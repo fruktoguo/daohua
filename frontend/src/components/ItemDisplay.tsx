@@ -2,7 +2,7 @@ import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, convertTierToLevel, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { calculateEquipmentSellPrice, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import { BUFF_CHANNELS, formatBuffChannelValue, isBuffEffectChannel, specToBuffEffects, type BuffEffectEntry } from '../game/buffChannels'
@@ -86,7 +86,7 @@ function fallbackMetadata(itemId: string): ItemMetadata {
     rarity: grade.rarity,
     rarityLabel: grade.label,
     tier,
-    level: convertTierToLevel(tier),
+    level: def?.level ?? 1,
     description: def?.description ?? '',
     source: '',
     usage: '',
@@ -155,7 +155,7 @@ function ItemTooltipCardContent({
         label: itemDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: itemDef.tier ?? baseMetadata.tier,
-        level: itemDef.level ?? baseMetadata.level ?? (itemDef.tier ? convertTierToLevel(itemDef.tier) : undefined),
+        level: itemDef.level ?? baseMetadata.level ?? 1,
         description: itemDef.description || baseMetadata.description,
       }
     : eqDef
@@ -164,14 +164,14 @@ function ItemTooltipCardContent({
         label: eqDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: eqDef.tier ?? baseMetadata.tier,
-        level: eqDef.level ?? (eqDef.tier ? convertTierToLevel(eqDef.tier) : baseMetadata.level),
+        level: eqDef.level ?? baseMetadata.level ?? 1,
       }
     : baseMetadata
 
-  const tier = rawMetadata.tier ?? (eqDef?.tier || itemDef?.tier || (rawMetadata.level && rawMetadata.level <= 8 ? rawMetadata.level : 1))
+  const tier = rawMetadata.tier ?? (eqDef?.tier || itemDef?.tier || 1)
   const normalizedTier = tier > 8 ? 1 : Math.max(1, Math.floor(tier))
   const grade = resolveItemGrade(normalizedTier)
-  const levelNumber = eqDef?.level ?? itemDef?.level ?? rawMetadata.level ?? convertTierToLevel(normalizedTier)
+  const levelNumber = eqDef?.level ?? itemDef?.level ?? rawMetadata.level ?? 1
   const metadata: ItemMetadata = {
     ...rawMetadata,
     rarity: grade.rarity,
@@ -287,11 +287,13 @@ export function resolveItemTooltipAsideCards(
           ...buff,
           effects: specToBuffEffects(buff as unknown as Record<string, number | undefined>, 1),
         })
+        const buffDuration = (buff as unknown as { durationSeconds?: number }).durationSeconds
         list.push(
-          createBonusAsideCard({
+          createStandaloneBuffAsideCard({
             id: `aside-eq-buff-${buff.name || buff.buffId}`,
-            mark: t('market.aside.buff'),
-            title: buff.name ? `${t('market.aside.buff')}·${buff.name}` : t('market.aside.buff'),
+            name: buff.name || t('market.aside.buff'),
+            kind: items.some(item => String(item.value).startsWith('-')) ? 'debuff' : 'buff',
+            durationSeconds: buffDuration,
             tone: 'gold',
             items,
           })
@@ -934,6 +936,55 @@ export const BonusAsideList = memo(function BonusAsideList({
 })
 
 /**
+ * 独立状态/Buff 悬浮副卡片构造参数
+ * 全游戏（功法、特质、装备、消耗品）共用统一头部结构：纯状态名标题 + [增益]/[减益]/[状态] 角标 + 持续时间/机制副标。
+ */
+export interface StandaloneBuffAsideCardOptions {
+  id: string
+  name: string
+  kind?: 'buff' | 'debuff' | 'state'
+  durationSeconds?: number
+  refreshOnStack?: boolean
+  subtitle?: string
+  tone?: FloatingTone
+  items: BonusAsideItem[]
+}
+
+/**
+ * 统一构造独立状态/Buff 悬浮副卡片
+ */
+export function createStandaloneBuffAsideCard(
+  options: StandaloneBuffAsideCardOptions
+): FloatingAsideCard {
+  const t = getT()
+  const kind = options.kind ?? 'buff'
+  const mark = kind === 'debuff'
+    ? t('market.aside.debuff')
+    : kind === 'state'
+      ? t('game.abilityAside.stateMark')
+      : t('market.aside.buff')
+  const tone: FloatingTone = options.tone ?? (
+    kind === 'debuff' ? 'danger' : kind === 'state' ? 'purple' : 'jade'
+  )
+  const durationSeconds = options.durationSeconds ?? 0
+  const subtitle = options.subtitle ?? (
+    durationSeconds > 0
+      ? (options.refreshOnStack
+        ? t('game.abilityAside.durationRefresh', { seconds: formatNumber(durationSeconds) })
+        : t('market.aside.duration', { seconds: formatNumber(durationSeconds) }))
+      : undefined
+  )
+  return createBonusAsideCard({
+    id: options.id,
+    mark,
+    title: options.name,
+    subtitle,
+    tone,
+    items: options.items,
+  })
+}
+
+/**
  * 构造标准统一的属性数值加成独立悬浮窗 (Bonus Aside Card)
  * 装备属性、药品效果、实时Buff 均共用此悬浮窗！
  */
@@ -1121,6 +1172,33 @@ export function extractBuffBonusItems(buff: {
     }
   }
 
+  // 2.5 「移形」与「蓄意」特殊机制条目（与特质、技能、战斗面板复用同一声明，避免多处文案漂移）
+  if (buff.buffId === 'buff.yixing') {
+    appendYixingMechanicItems(items, !items.some(item => item.glyph === 'evasion'))
+  }
+  if (buff.buffId === 'buff.xuyi') {
+    items.push(
+      {
+        glyph: 'total-damage',
+        label: t('market.effect.badgeXuyiStackSource'),
+        tone: 'gold',
+        value: t('market.effect.xuyiStackSourceValue'),
+      },
+      {
+        glyph: 'break-power',
+        label: t('market.effect.badgeXuyiBurstTrigger'),
+        tone: 'purple',
+        value: t('market.effect.xuyiBurstTriggerValue'),
+      },
+      {
+        glyph: 'phys-damage',
+        label: t('market.effect.badgeXuyiBurstDamage'),
+        tone: 'crimson',
+        value: t('market.effect.xuyiBurstDamageValue'),
+      }
+    )
+  }
+
   // 3. 若无点数解析，回退到原有文本解析
   if (items.length === 0) {
     const rawLines = describeBuffEffectLines(buff)
@@ -1135,6 +1213,39 @@ export function extractBuffBonusItems(buff: {
   }
 
   return items
+}
+
+/**
+ * 追加「移形」状态的共性规则条目（可按需补全闪避 +100% 条目），
+ * 供战内 Buff 悬停、技能独立 Buff 副卡与特质「剑与心」副卡统一复用。
+ */
+export function appendYixingMechanicItems(
+  items: BonusAsideItem[],
+  includeEvasion = false
+): void {
+  const t = getT()
+  if (includeEvasion) {
+    items.push({
+      glyph: 'evasion',
+      label: t('market.effect.badgeEvasionPostRatio'),
+      tone: 'cyan',
+      value: '+100%',
+    })
+  }
+  items.push(
+    {
+      glyph: 'accuracy',
+      label: t('market.effect.badgeAccuracy'),
+      tone: 'jade',
+      value: '+100%',
+    },
+    {
+      glyph: 'action-speed',
+      label: t('market.effect.badgeYixingConsume'),
+      tone: 'amber',
+      value: t('market.effect.yixingConsumeValue'),
+    }
+  )
 }
 
 /** 向下兼容别名与转发 */
@@ -1431,15 +1542,12 @@ export function resolveItemAsideCards(
     }
     // 配表 Buff 定义为平铺键规格：转换为通道载荷后走统一注册表解析。
     const items = extractBuffBonusItems({ ...buff, effects: specToBuffEffects(buff as unknown as Record<string, number | undefined>, 1) })
-    const buffDurationSubtitle = buff.durationSeconds && buff.durationSeconds > 0
-      ? t('market.aside.duration', { seconds: formatNumber(buff.durationSeconds) })
-      : undefined
     cards.push(
-      createBonusAsideCard({
+      createStandaloneBuffAsideCard({
         id: `aside-buff-${buff.name}`,
-        mark: t('market.aside.buff'),
-        title: buff.name,
-        subtitle: buffDurationSubtitle,
+        name: buff.name,
+        kind: items.some(item => String(item.value).startsWith('-')) ? 'debuff' : 'buff',
+        durationSeconds: buff.durationSeconds,
         tone: 'gold',
         items,
       })

@@ -23,6 +23,7 @@ const allMaterials = rawMaterials
     category: it.category,
     subCategory: it.subCategory,
     tier: it.tier ?? 1,
+    level: it.level ?? 1,
     sellPrice: it.sellPrice ?? 0,
   }))
 
@@ -66,25 +67,26 @@ test('codexCalculations: 解锁规则验证（境界、技艺与背包三路联�
   assert.equal(isMaterialUnlocked(commonMineral, 1, []), true)
   assert.equal(isMaterialUnlocked(commonExotic, 1, []), true)
 
-  // 稀有材料（tier >= 2）默认锁定，境界达标才由境界路径解锁
+  // 稀有材料（tier >= 2）默认锁定，直读材料显式 level（妖丹 level: 12）由境界达标解锁
   assert.equal(isMaterialUnlocked(rareExotic, 1, []), false)
-  assert.equal(isMaterialUnlocked(rareExotic, 18, []), true)
+  assert.equal(isMaterialUnlocked(rareExotic, 11, []), false)
+  assert.equal(isMaterialUnlocked(rareExotic, 12, []), true)
 
   // 背包持有稀有材料：提前点亮解锁
   assert.equal(isMaterialUnlocked(rareExotic, 1, [{ itemId: 'item.demon-dan', amount: 1 }]), true)
 
   // 技艺路径按 subCategory 分派（灵材→采集、矿石→采矿、异材/精材无技艺）：
-  // 当前配表凡品材料已无技艺门槛，用同构材料定义验证分派逻辑本身不退化
-  const herbAt18 = { itemId: 'item.test-herb', tier: 2, subCategory: 'spiritMaterial' }
-  const mineralAt18 = { itemId: 'item.test-ore', tier: 2, subCategory: 'mineral' }
-  const exoticAt18 = { itemId: 'item.test-exotic', tier: 2, subCategory: 'exoticMaterial' }
+  // 稀有材料门槛直读自身显式 level，不再经由 tier 换算
+  const herbAt18 = { itemId: 'item.test-herb', tier: 2, level: 18, subCategory: 'spiritMaterial' }
+  const mineralAt18 = { itemId: 'item.test-ore', tier: 2, level: 18, subCategory: 'mineral' }
+  const exoticAt18 = { itemId: 'item.test-exotic', tier: 2, level: 18, subCategory: 'exoticMaterial' }
   assert.equal(isMaterialUnlocked(herbAt18, 1, [], { gathering: 18 }), true)
   assert.equal(isMaterialUnlocked(mineralAt18, 1, [], { gathering: 18 }), false)
   assert.equal(isMaterialUnlocked(mineralAt18, 1, [], { mining: 18 }), true)
   assert.equal(isMaterialUnlocked(exoticAt18, 1, [], { gathering: 18, mining: 18 }), false)
 
-  // 稀有阶梯：tier 3 门槛 30 级，18 级不足以解锁
-  const exoticAt30 = { itemId: 'item.test-exotic-3', tier: 3, subCategory: 'exoticMaterial' }
+  // 稀有阶梯：直读显式 level 30，18 级不足以解锁
+  const exoticAt30 = { itemId: 'item.test-exotic-3', tier: 3, level: 30, subCategory: 'exoticMaterial' }
   assert.equal(isMaterialUnlocked(exoticAt30, 18, []), false)
   assert.equal(isMaterialUnlocked(exoticAt30, 30, []), true)
 })

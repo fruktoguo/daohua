@@ -1,0 +1,403 @@
+/* ===== 全服排行榜页 ===== */
+
+.leaderboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.leaderboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.leaderboard-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.leaderboard-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gold-bright);
+}
+
+.leaderboard-title-row h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.leaderboard-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.leaderboard-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.leaderboard-meta-chip {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.leaderboard-refresh-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--gold);
+  border: 1px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.08);
+  cursor: pointer;
+}
+
+.leaderboard-refresh-btn:hover:not(:disabled) {
+  background: rgba(201, 180, 109, 0.16);
+  color: var(--gold-bright);
+}
+
+.leaderboard-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.leaderboard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.leaderboard-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.leaderboard-tab-btn:hover {
+  color: var(--text);
+  border-color: var(--gold-dim);
+}
+
+.leaderboard-tab-btn.active {
+  color: var(--gold-bright);
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.14);
+}
+
+.leaderboard-subtabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.leaderboard-my-rank {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--gold-dim);
+  background: linear-gradient(90deg, rgba(201, 180, 109, 0.12), rgba(201, 180, 109, 0.03));
+}
+
+.leaderboard-my-rank.is-unranked {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.leaderboard-my-rank-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.leaderboard-my-rank-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.leaderboard-my-rank-pos {
+  font-size: 15px;
+  color: var(--gold-bright);
+}
+
+.leaderboard-my-rank-sect {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.leaderboard-my-rank-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.leaderboard-my-score {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.leaderboard-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-dim);
+}
+
+.leaderboard-state-card p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.leaderboard-state-card button {
+  padding: 5px 12px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.1);
+  color: var(--gold-bright);
+  cursor: pointer;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.leaderboard-row:hover {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.leaderboard-row.is-top1 {
+  border-color: rgba(245, 196, 81, 0.65);
+  background: linear-gradient(90deg, rgba(245, 196, 81, 0.14), rgba(255, 255, 255, 0.02));
+}
+
+.leaderboard-row.is-top2 {
+  border-color: rgba(196, 210, 224, 0.55);
+  background: linear-gradient(90deg, rgba(196, 210, 224, 0.1), rgba(255, 255, 255, 0.02));
+}
+
+.leaderboard-row.is-top3 {
+  border-color: rgba(205, 140, 82, 0.55);
+  background: linear-gradient(90deg, rgba(205, 140, 82, 0.1), rgba(255, 255, 255, 0.02));
+}
+
+.leaderboard-row.is-self {
+  box-shadow: inset 2px 0 0 var(--jade, #4ade80);
+}
+
+.leaderboard-rank {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.leaderboard-rank.is-top1 {
+  color: #fde047;
+  border-color: rgba(245, 196, 81, 0.8);
+  background: rgba(245, 196, 81, 0.18);
+}
+
+.leaderboard-rank.is-top2 {
+  color: #e2e8f0;
+  border-color: rgba(196, 210, 224, 0.75);
+  background: rgba(196, 210, 224, 0.15);
+}
+
+.leaderboard-rank.is-top3 {
+  color: #fdba74;
+  border-color: rgba(205, 140, 82, 0.75);
+  background: rgba(205, 140, 82, 0.15);
+}
+
+.leaderboard-player-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leaderboard-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid var(--gold-faint);
+}
+
+.leaderboard-avatar .character-avatar,
+.leaderboard-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.leaderboard-row-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.leaderboard-row-name-line,
+.leaderboard-zongmen-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.leaderboard-row-name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-player-trigger:hover .leaderboard-row-name {
+  color: var(--gold-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.leaderboard-player-seq {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-self-badge {
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--jade, #4ade80);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.leaderboard-zongmen-prefix {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.leaderboard-row-realm,
+.leaderboard-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.leaderboard-row-metric {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-metric-primary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-bright);
+}
+
+.leaderboard-metric-primary.is-hoverable {
+  cursor: help;
+}
+
+.leaderboard-metric-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .leaderboard-page {
+    padding: 10px 10px 16px;
+  }
+
+  .leaderboard-row {
+    padding: 8px 8px;
+    gap: 8px;
+  }
+
+  .leaderboard-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .leaderboard-metric-primary {
+    font-size: 12px;
+  }
+}

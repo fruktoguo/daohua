@@ -46,6 +46,7 @@ export function linggenTechniqueSpeedRatio(linggen: LinggenPoints | undefined, t
     case 'talisman':
       return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.water)) / LINGGEN_AXIS_CAP)
     case 'gathering':
+    case 'mining':
       return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.wood)) / LINGGEN_AXIS_CAP)
     case 'enhancement':
       return 0.25 * (Math.max(0, Math.min(LINGGEN_AXIS_CAP, linggen.metal)) / LINGGEN_AXIS_CAP)

@@ -13,6 +13,7 @@ import {
   enhanceSuccessRate,
 } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
+import { resolveEffectiveEnhancementSuccessBonuses } from '../game/sustainedConsumables'
 import { useEnhancementStats } from '../game/enhancementRecordStore'
 import { useGameStore } from '../game/gameStore'
 import { useUiStore } from '../uiStore'
@@ -127,6 +128,7 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
   const combat = useGameStore(state => state.combat)
   const world = useGameStore(state => state.world)
   const queueEntries = useGameStore(state => state.queue?.entries)
+  const enhancementAutoUseSlots = useGameStore(state => state.queue?.autoUseSlots?.enhancement)
   const stats = useGameStore(state => state.stats)
   const playerId = useGameStore(state => state.playerId)
 
@@ -203,19 +205,14 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
   useEffect(() => {
     setUserProtectionItemId(protectionOptions[0] ?? null)
   }, [protectionOptions])
-  // 保护材料仅限背包内未装备件（若为装备则扣除已装备在身上的 0 级件）
+  // 保护材料仅限背包内未穿戴且未被强化队列锁定的 0 级可用件
   const getAvailableProtectionAmount = useCallback((id: string) => {
     const rawAmount = getItemAmount(inventory, id)
     const eqDef = findEquipmentInCatalog(equipmentCatalog, id)
     if (!eqDef) return rawAmount
-    let wornZeroCount = 0
-    for (const eq of combat?.equipment ?? []) {
-      if (eq.itemId === id && Math.floor(eq.enhancementLevel) === 0) {
-        wornZeroCount++
-      }
-    }
-    return Math.max(0, rawAmount - wornZeroCount)
-  }, [combat?.equipment, equipmentCatalog, inventory])
+    const occupied = collectOccupiedEquipmentCounts(combat?.equipment, queueEntries).get(`${id}#0`) ?? 0
+    return Math.max(0, rawAmount - occupied)
+  }, [combat?.equipment, equipmentCatalog, inventory, queueEntries])
   const protectionOwned = protectionItemId ? getAvailableProtectionAmount(protectionItemId) : 0
   // 保护材料即目标装备且当前为 +0 时，本体与代护件共用同一资产键，需持有 ≥2。
   const protectionRequired = protectionItemId !== null && protectionItemId === selected?.itemId && currentLevel === 0 ? 2 : 1
@@ -243,23 +240,26 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
     return 0.25 * (Math.max(0, Math.min(100, stats.heavenGateConfirmed.metal ?? 0)) / 100)
   }, [stats?.heavenGateEntered, stats?.heavenGateConfirmed])
 
-  const itemTier = selected?.equipmentDefinition?.tier ?? 1
-  // 强化感悟经验按装备代表等级结算（与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算）
-  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition, itemTier)
+  // 强化感悟经验按装备自身显式 level 结算（与服务端 ResolveItemLevel 同口径，缺省 1）
+  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition)
   const yields = useMemo(
     () => calculateEnhancementYields(itemLevel, nextLevel),
     [itemLevel, nextLevel],
   )
 
+  const consumableBonuses = useMemo(
+    () => resolveEffectiveEnhancementSuccessBonuses(enhancementAutoUseSlots, items, inventory),
+    [enhancementAutoUseSlots, items, inventory],
+  )
   const preview = useMemo(() => {
-    const successRate = enhanceSuccessRate(nextLevel, techniqueLevel)
+    const successRate = enhanceSuccessRate(nextLevel, techniqueLevel, consumableBonuses.totalBonus)
     const spiritCost = enhanceSpiritStoneCost(nextLevel)
     const buildingSpeed = world?.buildingEffects?.enhancementSpeedRatio ?? 0
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
     const durationAfterBuilding = buildingSpeed > 0 ? baseDuration / (1 + buildingSpeed) : baseDuration
     const actualDuration = durationAfterBuilding / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio + linggenSpeedRatio)
     return { successRate, spiritCost, baseDuration, actualDuration }
-  }, [nextLevel, techniqueLevel, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
+  }, [nextLevel, techniqueLevel, consumableBonuses.totalBonus, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
 
   const enhancementStats = useEnhancementStats(playerId, selected?.itemId)
   const historyRows = useMemo(() => {
@@ -479,6 +479,16 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
                     {`(${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%)`}
                   </strong>
                 </div>
+                {consumableBonuses.items.length > 0 && (
+                  <span className="enhancement-duration-note">
+                    {t('app.enhancement.consumableSuccessNote', {
+                      percent: formatNumber(consumableBonuses.totalBonus * 100, { maxDecimals: 1 }),
+                      sources: consumableBonuses.items
+                        .map(item => `${item.name} +${formatNumber(item.bonus * 100, { maxDecimals: 1 })}%`)
+                        .join(' / '),
+                    })}
+                  </span>
+                )}
                 <span>{t('app.enhancement.outcomeSuccess', { level: nextLevel })}</span>
                 <span>{isProtectedThisRound
                   ? t('app.enhancement.outcomeFailProtected', { level: Math.max(0, currentLevel - 1) })
@@ -499,6 +509,12 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
                   <span className="action-stat-pill-label">{t('insight.technique.enhancement')}</span>
                   <strong className="action-stat-pill-value">
                     <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={yields.techniqueExp} />
+                  </strong>
+                </span>
+                <span className="action-stat-pill action-stat-pill--foundation">
+                  <span className="action-stat-pill-label">{t('combat.report.foundation')}</span>
+                  <strong className="action-stat-pill-value">
+                    <UnitNumber disableTooltip maxDecimals={1} prefix="+" value={yields.foundationGain} />
                   </strong>
                 </span>
               </dd>

@@ -2069,6 +2069,8 @@ input[type="checkbox"] {
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.12);
   line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: default;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -2087,6 +2089,7 @@ input[type="checkbox"] {
   font-size: 11px;
   font-weight: var(--font-weight-medium);
   color: #e5e7eb;
+  white-space: nowrap;
 }
 
 .item-reference-compound .underlined-value {
@@ -2096,6 +2099,7 @@ input[type="checkbox"] {
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   border-bottom: 1.5px solid currentColor;
 }
 
@@ -5083,6 +5087,18 @@ input[type="checkbox"] {
 
 .action-stat-pill--technique strong {
   color: #fb923c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.action-stat-pill--foundation {
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  color: var(--text);
+}
+
+.action-stat-pill--foundation strong {
+  color: #c084fc;
   font-size: 13px;
   font-weight: 600;
 }
@@ -8148,10 +8164,15 @@ input[type="checkbox"] {
     border-radius: 8px;
   }
 
-  /* 组内子行：仅在当前分组有第二层时渲染，横向滚动兜住「更多」组五项 */
+  /* 组内子行：仅在当前分组有第二层时渲染，横向滚动兜住「更多」组五项；
+     首个子行与 .bottom-nav 顶边共线，去掉自身上边框避免双线。 */
   .bottom-sub-nav {
     display: flex;
     border-top: 1px solid var(--gold-faint);
+  }
+
+  .bottom-sub-nav:first-child {
+    border-top: 0;
   }
 
   .bottom-sub-tabs {
@@ -10635,18 +10656,6 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
-.social-page-header {
-  flex-shrink: 0;
-}
-
-/* 桌面宽屏（≥961px）侧栏「同道」子菜单已承载队伍/宗门/邀请切换，页内页签仅移动布局显示；
-   本规则必须位于 .panel-header{display:flex} 之后，同特异度靠后声明才能压住它。 */
-@media (min-width: 961px) {
-  .social-page-header {
-    display: none;
-  }
-}
-
 .social-page-body {
   display: flex;
   min-height: 0;
@@ -11880,6 +11889,23 @@ input[type="checkbox"] {
   line-height: 1.2;
   z-index: 2;
   pointer-events: none;
+}
+
+.player-card-privacy-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px dashed var(--gold-dim);
+  background: rgba(201, 180, 109, 0.06);
+}
+
+.player-card-privacy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gold-bright);
+  font-size: 13px;
 }
 
 /* 传音消息内嵌的队伍链接卡 */

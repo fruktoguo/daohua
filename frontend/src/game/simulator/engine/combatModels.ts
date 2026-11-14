@@ -95,6 +95,7 @@ export interface CombatEvent {
   break: boolean
   parried: boolean
   abilityId: string | null
+  abilityNameOverride?: string | null
   healing: number
   attackerManapointsAfter: number | null
   targetManapointsAfter: number | null
@@ -205,6 +206,18 @@ export class CombatantState {
   invalidateBuffAggregates(): void {
     this._buffTotals = null
     this._effectiveStatsCache = null
+    if (this.skillWakePending) {
+      const buffChannel = 1 << 2 // 与 triggerWake.UnitChannel.Buff 对齐，防止循环依赖
+      for (let i = 0; i < this.skillWakePending.length; i++) {
+        const cur = this.skillWakePending[i]
+        this.skillWakePending[i] = {
+          ...cur,
+          self: cur.self | buffChannel,
+          allySide: cur.allySide | buffChannel,
+          enemySide: cur.enemySide | buffChannel,
+        }
+      }
+    }
   }
 
   setBuff(buff: CombatBuffState): void {
@@ -348,6 +361,21 @@ export class CombatantState {
       }
     }
     return total + (this.externalBuffStacks ? this.externalBuffStacks(buffId) : 0)
+  }
+
+  consumeOneBuffStack(buffId: string): boolean {
+    for (let i = 0; i < this._buffs.length; i++) {
+      const current = this._buffs[i]
+      if (current.buffId !== buffId) continue
+      if (current.stacks <= 1 + 1e-12) {
+        this._buffs.splice(i, 1)
+      } else {
+        this._buffs[i] = { ...current, stacks: current.stacks - 1 }
+      }
+      this.invalidateBuffAggregates()
+      return true
+    }
+    return false
   }
 
   syncDerivedStacks(): void {
@@ -825,6 +853,7 @@ export interface CombatHitContext {
   target: CombatantState
   attackStats: CombatantStats
   abilityId: string | null
+  doubleAccuracy?: boolean
   side: bigint
   count: number
   atSeconds: number

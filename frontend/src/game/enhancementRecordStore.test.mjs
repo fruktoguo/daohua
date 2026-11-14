@@ -82,4 +82,27 @@ test('enhancementRecordStore: 暂存记录摄入、已完成项累加归档、�
   assert.equal(stats[2].attempts, 5)
   assert.equal(stats[2].successes, 2)
   assert.equal(stats[2].successRate, 0.4)
+
+  // 6. 模拟刷新/WS 重连在 Ack 生效前重放已完成行动 A（以及旧时间戳进行的回放）：
+  // 仍需回传 actionA 供服务端核销，但本地 archived 绝不重复累加，且过时 staged 不会复活
+  const ackReplay = ingestStagedEnhancements(playerId, [
+    {
+      actionId: actionA,
+      itemId: swordId,
+      levels: { 1: { attempts: 20, successes: 14 } },
+      isCompleted: true,
+      updatedAtUnixSeconds: 1020,
+    },
+    {
+      actionId: actionA,
+      itemId: swordId,
+      levels: { 1: { attempts: 15, successes: 10 } },
+      isCompleted: false,
+      updatedAtUnixSeconds: 1010,
+    },
+  ])
+  assert.deepEqual(ackReplay, [actionA])
+  stats = getEnhancementStats(playerId, swordId)
+  assert.equal(stats[1].attempts, 20)
+  assert.equal(stats[1].successes, 14)
 })

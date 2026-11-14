@@ -3,7 +3,6 @@ import { describeAbility, formatAbilityCategory } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
 import type { CombatAbilityDefinition } from '../game/types'
-import { useGameStore } from '../game/gameStore'
 import { CandidatePicker, type CandidateOption } from './CandidatePicker'
 import { EffectTooltipTarget, resolveAbilityAsideCards } from './EffectTooltip'
 
@@ -29,6 +28,8 @@ export interface AbilityGridPickerProps {
   slotIndex?: number
   /** 已参悟等级查询（用于瓦片角标与悬浮详情展示；缺省按 1 级显示） */
   levelFor?: (abilityId: string) => number
+  /** 当前编辑/查看单位的功法参悟经验映射；仅玩家本人配置面板传入，模拟器预设/非己方场景传 null 隐藏个人参悟进度副卡 */
+  abilityExperiences?: Readonly<Record<string, number>> | null
   /** 当前槽位功法触发条件编辑回调 */
   onEditCondition?: () => void
   /** 当前槽位功法已配置触发条件数量 */
@@ -53,11 +54,11 @@ export function AbilityGridPicker({
   allowEmpty = true,
   slotIndex,
   levelFor,
+  abilityExperiences,
   onEditCondition,
   triggerCount,
 }: AbilityGridPickerProps): React.JSX.Element {
   const t = useT()
-  const abilityExperiences = useGameStore(state => state.combat?.abilityExperiences)
 
   const isInternalSlot = slotIndex === 0
   // 槽位类别互斥：内功位（index 0）只列内功心法，术法位只列神通术法；
@@ -87,8 +88,10 @@ export function AbilityGridPicker({
   const options = useMemo<readonly CandidateOption[]>(() => slotAbilities.map(ability => {
 
     const learnedLevel = levelFor?.(ability.abilityId) ?? 1
-    const abilityExp = abilityExperiences?.[ability.abilityId] ?? 0
-    const asideCards = resolveAbilityAsideCards(ability, abilityExp)
+    const abilityExp = abilityExperiences
+      ? (abilityExperiences[ability.abilityId] ?? 0)
+      : undefined
+    const asideCards = resolveAbilityAsideCards(ability, abilityExp, 'qi', learnedLevel)
     const iconUrl = resolveItemIconUrl(ability.abilityId)
     return {
       key: ability.abilityId,

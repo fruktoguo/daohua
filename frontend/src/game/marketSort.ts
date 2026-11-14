@@ -1,4 +1,4 @@
-import { convertTierToLevel, resolveItemSubCategory } from './ids'
+import { resolveItemSubCategory } from './ids'
 import type { MarketInstrument } from './marketStore'
 
 /**
@@ -68,15 +68,14 @@ export function getSubCategoryOrder(primaryKey: string, subKey: string): number 
 }
 
 /**
- * 解析标的的使用/需求境界等级
- * 优先取显式配置的 level，缺省时由 tier 换算为境界等级（convertTierToLevel）
+ * 解析标的的使用/需求境界等级（直读显式 level，缺省按 1 级）
  */
 export function resolveMarketInstrumentLevel(item: MarketInstrument): number {
   const explicitLevel = item.equipmentDefinition?.level ?? item.definition?.level
   if (typeof explicitLevel === 'number' && explicitLevel > 0) {
     return explicitLevel
   }
-  return convertTierToLevel(item.tier ?? 1)
+  return 1
 }
 
 /**

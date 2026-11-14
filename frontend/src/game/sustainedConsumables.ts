@@ -1,10 +1,75 @@
 import { ENHANCE_ACTION_ID, TECHNIQUE_IDS } from './combatConstants'
-import type { ActionDefinition, AutoUseBarType, ItemDefinition, QueueEntry } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, InventoryItem, ItemDefinition, QueueEntry } from './types'
 
 export type SustainedDurationClock =
   | { mode: 'frozen' }
   | { mode: 'action'; progressAtSyncSeconds: number; elapsedSinceSyncSeconds: number; durationSeconds: number }
   | { mode: 'combat'; elapsedSinceSyncSeconds: number }
+
+export interface EnhancementConsumableBonusItem {
+  itemId: string
+  name: string
+  bonus: number
+}
+
+export interface EffectiveEnhancementConsumables {
+  totalBonus: number
+  items: EnhancementConsumableBonusItem[]
+}
+
+function getUnvariantInventoryAmount(
+  inventory: readonly InventoryItem[] | Readonly<Record<string, number>>,
+  itemId: string,
+): number {
+  if (Array.isArray(inventory)) {
+    let total = 0
+    for (const entry of inventory) {
+      if (entry.itemId === itemId && !entry.variant) total += entry.amount
+    }
+    return total
+  }
+  return (inventory as Readonly<Record<string, number>>)[itemId] ?? 0
+}
+
+/**
+ * 统计强化栏位当前可即时生效的成功率加成（含已充能残余与开轮可自动充能的库存）：
+ * 与服务端 EffectiveEnhancementSuccessBonus + PrepareSustainedAutoUse 同口径，按 itemId 预约库存防止重复计数。
+ */
+export function resolveEffectiveEnhancementSuccessBonuses(
+  slots: readonly AutoUseSlot[] | undefined,
+  items: readonly ItemDefinition[],
+  inventory: readonly InventoryItem[] | Readonly<Record<string, number>>,
+): EffectiveEnhancementConsumables {
+  if (!slots || slots.length === 0) return { totalBonus: 0, items: [] }
+  const itemById = new Map(items.map(item => [item.itemId, item]))
+  const reservedByItem = new Map<string, number>()
+  const bonusItems: EnhancementConsumableBonusItem[] = []
+  let totalBonus = 0
+
+  for (const slot of slots) {
+    if (!slot.enabled || !slot.itemId) continue
+    const item = itemById.get(slot.itemId)
+    const bonus = item?.enhancementSuccessBonus
+    if (!item || bonus === undefined || !Number.isFinite(bonus) || bonus <= 0) continue
+
+    const remaining = slot.remainingDurationSeconds ?? 0
+    if (remaining <= 0) {
+      const canActivate = item.isContinuous === true
+        && (item.durationSeconds ?? 0) > 0
+        && item.durable !== true
+        && item.usableBars.includes('enhancement')
+      if (!canActivate) continue
+      const reserved = reservedByItem.get(item.itemId) ?? 0
+      if (getUnvariantInventoryAmount(inventory, item.itemId) - reserved + 1e-12 < 1) continue
+      reservedByItem.set(item.itemId, reserved + 1)
+    }
+
+    totalBonus += bonus
+    bonusItems.push({ itemId: item.itemId, name: item.name, bonus })
+  }
+
+  return { totalBonus, items: bonusItems }
+}
 
 /** 判定持续消耗品是否会被当前行动实际消耗，保持与服务端生效守卫一致。 */
 export function hasActiveSustainedEffect(

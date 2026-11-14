@@ -677,7 +677,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <CombatAttributePanel
                 attributes={attributes}
                 buffs={buffs}
-                loadout={{ skills: loadout?.abilitySlots ?? [], equipment: loadout?.equipment }}
+                loadout={{
+                  skills: loadout?.abilitySlots ?? [],
+                  equipment: loadout?.equipment,
+                  abilityExperiences: loadout?.abilityExperiences ?? {},
+                }}
               />
             )}
           </div>

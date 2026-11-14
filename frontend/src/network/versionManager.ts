@@ -19,6 +19,7 @@
  */
 import { useGameStore } from '../game/gameStore'
 import { getT } from '../i18n'
+import { getApiUrl } from './apiUrl'
 
 /** 客户端构建注入的版本号，缺省为 'dev' */
 export const CLIENT_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
@@ -162,12 +163,13 @@ export async function checkVersionFromApi(): Promise<void> {
   lastApiCheckAt = now
 
   try {
-    const response = await fetch(`/api/v1/version?_t=${now}`, {
+    const response = await fetch(getApiUrl(`/api/v1/version?_t=${now}`), {
       method: 'GET',
       headers: {
         'Cache-Control': 'no-cache, no-store',
         Pragma: 'no-cache',
       },
+      signal: AbortSignal.timeout(8_000),
     })
     if (!response.ok) return
     const data = (await response.json()) as { version?: string }

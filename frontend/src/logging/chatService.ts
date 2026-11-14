@@ -142,7 +142,10 @@ class ChatService {
 
   /** 宗门资格变化时清除旧作用域，避免无资格时继续展示旧宗门历史。 */
   clearChannel(channel: ChatChannel): void {
-    for (const key of this.conversations.keys()) if (key.startsWith(`${channel}:`)) this.conversations.delete(key)
+    const prefix = `${channel}\u0000`
+    for (const key of this.conversations.keys()) {
+      if (key.startsWith(prefix)) this.conversations.delete(key)
+    }
     this.channelScopes.delete(channel)
     this.publish(0)
   }

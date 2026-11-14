@@ -435,6 +435,10 @@ export interface AbilityJson {
   castMilliseconds?: number;
   cooldownMilliseconds?: number;
   manaCost?: number;
+  yixingMorphName?: string;
+  yixingMorphTargetType?: string;
+  ranhunBaseStacks?: number;
+  ranhunSpellAttackRatio?: number;
   threatGain?: number;
   threatPoints?: number;
   rootAttribute?: string;

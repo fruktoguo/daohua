@@ -61,6 +61,28 @@ export function OpsOverviewView({ intervalMs }: { intervalMs: number }): React.J
               <OpsStat label="成交金额" value={formatNumber(data.market.tradedGrossAmount, 2)} />
             </OpsStatGrid>
           </OpsCard>
+          {data.leaderboard && (
+            <OpsCard title="全服排行榜整点物化">
+              <OpsStatGrid>
+                <OpsStat
+                  label="快照状态"
+                  value={data.leaderboard.ready ? '已就绪' : '凝练中'}
+                  tone={data.leaderboard.ready ? 'jade' : 'warn'}
+                />
+                <OpsStat label="榜单数量" value={formatNumber(data.leaderboard.boardCount)} />
+                <OpsStat label="在榜总人次" value={formatNumber(data.leaderboard.totalRankedEntries)} />
+                <OpsStat label="上次物化耗时" value={`${formatNumber(data.leaderboard.lastDurationMs, 1)} ms`} />
+                <OpsStat
+                  label="本期快照时刻"
+                  value={data.leaderboard.computedAt ? new Date(data.leaderboard.computedAt).toLocaleString() : '—'}
+                />
+                <OpsStat
+                  label="下次整点刷新"
+                  value={new Date(data.leaderboard.nextComputeAt).toLocaleString()}
+                />
+              </OpsStatGrid>
+            </OpsCard>
+          )}
         </>
       )}
     </OpsAsyncView>

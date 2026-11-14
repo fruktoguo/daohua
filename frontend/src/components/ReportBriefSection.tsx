@@ -1,9 +1,11 @@
-import { memo, useMemo } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { formatNumber, formatRemainingSeconds } from '../game/format'
 import { calculateBriefStats } from '../game/statsCalculations'
 import { useT } from '../i18n'
+import { Icon } from './Icon'
 import { ItemReference } from './ItemDisplay'
+import { UnitNumber } from './UnitNumber'
 import type { BattleReport } from '../game/types'
 
 export interface ReportBriefSectionProps {
@@ -39,7 +41,6 @@ export const ReportBriefSection = memo(function ReportBriefSection({
     durationSeconds,
     isCombat,
     encountersPerHour,
-    killsPerHour,
     deathsPerHour,
     cyclesPerHour,
     dailyRevenue,
@@ -97,7 +98,7 @@ export const ReportBriefSection = memo(function ReportBriefSection({
           </span>
           <span className="battle-report-kpi-sub">
             {isCombat
-              ? `${killsPerHour.toFixed(1)} ${t('combat.report.killsPerHour')}${deathsPerHour > 0 ? ` · ${deathsPerHour.toFixed(1)} ${t('combat.report.deathsPerHour')}` : ''}`
+              ? `${t('combat.report.totalEncounters', { n: report.cycles })}${deathsPerHour > 0 ? ` · ${deathsPerHour.toFixed(1)} ${t('combat.report.deathsPerHour')}` : ''}`
               : t('combat.report.totalCyclesDone', { n: report.cycles })}
           </span>
         </div>
@@ -140,10 +141,12 @@ export const ReportBriefSection = memo(function ReportBriefSection({
           <div className="battle-report-brief-drops-list">
             {topYields.map(item => (
               <div className="battle-report-brief-drop-row" key={item.itemId}>
-                <ItemReference amount={item.quantity} itemId={item.itemId} />
+                <div className="battle-report-brief-drop-item">
+                  <ItemReference amount={item.quantity} itemId={item.itemId} />
+                </div>
                 <div className="battle-report-brief-drop-rates">
                   <span className="battle-report-brief-drop-daily-qty font-mono">
-                    +{formatNumber(item.dailyQty)} /{t('combat.report.perDayUnit')}
+                    +{formatNumber(item.dailyQty)}/{t('combat.report.perDayUnit')}
                   </span>
                   {item.dailyVal > 0 && (
                     <span className="battle-report-brief-drop-daily-val font-mono">
@@ -156,6 +159,84 @@ export const ReportBriefSection = memo(function ReportBriefSection({
           </div>
         )}
       </div>
+    </div>
+  )
+})
+
+/**
+ * 详情页头部右上角战斗任务实时效率条
+ * 仅在当前队首行动为战斗任务且存在进行中战报时渲染，数据源与「统计 → 简要」同源。
+ */
+export const CombatHeaderRateBar = memo(function CombatHeaderRateBar({
+  hidden,
+}: {
+  hidden?: boolean
+}): React.JSX.Element | null {
+  const t = useT()
+  const isCombatHead = useGameStore(state => state.queue.entries[0]?.executionKind === 'combat-encounter')
+  const currentReport = useGameStore(state => state.duel.currentReport)
+  const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
+  const itemsCatalog = useGameStore(state => state.items)
+  const marketStats = useGameStore(state => state.marketStats)
+  const equipmentsCatalog = useGameStore(state => state.equipment)
+
+  const active = Boolean(isCombatHead && currentReport)
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (hidden || !active) return undefined
+    const timer = window.setInterval(() => setTick(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [active, hidden])
+
+  const stats = useMemo(() => {
+    if (!active || !currentReport) return null
+    void tick
+    const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
+    return calculateBriefStats(currentReport, estimatedServerNow, {
+      items: itemsCatalog,
+      marketStats,
+      equipments: equipmentsCatalog,
+    })
+  }, [active, currentReport, serverTime, lastSyncPerformanceTime, itemsCatalog, marketStats, equipmentsCatalog, tick])
+
+  if (!stats) return null
+
+  return (
+    <div aria-label={t('combat.report.headerMetricsAria')} className="combat-header-rate-bar">
+      <span className="combat-header-rate-pill is-revenue">
+        <span aria-hidden="true" className="combat-header-rate-icon">
+          <Icon name="spirit" size={12} />
+        </span>
+        <UnitNumber
+          disableTooltip
+          maxDecimals={1}
+          suffix={`${t('combat.report.spiritStone')}/${t('combat.report.perDayShortUnit')}`}
+          value={stats.dailyRevenue}
+        />
+      </span>
+      <span className="combat-header-rate-pill is-cultivation">
+        <span aria-hidden="true" className="combat-header-rate-icon">
+          <Icon name="cultivation" size={12} />
+        </span>
+        <UnitNumber
+          disableTooltip
+          maxDecimals={1}
+          suffix={`${t('combat.report.experience')}/${t('combat.report.perDayShortUnit')}`}
+          value={stats.dailyCultivation}
+        />
+      </span>
+      <span className="combat-header-rate-pill is-frequency">
+        <span aria-hidden="true" className="combat-header-rate-icon">
+          <Icon name="combat" size={12} />
+        </span>
+        <UnitNumber
+          disableTooltip
+          maxDecimals={1}
+          suffix={t('combat.report.encountersPerHour')}
+          value={stats.encountersPerHour}
+        />
+      </span>
     </div>
   )
 })

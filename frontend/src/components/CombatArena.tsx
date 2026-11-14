@@ -5,7 +5,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
-import { useGameStore } from '../game/gameStore'
+import { useGameStore, useGameStoreWhenVisible } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
@@ -21,7 +21,7 @@ import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel, type UnitLoadoutView } from './CombatAttributePanel'
 import { CombatStatsPanel } from './CombatStatsPanel'
 import { ConfirmDialog } from './ConfirmDialog'
-import { BonusAsideList, extractBuffBonusItems, ItemIcon } from './ItemDisplay'
+import { BonusAsideList, extractBuffBonusItems, ItemIcon, ItemTooltipTarget } from './ItemDisplay'
 import { Icon } from './Icon'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useCombatVfx } from '../vfx/useCombatVfx'
@@ -722,7 +722,7 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
     let lastOffset = ''
     let intervalId: number | undefined
     const update = () => {
-      const currentRemaining = Math.max(0, buff.expiresAtUnixSeconds - Date.now() / 1000)
+      const currentRemaining = Math.max(0, buff.expiresAtUnixSeconds - estimateServerNowUnixMilliseconds() / 1000)
       const ratio = Math.min(1, Math.max(0, currentRemaining / total))
       const offset = `${circumference * (1 - ratio)}`
       if (offset !== lastOffset) {
@@ -1160,7 +1160,7 @@ function ArenaActor({
     if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
 
     const duration = actorMotionDurationMilliseconds[kind]
-    const delay = deadline - actorMotionLeadMilliseconds[kind] - Date.now()
+    const delay = deadline - actorMotionLeadMilliseconds[kind] - estimateServerNowUnixMilliseconds()
     if (delay < -duration) {
       scheduledAction.current = null
       return
@@ -1192,7 +1192,8 @@ function ArenaActor({
   return (
     <article
       aria-label={t('combat.arena.inspectAria', { name: name || t('combat.arena.defaultActorName') })}
-      className={`arena-actor arena-actor--${role}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}${dodging ? ' is-dodging' : ''}`}
+      className={`arena-actor arena-actor--${role} is-${role === 'enemy' ? 'enemy' : 'ally'}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}${dodging ? ' is-dodging' : ''}`}
+      data-actor-key={actorKey}
       ref={articleRef}
       style={{
         '--arena-aim-angle': `${actionMotion?.aimAngleDeg ?? 0}deg`,
@@ -1258,6 +1259,8 @@ function ArenaActor({
 /** 生活目标卡单条产出展示行（物品 / 修为·灵力·气血资源 / 增益） */
 interface LifeYieldRow {
   key: string
+  /** 物品产出强标识（仅装备强化目标或物品产出条目携带，用于渲染图标与悬浮详情卡） */
+  itemId?: string
   name: string
   /** 主产物图标节点：物品走 ItemIcon 位图，资源/技艺走 StatGlyph 剪影，增益回退文字字印 */
   icon: ReactNode
@@ -1302,24 +1305,26 @@ function ArenaLifeGoalCard({
   hidden?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const itemCatalog = useGameStore(state => state.items)
-  const equipmentCatalog = useGameStore(state => state.equipment)
-  const inventory = useGameStore(state => state.inventory)
-  const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
-  const stats = useGameStore(state => state.stats)
-  const world = useGameStore(hidden ? () => FROZEN_WORLD : state => state.world)
-  const maps = useGameStore(state => state.maps)
-  const combat = useGameStore(state => state.combat)
+  const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
+  const equipmentCatalog = useGameStoreWhenVisible(hidden, state => state.equipment)
+  const inventory = useGameStoreWhenVisible(hidden, state => state.inventory)
+  const autoUseSlots = useGameStoreWhenVisible(hidden, state => state.queue.autoUseSlots)
+  const stats = useGameStoreWhenVisible(hidden, state => state.stats)
+  const world = useGameStoreWhenVisible(hidden, state => state.world)
+  const maps = useGameStoreWhenVisible(hidden, state => state.maps)
+  const combat = useGameStoreWhenVisible(hidden, state => state.combat)
 
   const actionId = queueEntry?.actionId ?? actionDef?.id ?? ''
   // forge.* 与 craft.* 精炼归炼器，alchemy.* 与 craft.extract-* 提炼归炼丹：两者同为 alchemy 大类，按 id 前缀区分
   const isForging = actionId.startsWith('forge.') || (actionId.startsWith('craft.') && !actionId.startsWith('craft.extract-'))
-  const isEnhancement = queueEntry?.type === 'enhancement' || actionDef?.type === 'enhancement' || actionId === ENHANCE_ACTION_ID
+  // 仅装备强化（enhance.equipment）按强化轮次动态推导经验；同属 enhancement 大类的秘法化灵/分解/转化（secret_art.*）不走强化经验。
+  const isEnhancement = actionId === ENHANCE_ACTION_ID
+  const isSecretArtCategory = queueEntry?.type === 'enhancement' || actionDef?.type === 'enhancement' || isEnhancement
   const title = queueEntry?.type === 'cultivation' ? t('combat.life.tagCultivation')
     : isForging ? t('combat.life.tagForging')
     : queueEntry?.type === 'alchemy' ? t('combat.life.tagAlchemy')
     : queueEntry?.type === 'exploration' ? t('combat.life.tagExploration')
-    : isEnhancement ? t('insight.technique.enhancement')
+    : isSecretArtCategory ? t('insight.technique.enhancement')
     : t('combat.life.tagDefault')
   const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name, world, maps) || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
@@ -1362,6 +1367,7 @@ function ArenaLifeGoalCard({
 
     outputs.push({
       key: 'enhancement:target',
+      itemId: targetItemId ?? undefined,
       name: displayName,
       icon: targetItemId ? itemYieldIcon(targetItemId) : <StatGlyph glyph="enhancement" size={30} />,
       tone: meta?.tone ?? 'gold',
@@ -1370,9 +1376,10 @@ function ArenaLifeGoalCard({
       unit: t('combat.life.unitItem'),
     })
 
-    const eqTier = targetEq?.tier ?? 1
-    const itemLvl = resolveCatalogItemLevel(targetEq, targetItem, eqTier)
-    const yields = calculateEnhancementYields(itemLvl, targetLevel)
+    // 强化经验按「下一级 (current + 1)」对应基础耗时 (5 + nextLevel) 结算，避免 +N 目标虚高预览；缺省时按 +1 起步。
+    const nextLevel = Math.min(20, (currentTracked ?? 0) + 1)
+    const itemLvl = resolveCatalogItemLevel(targetEq, targetItem)
+    const yields = calculateEnhancementYields(itemLvl, nextLevel)
     outputs.push({
       key: 'rootexp:consciousness',
       name: t('combat.attr.divineSense'),
@@ -1391,12 +1398,22 @@ function ArenaLifeGoalCard({
       total: isInfinite ? null : yields.techniqueExp * repeats,
       unit: t('combat.life.unitPoint'),
     })
+    outputs.push({
+      key: 'foundation:enhancement',
+      name: t('combat.report.foundation'),
+      icon: <StatGlyph glyph="foundation" size={30} />,
+      tone: 'purple',
+      perRound: yields.foundationGain,
+      total: isInfinite ? null : yields.foundationGain * repeats,
+      unit: t('combat.life.unitPoint'),
+    })
   } else if (yieldPreview) {
     for (const output of yieldPreview.itemOutputs) {
       const meta = resolveItemMetadata(output.itemId)
       const definition = findItemInCatalog(itemCatalog, output.itemId)
       outputs.push({
         key: `item:${output.itemId}`,
+        itemId: output.itemId,
         name: definition?.name || meta?.label || output.itemId,
         icon: itemYieldIcon(output.itemId),
         tone: meta?.tone ?? 'gold',
@@ -1503,15 +1520,32 @@ function ArenaLifeGoalCard({
           <div className="arena-life-inputs">
             <span className="arena-life-inputs-label">{t('combat.life.extraOutputsLabel')}</span>
             <div className="arena-life-inputs-list">
-              {outputs.slice(1).map(row => (
-                <span className="arena-life-input-chip" key={row.key}>
-                  {row.buffDurationSeconds !== undefined
-                    ? t('combat.life.buffChip', { name: row.name, stacks: formatNumber(row.perRound), duration: row.buffDurationSeconds })
-                    : row.total !== null
-                      ? t('combat.life.yieldChip', { name: row.name, n: formatNumber(row.perRound), total: formatNumber(row.total) })
-                      : t('combat.life.yieldChipInfinite', { name: row.name, n: formatNumber(row.perRound) })}
-                </span>
-              ))}
+              {outputs.slice(1).map(row => {
+                const label = row.buffDurationSeconds !== undefined
+                  ? t('combat.life.buffChip', { name: row.name, stacks: formatNumber(row.perRound), duration: row.buffDurationSeconds })
+                  : row.total !== null
+                    ? t('combat.life.yieldChip', { name: row.name, n: formatNumber(row.perRound), total: formatNumber(row.total) })
+                    : t('combat.life.yieldChipInfinite', { name: row.name, n: formatNumber(row.perRound) })
+                if (!row.itemId) {
+                  return <span className="arena-life-input-chip" key={row.key}>{label}</span>
+                }
+                const rowDef = findItemInCatalog(itemCatalog, row.itemId)
+                const rowEq = findEquipmentInCatalog(equipmentCatalog, row.itemId)
+                const rowMeta = resolveItemMetadata(row.itemId)
+                return (
+                  <ItemTooltipTarget
+                    className="arena-life-input-chip"
+                    definition={rowDef}
+                    equipmentDefinition={rowEq}
+                    itemId={row.itemId}
+                    key={row.key}
+                    metadata={rowMeta}
+                  >
+                    <ItemIcon itemId={row.itemId} />
+                    {label}
+                  </ItemTooltipTarget>
+                )
+              })}
               {isPendingBreakthrough && (
                 <span className="arena-life-input-chip">{t('app.action.pendingBreakthroughTag')} → {t('combat.report.foundation')}</span>
               )}
@@ -1525,12 +1559,21 @@ function ArenaLifeGoalCard({
             <div className="arena-life-inputs-list">
               {inputEntries.map(([inId, inAmt]) => {
                 const inDef = findItemInCatalog(itemCatalog, inId)
+                const inEq = findEquipmentInCatalog(equipmentCatalog, inId)
                 const inMeta = resolveItemMetadata(inId)
-                const inName = inDef?.name || inMeta?.label || inId
+                const inName = inDef?.name || inEq?.name || inMeta?.label || inId
                 return (
-                  <span className="arena-life-input-chip" key={inId}>
+                  <ItemTooltipTarget
+                    className="arena-life-input-chip"
+                    definition={inDef}
+                    equipmentDefinition={inEq}
+                    itemId={inId}
+                    key={inId}
+                    metadata={inMeta}
+                  >
+                    <ItemIcon itemId={inId} />
                     {t('combat.life.inputChip', { name: inName, n: formatNumber(inAmt), total: isInfinite ? '∞' : formatNumber(inAmt * repeats) })}
-                  </span>
+                  </ItemTooltipTarget>
                 )
               })}
             </div>
@@ -2111,8 +2154,8 @@ export const CombatArena = memo(function CombatArena({
   const lastQueueSyncPerformanceTime = useGameStore(hidden ? () => 0 : state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
   // 详情弹窗静态快照：点击单位时获取一次，不随战斗持续推进或单位死亡改变。
   const [inspectedSnapshot, setInspectedSnapshot] = useState<InspectedCharacterSnapshot | null>(null)
-  // 玩家本地装配：详情弹窗「装配」Tab 的玩家数据源（功法槽 + 已穿戴装备，实时值）。
-  const combatLoadout = useGameStore(state => state.combat)
+  // 玩家本地装配：详情弹窗「装配」Tab 的玩家数据源（功法槽 + 已穿戴装备，实时值；隐藏态冻结）。
+  const combatLoadout = useGameStoreWhenVisible(hidden, state => state.combat)
   // 终止当前行动的二次确认目标（队首 entryId）；目标离开队首（自然完成/被移除）时自动失效收起弹窗
   const [pendingStopEntryId, setPendingStopEntryId] = useState<string | null>(null)
   // 组队讨伐终止确认：参与行动不可 action.remove，「终止」语义=取消参战（party.unready 散场）
@@ -2137,10 +2180,11 @@ export const CombatArena = memo(function CombatArena({
   const t = useT()
 
 
-  // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
+  // 战斗特效：双层 High-DPI Canvas 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
+  const vfxGroundOverlayRef = useRef<HTMLDivElement | null>(null)
   const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
-  const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef)
+  const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef, vfxGroundOverlayRef)
   const alliesFormationRef = useRef<HTMLDivElement | null>(null)
 
   const current = queue[0] ?? null
@@ -2183,7 +2227,11 @@ export const CombatArena = memo(function CombatArena({
               ...prev,
               attributes: prev.attributes ?? ally.attributes ?? null,
               loadout: (ally.skills || ally.equipment)
-                ? { skills: ally.skills ?? prev.loadout?.skills ?? [], equipment: ally.equipment ?? prev.loadout?.equipment ?? null }
+                ? {
+                    skills: ally.skills ?? prev.loadout?.skills ?? [],
+                    equipment: ally.equipment ?? prev.loadout?.equipment ?? null,
+                    abilityExperiences: prev.loadout?.abilityExperiences,
+                  }
                 : prev.loadout,
             }
           }
@@ -2517,6 +2565,7 @@ export const CombatArena = memo(function CombatArena({
       loadout: {
         skills: combatLoadout?.abilitySlots ?? [],
         equipment: combatLoadout?.equipment ?? [],
+        abilityExperiences: combatLoadout?.abilityExperiences ?? {},
       },
       drops: undefined,
       enemyId: null,
@@ -2539,11 +2588,12 @@ export const CombatArena = memo(function CombatArena({
       loadout: {
         skills: ally.skills ?? cachedLoadout?.skills ?? [],
         equipment: ally.equipment ?? cachedLoadout?.equipment ?? null,
+        abilityExperiences: ally.isSelf ? (combatLoadout?.abilityExperiences ?? {}) : undefined,
       },
       drops: undefined,
       enemyId: null,
     })
-  }, [selfActorId])
+  }, [selfActorId, combatLoadout?.abilityExperiences])
 
   const handleInspectEnemy = useCallback((entry: EnemyDisplayState, index: number) => {
     gameClient.sendUnitInspect({ side: 'enemy', index })
@@ -2582,7 +2632,7 @@ export const CombatArena = memo(function CombatArena({
       drops,
       enemyId: entry.enemyId ?? null,
     })
-  }, [encounters, maps, expedition?.duel, activeEncounterId])
+  }, [encounters, maps, expedition?.duel, activeEncounterId, currentDifficulty])
 
   const handleCloseInspect = useCallback(() => {
     setInspectedSnapshot(null)
@@ -2619,7 +2669,8 @@ export const CombatArena = memo(function CombatArena({
       className="combat-arena-shell"
       ref={arenaShellRef}
     >
-      {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
+      {/* 技能特效双层 Canvas 覆盖层：底层地面法阵（z=1）+ 高层天幕粒子（z=8），pointer-events 穿透零回流 */}
+      <div className="vfx-ground-overlay" ref={vfxGroundOverlayRef} aria-hidden="true" />
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       {/* 战场顶部操作区：统计与模拟器入口 + 终止行动按钮（固定顶栏独立行，绝不遮挡角色名称与行动栏） */}
       <div className="combat-arena-top-actions">

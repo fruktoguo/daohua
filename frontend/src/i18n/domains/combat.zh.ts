@@ -103,6 +103,7 @@ export const combatZh = {
       kpiDailyRevenue: '平均每日收益',
       spiritStone: '灵石',
       perDayUnit: '天',
+      perDayShortUnit: '日',
       perHourUnit: '时',
       kpiHourlyRevenue: '每小时约 +{amount} 灵石',
       kpiCombatFrequency: '战斗频次',
@@ -112,6 +113,8 @@ export const combatZh = {
       killsPerHour: '击杀/时',
       deathsPerHour: '阵亡/时',
       totalCyclesDone: '累计已完成 {n} 轮',
+      totalEncounters: '已完成 {n} 场',
+      headerMetricsAria: '战斗任务实时收益效率',
       kpiCultivationRate: '修为获取速率',
       kpiCombatExpRate: '经验获取速率',
       kpiDailyExpEstimate: '预计约 +{amount}/天',
@@ -144,6 +147,10 @@ export const combatZh = {
       combatantMonsterTag: '妖兽',
       combatantRegenTag: '回复',
       combatantOtherTag: '其他',
+    },
+    detail: {
+      expandAria: '全屏查看详情',
+      restoreAria: '恢复详情布局',
     },
     // 战斗统计独立面板（敌我页签 × 指标页签 + 全单位对比条形图）
     stats: {
@@ -436,11 +443,9 @@ export const combatZh = {
       uploadQuotaExceeded: '今日图片上传配额已用完（每日上限 20 张）',
       uploadImageTooltip: '上传本地图片为表情包',
     },
-    // 触发条件编辑器（依赖/条件/比较器枚举展示复用 game.trigger.*，不在此重复）
+    // 特质与状态
     trait: {
-      stateMark: '特质状态',
-      stealthTitle: '状态·隐身',
-      stateTitle: '状态·{name}',
+      stateMark: '状态',
     },
     trigger: {
       indexLabel: '条件 {n}',
@@ -530,6 +535,10 @@ export const combatZh = {
         'buff.huangya': '黄芽',
         'buff.heqi': '合气',
         'buff.yinshen': '隐身',
+        yixing: '移形',
+        'buff.yixing': '移形',
+        ranhun: '燃烧',
+        'buff.ranhun': '燃烧',
       },
     },
     simulator: {
@@ -730,7 +739,9 @@ export const combatZh = {
       'result.exp': '修为',
       'result.combatExp': '战斗经验',
       'result.foundation': '底蕴',
-      'result.repeats': '完成轮次',
+      'result.repeats': '完成场次',
+      'result.repeatsPerHour': '场次/时',
+      'result.completedRepeats': '完成 {count} 场',
       'result.killsPerHour': '斩妖/时',
       'result.rootExp': '六维经验',
       'result.unit': '单位',
@@ -739,6 +750,8 @@ export const combatZh = {
       'result.heal': '治疗',
       'result.enemies': '敌方',
       'result.slots': '消耗品槽',
+      'result.slotUnlimited': '无限补给',
+      'result.slotUnlimitedConsumed': '耗 {count} · 无限补给',
       'result.events': '事件日志',
       'result.gained': '获得',
       'result.lost': '失去',

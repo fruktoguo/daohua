@@ -37,6 +37,7 @@ interface EmojiFrequencyRecord {
 class ChatStickerService {
   private dbPromise: Promise<IDBDatabase | null> | null = null
   private readonly memoryBlobUrlMap = new Map<string, string>()
+  private readonly inFlightLoads = new Map<string, Promise<string>>()
   private readonly listeners = new Set<() => void>()
 
   // 内存中保持一份最新排序列表的缓存，避免高频读取 localStorage
@@ -234,6 +235,7 @@ class ChatStickerService {
     const updated = list.filter(item => item.url !== trimmed)
     if (updated.length === list.length) return false
     this.saveStickers(updated)
+    this.deleteMemoryBlobUrl(trimmed)
     this.notify()
     return true
   }
@@ -264,7 +266,8 @@ class ChatStickerService {
     // 内存与 IndexedDB 映射同步迁移
     const mem = this.memoryBlobUrlMap.get(oldTrimmed)
     if (mem) {
-      this.memoryBlobUrlMap.set(newTrimmed, mem)
+      this.memoryBlobUrlMap.delete(oldTrimmed)
+      this.setMemoryBlobUrl(newTrimmed, mem)
     }
     this.initDatabase().then(async db => {
       if (db) {
@@ -345,6 +348,31 @@ class ChatStickerService {
   // IndexedDB 图像离线缓存
   // ==========================================
 
+  private setMemoryBlobUrl(url: string, blobUrl: string): void {
+    const prev = this.memoryBlobUrlMap.get(url)
+    if (prev && prev !== blobUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+      try {
+        URL.revokeObjectURL(prev)
+      } catch {
+        // ignore
+      }
+    }
+    this.memoryBlobUrlMap.set(url, blobUrl)
+  }
+
+  private deleteMemoryBlobUrl(url: string): void {
+    const prev = this.memoryBlobUrlMap.get(url)
+    if (!prev) return
+    this.memoryBlobUrlMap.delete(url)
+    if (typeof URL !== 'undefined' && URL.revokeObjectURL) {
+      try {
+        URL.revokeObjectURL(prev)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   /** 获取当前内存已转换的离线 Object URL（命中即同步直出） */
   getCachedUrl(url: string): string | null {
     const trimmed = url.trim()
@@ -357,7 +385,7 @@ class ChatStickerService {
     if (!trimmed) return ''
     if (typeof URL !== 'undefined' && URL.createObjectURL) {
       const blobUrl = URL.createObjectURL(blob)
-      this.memoryBlobUrlMap.set(trimmed, blobUrl)
+      this.setMemoryBlobUrl(trimmed, blobUrl)
     }
     const db = await this.initDatabase()
     if (db) {
@@ -367,7 +395,7 @@ class ChatStickerService {
   }
   /**
    * 加载图片并利用 IndexedDB 离线缓存。
-   * 优先命中内存 ObjectURL -> 命中 IndexedDB Blob -> 发起网络 Fetch 并持久化。
+   * 优先命中内存 ObjectURL -> 复用并发请求 -> 命中 IndexedDB Blob -> 发起网络 Fetch 并持久化。
    * 若 Fetch 失败或受 CORS 限制，降级返回原始 url。
    */
   async loadImageWithCache(url: string): Promise<string> {
@@ -378,6 +406,21 @@ class ChatStickerService {
     const memHit = this.getCachedUrl(trimmed)
     if (memHit) return memHit
 
+    // 2. 并发加载同一 URL 去重，避免生成重复 Object URL 造成泄漏
+    const existing = this.inFlightLoads.get(trimmed)
+    if (existing) return existing
+
+    const task = this.loadImageInternal(trimmed).finally(() => {
+      this.inFlightLoads.delete(trimmed)
+    })
+    this.inFlightLoads.set(trimmed, task)
+    return task
+  }
+
+  private async loadImageInternal(trimmed: string): Promise<string> {
+    const memHit = this.getCachedUrl(trimmed)
+    if (memHit) return memHit
+
     // 2. 尝试从 IndexedDB 检索
     const db = await this.initDatabase()
     if (db) {
@@ -385,7 +428,7 @@ class ChatStickerService {
         const cachedBlob = await this.getFromIndexedDB(db, trimmed)
         if (cachedBlob instanceof Blob) {
           const blobUrl = URL.createObjectURL(cachedBlob)
-          this.memoryBlobUrlMap.set(trimmed, blobUrl)
+          this.setMemoryBlobUrl(trimmed, blobUrl)
           return blobUrl
         }
       } catch (err) {
@@ -412,7 +455,7 @@ class ChatStickerService {
             }
             if (typeof URL !== 'undefined' && URL.createObjectURL) {
               const blobUrl = URL.createObjectURL(blob)
-              this.memoryBlobUrlMap.set(trimmed, blobUrl)
+              this.setMemoryBlobUrl(trimmed, blobUrl)
               return blobUrl
             }
           }

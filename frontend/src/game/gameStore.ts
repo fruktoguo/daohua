@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { create } from 'zustand'
 import { gameClient } from '../network/gameClient'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
@@ -57,6 +58,8 @@ interface GameStore {
   respawnPolicy: PlayerSnapshot['respawnPolicy']
   /** 「指定队友存活」的观察对象玩家 ID；未指定为 null */
   respawnTargetPlayerId: PlayerSnapshot['respawnTargetPlayerId']
+  /** 是否对非队友公开角色配装明细（默认 true；对同队成员恒开放） */
+  publicLoadoutVisible: boolean
   /** 行动队列状态（当前执行、等待列表、自动消耗槽位） */
   queue: PlayerSnapshot['queue']
   /** 背包物品列表 */
@@ -228,6 +231,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     tutorialStep: 0,
     respawnPolicy: 'immediate',
     respawnTargetPlayerId: null,
+    publicLoadoutVisible: true,
   }
 }
 
@@ -324,6 +328,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   tutorialStep: 0,
   respawnPolicy: initial.respawnPolicy,
   respawnTargetPlayerId: initial.respawnTargetPlayerId,
+  publicLoadoutVisible: initial.publicLoadoutVisible,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -443,6 +448,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tutorialStep: snapshot.tutorialStep,
       respawnPolicy: snapshot.respawnPolicy,
       respawnTargetPlayerId: snapshot.respawnTargetPlayerId,
+      publicLoadoutVisible: snapshot.publicLoadoutVisible,
     })
     // 刷新自动进详情：首个权威快照且行动队列非空时，直接切到「详情」页查看当前行动统计与战况。
     if (isFirstSnapshot && snapshot.queue.entries.length > 0) {
@@ -509,6 +515,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       respawnTargetPlayerId: patch.respawnTargetPlayerId === undefined
         ? state.respawnTargetPlayerId
         : patch.respawnTargetPlayerId,
+      publicLoadoutVisible: patch.publicLoadoutVisible ?? state.publicLoadoutVisible,
     })
   },
   toSnapshotView: () => {
@@ -538,6 +545,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tutorialStep: state.tutorialStep,
       respawnPolicy: state.respawnPolicy,
       respawnTargetPlayerId: state.respawnTargetPlayerId,
+      publicLoadoutVisible: state.publicLoadoutVisible,
     }
   },
   resetGameStore: () => set({
@@ -571,6 +579,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     tutorialStep: initial.tutorialStep,
     respawnPolicy: initial.respawnPolicy,
     respawnTargetPlayerId: initial.respawnTargetPlayerId,
+    publicLoadoutVisible: initial.publicLoadoutVisible,
     marketStats: {},
   }),
 }))
@@ -580,4 +589,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
  */
 function stateVisualFallback(name: string): NonNullable<PlayerSnapshot['visual']> {
   return { renderer: 'text', source: name.slice(0, 1) || '修' }
+}
+
+const FROZEN_STORE_SENTINEL = Symbol('frozen-store-sentinel')
+const returnFrozenSentinel = () => FROZEN_STORE_SENTINEL
+
+/**
+ * 可见态冻结版 `useGameStore`：当面板处于 `hidden` 时停止订阅 store 变动，
+ * 保留最近一次可见态快照并在切回可见时同步最新状态，防止隐藏大页签每拍空转重渲。
+ */
+export function useGameStoreWhenVisible<T>(hidden: boolean, selector: (state: GameStore) => T): T {
+  const live = useGameStore(hidden ? (returnFrozenSentinel as unknown as (state: GameStore) => T) : selector)
+  const snapshotRef = useRef<{ initialized: boolean; value: T }>({ initialized: false, value: undefined as T })
+  if (!hidden || !snapshotRef.current.initialized) {
+    const nextValue = (live as unknown) === FROZEN_STORE_SENTINEL
+      ? selector(useGameStore.getState())
+      : live
+    snapshotRef.current = { initialized: true, value: nextValue }
+  }
+  return snapshotRef.current.value
 }

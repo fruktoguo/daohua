@@ -40,3 +40,11 @@ export const useZongmenStore = create<ZongmenStateDto & {
     game.setMaps(withZongmenResidence(game.maps, null))
   },
 }))
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('daohua:zongmen-result', () => {
+    if (useZongmenStore.getState().pending) {
+      useZongmenStore.setState({ pending: false })
+    }
+  })
+}

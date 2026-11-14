@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react'
 import { useAccountStore } from '../network/account'
+import { getApiUrl } from '../network/apiUrl'
 import { useT } from '../i18n'
 
 /** 登录注册页 Props */
@@ -117,12 +118,14 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
     // 网页版回退流程
     try {
-      const res = await fetch('/api/v1/auth/taptap/url')
+      const res = await fetch(getApiUrl('/api/v1/auth/taptap/url'), { signal: AbortSignal.timeout(10_000) })
       if (!res.ok) throw new Error('Failed to get TapTap auth url')
       const data = await res.json()
-      if (data.url) {
+      if (data?.url) {
         window.location.href = data.url
+        return
       }
+      throw new Error('Empty TapTap auth url')
     } catch {
       setError(t('app.login.tapTapLaunchFailed'))
       setLoading(false)

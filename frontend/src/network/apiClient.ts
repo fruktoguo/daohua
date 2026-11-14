@@ -1,7 +1,10 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
 import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
 import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/simulatorTypes'
-import { createRequestId } from './protocol'
+import { createRequestId, type LeaderboardIndexDto, type LeaderboardSnapshotDto } from './protocol'
+import { getApiUrl, getHttpBase } from './apiUrl'
+
+export { getApiUrl, getHttpBase }
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
 const REQUEST_TIMEOUT_MS = 15_000
@@ -15,17 +18,6 @@ let catalogFingerprint: string | null = null
 /** 当前客户端持有的游戏数据指纹；未拉取过配表时为 null。 */
 export function getCatalogFingerprint(): string | null {
   return catalogFingerprint
-}
-
-/** HTTP API 只使用同源或显式配置的 v1 地址，认证由 HttpOnly Cookie 承担。 */
-export function getHttpBase(): string {
-  const configured = import.meta.env.VITE_API_URL as string | undefined
-  return configured ? configured.replace(/\/$/, '') : window.location.origin
-}
-
-/** 拼接完整 API 地址（path 自动补前导斜杠） */
-export function getApiUrl(path: string): string {
-  return `${getHttpBase()}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 /**
@@ -328,4 +320,118 @@ export function fetchSimulatorProfile(playerId: string, targetPlayerId?: string,
 
 export function fetchSimulatorEnvironment(playerId: string, signal?: AbortSignal): Promise<SimulatorEnvironmentDto> {
   return requestJson<SimulatorEnvironmentDto>(`/api/v1/players/${encodeURIComponent(playerId)}/simulator-environment`, { signal })
+}
+
+/** 排行榜 HTTP 接口异常（保留 HTTP 状态码与服务端错误标题，便于 UI 精确区分 503 整点凝练等待态与 404/401） */
+export class LeaderboardApiError extends Error {
+  readonly status: number
+  readonly code?: string
+  readonly retryAfterSeconds?: number
+
+  constructor(message: string, status: number, code?: string, retryAfterSeconds?: number) {
+    super(message)
+    this.name = 'LeaderboardApiError'
+    this.status = status
+    this.code = code
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+interface LeaderboardEtagCacheEntry<T> {
+  etag: string
+  data: T
+}
+
+let leaderboardCacheViewerKey = ''
+const leaderboardEtagCache = new Map<string, LeaderboardEtagCacheEntry<unknown>>()
+
+async function fetchLeaderboardWithEtag<T>(
+  path: string,
+  viewerId: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (viewerId !== leaderboardCacheViewerKey) {
+    leaderboardCacheViewerKey = viewerId
+    leaderboardEtagCache.clear()
+  }
+
+  const cached = leaderboardEtagCache.get(path) as LeaderboardEtagCacheEntry<T> | undefined
+  const controller = new AbortController()
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+  const forwardAbort = () => controller.abort()
+  if (signal) {
+    if (signal.aborted) controller.abort()
+    else signal.addEventListener('abort', forwardAbort, { once: true })
+  }
+
+  const headers = new Headers()
+  if (cached?.etag) headers.set('If-None-Match', cached.etag)
+
+  try {
+    const response = await fetch(getApiUrl(path), {
+      method: 'GET',
+      signal: controller.signal,
+      headers,
+      credentials: 'include',
+      cache: 'no-cache',
+    })
+    if (response.status === 304 && cached) {
+      return cached.data
+    }
+    if (!response.ok) {
+      const retryRaw = response.headers.get('Retry-After')
+      const retrySeconds = retryRaw ? Number.parseInt(retryRaw, 10) : undefined
+      let message = `请求失败 (${response.status})`
+      let code: string | undefined
+      try {
+        const payload = await response.clone().json() as { detail?: string; message?: string; title?: string }
+        message = payload.detail ?? payload.message ?? payload.title ?? message
+        code = payload.title
+      } catch {
+        const text = await response.text().catch(() => '')
+        if (text) message = text
+      }
+      throw new LeaderboardApiError(
+        message,
+        response.status,
+        code,
+        Number.isFinite(retrySeconds) ? retrySeconds : undefined,
+      )
+    }
+
+    const data = await response.json() as T
+    const etag = response.headers.get('ETag')
+    if (etag) {
+      leaderboardEtagCache.set(path, { etag, data })
+    }
+    return data
+  } catch (error) {
+    if (timedOut) throw new Error('网络请求超时，请稍后重试。')
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', forwardAbort)
+  }
+}
+
+/** 拉取全服排行榜目录（12 张榜单元信息 + 当前与下一次整点刷新时间；支持 If-None-Match / 304 复用） */
+export function fetchLeaderboardIndex(viewerId = '', signal?: AbortSignal): Promise<LeaderboardIndexDto> {
+  return fetchLeaderboardWithEtag<LeaderboardIndexDto>('/api/v1/leaderboards', viewerId, signal)
+}
+
+/** 拉取指定全服排行榜 Top 50 与当前登录角色个人名次（含防串号 ETag / 304 复用） */
+export function fetchLeaderboardBoard(
+  boardId: string,
+  viewerId = '',
+  signal?: AbortSignal,
+): Promise<LeaderboardSnapshotDto> {
+  return fetchLeaderboardWithEtag<LeaderboardSnapshotDto>(
+    `/api/v1/leaderboards/${encodeURIComponent(boardId)}`,
+    viewerId,
+    signal,
+  )
 }

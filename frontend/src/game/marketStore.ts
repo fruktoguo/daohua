@@ -60,7 +60,7 @@ export interface MarketInstrument {
  * 解析坊市交易标的对应的物品元数据 (ItemMetadata)
  *
  * 统一委托 resolveCatalogItemMetadata 收拢品类细分、等阶归一化与代表等级解析
- * （装备/物品显式 level 优先，缺省回退等阶换算）。
+ * （直接读取装备/物品显式 level，缺省按 1 级）。
  */
 export function resolveMarketInstrumentMetadata(item: MarketInstrument, t?: TFunction): ItemMetadata {
   const translator = t ?? getT()

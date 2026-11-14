@@ -39,6 +39,72 @@ interface ModalProps {
   dismissible?: boolean
 }
 
+/** 全局打开弹层栈（含 Modal 与 ChatImageLightbox）：仅栈顶响应 Escape，栈空时才恢复 body 滚动。 */
+interface ModalStackEntry {
+  token: symbol
+  canClose: () => boolean
+  close: () => void
+}
+
+const openModalStack: ModalStackEntry[] = []
+let savedBodyOverflow: string | null = null
+let stackKeydownBound = false
+
+/** 返回当前是否存在已打开的全局模态层（用于全屏面板决定 Escape 键归属） */
+export function hasOpenModalLayer(): boolean {
+  return openModalStack.length > 0
+}
+
+function handleModalStackKeyDown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || openModalStack.length === 0) return
+  const top = openModalStack[openModalStack.length - 1]
+  if (!top.canClose()) return
+  event.preventDefault()
+  top.close()
+}
+
+/** 登记全局弹层栈成员并托管 body 滚动锁与顶层 Escape 关闭。 */
+export function useModalStackLayer(
+  active: boolean,
+  canClose: () => boolean,
+  close: () => void,
+): void {
+  const canCloseRef = useRef(canClose)
+  const closeRef = useRef(close)
+  canCloseRef.current = canClose
+  closeRef.current = close
+
+  useEffect(() => {
+    if (!active) return undefined
+    const token = Symbol('modal-layer')
+    if (openModalStack.length === 0) {
+      savedBodyOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
+    if (!stackKeydownBound) {
+      document.addEventListener('keydown', handleModalStackKeyDown)
+      stackKeydownBound = true
+    }
+    openModalStack.push({
+      token,
+      canClose: () => canCloseRef.current(),
+      close: () => closeRef.current(),
+    })
+    return () => {
+      const index = openModalStack.findIndex(entry => entry.token === token)
+      if (index !== -1) openModalStack.splice(index, 1)
+      if (openModalStack.length === 0) {
+        document.body.style.overflow = savedBodyOverflow ?? ''
+        savedBodyOverflow = null
+        if (stackKeydownBound) {
+          document.removeEventListener('keydown', handleModalStackKeyDown)
+          stackKeydownBound = false
+        }
+      }
+    }
+  }, [active])
+}
+
 /**
  * 通用修仙风模态弹窗基础组件 (Modal)
  *
@@ -72,11 +138,11 @@ export function Modal({
     onCloseRef.current = onClose
   }, [onClose])
 
+  useModalStackLayer(open, () => dismissible, () => onCloseRef.current())
+
   useEffect(() => {
     if (!open) return undefined
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
     const focusFrame = window.requestAnimationFrame(() => {
       if (initialFocusRef?.current) initialFocusRef.current.focus()
       else if (closeRef.current) closeRef.current.focus()
@@ -84,11 +150,6 @@ export function Modal({
     })
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && dismissible) {
-        event.preventDefault()
-        onCloseRef.current()
-        return
-      }
       if (event.key !== 'Tab' || !dialogRef.current) return
       const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
       if (focusable.length === 0) return
@@ -107,10 +168,9 @@ export function Modal({
     return () => {
       window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [dismissible, initialFocusRef, open])
+  }, [initialFocusRef, open])
 
   if (!open) return null
 

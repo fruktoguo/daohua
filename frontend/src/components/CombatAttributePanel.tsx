@@ -42,6 +42,8 @@ export interface UnitLoadoutView {
   skills?: readonly CombatAbilitySlot[] | null
   /** 已穿戴装备清单；未提供时装备分组不渲染（怪物等无装备概念的单位） */
   equipment?: readonly EquippedItem[] | null
+  /** 单位自身各功法参悟经验映射；仅查看本人等具备个人成长上下文时传入，严禁回退读取全局玩家经验 */
+  abilityExperiences?: Readonly<Record<string, number>> | null
 }
 
 /**
@@ -92,6 +94,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
   hideTabs?: boolean
 }): React.JSX.Element {
    const t = useT()
+   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
    const [internalGroup, setInternalGroup] = useState<CombatAttributeGroupTab>('base')
   const activeGroup = controlledActiveGroup ?? internalGroup
   const setActiveGroup = (group: CombatAttributeGroupTab) => {
@@ -325,13 +328,20 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
           <div className="insight-pill-group-items">
             {buffs.map(buff => {
               const bonusItems = extractBuffBonusItems(buff)
+              const permanent = buff.expiresAtUnixSeconds >= 1e15
+              const remaining = permanent ? 0 : Math.max(0, buff.expiresAtUnixSeconds - serverTime)
               return (
                 <FloatingPopover
                   content={
                     <FloatingInfoCard
-                      badge={buff.stacks > 1 ? `×${formatNumber(buff.stacks)}` : undefined}
+                      badge={t('combat.arena.buffStacks', { n: formatNumber(buff.stacks) })}
                       badgeTone="gold"
                       description={bonusItems.length > 0 ? <BonusAsideList items={bonusItems} /> : undefined}
+                      subtitle={
+                        permanent
+                          ? t('combat.arena.buffPermanent')
+                          : t('combat.arena.buffRemaining', { n: formatNumber(remaining) })
+                      }
                       title={buff.name}
                     />
                   }
@@ -375,7 +385,7 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
   const abilities = useGameStore(state => state.abilities)
   const equipmentCatalog = useGameStore(state => state.equipment)
    const itemCatalog = useGameStore(state => state.items)
-  const abilityExperiences = useGameStore(state => state.combat?.abilityExperiences)
+  const abilityExperiences = loadout?.abilityExperiences
   const skills = (loadout.skills ?? []).filter(
     (slot): slot is CombatAbilitySlot & { abilityId: string } => slot.abilityId !== null && slot.abilityId.length > 0,
   )
@@ -402,10 +412,13 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
               const ribbonLabel = ability?.element && ability.element !== 'none'
                 ? t(`combat.encounter.element.${ability.element}`)
                 : formatAbilityCategory(ability?.category)
-              const abilityExp = slot.abilityId ? abilityExperiences?.[slot.abilityId] : undefined
-              const asideCards = ability && abilityExp !== undefined
-                ? resolveAbilityAsideCards(ability, abilityExp)
+              const abilityExp = slot.abilityId && abilityExperiences
+                ? (abilityExperiences[slot.abilityId] ?? 0)
                 : undefined
+              const resolvedAsideCards = ability
+                ? resolveAbilityAsideCards(ability, abilityExp, 'qi', slot.level)
+                : []
+              const asideCards = resolvedAsideCards.length > 0 ? resolvedAsideCards : undefined
               return (
                 <ConditionedTile
                   asideCards={asideCards}

@@ -69,6 +69,12 @@ export const MarketOrderForm = memo(function MarketOrderForm({
   const quantityLimit = side === 'sell'
     ? Math.max(1, selectedAmount)
     : Math.max(1, Math.floor(spiritAmount / Math.max(1, Number.parseInt(price, 10) || vendorPrice)))
+  const effectiveQuantity = Math.max(1, Math.min(quantity, quantityLimit))
+
+  // 上限变动（库存/灵石/价格/买卖方向切换）时同步钳位真实受控数量，防止展示值与提交值分叉
+  useEffect(() => {
+    setQuantity(prev => Math.max(1, Math.min(prev, quantityLimit)))
+  }, [quantityLimit])
 
   useEffect(() => {
     setPrice(current => {
@@ -82,7 +88,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
   const submitOrder = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const parsedPrice = Number.parseInt(price, 10)
-    const parsedQuantity = quantity
+    const parsedQuantity = effectiveQuantity
     if (!Number.isSafeInteger(parsedPrice) || parsedPrice < vendorPrice || !Number.isSafeInteger(parsedQuantity) || parsedQuantity <= 0) {
       setNotice(getT()('market.error.invalidInput'))
       return
@@ -116,7 +122,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
     })) return
     setNotice(getT()('market.notice.orderSubmitted'))
     window.setTimeout(onPlaced, 120)
-  }, [itemId, onPlaced, price, quantity, quantityLimit, selectedAmount, setNotice, side, vendorPrice])
+  }, [effectiveQuantity, itemId, onPlaced, price, quantityLimit, selectedAmount, setNotice, side, vendorPrice])
 
   return (
     <form className="market-order-form" onSubmit={submitOrder}>
@@ -144,9 +150,9 @@ export const MarketOrderForm = memo(function MarketOrderForm({
           ariaLabel={t('market.orderQuantityAria')}
           compact
           max={quantityLimit}
-          onChange={setQuantity}
+          onChange={v => setQuantity(Math.max(1, Math.min(v, quantityLimit)))}
           presets={[1, 10, 100].filter(value => value <= quantityLimit)}
-          value={Math.min(quantity, quantityLimit)}
+          value={effectiveQuantity}
         />
       </label>
       <span className="market-order-hint">{side === 'sell' ? t('market.stockHint', { count: formatNumber(selectedAmount) }) : t('market.spiritHint', { amount: formatNumber(spiritAmount) })}</span>

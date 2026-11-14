@@ -890,6 +890,8 @@ export interface ExpeditionDuel {
   outcome: number
   /** 是否已结算 */
   resolved: boolean
+  /** 是否因认输/逃逸判负 */
+  forfeited: boolean
   /** 对手气血上限（镜像血蓝条分母，常驻标量） */
   opponentMaxHitpoints?: number | null
   /** 对手灵力上限 */
@@ -1426,6 +1428,10 @@ export interface AbilityBuffSpec {
   stackPolicy?: 'capped' | 'perCaster' | 'maxKeep'
   /** 施法者术法攻击参与层数折算的百分比（甘露为 0.08 即 8%，随等级与技能增幅提升） */
   spellAttackStackPercent?: number
+  /** 终乘闪避比率（+1.0 即面板闪避 ×2，实例覆盖不叠加） */
+  evasionPostRatio?: number
+  /** 换波/新波次时是否清零（移形/燃魂等战内瞬时状态为 true） */
+  resetOnWave?: boolean
   /** 层数上限（缺省 1） */
   maxStacks?: number
 }
@@ -1484,6 +1490,14 @@ export interface CombatAbilityDefinition {
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */
   hitCount?: number
+  /** 拥有「移形」时的变招显示名（如斩玉切换为踏云） */
+  yixingMorphName?: string
+  /** 拥有「移形」时的变招目标范围（如 allEnemies） */
+  yixingMorphTargetType?: CombatAbilityTargetType
+  /** 技能命中时附加燃魂的基础层数（火焰风暴为 5） */
+  ranhunBaseStacks?: number
+  /** 技能命中时附加燃魂的术法攻击折算比例（火焰风暴为 0.20） */
+  ranhunSpellAttackRatio?: number
   /** 六维经验分配乘率（仅内功心法有效） */
   rootExpMultipliers?: Partial<Record<string, number>>
   /** 参悟等级每级提升六维经验总效率（缺省 0.02） */
@@ -2089,6 +2103,8 @@ export interface PlayerSnapshot {
   respawnPolicy: RespawnPolicy
   /** 「指定队友存活」策略的观察对象玩家 ID；未指定为 null（该策略退化为直接复活） */
   respawnTargetPlayerId: string | null
+  /** 是否对非队友公开角色配装明细（settings 分段权威，默认 true；对队友恒开放） */
+  publicLoadoutVisible: boolean
 }
 
 /**
@@ -2123,6 +2139,8 @@ export interface PlayerPatch {
   respawnPolicy?: RespawnPolicy
   /** 「指定队友存活」的观察对象玩家 ID；未指定为 null */
   respawnTargetPlayerId?: string | null
+  /** 是否对非队友公开角色配装明细（settings 分段变更时下发） */
+  publicLoadoutVisible?: boolean
 }
 
 /**

@@ -35,6 +35,7 @@ import {
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
 import { fetchMarketStats, getCatalogFingerprint } from './apiClient'
+import { getApiUrl } from './apiUrl'
 import { getSessionAccount } from './sessionState'
 import { useUiStore } from '../uiStore'
 import type { AwakenedTraitResult } from '../game/types'
@@ -98,8 +99,8 @@ export class GameClient {
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   /** 待处理请求计时器；连接关闭后保留元数据，避免把可能已执行的命令静默判定为失败。 */
   private readonly pendingRequests = new Map<string, number>()
-  /** 在途 Ping 的发送时间（requestId -> Date.now()），Pong 回包时计算 RTT。 */
-  private readonly pendingPings = new Map<string, number>()
+  /** 在途 Ping 的发送信息（requestId -> { sentAt, timer }），用于 RTT 测算与 Pong 超时判死。 */
+  private readonly pendingPings = new Map<string, { sentAt: number; timer: number }>()
   /** 手动测速的最小间隔，避免悬停抖动刷 Ping。 */
   private lastManualPingAt = 0
   private readonly awaitingReconnectRequests = new Set<string>()
@@ -107,6 +108,8 @@ export class GameClient {
   private helloAckReceived = false
   /** 连续握手未成次数：达到阈值后探测 HTTP 会话有效性，把「会话已过期」从无限静默重连中识别出来 */
   private consecutiveConnectFailures = 0
+  /** 连续自动重连次数：超过熔断上限后停止后台无限空转重连，转入手动重试 */
+  private reconnectAttempts = 0
   /** 坊市行情统计轮询计时器：仅在会话在线期间运行，连接断开即停。 */
   private marketStatsTimer: number | undefined
   /** 行情统计在途请求标记：上一轮未返回时跳过一次 tick，避免慢网叠加并发请求。 */
@@ -117,6 +120,10 @@ export class GameClient {
    */
   private messageChain: Promise<void> = Promise.resolve()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
+  /** Ping 发送后等待 Pong 响应的超时上限：超时视为半开死连接，主动关闭触发重连。 */
+  private static readonly PONG_TIMEOUT_MS = 10_000
+  /** 自动重连熔断上限（约 70 秒退避累加后暂停后台自动重连，由用户点击重试恢复）。 */
+  private static readonly MAX_RECONNECT_ATTEMPTS = 12
   /** 坊市行情统计轮询间隔（15 秒）：悬浮行情卡为低频只读面，不需要盘口级实时性。 */
   private static readonly MARKET_STATS_REFRESH_INTERVAL_MS = 15_000
   /** 行情轮询的页面可见性监听句柄：随 start/stop 成对挂载卸载。 */
@@ -140,17 +147,26 @@ export class GameClient {
     this.stopHeartbeat()
     this.heartbeatTimer = window.setInterval(() => {
       if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId) || sourceSocket.readyState !== WebSocket.OPEN) return
-      this.sendPing(sourceSocket)
+      this.sendPing(sourceSocket, sourceGeneration, sourcePlayerId)
     }, 25_000)
   }
 
-  /** 发送一次 Ping 并登记发送时间；Pong 回包时按 requestId 计算 RTT 写入 latencyMs。 */
-  private sendPing(sourceSocket: WebSocket): void {
+  /** 发送一次 Ping 并登记发送时间与 Pong 超时定时器；Pong 超时主动关闭死连接触发重连。 */
+  private sendPing(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): void {
     const requestId = createRequestId()
-    this.pendingPings.set(requestId, Date.now())
+    const sentAt = Date.now()
+    const timer = window.setTimeout(() => {
+      if (!this.pendingPings.delete(requestId)) return
+      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+      if (sourceSocket.readyState === WebSocket.OPEN) {
+        sourceSocket.close(4000, '心跳响应超时')
+      }
+    }, GameClient.PONG_TIMEOUT_MS)
+    this.pendingPings.set(requestId, { sentAt, timer })
     try {
-      sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, requestId, this.nextOutboundSequence(), { clientTime: Date.now() }))
+      sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, requestId, this.nextOutboundSequence(), { clientTime: sentAt }))
     } catch {
+      window.clearTimeout(timer)
       this.pendingPings.delete(requestId)
       // 发送失败由 WebSocket close 事件统一处理。
     }
@@ -163,7 +179,14 @@ export class GameClient {
     const now = Date.now()
     if (now - this.lastManualPingAt < 1000) return
     this.lastManualPingAt = now
-    this.sendPing(socket)
+    this.sendPing(socket, this.sessionGeneration, this.playerId)
+  }
+
+  private clearPendingPings(): void {
+    for (const pending of this.pendingPings.values()) {
+      window.clearTimeout(pending.timer)
+    }
+    this.pendingPings.clear()
   }
 
   private stopHeartbeat(): void {
@@ -171,6 +194,7 @@ export class GameClient {
       window.clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = undefined
     }
+    this.clearPendingPings()
   }
 
   /**
@@ -214,6 +238,14 @@ export class GameClient {
 
   private scheduleReconnect(): void {
     if (this.disposed || this.reconnectTimer !== undefined) return
+    this.reconnectAttempts += 1
+    if (this.reconnectAttempts > GameClient.MAX_RECONNECT_ATTEMPTS) {
+      this.stopHeartbeat()
+      useGameStore.getState().setConnection('offline')
+      useGameStore.getState().setDisconnectReason('common.net.reconnectCircuitBroken')
+      useGameStore.getState().setNotice(getT()('common.net.reconnectCircuitBroken'))
+      return
+    }
     useGameStore.getState().setConnection('reconnecting')
     const delay = this.reconnectDelay
     this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
@@ -230,7 +262,10 @@ export class GameClient {
    */
   private async probeSessionValidity(): Promise<void> {
     try {
-      const response = await fetch('/api/v1/auth/session', { credentials: 'same-origin' })
+      const response = await fetch(getApiUrl('/api/v1/auth/session'), {
+        credentials: 'same-origin',
+        signal: AbortSignal.timeout(8_000),
+      })
       if (response.status === 401 && !this.disposed) {
         this.consecutiveConnectFailures = 0
         useGameStore.getState().setConnection('offline')
@@ -280,6 +315,7 @@ export class GameClient {
     this.catalogRefreshPending = false
     this.reconnectDelay = 500
     this.consecutiveConnectFailures = 0
+    this.reconnectAttempts = 0
     this.outboundSequence = 0
     this.lastServerSequence = 0
     // 新会话起一条干净的入站串行链；旧链残留任务由 handleMessage 的 socket 一致性检查拦截。
@@ -517,7 +553,7 @@ export class GameClient {
     this.stopHeartbeat()
     this.stopMarketStatsSync()
     this.helloAckReceived = false
-    this.pendingPings.clear()
+    this.clearPendingPings()
     this.messageChain = Promise.resolve()
     this.outboundSequence = 0
     this.lastServerSequence = 0
@@ -566,8 +602,8 @@ export class GameClient {
       this.stopMarketStatsSync()
       this.socket = null
       this.markPendingRequestsAwaitingReconnect()
-      // 连接中断时在途角色信息卡请求必然失效：直接收起弹窗，避免加载态永久悬挂。
-      useSocialStore.getState().closePlayerCard()
+      // 连接中断时在途名片/队友战报/模拟器导入请求必然失效：统一清理，避免加载态永久悬挂。
+      useSocialStore.getState().cancelPendingCardRequests()
       if (this.disposed) return
       // 配表指纹不匹配：挂起自动重连，等待 App 重新拉取配表成功后显式 connect() 放行。
       if (this.catalogRefreshPending) {
@@ -603,6 +639,10 @@ export class GameClient {
   private clearPendingRequests(): void {
     for (const timer of this.pendingRequests.values()) window.clearTimeout(timer)
     this.pendingRequests.clear()
+    if (this.zongmenRequests.size > 0) {
+      this.zongmenRequests.clear()
+      window.dispatchEvent(new Event('daohua:zongmen-result'))
+    }
   }
 
   private markPendingRequestsAwaitingReconnect(): void {
@@ -610,6 +650,10 @@ export class GameClient {
       window.clearTimeout(timer)
       this.pendingRequests.delete(requestId)
       this.awaitingReconnectRequests.add(requestId)
+    }
+    if (this.zongmenRequests.size > 0) {
+      this.zongmenRequests.clear()
+      window.dispatchEvent(new Event('daohua:zongmen-result'))
     }
     if (this.awaitingReconnectRequests.size > 0) {
       useGameStore.getState().setNotice(getT()('common.net.requestAwaitingReconnect'))
@@ -691,7 +735,7 @@ export class GameClient {
           // 重连成功即清账：悬挂请求的超时提示已发出、其状态由随后的全量快照权威覆盖；
           // 集合只进不出会随断线次数缓慢泄漏。
           this.awaitingReconnectRequests.clear()
-          this.sendPing(sourceSocket)
+          this.sendPing(sourceSocket, sourceGeneration, sourcePlayerId)
           this.startMarketStatsSync()
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
@@ -706,6 +750,7 @@ export class GameClient {
           if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
           useGameStore.getState().applySnapshot(snapshot)
           this.reconnectDelay = 500
+          this.reconnectAttempts = 0
           appliedBusinessPayload = true
           break
         }
@@ -779,6 +824,9 @@ export class GameClient {
             if (timer !== undefined) window.clearTimeout(timer)
             this.pendingRequests.delete(error.requestId)
             this.awaitingReconnectRequests.delete(error.requestId)
+            if (this.zongmenRequests.delete(error.requestId)) {
+              window.dispatchEvent(new Event('daohua:zongmen-result'))
+            }
           }
           if (error.code === 'GAME_DATA_MISMATCH') {
             // 客户端配表落后于服务端：服务端保持连接但不放行握手，
@@ -845,10 +893,11 @@ export class GameClient {
           break
         }
         case WireMessageType.Pong: {
-          const sentAt = this.pendingPings.get(envelope.requestId)
-          if (sentAt !== undefined) {
+          const pending = this.pendingPings.get(envelope.requestId)
+          if (pending !== undefined) {
+            window.clearTimeout(pending.timer)
             this.pendingPings.delete(envelope.requestId)
-            useGameStore.getState().setLatencyMs(Math.max(0, Date.now() - sentAt))
+            useGameStore.getState().setLatencyMs(Math.max(0, Date.now() - pending.sentAt))
           }
           const pong = decodeJsonPayload<PongResponse>(envelope)
           if (pong && typeof pong.onlineCount === 'number') {

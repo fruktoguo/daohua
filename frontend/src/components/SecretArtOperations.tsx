@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import { ROOT_ASPECT_LABEL_KEYS } from '../game/actionCalculations'
 import {
   calculateSecretArtYields,
+  calculateTechniqueProgress,
   CONVERT_ACTION_ID,
   CONVERT_BASE_DURATION,
   DISASSEMBLE_ACTION_ID,
@@ -193,8 +194,8 @@ export const SecretArtOperations = memo(function SecretArtOperations({
     return null
   }, [candidates, selectedKey])
 
-  // 秘法技艺等级与加速（统称秘法速度）
-  const techniqueLevel = Math.max(0, Math.floor((techniqueExperiences?.['enhancement'] ?? 0) / 100))
+  // 秘法技艺等级与加速（统称秘法速度，与增强曲线同源立方公式）
+  const techniqueLevel = calculateTechniqueProgress(techniqueExperiences?.['enhancement'] ?? 0).level
   const toolSpeedRatio = useMemo(() => {
     let ratio = 0
     for (const eq of combatEquipment ?? []) {
@@ -233,9 +234,13 @@ export const SecretArtOperations = memo(function SecretArtOperations({
     return 'item.tome.' + selected.itemId.slice('item.fragment.'.length)
   }, [operation, selected])
 
-  const itemTier = selected?.tier ?? 1
-  // 感悟经验按目标物品代表等级结算（与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算）
-  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition, itemTier)
+  const convertFallbackStones = useMemo(() => {
+    if (!selected || operation !== 'convert') return 0
+    return Math.round(resolveInventoryItemUnitPrice(selected.itemId, selected.variant, items, equipment) * 2)
+  }, [equipment, items, operation, selected])
+
+  // 感悟经验按目标物品自身显式 level 结算（与服务端 ResolveItemLevel 同口径，缺省 1）
+  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition)
   const yields = useMemo(
     () => calculateSecretArtYields(itemLevel, baseDuration),
     [itemLevel, baseDuration],
@@ -245,10 +250,12 @@ export const SecretArtOperations = memo(function SecretArtOperations({
 
   const submitAction = (startImmediately: boolean) => {
     if (!selected) return
+    const enhancementLevel = Math.floor(selected.enhancementLevel ?? 0)
     gameClient.sendCommand('action.enqueue', {
       actionId: currentActionId,
       repeatCount: repeats,
       targetItemId: selected.itemId,
+      ...(enhancementLevel > 0 ? { parameters: { initialLevel: enhancementLevel } } : {}),
       priority: startImmediately,
     })
   }
@@ -359,7 +366,7 @@ export const SecretArtOperations = memo(function SecretArtOperations({
             <div>
               <dt>{t('app.secretArt.previewSectionCost')}</dt>
               <dd>
-                <ItemReference amount={1} itemId={selected.itemId} />
+                <ItemReference amount={1} enhancementLevel={selected.enhancementLevel} itemId={selected.itemId} />
               </dd>
             </div>
 
@@ -388,7 +395,7 @@ export const SecretArtOperations = memo(function SecretArtOperations({
                       <span className="yield-chance-tag yield-chance-tag--rare">5%</span>
                     </div>
                     <div className="convert-yield-row">
-                      <ItemReference amount={100} itemId="currency.spirit-stone" />
+                      <ItemReference amount={convertFallbackStones} itemId="currency.spirit-stone" />
                       <span className="yield-chance-tag">95%</span>
                     </div>
                   </div>
@@ -410,6 +417,12 @@ export const SecretArtOperations = memo(function SecretArtOperations({
                   <span className="action-stat-pill-label">{t('insight.technique.enhancement')}</span>
                   <strong className="action-stat-pill-value">
                     <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={yields.techniqueExp} />
+                  </strong>
+                </span>
+                <span className="action-stat-pill action-stat-pill--foundation">
+                  <span className="action-stat-pill-label">{t('combat.report.foundation')}</span>
+                  <strong className="action-stat-pill-value">
+                    <UnitNumber disableTooltip maxDecimals={1} prefix="+" value={yields.foundationGain} />
                   </strong>
                 </span>
               </dd>

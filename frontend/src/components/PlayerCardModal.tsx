@@ -4,6 +4,7 @@ import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { ConditionedTile } from './ConditionedTile'
+import { resolveAbilityAsideCards } from './EffectTooltip'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolveCatalogItemMetadata } from '../game/ids'
 import { useSocialStore } from '../game/socialStore'
@@ -13,6 +14,7 @@ import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { FloatingTooltip } from './FloatingPopover'
+import { Icon } from './Icon'
 import { Modal } from './Modal'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { RealmBadge } from './RealmBadge'
@@ -116,9 +118,11 @@ const PlayerCardAbilityTile = memo(function PlayerCardAbilityTile({ abilityId, l
   const ribbonLabel = ability?.element && ability.element !== 'none'
     ? t(`combat.encounter.element.${ability.element}`)
     : formatAbilityCategory(ability?.category)
+  const asideCards = ability ? resolveAbilityAsideCards(ability, undefined, 'qi', lv) : []
 
   return (
     <ConditionedTile
+      asideCards={asideCards.length > 0 ? asideCards : undefined}
       className="abilities-learned-cell"
       content={ability ? describeAbility(ability, lv) : null}
       triggerClassName="item-grid-picker-tooltip"
@@ -341,7 +345,19 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
       )}
 
       {/* 装配 Tab：功法技能 -> 装备 -> 战斗消耗品（置于装备下方） */}
-      {activeTab === 'loadout' && (
+      {activeTab === 'loadout' && card.loadoutHidden && (
+        <div className="player-card-tab-content">
+          <section className="player-card-section player-card-privacy-notice">
+            <div className="player-card-privacy-badge">
+              <Icon name="lock" size={18} />
+              <strong>{t('social.card.loadoutHiddenTitle')}</strong>
+            </div>
+            <p className="player-card-empty">{t('social.card.loadoutHiddenDesc')}</p>
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'loadout' && !card.loadoutHidden && (
         <div className="player-card-tab-content">
           <section className="player-card-section">
             <h4 className="player-card-section-title">{t('social.card.abilities')}</h4>

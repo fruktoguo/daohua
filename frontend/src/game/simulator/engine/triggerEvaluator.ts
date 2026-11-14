@@ -95,6 +95,11 @@ function maxAliveHpPercentage(units: readonly CombatantState[]): number {
   return max === Number.NEGATIVE_INFINITY ? Number.NaN : max
 }
 
+function hpRatio(unit: CombatantState): number {
+  const maxHp = unit.stats.maxHitpoints
+  return maxHp > 0 ? unit.hitpoints / maxHp : 0
+}
+
 function minAliveBy(
   units: readonly CombatantState[],
   key: (unit: CombatantState) => number,
@@ -146,13 +151,13 @@ function resolveDependency(
     case 'target-enemy':
       return primaryTarget && primaryTarget.isAlive ? primaryTarget : null
     case 'ally-lowest-hp':
-      return minAliveBy(allies, (u) => u.hitpoints / u.stats.maxHitpoints)
+      return minAliveBy(allies, hpRatio)
     case 'ally-highest-hp':
-      return maxAliveBy(allies, (u) => u.hitpoints)
+      return maxAliveBy(allies, hpRatio)
     case 'enemy-lowest-hp':
-      return minAliveBy(opponents, (u) => u.hitpoints / u.stats.maxHitpoints)
+      return minAliveBy(opponents, hpRatio)
     case 'enemy-highest-hp':
-      return maxAliveBy(opponents, (u) => u.hitpoints)
+      return maxAliveBy(opponents, hpRatio)
     default:
       return null
   }

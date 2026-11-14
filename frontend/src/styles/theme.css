@@ -264,6 +264,7 @@
 :root[data-theme="light"] .badge-duel,
 :root[data-theme="light"] .ecology-monster-rank.is-elite,
 :root[data-theme="light"] .action-stat-pill--buff strong,
+:root[data-theme="light"] .action-stat-pill--foundation strong,
 :root[data-theme="light"] .action-notice-badge--foundation,
 :root[data-theme="light"] .action-bonus-pill--foundation,
 :root[data-theme="light"] .duel-option-toggle strong,
@@ -1277,6 +1278,10 @@
   color: var(--amber);
 }
 
+:root[data-theme="light"] .action-stat-pill--foundation {
+  border-color: rgba(126, 34, 206, 0.35);
+}
+
 :root[data-theme="light"] .duel-option-status .duel-node-teams {
   color: var(--purple);
 }
@@ -1694,3 +1699,253 @@
 :root[data-theme="light"] .trait-quality--q6 { border-color: var(--danger); }
 :root[data-theme="light"] .trait-quality--q6 .trait-bar-quality-tag,
 :root[data-theme="light"] .trait-quality--q6 .trait-bar-name { color: var(--danger); }
+
+/* 物品获取途径副气泡（.daohua-source-aside-*）：浅色纸纹面板下替换浅粉/浅黄/深黑底，保证可读对比度 */
+:root[data-theme="light"] .daohua-source-aside-badge--crimson {
+  color: var(--seal);
+  background: rgba(178, 51, 39, 0.12);
+  border-color: rgba(178, 51, 39, 0.35);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-source-aside-badge--qi {
+  color: var(--qi);
+  background: rgba(22, 92, 118, 0.12);
+  border-color: rgba(22, 92, 118, 0.35);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-source-aside-badge--emerald {
+  color: var(--jade);
+  background: rgba(23, 96, 67, 0.12);
+  border-color: rgba(23, 96, 67, 0.35);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-source-aside-badge--amber {
+  color: var(--amber);
+  background: rgba(138, 69, 20, 0.12);
+  border-color: rgba(138, 69, 20, 0.35);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-source-aside-badge--gold {
+  color: var(--gold-bright);
+  background: rgba(125, 82, 26, 0.12);
+  border-color: rgba(125, 82, 26, 0.35);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .daohua-source-aside-sub-count,
+:root[data-theme="light"] .daohua-source-aside-level,
+:root[data-theme="light"] .daohua-source-aside-more,
+:root[data-theme="light"] .daohua-source-aside-desc-text {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .daohua-source-aside-row,
+:root[data-theme="light"] .daohua-source-aside-general-row {
+  background: rgba(120, 92, 50, 0.06);
+  border-color: rgba(120, 92, 50, 0.18);
+}
+
+:root[data-theme="light"] .daohua-source-aside-name,
+:root[data-theme="light"] .daohua-source-aside-name.is-normal,
+:root[data-theme="light"] .daohua-source-aside-title-text {
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .daohua-source-aside-name.is-boss {
+  color: var(--seal);
+}
+
+:root[data-theme="light"] .daohua-source-aside-name.is-elite {
+  color: var(--purple);
+}
+
+:root[data-theme="light"] .daohua-source-aside-meta {
+  color: var(--qi);
+  background: rgba(22, 92, 118, 0.11);
+}
+
+:root[data-theme="light"] .daohua-source-aside-rate {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .daohua-source-aside-amount {
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .daohua-source-aside-tag {
+  color: var(--gold-bright);
+  background: rgba(125, 82, 26, 0.13);
+  border-color: rgba(125, 82, 26, 0.32);
+}
+
+/* 聊天区队伍分享卡与坐标引用胶囊：浅色主题去除深黑底与刺眼白字/浅黄字 */
+:root[data-theme="light"] .chat-party-link {
+  background: rgba(125, 82, 26, 0.08);
+  border-color: rgba(125, 82, 26, 0.35);
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-party-link:hover,
+:root[data-theme="light"] .chat-party-link:focus-visible {
+  background: rgba(125, 82, 26, 0.15);
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(125, 82, 26, 0.22);
+}
+
+:root[data-theme="light"] .chat-party-badge {
+  background: rgba(125, 82, 26, 0.14);
+  border-color: rgba(125, 82, 26, 0.4);
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .chat-party-name {
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-party-activity {
+  background: rgba(23, 96, 67, 0.12);
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .chat-party-slots {
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .chat-party-action-hint {
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .chat-location-link {
+  background: rgba(23, 96, 67, 0.08);
+  border-color: rgba(23, 96, 67, 0.35);
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-location-link:hover,
+:root[data-theme="light"] .chat-location-link:focus-visible {
+  background: rgba(23, 96, 67, 0.15);
+  border-color: var(--jade);
+  box-shadow: 0 0 6px rgba(23, 96, 67, 0.22);
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-location-badge {
+  background: rgba(23, 96, 67, 0.14);
+  border-color: rgba(23, 96, 67, 0.4);
+  color: var(--jade);
+}
+
+/* 传音表情与自定义斗图选择器（.chat-emoji-picker / .chat-picker-*）：浅色宣纸面板 */
+:root[data-theme="light"] .chat-emoji-picker {
+  background: var(--panel);
+  border-color: var(--border-gold);
+  box-shadow: 0 8px 24px rgba(58, 42, 20, 0.18);
+}
+
+:root[data-theme="light"] .chat-picker-tabs {
+  background: rgba(120, 92, 50, 0.07);
+  border-bottom-color: var(--border-gold);
+}
+
+:root[data-theme="light"] .chat-picker-tab-btn.is-active {
+  color: var(--gold-bright);
+  border-bottom-color: var(--gold-bright);
+  background: rgba(125, 82, 26, 0.1);
+}
+
+:root[data-theme="light"] .chat-picker-emoji-btn:hover {
+  background: rgba(120, 92, 50, 0.14);
+}
+
+:root[data-theme="light"] .chat-picker-sticker-btn {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(120, 92, 50, 0.25);
+}
+
+:root[data-theme="light"] .chat-picker-add-form {
+  background: rgba(120, 92, 50, 0.06);
+  border-top-color: var(--border-gold);
+}
+
+:root[data-theme="light"] .chat-picker-add-form input {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(120, 92, 50, 0.3);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .chat-picker-add-form button,
+:root[data-theme="light"] .chat-picker-upload-label {
+  background: rgba(125, 82, 26, 0.12);
+  border-color: rgba(125, 82, 26, 0.4);
+  color: var(--gold-bright);
+}
+
+:root[data-theme="light"] .chat-picker-add-form button:disabled {
+  background: transparent;
+  border-color: rgba(120, 92, 50, 0.22);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .chat-picker-upload-label:hover {
+  background: rgba(125, 82, 26, 0.22);
+  border-color: var(--gold);
+}
+
+:root[data-theme="light"] .player-card-privacy-notice {
+  background: rgba(154, 109, 32, 0.08);
+}
+
+:root[data-theme="light"] .leaderboard-tab-btn,
+:root[data-theme="light"] .leaderboard-row,
+:root[data-theme="light"] .leaderboard-meta-chip,
+:root[data-theme="light"] .leaderboard-state-card {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+:root[data-theme="light"] .leaderboard-row:hover {
+  background: rgba(125, 82, 26, 0.09);
+}
+
+:root[data-theme="light"] .leaderboard-rank {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .leaderboard-rank.is-top1 {
+  color: #9a5d00;
+}
+
+:root[data-theme="light"] .leaderboard-rank.is-top2 {
+  color: #475569;
+}
+
+:root[data-theme="light"] .leaderboard-rank.is-top3 {
+  color: #9a3412;
+}
+
+:root[data-theme="light"] .combat-detail-expand-btn {
+  background: rgba(125, 82, 26, 0.06);
+}
+
+:root[data-theme="light"] .combat-detail-expand-btn:hover,
+:root[data-theme="light"] .combat-detail-expand-btn:focus-visible {
+  color: var(--seal);
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+}
+
+:root[data-theme="light"] .combat-detail-expand-btn[aria-expanded="true"] {
+  color: var(--seal);
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+}
+
+@media (orientation: portrait) {
+  :root[data-theme="light"] .main-content > .expedition-page.is-combat-detail-expanded:not([hidden]) {
+    background: var(--panel);
+    box-shadow: none;
+  }
+}

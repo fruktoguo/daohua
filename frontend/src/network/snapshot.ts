@@ -492,6 +492,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     isInitiator: booleanValue(row.viewerIsInitiator),
     outcome,
     resolved: booleanValue(row.resolved),
+    forfeited: booleanValue(row.forfeited),
     opponentMaxHitpoints,
     opponentMaxManapoints,
     opponentAttributes,
@@ -1595,6 +1596,7 @@ export async function decodePlayerSnapshotDto(
     renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
     tutorialStep: numberValue(settings.tutorialStep, 0),
     ...mapSettingsRespawn(settings),
+    publicLoadoutVisible: typeof settings.publicLoadoutVisible === 'boolean' ? settings.publicLoadoutVisible : true,
   }
 }
 
@@ -1627,16 +1629,29 @@ export async function decodePlayerSnapshotDeltaDto(
     serverTimeUnixSeconds: serverTime,
     serverTimeUnixMilliseconds: serverTime * 1000,
   }
-  // 道号属身份标量而非分段：delta 透传后即时生效（改名无需等待全量快照）。
-  if (typeof dto.displayName === 'string' && dto.displayName.length > 0) {
-    patch.name = dto.displayName
-    patch.visual = visualFor(dto.displayName)
-  }
   const settingsEnvelope = sections.has('settings') ? requiredObject(sections.get('settings'), 'settings') : undefined
   const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined
+  const deltaAvatar = optionalString(dto.avatarId, '玩家增量快照 avatarId')
+  // 道号属身份标量而非分段：delta 透传后即时生效（改名无需等待全量快照）；
+  // 仅携带 displayName 而未携带 avatarId / settings.avatar 时，若当前已是自定义立绘头像则绝不覆写成文字头像。
+  if (typeof dto.displayName === 'string' && dto.displayName.length > 0) {
+    patch.name = dto.displayName
+    if (!deltaAvatar && current.visual?.renderer !== 'image') {
+      patch.visual = visualFor(dto.displayName)
+    }
+  }
+  if (deltaAvatar) {
+    useAvatarStore.getState().setAvatarId(deltaAvatar as PlayerAvatarId)
+    patch.visual = visualFor(dto.displayName ?? current.name ?? '', deltaAvatar)
+  }
+  let queueEntriesUpdated = false
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
-    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, false), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    const nextPaused = booleanValue(settings.queuePaused, false)
+    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, false), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: nextPaused, autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    if (nextPaused !== (current.queue?.paused ?? false)) {
+      queueEntriesUpdated = true
+    }
     if (Array.isArray(settings.unlockedAvatars)) {
       useAvatarStore.getState().setUnlockedAvatars(settings.unlockedAvatars.filter((x): x is string => typeof x === 'string'))
     }
@@ -1651,6 +1666,9 @@ export async function decodePlayerSnapshotDeltaDto(
       respawnPolicy: current.respawnPolicy,
       respawnTargetPlayerId: current.respawnTargetPlayerId,
     }))
+    if (typeof settings.publicLoadoutVisible === 'boolean') {
+      patch.publicLoadoutVisible = settings.publicLoadoutVisible
+    }
   }
   if (sections.has('progression')) {
     patch.stats = mapStats(sections.get('progression'))
@@ -1667,7 +1685,13 @@ export async function decodePlayerSnapshotDeltaDto(
   if (sections.has('loadout')) patch.combat = mapLoadout(sections.get('loadout'))
   if (sections.has('duel')) patch.duel = mapDuel(sections.get('duel'))
   if (sections.has('buffs')) patch.buffs = mapBuffs(sections.get('buffs'))
-  if (sections.has('action_queue')) patch.queue = mapQueue(sections.get('action_queue'), settings, current.queue)
+  if (sections.has('action_queue')) {
+    patch.queue = mapQueue(sections.get('action_queue'), settings, current.queue)
+    queueEntriesUpdated = true
+  }
+  if (patch.queue !== undefined) {
+    patch.queueEntriesUpdated = queueEntriesUpdated
+  }
   if (dto.changedAssets !== null && dto.changedAssets !== undefined) {
     if (!Array.isArray(dto.changedAssets)) throw new Error('玩家资产增量载荷无效。')
     // 按 (itemId, variant) 复合键原位合入：数量变动只更新数值，不清空原位置再追加到尾部，

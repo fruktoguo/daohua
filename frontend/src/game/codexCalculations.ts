@@ -42,7 +42,7 @@ export function formatDualUnlockCondition(level: number, techniqueName?: string 
 /**
  * 判定材料是否已在图鉴中解锁收录：
  * 1. 角色当前境界达到材料等阶所需等级（如 T1 对应 1 级默认解锁，T2 对应 18 级叩天门）
- * 2. 对应生活技艺达到材料等阶所需等级（如采集/采矿达到 18 级）
+ * 2. 对应生活技艺达到稀有材料显式等级（或 1 级凡品材料默认解锁）
  * 3. 玩家背包当前或曾持有该物品（数量 > 0）
  */
 export function isMaterialUnlocked(
@@ -51,8 +51,8 @@ export function isMaterialUnlocked(
   inventory: readonly InventoryItem[] | Record<string, number> = [],
   techniqueLevels?: Record<string, number>
 ): boolean {
-  const t = Math.max(1, Math.floor(item.tier ?? 1))
-  const requiredLevel = t <= 1 ? 1 : 18 + (t - 2) * 12
+  const tier = Math.max(1, Math.floor(item.tier ?? 1))
+  const requiredLevel = tier <= 1 ? 1 : (item.level ?? 1)
   if (realmLevel >= requiredLevel) return true
 
   const tech = resolveMaterialTechnique(item)

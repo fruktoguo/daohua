@@ -1133,10 +1133,15 @@ function buildCastMessage(
   abilityId: string,
   catalog: GameDataCatalog,
   clauses: string[],
+  abilityNameOverride?: string | null,
 ): string {
+  const displayName =
+    abilityNameOverride && abilityNameOverride.trim().length > 0
+      ? abilityNameOverride
+      : abilityDisplayName(catalog, abilityId)
   const prefix = ALL_TRAITS.has(abilityId)
     ? `${attackerLabel}触发 ${abilityDisplayName(catalog, abilityId)}`
-    : `${attackerLabel}施放 {{ability:${abilityId}|${abilityDisplayName(catalog, abilityId)}}}`
+    : `${attackerLabel}施放 {{ability:${abilityId}|${displayName}}}`
   if (clauses.length === 0) {
     return `${prefix}，。`
   }
@@ -1565,6 +1570,7 @@ export function completeCombatAdvanceCore(
       abilityId,
       catalog,
       clauses,
+      combatEvent.abilityNameOverride,
     )
     events.add({
       atTicks: eventAtTicks,

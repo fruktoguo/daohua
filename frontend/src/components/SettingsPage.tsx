@@ -20,13 +20,14 @@ import {
 } from './TopbarCommunityLinks'
 
 
-/** 设置页面分类（账号、显示偏好、形象、引导、关于） */
-type SettingsTab = 'account' | 'display' | 'avatar' | 'tutorial' | 'about'
+/** 设置页面分类（账号、显示偏好、隐私、形象、引导、关于） */
+type SettingsTab = 'account' | 'display' | 'privacy' | 'avatar' | 'tutorial' | 'about'
 
 /** 设置分类导航配置：顺序即左栏展示顺序 */
-const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' | 'tabTutorial' | 'tabAbout' }> = [
+const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabPrivacy' | 'tabAvatar' | 'tabTutorial' | 'tabAbout' }> = [
   { id: 'account', labelKey: 'tabAccount' },
   { id: 'display', labelKey: 'tabDisplay' },
+  { id: 'privacy', labelKey: 'tabPrivacy' },
   { id: 'avatar', labelKey: 'tabAvatar' },
   { id: 'tutorial', labelKey: 'tabTutorial' },
   { id: 'about', labelKey: 'tabAbout' },
@@ -44,6 +45,12 @@ const SETTINGS_NAV_ICONS: Record<SettingsTab, React.JSX.Element> = {
     <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
       <rect x="3.5" y="5" width="17" height="11.5" rx="1.5" />
       <path d="M9.5 20h5M12 16.5V20" />
+    </svg>
+  ),
+  privacy: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
     </svg>
   ),
   avatar: (
@@ -128,6 +135,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const locale = useI18nStore(state => state.locale)
   const setLocale = useI18nStore(state => state.setLocale)
   const localeError = useI18nStore(state => state.error)
+  const publicLoadoutVisible = useGameStore(state => state.publicLoadoutVisible)
 
   const theme = useThemeStore(state => state.theme)
   const setTheme = useThemeStore(state => state.setTheme)
@@ -329,6 +337,35 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 </div>
               </section>
             </>
+          )}
+
+          {activeTab === 'privacy' && (
+            <section className="settings-group" aria-label={t('app.settings.privacyHeading')}>
+              <h3 className="settings-group-title">{t('app.settings.privacyHeading')}</h3>
+              <div className="setting-row">
+                <span className="setting-label">{t('app.settings.privacyPublicLoadoutLabel')}</span>
+                <div className="presence-options" role="group" aria-label={t('app.settings.privacyPublicLoadoutLabel')}>
+                  {([
+                    { value: true, labelKey: 'app.settings.privacyPublic' },
+                    { value: false, labelKey: 'app.settings.privacyHidden' },
+                  ] as const).map(opt => (
+                    <button
+                      key={String(opt.value)}
+                      aria-pressed={publicLoadoutVisible === opt.value}
+                      className={publicLoadoutVisible === opt.value ? 'active' : ''}
+                      onClick={() => {
+                        if (publicLoadoutVisible === opt.value) return
+                        gameClient.sendCommand('player.set_privacy', { publicLoadoutVisible: opt.value })
+                      }}
+                      type="button"
+                    >
+                      {t(opt.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="setting-desc">{t('app.settings.privacyPublicLoadoutDesc')}</p>
+            </section>
           )}
 
           {activeTab === 'tutorial' && (

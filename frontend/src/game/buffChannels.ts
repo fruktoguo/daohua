@@ -80,7 +80,7 @@ export const BUFF_CHANNELS: Record<BuffEffectChannel, BuffChannelDisplay> = {
   actionSpeedPoints: { labelKey: 'market.effect.badgeActionSpeed', glyph: 'action-speed', positiveTone: 'purple', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   criticalDamagePoints: { labelKey: 'market.effect.badgeCriticalDamage', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   healingBonusPoints: { labelKey: 'market.effect.badgeHealingBonus', glyph: 'hp-regen', positiveTone: 'emerald', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
-  fireSpellDamagePerSecond: { labelKey: 'market.effect.badgeFireDamagePerSecond', glyph: 'fire', positiveTone: 'crimson', negativeTone: 'crimson', format: 'flat', perStack: true },
+  fireSpellDamagePerSecond: { labelKey: 'market.effect.badgeFireDamagePerSecond', glyph: 'element-fire', positiveTone: 'crimson', negativeTone: 'crimson', format: 'flat', perStack: true },
 }
 
 /** wire 通道名 → 是否已登记（未登记通道不参与展示渲染）。 */
@@ -89,7 +89,7 @@ export function isBuffEffectChannel(channel: string): channel is BuffEffectChann
 }
 
 function signedPercent(value: number): string {
-  const percent = Math.round(value * 100)
+  const percent = +(value * 100).toFixed(1)
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
@@ -108,12 +108,12 @@ export function formatBuffChannelValue(
     case 'flat':
       return `${scaled > 0 ? '+' : ''}${formatNumber(scaled)}${perStackSuffix}`
     case 'percentPoint':
-      return signedPercent(scaled / 100)
+      return `${signedPercent(scaled / 100)}${perStackSuffix}`
     case 'percentRaw':
       return signedPercent(scaled)
     case 'absorption': {
       const percent = Math.abs(+(scaled / (100 + Math.abs(scaled)) * 100).toFixed(1))
-      return `${scaled > 0 ? '+' : '-'}${percent}%`
+      return `${scaled > 0 ? '+' : '-'}${percent}%${perStackSuffix}`
     }
     case 'resistance': {
       const ratio = value >= 0 ? value / 100 : -Math.abs(value) / (100 + Math.abs(value))
@@ -135,8 +135,8 @@ export function specToBuffEffects(
   const effects: BuffEffectEntry[] = []
   for (const [key, raw] of Object.entries(spec)) {
     if (raw === undefined || raw === 0 || !isBuffEffectChannel(key)) continue
-    // 双抗破防比率不吃成长（与服务端 GrowsWithLevel 豁免同式）。
-    const value = key === 'resistancePoints' ? raw : raw * growth
+    // 双抗破防比率与终乘闪避实例效果不吃成长（与服务端 GrowsWithLevel 豁免同式）。
+    const value = key === 'resistancePoints' || key === 'evasionPostRatio' ? raw : raw * growth
     effects.push({ channel: key, value })
   }
   return effects

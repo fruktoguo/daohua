@@ -8,6 +8,7 @@ import { resolveItemIconUrl } from '../game/itemIcons'
 import type { CombatantDefinition, CombatEncounterDefinition, MonsterDropDefinition, NearbyMonsterDefinition, WorldMapDefinition } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { ConditionedTile } from './ConditionedTile'
+import { resolveAbilityAsideCards } from './EffectTooltip'
 import { FloatingInfoCard, FloatingPopover, type FloatingPlacement, type FloatingTone } from './FloatingPopover'
 import { ItemDropReference } from './ItemDisplay'
 import { UnitNumber } from './UnitNumber'
@@ -87,9 +88,11 @@ const MonsterAbilityTile = memo(function MonsterAbilityTile({
   const ribbonLabel = ability?.element && ability.element !== 'none'
     ? t(`combat.encounter.element.${ability.element}`)
     : formatAbilityCategory(ability?.category)
+  const asideCards = ability ? resolveAbilityAsideCards(ability, undefined, 'qi', lv) : []
 
   return (
     <ConditionedTile
+      asideCards={asideCards.length > 0 ? asideCards : undefined}
       className="abilities-learned-cell"
       content={ability ? describeAbility(ability, lv) : null}
       triggerClassName="item-grid-picker-tooltip"

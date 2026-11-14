@@ -1,7 +1,7 @@
 import { memo, useId, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../game/ids'
+import { calculateEquipmentSellPrice, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { useMarketStore } from '../game/marketStore'
 import { useT } from '../i18n'
@@ -183,7 +183,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     const { combat, equipment, stats, setNotice } = useGameStore.getState()
     if (!combat) return
     const realmLevel = stats?.realmLevel ?? 1
-    const reqLevel = equipmentDef.level ?? convertTierToLevel(equipmentDef.tier)
+    const reqLevel = equipmentDef.level ?? 1
     const isAlreadyEquipped = (combat.equipment ?? []).some(entry => entry.itemId === item.itemId)
     if (!isAlreadyEquipped && realmLevel < reqLevel) {
       setNotice(t('app.inventoryPanel.equipmentRealmTooLow', { level: reqLevel }))

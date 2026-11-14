@@ -6,6 +6,7 @@ import { AwakenResultModal } from './components/AwakenResultModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
+import { CombatHeaderRateBar } from './components/ReportBriefSection'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
@@ -17,7 +18,7 @@ import { ValueText } from './components/ValueText'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ActionDetailItem, ItemIcon, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
-import { Modal } from './components/Modal'
+import { Modal, hasOpenModalLayer } from './components/Modal'
 import type { PillTone } from './components/PillLabel'
 import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel, type NearbyTab } from './components/NearbyPanel'
@@ -34,22 +35,28 @@ import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgress
 import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
-import { calculateBaseExperienceForLevel, calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { getDifficultyBracket } from './game/combatDifficulty'
-import { useGameStore } from './game/gameStore'
+import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { chatStickerService } from './game/chatStickerService'
 import { calculateActionYieldPreview, isActionAvailableAtNode, ROOT_ASPECT_LABEL_KEYS } from './game/actionCalculations'
+import {
+  calculateQueueActionEstimate,
+  formatQueueRepeatsText,
+  getQueueEstimateDependencies,
+  resolveLiveRemainingSeconds,
+} from './game/queueTimeEstimate'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, AutoUseBarType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
+import type { ActionDefinition, AutoUseBarType, CombatEquipmentDefinition, CombatTrigger, EquipmentSlot, EquippedItem, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, disposeAntiMultiOpen, useAntiMultiOpenStore, MultiTabBlockedPage } from './private'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
-import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab, type EnhancementSubTab } from './uiStore'
+import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab, type EnhancementSubTab, type SocialSubTab } from './uiStore'
 import { MOBILE_NAV_GROUPS, TAB_ICON, mobileNavGroupById, mobileNavGroupIdOf } from './mobileNav'
 import { useLogUnreadStore } from './logging/logUnreadStore'
 import { useT, getT } from './i18n'
@@ -61,6 +68,7 @@ const ShopPage = lazy(() => import('./components/ShopPage').then(module => ({ de
 const SocialPage = lazy(() => import('./components/SocialPage').then(module => ({ default: module.SocialPage })))
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })))
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
+const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
@@ -121,6 +129,90 @@ function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: 
   if (remainingRepeats < 0) return t('app.queue.repeatsInfinite')
   return t('common.repeatsCount', { n: remainingRepeats })
 }
+
+const EMPTY_QUEUE_ESTIMATE_INVENTORY: readonly InventoryItem[] = []
+const EMPTY_QUEUE_ESTIMATE_EQUIPPED: readonly EquippedItem[] = []
+const EMPTY_QUEUE_ESTIMATE_ENTRIES: readonly QueueEntry[] = []
+const EMPTY_QUEUE_ESTIMATE_EQUIPMENT_DEFS: readonly CombatEquipmentDefinition[] = []
+
+/** 顶部当前行动栏的次数与实时总剩余耗时标签 */
+const CurrentActionRepeatsLabel = memo(function CurrentActionRepeatsLabel({
+  entry,
+  departing,
+  queuePaused,
+}: {
+  entry: QueueEntry
+  departing: boolean
+  queuePaused: boolean
+}): React.JSX.Element {
+  const t = useT()
+  const spanRef = useRef<HTMLSpanElement>(null)
+  const actions = useGameStore(state => state.actions)
+  const action = useMemo(() => findActionInCatalog(actions, entry.actionId), [actions, entry.actionId])
+  const deps = getQueueEstimateDependencies(entry, action)
+
+  const inventory = useGameStore(state => (deps.needsInventory ? state.inventory : EMPTY_QUEUE_ESTIMATE_INVENTORY))
+  const combatEquipment = useGameStore(state => (deps.needsInventory ? (state.combat?.equipment ?? EMPTY_QUEUE_ESTIMATE_EQUIPPED) : EMPTY_QUEUE_ESTIMATE_EQUIPPED))
+  const queueEntries = useGameStore(state => (deps.needsInventory ? state.queue.entries : EMPTY_QUEUE_ESTIMATE_ENTRIES))
+  const equipmentCatalog = useGameStore(state => (deps.needsInventory ? state.equipment : EMPTY_QUEUE_ESTIMATE_EQUIPMENT_DEFS))
+  const foundation = useGameStore(state => (deps.needsFoundation ? (state.stats?.foundation ?? 0) : 0))
+  const experience = useGameStore(state => (deps.needsFoundation ? (state.stats?.experience ?? 0) : 0))
+  const realmLevel = useGameStore(state => (deps.needsFoundation ? state.stats?.realmLevel : undefined))
+  const expToNextLinggen = useGameStore(state => (deps.needsFoundation ? state.stats?.expToNextLinggen : undefined))
+  const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
+
+  const estimate = useMemo(() => calculateQueueActionEstimate({
+    entry,
+    action,
+    inventory,
+    combatEquipment,
+    queueEntries,
+    equipmentCatalog,
+    stats: deps.needsFoundation ? { foundation, experience, realmLevel, expToNextLinggen } : undefined,
+  }), [
+    action,
+    combatEquipment,
+    deps.needsFoundation,
+    deps.needsInventory,
+    entry,
+    equipmentCatalog,
+    expToNextLinggen,
+    experience,
+    foundation,
+    inventory,
+    queueEntries,
+    realmLevel,
+  ])
+
+  const shouldTick = !departing &&
+    !queuePaused &&
+    entry.status !== 'blocked' &&
+    estimate.hasEstimate &&
+    estimate.effectiveCount > 0 &&
+    estimate.roundDurationSeconds > 0
+
+  useLayoutEffect(() => {
+    const el = spanRef.current
+    if (!el) return undefined
+    const renderText = () => {
+      const elapsedSinceSync = shouldTick
+        ? Math.max(0, (performance.now() - lastQueueSyncPerformanceTime) / 1000)
+        : 0
+      const remaining = resolveLiveRemainingSeconds(estimate, elapsedSinceSync)
+      const nextText = formatQueueRepeatsText(estimate, remaining, t)
+      if (el.textContent !== nextText) {
+        el.textContent = nextText
+      }
+    }
+    renderText()
+    if (!shouldTick) return undefined
+    const timerId = window.setInterval(renderText, 250)
+    return () => window.clearInterval(timerId)
+  }, [estimate, lastQueueSyncPerformanceTime, shouldTick, t])
+
+  const initialText = formatQueueRepeatsText(estimate, estimate.baseRemainingSeconds, t)
+  return <span className="qc-repeats" ref={spanRef}>{initialText}</span>
+})
 
 /**
  * 响应式监听移动端断点 (< 960px) 的自定义 Hook
@@ -361,7 +453,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
       <div className="qc-main">
         <div className="qc-title">
           <strong>{resolveQueueEntryName(entry, undefined, world, maps)}</strong>
-          <span className="qc-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
+          <CurrentActionRepeatsLabel departing={departing} entry={entry} queuePaused={queuePaused} />
           {(entry.status === 'blocked' || phaseLabel) && (
             <span className={entry.status === 'blocked' ? 'badge badge-danger' : 'badge'}>
               {entry.status === 'blocked' ? t('app.queue.blocked') : phaseLabel}
@@ -775,6 +867,83 @@ const CRAFTING_FLOATING_TONE_MAP: Record<string, FloatingTone> = {
   qi: 'qi',
 }
 
+/** 桌面端侧边栏「坊市」分组子页签（与竖屏 `mobileNav.ts` 保持同一顺序与边界） */
+const SIDEBAR_MARKET_TABS: readonly TabId[] = ['market', 'shop']
+
+/** 桌面端侧边栏「其他」分组子页签 */
+const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard']
+
+interface SidebarTabGroupProps {
+  activeTab: TabId
+  expanded: boolean
+  icon: IconName
+  label: string
+  tabs: readonly TabId[]
+  onActivateGroup: () => void
+  onSelectTab: (tab: TabId) => void
+  onToggleExpanded: () => void
+}
+
+/** 桌面端侧边栏通用可折叠页签分组（用于「坊市」「其他」等含直达 Tab 的二级收拢入口） */
+const SidebarTabGroup = memo(function SidebarTabGroup({
+  activeTab,
+  expanded,
+  icon,
+  label,
+  tabs,
+  onActivateGroup,
+  onSelectTab,
+  onToggleExpanded,
+}: SidebarTabGroupProps): React.JSX.Element {
+  const t = useT()
+  const isActive = tabs.includes(activeTab)
+  return (
+    <div className="nav-group">
+      <button
+        aria-expanded={expanded}
+        className={`nav-item nav-item--collapsible${isActive ? ' active' : ''}`}
+        onClick={() => {
+          if (!isActive) onActivateGroup()
+          else onToggleExpanded()
+        }}
+        type="button"
+      >
+        <span className="nav-glyph" aria-hidden="true"><Icon name={icon} /></span>
+        <span className="nav-text">
+          <span className="nav-label">{label}</span>
+        </span>
+        <span
+          aria-hidden="true"
+          className={`nav-chevron${expanded ? ' is-expanded' : ''}`}
+          onClick={e => {
+            e.stopPropagation()
+            onToggleExpanded()
+          }}
+        >
+          ›
+        </span>
+      </button>
+      {expanded && (
+        <div className="nav-sub-menu">
+          {tabs.map(tab => (
+            <button
+              className={`nav-sub-item${activeTab === tab ? ' active' : ''}`}
+              key={tab}
+              onClick={() => onSelectTab(tab)}
+              type="button"
+            >
+              <span className="nav-sub-main">
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name={TAB_ICON[tab]} size={15} /></span>
+                <span className="nav-sub-label">{t(`app.nav.${tab}`)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
+
 /**
  * 桌面端主侧边导航栏组件
  */
@@ -782,6 +951,9 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const activateMobileNavGroup = useUiStore(state => state.activateMobileNavGroup)
+  const marketNavExpanded = useUiStore(state => state.marketNavExpanded)
+  const setMarketNavExpanded = useUiStore(state => state.setMarketNavExpanded)
   const socialSubTab = useUiStore(state => state.socialSubTab)
   const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
   const socialNavExpanded = useUiStore(state => state.socialNavExpanded)
@@ -790,6 +962,8 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
+  const otherNavExpanded = useUiStore(state => state.otherNavExpanded)
+  const setOtherNavExpanded = useUiStore(state => state.setOtherNavExpanded)
 
   // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按「修为曲线前 30 级线性削减」的技艺曲线导出（0 级起步）；
   // 满级（expToNext=0）时进度条恒显满格，悬浮气泡经验行改显「已臻化境」。
@@ -830,16 +1004,19 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <span className="nav-label">{t('app.nav.insight')}</span>
           </span>
         </button>
-        <button
-          className={`nav-item${activeTab === 'market' ? ' active' : ''}`}
-          onClick={() => setActiveTab('market')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="market" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.market')}</span>
-          </span>
-        </button>
+        <SidebarTabGroup
+          activeTab={activeTab}
+          expanded={marketNavExpanded}
+          icon="market"
+          label={t('app.nav.marketGroup')}
+          onActivateGroup={() => {
+            activateMobileNavGroup('market')
+            setMarketNavExpanded(true)
+          }}
+          onSelectTab={setActiveTab}
+          onToggleExpanded={() => setMarketNavExpanded(expanded => !expanded)}
+          tabs={SIDEBAR_MARKET_TABS}
+        />
         <button
           className={`nav-item${activeTab === 'exploration' ? ' active' : ''}`}
           onClick={() => setActiveTab('exploration')}
@@ -985,33 +1162,26 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <span className={`nav-chevron${socialNavExpanded ? ' is-expanded' : ''}`} aria-hidden="true">›</span>
           </button>
           {socialNavExpanded && <div className="nav-sub-menu">
-            {(['party', 'zongmen', 'invite'] as const).map(tab =>
+            {SOCIAL_NAV_TABS.map(({ id: tab }) =>
               <button className={`nav-sub-item${activeTab === 'social' && socialSubTab === tab ? ' active' : ''}`}
                 key={tab} onClick={() => { setActiveTab('social'); setSocialSubTab(tab) }} type="button">
                 <span className="nav-label">{t(`social.sub.${tab}`)}</span>
               </button>)}
           </div>}
         </div>
-        <button
-          className={`nav-item${activeTab === 'codex' ? ' active' : ''}`}
-          onClick={() => setActiveTab('codex')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="codex" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.codex')}</span>
-          </span>
-        </button>
-        <button
-          className={`nav-item${activeTab === 'shop' ? ' active' : ''}`}
-          onClick={() => setActiveTab('shop')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="shop" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.shop')}</span>
-          </span>
-        </button>
+        <SidebarTabGroup
+          activeTab={activeTab}
+          expanded={otherNavExpanded}
+          icon="more"
+          label={t('app.nav.other')}
+          onActivateGroup={() => {
+            setActiveTab(SIDEBAR_OTHER_TABS[0])
+            setOtherNavExpanded(true)
+          }}
+          onSelectTab={setActiveTab}
+          onToggleExpanded={() => setOtherNavExpanded(expanded => !expanded)}
+          tabs={SIDEBAR_OTHER_TABS}
+        />
       </nav>
       <div className="sidebar-footer">
         <button
@@ -1102,16 +1272,56 @@ const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
   )
 })
 
+/** 同道通用二级菜单项（桌面侧栏折叠子菜单与竖屏底部子行共用顺序与标识） */
+const SOCIAL_NAV_TABS: ReadonlyArray<{ id: SocialSubTab; icon: IconName }> = [
+  { id: 'party', icon: 'social' },
+  { id: 'zongmen', icon: 'gate' },
+  { id: 'invite', icon: 'chat' },
+]
+
+/**
+ * 竖屏同道二级切换栏（队伍/宗门/邀请）
+ * 桌面端由侧边栏可折叠二级菜单承载；竖屏侧边栏整体隐藏，本栏作为底部导航在激活「同道」页签时
+ * 浮现于「更多」子行之上的子行渲染，页面主体内不再重复出现；队伍内部的「队伍/对弈」仍留在面板顶部。
+ */
+const SocialSubTabs = memo(function SocialSubTabs({ inviteBadge }: { inviteBadge: number }): React.JSX.Element {
+  const t = useT()
+  const socialSubTab = useUiStore(state => state.socialSubTab)
+  const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
+  return (
+    <div aria-label={t('social.subAria')} className="bottom-sub-tabs bottom-sub-tabs--social" role="tablist">
+      {SOCIAL_NAV_TABS.map(tab => (
+        <button
+          aria-selected={socialSubTab === tab.id}
+          className={`bottom-sub-tab-btn${socialSubTab === tab.id ? ' active' : ''}`}
+          key={tab.id}
+          onClick={() => setSocialSubTab(tab.id)}
+          role="tab"
+          type="button"
+        >
+          <span className="bottom-sub-tab-glyph" aria-hidden="true"><Icon name={tab.icon} /></span>
+          <span className="bottom-sub-tab-text">{t(`social.sub.${tab.id}`)}</span>
+          {tab.id === 'party' && inviteBadge > 0 && socialSubTab !== 'party' && (
+            <span className="bottom-sub-tab-badge">{inviteBadge > 99 ? '99+' : inviteBadge}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+})
+
 /**
  * 技艺页面（整合炼丹与炼器两大修仙工艺系统，支持二级模式切换与顶部多子选项卡）
  */
 const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
-  const actions = useGameStore(state => state.actions)
-  const equipment = useGameStore(state => state.equipment)
-  const worldNodeId = useGameStore(state => state.world.nodeId)
-  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
-  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
+  const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
+  if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
+  const actions = useGameStoreWhenVisible(hidden, state => state.actions)
+  const equipment = useGameStoreWhenVisible(hidden, state => state.equipment)
+  const worldNodeId = useGameStoreWhenVisible(hidden, state => state.world.nodeId)
+  const realmLevel = useGameStoreWhenVisible(hidden, state => state.stats.realmLevel) ?? 1
+  const techniqueExperiences = useGameStoreWhenVisible(hidden, state => state.combat?.techniqueExperiences)
   const craftingMode = useUiStore(state => state.craftingMode)
   const alchemySubTab = useUiStore(state => state.alchemySubTab)
   const setAlchemySubTab = useUiStore(state => state.setAlchemySubTab)
@@ -1294,17 +1504,21 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         )}
       </header>
 
-      {craftingMode === 'enhancement' ? (
-        <EnhancementPage />
-      ) : (
-        <div className="action-cards">
-          {filteredActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-          {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
-        </div>
+      {hasBeenVisible && (
+        <>
+          {craftingMode === 'enhancement' ? (
+            <EnhancementPage />
+          ) : (
+            <div className="action-cards">
+              {filteredActions.map(action => <ActionCard action={action} hidden={hidden} key={action.id} onOpen={setSelectedAction} />)}
+              {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
+            </div>
+          )}
+          <AutoUse bar={craftingMode} hidden={hidden} />
+          {/* 技艺模式切换条由底部导航「技艺」组的子行承载（竖屏），页面内不再重复渲染 */}
+          {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+        </>
       )}
-      <AutoUse bar={craftingMode} />
-      {/* 技艺模式切换条由底部导航「技艺」组的子行承载（竖屏），页面内不再重复渲染 */}
-      {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
 })
@@ -1316,6 +1530,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
 const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   bar,
   className = '',
+  hidden = false,
   hideLabel = false,
   label,
   slotGroup = 'general',
@@ -1323,32 +1538,35 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   /** 物品栏域：历练/各制造技艺/战斗，决定本组槽位来源与物品准入 */
   bar: AutoUseBarType
   className?: string
+  /** 所属父页面是否处于隐藏态 */
+  hidden?: boolean
   hideLabel?: boolean
   label: string
   /** 栏位分组：仅战斗栏域区分 potion（药品栏）/general（通用栏） */
   slotGroup?: 'potion' | 'general'
 }): React.JSX.Element {
   const t = useT()
-  const allSlots = useGameStore(state => state.queue.autoUseSlots[bar])
+  const allSlots = useGameStoreWhenVisible(hidden, state => state.queue.autoUseSlots[bar])
   // 战斗栏域槽位数组布局：0-2 药品栏，3-5 通用栏；其余栏域整段通用栏（历练 6 槽、技艺 3 槽）。
   const slotOffset = bar === 'combat' && slotGroup === 'general' ? 3 : 0
   const slots = allSlots.slice(slotOffset, slotOffset + (bar === 'combat' ? 3 : allSlots.length))
-  const activeEntry = useGameStore(state => {
+  const activeEntry = useGameStoreWhenVisible(hidden, state => {
     const current = state.queue.entries[0]
     if (!current) return null
     const definition = resolveActionDefinition(current.actionId)
     return autoUseBarFor({ type: current.type, technique: definition?.technique ?? null }) === bar ? current : null
   })
   const activeAction = activeEntry ? resolveActionDefinition(activeEntry.actionId) ?? null : null
-  const queuePaused = useGameStore(state => state.queue.paused)
+  const queuePaused = useGameStoreWhenVisible(hidden, state => state.queue.paused)
   // 消耗品冷却仅 combat 栏域槽位由服务端按双组下标定长下发（药品栏 0-2、通用栏 3-5）。
-  const consumableCooldowns = useGameStore(
+  const consumableCooldowns = useGameStoreWhenVisible(
+    hidden,
     state => bar === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
   )
-  const inventory = useGameStore(state => state.inventory)
-  const itemCatalog = useGameStore(state => state.items)
+  const inventory = useGameStoreWhenVisible(hidden, state => state.inventory)
+  const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
   const isCombat = bar === 'combat'
-  const combat = useGameStore(state => state.combat)
+  const combat = useGameStoreWhenVisible(hidden, state => state.combat)
   const [picker, setPicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   const [editingTriggerItemId, setEditingTriggerItemId] = useState<string | null>(null)
 
@@ -1480,11 +1698,11 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 /**
  * 各行动页签下的自动消耗品快捷托盘
  */
-const AutoUse = memo(function AutoUse({ bar }: { bar: AutoUseBarType }): React.JSX.Element {
+const AutoUse = memo(function AutoUse({ bar, hidden = false }: { bar: AutoUseBarType; hidden?: boolean }): React.JSX.Element {
   const t = useT()
   return (
     <div className="auto-use-tray" aria-label={t('app.action.autoUseTrayAria', { name: autoUseBarLabel(bar) })}>
-      <AutoUseSlotGroup bar={bar} hideLabel label={t('app.action.autoUseLabel')} />
+      <AutoUseSlotGroup bar={bar} hidden={hidden} hideLabel label={t('app.action.autoUseLabel')} />
     </div>
   )
 })
@@ -1492,15 +1710,15 @@ const AutoUse = memo(function AutoUse({ bar }: { bar: AutoUseBarType }): React.J
 /**
  * 单个行动卡片组件（制造配方呈现中型长方形图标瓦片；常规历练行动保留紧凑形态；右上角统一 Lv. 角标）
  */
-const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
+const ActionCard = memo(function ActionCard({ action, hidden = false, onOpen }: { action: ActionDefinition; hidden?: boolean; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
-  const itemCatalog = useGameStore(state => state.items)
-  const equipmentCatalog = useGameStore(state => state.equipment)
-  const encounters = useGameStore(state => state.encounters)
-  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
-  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
-  const world = useGameStore(state => state.world)
-  const maps = useGameStore(state => state.maps)
+  const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
+  const equipmentCatalog = useGameStoreWhenVisible(hidden, state => state.equipment)
+  const encounters = useGameStoreWhenVisible(hidden, state => state.encounters)
+  const realmLevel = useGameStoreWhenVisible(hidden, state => state.stats.realmLevel) ?? 1
+  const techniqueExperiences = useGameStoreWhenVisible(hidden, state => state.combat?.techniqueExperiences)
+  const world = useGameStoreWhenVisible(hidden, state => state.world)
+  const maps = useGameStoreWhenVisible(hidden, state => state.maps)
 
   // 行动名按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」），与节点生态实战语义一致
   const displayName = useMemo(() => localizeActionDisplayText(action.name, world, maps), [action.name, world, maps])
@@ -1605,7 +1823,12 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const stats = useGameStore(state => state.stats)
   const combat = useGameStore(state => state.combat)
   const equipmentCatalog = useGameStore(state => state.equipment)
-  const queueLength = useGameStore(state => state.queue.entries.length)
+  const queueEntries = useGameStore(state => state.queue.entries)
+  const queueLength = queueEntries.length
+  const occupiedCounts = useMemo(
+    () => getOccupiedEquipmentCounts(combat?.equipment, queueEntries),
+    [combat?.equipment, queueEntries]
+  )
   const encounters = useGameStore(state => state.encounters)
   const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
   const duel = useGameStore(state => state.duel)
@@ -1698,7 +1921,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     ? action.technique
     : null
   const techniqueExp = techniqueId
-    ? Math.max(1, Math.round(calculateBaseExperienceForLevel(actionLevel) * ((action.durationSeconds || 10) / 10.0)))
+    ? calculateTechniqueExperience(actionLevel, action.durationSeconds || 10, action)
     : 0
   const hasInsights = expYields.length > 0 || yieldPreview.rootExpYields.length > 0 || techniqueExp > 0
   // 斗法冷却倒计时：以「服务端时刻 + 本地流逝」估算服务端当前时刻，仅冷却生效期间每秒重渲染。
@@ -1726,7 +1949,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           <dd>{inputs.length === 0 && !(action.foundationCostRatio ?? 0) ? <span className="action-detail-empty">{t('app.action.none')}</span> : inputs.map(input => (
             <ActionDetailItem
               amount={input.amount}
-              current={itemAmount(inventory, input.itemId)}
+              current={Math.max(0, itemAmount(inventory, input.itemId) - (occupiedCounts.get(`${input.itemId}#0`) ?? 0))}
               itemId={input.itemId}
               key={input.itemId}
             />
@@ -1827,12 +2050,20 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                   </span>
                 ))}
                 {techniqueId && techniqueExp > 0 && (
-                  <span className="action-stat-pill action-stat-pill--technique" key={`tech-${techniqueId}`}>
-                    <span className="action-stat-pill-label">{t(`insight.technique.${techniqueId}`)}</span>
-                    <strong className="action-stat-pill-value">
-                      <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={techniqueExp} />
-                    </strong>
-                  </span>
+                  <>
+                    <span className="action-stat-pill action-stat-pill--technique" key={`tech-${techniqueId}`}>
+                      <span className="action-stat-pill-label">{t(`insight.technique.${techniqueId}`)}</span>
+                      <strong className="action-stat-pill-value">
+                        <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={techniqueExp} />
+                      </strong>
+                    </span>
+                    <span className="action-stat-pill action-stat-pill--foundation" key={`foundation-${techniqueId}`}>
+                      <span className="action-stat-pill-label">{t('combat.report.foundation')}</span>
+                      <strong className="action-stat-pill-value">
+                        <UnitNumber disableTooltip maxDecimals={1} prefix="+" value={techniqueExp} />
+                      </strong>
+                    </span>
+                  </>
                 )}
                 {isPending && (
                   <FloatingTooltip
@@ -2142,11 +2373,12 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
  * 战斗装配面板（配置功法技能槽与释放条件触发器；战斗消耗品槽统一走
  * queue.autoUseSlots 通道，由 AutoUseSlotGroup 渲染，loadout 不再重复携带）
  */
-const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element | null {
+const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: { hidden?: boolean } = {}): React.JSX.Element | null {
   const t = useT()
-  const combat = useGameStore(state => state.combat)
-  const abilities = useGameStore(state => state.abilities)
-  const abilityCooldowns = useGameStore(
+  const combat = useGameStoreWhenVisible(hidden, state => state.combat)
+  const abilities = useGameStoreWhenVisible(hidden, state => state.abilities)
+  const abilityCooldowns = useGameStoreWhenVisible(
+    hidden,
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
   const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
@@ -2193,8 +2425,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
         <div className="combat-slot-row combat-slot-row--consumables">
-          <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
-          <AutoUseSlotGroup bar="combat" className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" />
+          <AutoUseSlotGroup bar="combat" className="combat-slot-section" hidden={hidden} label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
+          <AutoUseSlotGroup bar="combat" className="combat-slot-section" hidden={hidden} label={t('app.combatPanel.generalGroup')} slotGroup="general" />
         </div>
 
         <section className="slot-group combat-slot-section combat-slot-section--abilities" aria-label={t('app.combatPanel.abilitiesAria')}>
@@ -2289,6 +2521,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
 
       <AbilityGridPicker
         abilities={learnedAbilities}
+        abilityExperiences={combat.abilityExperiences}
         allowEmpty
         anchor={pickerTarget?.anchor ?? null}
         levelFor={abilityLevelFor}
@@ -2323,14 +2556,16 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
  */
 const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
-  const actions = useGameStore(state => state.actions)
-  const worldNodeId = useGameStore(state => state.world.nodeId)
-  const itemCatalog = useGameStore(state => state.items)
-  const equipmentCatalog = useGameStore(state => state.equipment)
-  const encounters = useGameStore(state => state.encounters)
-  const world = useGameStore(state => state.world)
-  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
-  const realmLevel = useGameStore(state => state.stats.realmLevel)
+  const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
+  if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
+  const actions = useGameStoreWhenVisible(hidden, state => state.actions)
+  const worldNodeId = useGameStoreWhenVisible(hidden, state => state.world.nodeId)
+  const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
+  const equipmentCatalog = useGameStoreWhenVisible(hidden, state => state.equipment)
+  const encounters = useGameStoreWhenVisible(hidden, state => state.encounters)
+  const world = useGameStoreWhenVisible(hidden, state => state.world)
+  const techniqueExperiences = useGameStoreWhenVisible(hidden, state => state.combat?.techniqueExperiences)
+  const realmLevel = useGameStoreWhenVisible(hidden, state => state.stats.realmLevel)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
   const visibleActions = useMemo(() => actions.filter(action => (
@@ -2398,19 +2633,23 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
         <h2>{t('app.nav.exploration')}</h2>
         {world.locationName && <span className="location-sub-badge">{world.locationName}</span>}
       </header>
-      <div className="action-sections">
-        {groups.map(group => (
-          <div className="action-group-section" key={group.key}>
-            <span className="slot-group-label">{group.label}</span>
-            <div className="action-group-list">
-              {group.actions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-            </div>
+      {hasBeenVisible && (
+        <>
+          <div className="action-sections">
+            {groups.map(group => (
+              <div className="action-group-section" key={group.key}>
+                <span className="slot-group-label">{group.label}</span>
+                <div className="action-group-list">
+                  {group.actions.map(action => <ActionCard action={action} hidden={hidden} key={action.id} onOpen={setSelectedAction} />)}
+                </div>
+              </div>
+            ))}
+            {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
           </div>
-        ))}
-        {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
-      </div>
-      <AutoUse bar="exploration" />
-      {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+          <AutoUse bar="exploration" hidden={hidden} />
+          {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+        </>
+      )}
     </section>
   )
 })
@@ -2455,7 +2694,7 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
       </header>
       <div className="expedition-content">
         {hasBeenVisible && activeSubTab === 'map' && <WorldMapPanel hidden={hidden} />}
-        {activeSubTab !== 'map' && <NearbyPanel tab={activeSubTab} />}
+        {hasBeenVisible && !hidden && activeSubTab !== 'map' && <NearbyPanel tab={activeSubTab} />}
       </div>
     </section>
   )
@@ -2471,19 +2710,83 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
+  const [portraitExpanded, setPortraitExpanded] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
   const closeReport = useCallback(() => setReportOpen(false), [])
+  const togglePortraitExpanded = useCallback(() => setPortraitExpanded(prev => !prev), [])
+  const expanded = !hidden && portraitExpanded
+
+  // 切离详情页时退出竖屏全屏，避免再次切回时意外直接遮盖顶栏与底栏。
+  useEffect(() => {
+    if (hidden) setPortraitExpanded(false)
+  }, [hidden])
+
+  // 竖屏专注全屏下支持 Esc 快捷恢复（仅在当前确处竖屏且无顶层模态窗时接管）。
+  useEffect(() => {
+    if (!expanded) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || hasOpenModalLayer()) return
+      if (!window.matchMedia('(orientation: portrait)').matches) return
+      event.preventDefault()
+      setPortraitExpanded(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [expanded])
 
   return (
-    <section className="panel expedition-page" data-tour="combat-detail" hidden={hidden}>
-      <header className="panel-header">
+    <section
+      className={`panel expedition-page${expanded ? ' is-combat-detail-expanded' : ''}`}
+      data-tour="combat-detail"
+      hidden={hidden}
+    >
+      <header className="panel-header combat-detail-panel-header">
         <h2>{t('app.nav.combat')}</h2>
+        <div className="combat-detail-header-actions">
+          <CombatHeaderRateBar hidden={hidden} />
+          <button
+            className="ghost-button battle-report-open"
+            onClick={() => setReportOpen(true)}
+            type="button"
+          >
+            {t('combat.report.title')}
+          </button>
+        </div>
         <button
-          className="ghost-button battle-report-open"
-          onClick={() => setReportOpen(true)}
+          aria-expanded={expanded}
+          aria-label={t(expanded ? 'combat.detail.restoreAria' : 'combat.detail.expandAria')}
+          className="combat-detail-expand-btn"
+          onClick={togglePortraitExpanded}
+          title={t(expanded ? 'combat.detail.restoreAria' : 'combat.detail.expandAria')}
           type="button"
         >
-          {t('combat.report.title')}
+          <svg
+            aria-hidden="true"
+            fill="none"
+            height="15"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.7"
+            viewBox="0 0 16 16"
+            width="15"
+          >
+            {expanded ? (
+              <>
+                <path d="M9 3.5V7H12.5" />
+                <path d="M13.5 2.5L9 7" />
+                <path d="M3.5 9H7V12.5" />
+                <path d="M2.5 13.5L7 9" />
+              </>
+            ) : (
+              <>
+                <path d="M9.5 2.5H13.5V6.5" />
+                <path d="M13.5 2.5L8.75 7.25" />
+                <path d="M6.5 13.5H2.5V9.5" />
+                <path d="M2.5 13.5L7.25 8.75" />
+              </>
+            )}
+          </svg>
         </button>
       </header>
       <div className="expedition-content expedition-content--duel">
@@ -2493,9 +2796,11 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
               <CombatArena hidden={hidden} onOpenAction={setSelectedAction} />
             </Suspense>
           )}
-          <div className="expedition-duel-config">
-            <CombatLoadoutPanel />
-          </div>
+          {hasBeenVisible && (
+            <div className="expedition-duel-config">
+              <CombatLoadoutPanel hidden={hidden} />
+            </div>
+          )}
         </div>
       </div>
       <Modal
@@ -2550,8 +2855,9 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
   /** 子行各自角标：日志只报未读条数，同道只报待处理邀请数，避免两项混算误导 */
   const subBadge = (tab: TabId): number => tab === 'log' ? logUnread : tab === 'social' ? inviteBadge : 0
 
-  // 子行高度随内容（技艺条比纯文字子行高）变化，用实测高度反写 CSS 变量驱动底部占位。
+  // 子行高度随内容（技艺条比纯文字子行高，同道在「更多」子行之上叠加通用二级行）变化，用实测高度反写 CSS 变量驱动底部占位。
   const subVisible = activeGroup.subNav !== 'none'
+  const socialSubVisible = activeTab === 'social'
   useLayoutEffect(() => {
     const node = navRef.current
     if (!node) return undefined
@@ -2562,10 +2868,15 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
     const observer = new ResizeObserver(apply)
     observer.observe(node)
     return () => observer.disconnect()
-  }, [subVisible, activeGroupId])
+  }, [subVisible, socialSubVisible, activeGroupId])
 
   return (
     <nav aria-label={t('app.nav.mobileNavAria')} className="bottom-nav" ref={navRef}>
+      {socialSubVisible && (
+        <div className="bottom-sub-nav bottom-sub-nav--social">
+          <SocialSubTabs inviteBadge={inviteBadge} />
+        </div>
+      )}
       {subVisible && (
         <div className="bottom-sub-nav">
           {activeGroup.subNav === 'crafting'
@@ -2770,6 +3081,9 @@ export default function App(): React.JSX.Element {
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'codex' && <CodexPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'leaderboard' && <LeaderboardPage />}
               </Suspense>
               <Suspense fallback={null}>
                 {activeTab === 'shop' && <ShopPage />}

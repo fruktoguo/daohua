@@ -6,9 +6,9 @@ import {
   type TraitMeta,
 } from '../game/combatConstants'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
-import { createBonusAsideCard, type BonusAsideItem } from './ItemDisplay'
+import { createStandaloneBuffAsideCard, extractBuffBonusItems } from './ItemDisplay'
 import { getT, useT } from '../i18n'
-import { BUFF_CHANNELS, formatBuffChannelValue, isBuffEffectChannel } from '../game/buffChannels'
+import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
 export interface TraitBarItemProps {
   /** 特质定义 */
   def: TraitMeta
@@ -53,40 +53,48 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
 export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAsideCard[] {
   const t = getT()
   const cards: FloatingAsideCard[] = []
-  if (def.id === 'trait.bukandaowo') {
-    cards.push(
-      createBonusAsideCard({
-        id: `aside-trait-buff-${def.id}`,
-        mark: t('combat.trait.stateMark'),
-        title: t('combat.trait.stealthTitle'),
-        tone: 'purple',
-        items: [
-          {
-            glyph: 'threat-bonus',
-            label: t('game.abilityStat.threatBonusPoints'),
-            tone: 'crimson',
-            value: '-100%',
-          },
-        ],
-      })
-    )
-  } else if (def.buff) {
+  if (def.buff) {
     const buff = def.buff
-    const items: BonusAsideItem[] = []
+    const effects: BuffEffectEntry[] = []
     for (const [key, value] of Object.entries(buff)) {
       if (!isBuffEffectChannel(key) || typeof value !== 'number') continue
-      const info = BUFF_CHANNELS[key]
-      // 特质只成长正向授予值，燃魂的每层威力不随等级再次放大。
-      const scaled = value > 0 && key !== 'fireSpellDamagePerSecond' ? value * getTraitLevelScale(level) : value
-      items.push({ glyph: info.glyph, label: t(info.labelKey), tone: value > 0 ? 'jade' : 'crimson', value: formatBuffChannelValue(info, scaled, 1) })
+      // 特质只成长正向授予值，燃烧的每层威力与移形的固定 2× 闪避均不随等级再次放大。
+      const scaled = value > 0 && key !== 'fireSpellDamagePerSecond' && !(buff.buffId === 'buff.yixing' && key === 'evasionPostRatio')
+        ? value * getTraitLevelScale(level)
+        : value
+      effects.push({ channel: key, value: scaled })
     }
+    const isPerStack = def.id === 'trait.woyaodashige' || def.id === 'trait.ranhun'
+    const items = extractBuffBonusItems({
+      buffId: buff.buffId,
+      name: buff.name,
+      effects,
+      stacks: 1,
+      isPerStack,
+    })
     if (items.length > 0) {
+      const kind = buff.buffId === 'buff.ranhun'
+        ? 'debuff'
+        : (buff.buffId === 'buff.yixing' || buff.buffId === 'buff.yinshen')
+          ? 'buff'
+          : 'state'
+      const durationSeconds = def.id === 'trait.bukandaowo' && buff.durationSeconds
+        ? +(buff.durationSeconds * getTraitLevelScale(level)).toFixed(1)
+        : buff.durationSeconds
+      let subtitle: string | undefined
+      if (def.id === 'trait.yusuzebuda') subtitle = t('game.abilityAside.permanentInCombat')
+      else if (def.id === 'trait.woyaodashige') subtitle = t('game.abilityAside.perExtraEnemyStack')
+      else if (def.id === 'trait.dantiaowang') subtitle = t('game.abilityAside.duelCondition')
+      else if (def.id === 'trait.xuyi') subtitle = t('game.abilityAside.xuyiSubtitle')
+
       cards.push(
-        createBonusAsideCard({
+        createStandaloneBuffAsideCard({
           id: `aside-trait-buff-${def.id}`,
-          mark: t('combat.trait.stateMark'),
-          title: buff.name ? t('combat.trait.stateTitle', { name: buff.name }) : t('combat.trait.stateMark'),
-          tone: 'purple',
+          name: buff.name || t('combat.trait.stateMark'),
+          kind,
+          durationSeconds,
+          refreshOnStack: buff.buffId === 'buff.yixing' || buff.buffId === 'buff.ranhun',
+          subtitle,
           items,
         })
       )

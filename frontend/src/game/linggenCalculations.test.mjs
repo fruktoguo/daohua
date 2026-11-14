@@ -57,7 +57,7 @@ test('linggenCalculations：衍生战斗与百艺加成及技艺速度', () => {
   assert.equal(linggenTechniqueSpeedRatio(roots, 'gathering'), 0.25)
   assert.equal(linggenTechniqueSpeedRatio(roots, 'enhancement'), 0.25)
   assert.equal(linggenTechniqueSpeedRatio(roots, 'formation'), 0.25)
-  assert.equal(linggenTechniqueSpeedRatio(roots, 'mining'), 0)
+  assert.equal(linggenTechniqueSpeedRatio(roots, 'mining'), 0.25)
   assert.equal(linggenTechniqueSpeedRatio(undefined, 'alchemy'), 0)
 
   // 火系：暴击率 + 暴击伤害 + 炼丹速度 + 炼器速度（丹器分列，避免含糊合并项）。

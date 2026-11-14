@@ -12,11 +12,11 @@ import {
   type FloatingTone,
 } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
-import { createBonusAsideCard, extractBuffBonusItems, type BonusAsideItem } from './ItemDisplay'
+import { createBonusAsideCard, createStandaloneBuffAsideCard, extractBuffBonusItems, type BonusAsideItem } from './ItemDisplay'
 import { RootAspectRadarChart } from './RootAspectRadarChart'
 import { ValueText } from './ValueText'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
-import { abilityPassiveStatLabel, type AbilityBonusStat } from '../game/format'
+import { abilityPassiveStatLabel, describeMorphAbility, type AbilityBonusStat } from '../game/format'
 import type { AbilityBuffSpec, CombatAbilityDefinition } from '../game/types'
 /**
  * 功法/词条/效果悬浮气泡内容结构
@@ -170,8 +170,26 @@ export function extractSingleBuffSpecBonusItems(
   const effectGrowth = isStacked ? 1 : levelGrowth
   // 配表平铺规格 → 通道载荷（GrowsWithLevel 通道乘成长，双抗破防比率豁免——与服务端同式）。
   const effects = specToBuffEffects(buff as Record<string, number | undefined>, effectGrowth)
-  // 纯粹返回 Buff 本身带来的状态效果条目；持续时间与层数计算等属于添加事件控制的外部属性，由技能描述自身交代。
-  return extractBuffBonusItems({ effects, stacks: 1, isPerStack: isStacked })
+  return extractBuffBonusItems({ buffId: buff.buffId, name: buff.name, effects, stacks: 1, isPerStack: isStacked })
+}
+
+/** 渲染单条技能基础属性行（冷却/吟唱/施法/消耗/灵力/等级），自动匹配属性图标与数值高亮。 */
+function renderAbilityLineNode(line: string): React.JSX.Element {
+  let glyphName: string | null = null
+  if (line.includes('冷却')) glyphName = 'cooldown-reduction'
+  else if (line.includes('吟唱') || line.includes('施法')) glyphName = 'action-speed'
+  else if (line.includes('消耗') || line.includes('灵力')) glyphName = 'mp'
+  else if (line.includes('等级')) glyphName = 'realm'
+  return (
+    <span key={line}>
+      {glyphName && (
+        <span style={{ marginRight: 6 }}>
+          <StatGlyph glyph={glyphName} size={14} />
+        </span>
+      )}
+      <ValueText className="effect-value-capsule" text={line} />
+    </span>
+  )
 }
 
 /**
@@ -188,8 +206,46 @@ export function extractAbilityBuffBonusItems(
 }
 
 /**
+ * 构造双形态「变招」独立技能悬浮窗（如斩玉拥有移形时切换为踏云），
+ * 复用与主技能窗同构的描述、标签与基础属性行。
+ */
+export function createAbilityMorphAsideCard(
+  ability: CombatAbilityDefinition,
+  level = 1
+): FloatingAsideCard | null {
+  const morphInfo = describeMorphAbility(ability, level)
+  if (!morphInfo) return null
+  const t = getT()
+  return {
+    id: `aside-ability-morph-${ability.abilityId}`,
+    mark: t('game.abilityAside.yixingMorphMark'),
+    title: morphInfo.title,
+    subtitle: morphInfo.badge,
+    tone: 'qi',
+    content: (
+      <>
+        {morphInfo.description && (
+          <div className="daohua-floating-aside-desc">
+            <ValueText className="effect-value-capsule" text={morphInfo.description} />
+          </div>
+        )}
+        {morphInfo.lines.length > 0 && (
+          <ul className="daohua-floating-aside-lines">
+            {morphInfo.lines.map(line => (
+              <li key={line}>{renderAbilityLineNode(line)}</li>
+            ))}
+          </ul>
+        )}
+      </>
+    ),
+  }
+}
+
+/**
  * 构造功法战内全部 Buff 独立副卡片列表 (FloatingAsideCard[])
- * 支持 buffs[] 多状态并列展开（如碎罡同时授予「碎罡」破防与「罡锋」锐利两张独立副卡）。
+ * 支持 buffs[] 多状态并列展开（如碎罡同时授予「碎罡」破防与「罡锋」锐利两张独立副卡）；
+ * 双形态变招技能展开独立的 `[变招]` 技能窗与完整的 `[增益] 移形` 窗；
+ * 附加燃烧的技能追加完整的 `[减益] 燃烧` 窗。
  */
 export function createAbilityBuffAsideCards(
   ability: CombatAbilityDefinition,
@@ -200,22 +256,67 @@ export function createAbilityBuffAsideCards(
     : ability.buff
     ? [ability.buff]
     : []
-  if (buffSpecs.length === 0) return []
   const t = getT()
-  return buffSpecs.map((spec, index) => {
+  const cards: FloatingAsideCard[] = buffSpecs.map((spec, index) => {
     const items = extractSingleBuffSpecBonusItems(spec, level)
     const buffName = spec.name || (buffSpecs.length === 1
       ? t('game.abilityAside.buffTitle')
       : t('game.abilityAside.buffFallback', { index: index + 1 }))
     const isDebuff = (spec.resistancePoints ?? 0) < 0 || (spec.damageAbsorptionPoints ?? 0) < 0
-    return createBonusAsideCard({
+    return createStandaloneBuffAsideCard({
       id: `aside-ability-buff-${ability.abilityId}-${spec.buffId || index}`,
-      mark: isDebuff ? t('game.abilityAside.debuffMark') : t('game.abilityAside.buffMark'),
-      title: `${t('game.abilityAside.buffTitle')}·${buffName}`,
-      tone: isDebuff ? 'crimson' : 'emerald',
+      name: buffName,
+      kind: isDebuff ? 'debuff' : 'buff',
+      durationSeconds: spec.durationSeconds,
+      refreshOnStack: spec.buffId === 'buff.yixing' || spec.buffId === 'buff.ranhun',
       items,
     })
   })
+  if (ability.yixingMorphName) {
+    const morphCard = createAbilityMorphAsideCard(ability, level)
+    if (morphCard) {
+      cards.push(morphCard)
+    }
+    const yixingName = t('combat.trigger.buff.yixing')
+    const yixingItems = extractBuffBonusItems({
+      buffId: 'buff.yixing',
+      name: yixingName,
+      effects: [{ channel: 'evasionPostRatio', value: 1 }],
+      stacks: 1,
+      isPerStack: false,
+    })
+    cards.push(
+      createStandaloneBuffAsideCard({
+        id: `aside-ability-buff-${ability.abilityId}-yixing`,
+        name: yixingName,
+        kind: 'buff',
+        durationSeconds: 5,
+        refreshOnStack: true,
+        items: yixingItems,
+      })
+    )
+  }
+  if ((ability.ranhunBaseStacks ?? 0) > 0 || (ability.ranhunSpellAttackRatio ?? 0) > 0) {
+    const ranhunName = t('combat.trigger.buff.ranhun')
+    const ranhunItems = extractBuffBonusItems({
+      buffId: 'buff.ranhun',
+      name: ranhunName,
+      effects: [{ channel: 'fireSpellDamagePerSecond', value: 1 }],
+      stacks: 1,
+      isPerStack: true,
+    })
+    cards.push(
+      createStandaloneBuffAsideCard({
+        id: `aside-ability-buff-${ability.abilityId}-ranhun`,
+        name: ranhunName,
+        kind: 'debuff',
+        durationSeconds: 5,
+        refreshOnStack: true,
+        items: ranhunItems,
+      })
+    )
+  }
+  return cards
 }
 
 /**
@@ -232,14 +333,24 @@ export function createAbilityBuffAsideCard(
 /**
  * 统一解析功法技能的附属卡片列表（升级进度 + 战内 Buff + 内功增益 + 内功六维倾向说明）
  */
+/**
+ * 按功法定义与上下文（可选个人总经验 `totalExp` 或单位施放等级 `levelOverride`）拼装悬浮侧栏副卡列表：
+ * - 仅当提供 `totalExp` 时展示个人参悟进度与内功灵根共鸣条目（查看妖兽、非己方队友或模拟器预设时不回退玩家自身进度）；
+ * - Buff 效果与内功常驻被动按 `levelOverride ?? totalExp` 推导出的实际等级缩放。
+ */
 export function resolveAbilityAsideCards(
   ability: CombatAbilityDefinition | null | undefined,
   totalExp?: number,
-  tone: FloatingTone = 'qi'
+  tone: FloatingTone = 'qi',
+  levelOverride?: number
 ): FloatingAsideCard[] {
   if (!ability) return []
   const list: FloatingAsideCard[] = []
-  const level = totalExp !== undefined ? calculateAbilityLevelAndProgress(totalExp).level : 1
+  const level = levelOverride !== undefined
+    ? Math.max(1, Math.floor(levelOverride))
+    : totalExp !== undefined
+      ? calculateAbilityLevelAndProgress(totalExp).level
+      : 1
   if (totalExp !== undefined) {
     list.push(createAbilityProgressAsideCard(ability.abilityId, totalExp, tone))
   }
@@ -252,7 +363,9 @@ export function resolveAbilityAsideCards(
     if (bonusCard) {
       list.push(bonusCard)
     }
-    list.push(createInternalRootExpAsideCard(tone))
+    if (totalExp !== undefined) {
+      list.push(createInternalRootExpAsideCard(tone))
+    }
   }
   return list
 }
@@ -312,23 +425,7 @@ export function EffectTooltipTarget({
             </div>
           }
           lines={[
-            ...content.lines.map((line) => {
-              let glyphName: string | null = null
-              if (line.includes('冷却')) glyphName = 'cooldown-reduction'
-              else if (line.includes('吟唱') || line.includes('施法')) glyphName = 'action-speed'
-              else if (line.includes('消耗') || line.includes('灵力')) glyphName = 'mp'
-              else if (line.includes('等级')) glyphName = 'realm'
-              return (
-                <span key={line}>
-                  {glyphName && (
-                    <span style={{ marginRight: 6 }}>
-                      <StatGlyph glyph={glyphName} size={14} />
-                    </span>
-                  )}
-                  <ValueText className="effect-value-capsule" text={line} />
-                </span>
-              )
-            }),
+            ...content.lines.map(renderAbilityLineNode),
             ...(!asideCards ? (content.bonuses?.map((bonus) => {
               const glyph = resolveStatGlyph(bonus.key) || resolveStatGlyph(bonus.label)
               return (

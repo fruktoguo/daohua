@@ -28,7 +28,6 @@ import { calculateTechniqueProgress, TECHNIQUE_IDS, TRAIT_DEFINITIONS } from '..
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
-  convertTierToLevel,
   findItemInCatalog,
   resolveActionLevel,
   resolveActionTier,
@@ -63,6 +62,7 @@ import { MonsterTooltipTarget } from './MonsterDisplay'
 import { createAbilityBuffAsideCards, createInternalAbilityBonusAsideCard, createInternalRootExpAsideCard } from './EffectTooltip'
 import {
   describeItemEffects,
+  ItemIcon,
   ItemTile,
   rarityToTone,
   resolveItemTooltipAsideCards,
@@ -243,8 +243,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
       .filter(it => filters.materialSubTab === 'all' || resolveCodexMaterialSubTab(it) === filters.materialSubTab)
       .filter(it => matchesCodexCollect(filters.collect, isItemUnlocked(it)))
       .sort((a, b) => {
-        const levelA = convertTierToLevel(a.tier ?? 1)
-        const levelB = convertTierToLevel(b.tier ?? 1)
+        const levelA = a.level ?? 1
+        const levelB = b.level ?? 1
         if (levelA !== levelB) return levelA - levelB
         return a.itemId.localeCompare(b.itemId)
       })
@@ -813,13 +813,13 @@ const CodexMaterialEntry = memo(function CodexMaterialEntry({
 }): React.JSX.Element {
   const t = useT()
   const tier = item.tier ?? 1
-  const unlockLevel = convertTierToLevel(tier)
+  const unlockLevel = tier <= 1 ? 1 : (item.level ?? 1)
   const metadata = resolveCatalogItemMetadata(item.itemId, {
     itemDefinition: item,
     category: 'material',
     t,
   })
-  const levelNumber = metadata.level ?? unlockLevel
+  const levelNumber = metadata.level ?? item.level ?? 1
 
   const tone = rarityToTone(metadata.rarity)
 
@@ -991,6 +991,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
                 <div className="codex-chips-wrap">
                   {inputEntries.map(([id, qty]) => (
                     <span className="codex-chip" key={id}>
+                      <ItemIcon itemId={id} />
                       {resolveAssetLabel(id, items, equipment)} ×{qty}
                     </span>
                   ))}
@@ -1120,6 +1121,7 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
                 const def = findItemInCatalog(items, m.itemId)
                 return (
                   <span className="codex-chip" key={m.itemId}>
+                    <ItemIcon itemId={m.itemId} />
                     {def?.name ?? m.itemId} ×{m.quantity}
                   </span>
                 )

@@ -21,7 +21,7 @@ function createMockReport(overrides = {}) {
       { itemId: 'item.beast-fang', quantity: 60 },
     ],
     itemsLost: [],
-    cycles: 0,
+    cycles: 120,
     encounters: 120, // 120 场
     normalKills: 100,
     eliteKills: 20,
@@ -136,4 +136,26 @@ test('statsCalculations: 0秒或极短流逝时长安全保护', () => {
   assert.equal(result.cultivationPerHour, 0)
   assert.equal(result.combatExpPerHour, 0)
   assert.equal(result.topYields.length, 0)
+})
+
+test('statsCalculations: 刚进战斗尚未打完第一场(encounters=1, cycles=0)时完成场次速率为0', () => {
+  const report = createMockReport({
+    startedAtUnixSeconds: 1000,
+    endedAtUnixSeconds: 0,
+    experience: 0,
+    combatExperience: 0,
+    items: [],
+    encounters: 1,
+    cycles: 0,
+    normalKills: 0,
+    eliteKills: 0,
+    bossKills: 0,
+    deaths: 0,
+  })
+
+  // 搜怪 20s 刚开战：若误用 encounters 计算会得出 1 / (20/3600) = 180 场/时
+  const result = calculateBriefStats(report, 1020)
+
+  assert.equal(result.isCombat, true)
+  assert.equal(result.encountersPerHour, 0)
 })

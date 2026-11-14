@@ -80,7 +80,9 @@ export function calculateBriefStats(
     || (report.actionId ? report.actionId.startsWith('combat.') : false)
 
   const totalKills = report.normalKills + report.eliteKills + report.bossKills
-  const encountersPerHour = hours > 0 ? report.encounters / hours : 0
+  // 战斗行动以胜利结算记账的 report.cycles 为已完成场次；report.encounters 在刚入战时即 +1，不可用于每小时完成场次计算。
+  const completedBattles = report.cycles
+  const encountersPerHour = hours > 0 ? completedBattles / hours : 0
   const killsPerHour = hours > 0 ? totalKills / hours : 0
   const deathsPerHour = hours > 0 ? report.deaths / hours : 0
   const cyclesPerHour = hours > 0 ? report.cycles / hours : 0

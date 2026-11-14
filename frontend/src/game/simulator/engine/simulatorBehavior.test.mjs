@@ -6,11 +6,21 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { buildGameDataCatalog } from './catalog.ts'
-import { CombatantState } from './combatModels.ts'
+import { CombatEncounterState, CombatantState } from './combatModels.ts'
+import { advanceCombatTo, decideInitialActions } from './combatEngine.ts'
 import { evaluateTriggers } from './triggerEvaluator.ts'
-import { UnitChannel, resolveTriggerListWakeMask } from './triggerWake.ts'
+import { CombatFactTracker, UnitChannel, resolveTriggerListWakeMask } from './triggerWake.ts'
 import { listCombatNodeIds, runSimulation } from './simulatorRunner.ts'
-import { abilityLevelForExp } from './rules.ts'
+import {
+  BATTLE_LIFETIME_SECONDS,
+  BuffEffectChannel,
+  CombatDamageKind,
+  CombatRespawnPolicy,
+  abilityLevelForExp,
+  createCombatantStats,
+} from './rules.ts'
+import { pendingActionDurationOf } from './resourceBoundaries.ts'
+import { validateMember } from './validator.ts'
 import { useSimulatorStore } from '../simulatorStore.ts'
 
 // combatConstants 含 `../i18n` 目录导入，Node 原生 ESM 不支持，沿用 realmCalculations.test.mjs 的 esbuild 单文件打包范式
@@ -380,4 +390,466 @@ test('消耗品条件求值（妖王/精英阶层、难度缩放百分比、战�
     0,
     '普通怪遭遇下 target-enemy is-boss 不得触发雷击符',
   )
+})
+
+test('切片2&3同源回归：复活策略枚举、highest-hp按百分比筛选、零层蓄意校验、普攻攻速Buff与常驻Buff唤醒', () => {
+  assert.equal(CombatRespawnPolicy.Immediate, 0, 'Immediate 必须与服务端 0 对齐')
+  assert.equal(CombatRespawnPolicy.WaitAll, 1, 'WaitAll 必须与服务端 1 对齐')
+
+  const makeStats = (maxHitpoints) =>
+    createCombatantStats(maxHitpoints, 10, 0, 2, 1, 0, 0, {
+      maxManapoints: 100,
+      spellAttack: 10,
+    })
+
+  // 1. highest-hp 按百分比而非绝对生命筛选（200/1000 = 20% < 90/100 = 90%）
+  const allyLowRatio = new CombatantState('player', makeStats(1000), [])
+  allyLowRatio.hitpoints = 200
+  const allyHighRatio = new CombatantState('ally:1', makeStats(100), [])
+  allyHighRatio.hitpoints = 90
+  const enemyLowRatio = new CombatantState('enemy:0', makeStats(1000), [])
+  enemyLowRatio.hitpoints = 200
+  const enemyHighRatio = new CombatantState('enemy:1', makeStats(100), [])
+  enemyHighRatio.hitpoints = 90
+
+  assert.equal(
+    evaluateTriggers(
+      [{ dependency: 'ally-highest-hp', condition: 'current-hp-percentage', comparator: 'greater-than', value: 80 }],
+      allyLowRatio,
+      enemyLowRatio,
+      [allyLowRatio, allyHighRatio],
+      [enemyLowRatio, enemyHighRatio],
+      0,
+    ),
+    true,
+    'ally-highest-hp 应选出血量比例最高的盟友（90%），而非绝对血量更高的 20% 单位',
+  )
+  assert.equal(
+    evaluateTriggers(
+      [{ dependency: 'enemy-highest-hp', condition: 'current-hp-percentage', comparator: 'greater-than', value: 80 }],
+      allyLowRatio,
+      enemyLowRatio,
+      [allyLowRatio, allyHighRatio],
+      [enemyLowRatio, enemyHighRatio],
+      0,
+    ),
+    true,
+    'enemy-highest-hp 应选出血量比例最高的敌方（90%），而非绝对血量更高的 20% 单位',
+  )
+
+  // 2. pendingActionDurationOf 计入战内攻击速度加成
+  assert.equal(pendingActionDurationOf(allyLowRatio), 2)
+  allyLowRatio.addBuff({
+    buffId: 'buff.attack-speed-test',
+    expiresAtSeconds: 10,
+    stacks: 1,
+    name: '疾风测试',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [{ channel: BuffEffectChannel.AttackSpeedPoints, value: 100 }],
+    statRatios: null,
+    sourceUnitId: null,
+  })
+  assert.equal(pendingActionDurationOf(allyLowRatio), 1, '+100 战内攻速加成应将 2s 普攻间隔压半为 1s')
+
+  // 3. 常驻 Buff（BATTLE_LIFETIME_SECONDS）不得吞没有限时长 Buff 的刷新唤醒
+  const permBuff = {
+    buffId: 'buff.perm-test',
+    expiresAtSeconds: BATTLE_LIFETIME_SECONDS,
+    stacks: 1,
+    name: '常驻测试',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [],
+    statRatios: null,
+    sourceUnitId: null,
+  }
+  const finiteBuff = {
+    buffId: 'buff.finite-test',
+    expiresAtSeconds: 10,
+    stacks: 1,
+    name: '有限测试',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [],
+    statRatios: null,
+    sourceUnitId: null,
+  }
+  const encounter = CombatEncounterState.create('encounter.test', 1n, { stats: makeStats(100), skills: [] }, [])
+  encounter.player.addBuff(permBuff)
+  encounter.player.addBuff(finiteBuff)
+  const tracker = new CombatFactTracker(encounter)
+  tracker.advance(encounter)
+  encounter.player.replaceBuffs([permBuff, { ...finiteBuff, expiresAtSeconds: 15 }])
+  const delta = tracker.advance(encounter)
+  assert.equal((delta.allyUnion & UnitChannel.Buff) !== 0, true, '常驻 Buff 存在时有限 Buff 续期仍必须触发 UnitChannel.Buff')
+
+  // 4. combatBuffCarry 允许 0 层携带（如满血蓄意导出预演）
+  const memberWithZeroStackCarry = structuredClone(parityCases.runCases[0].request.members[0])
+  memberWithZeroStackCarry.combatBuffCarry = [
+    {
+      buffId: 'buff.test-xuyi',
+      remainingSeconds: 6,
+      stacks: 0,
+      name: '蓄意',
+      missingHitpointsPerStack: 0,
+    },
+  ]
+  assert.doesNotThrow(
+    () => validateMember(memberWithZeroStackCarry, 0, catalog),
+    'validateMember 应允许 stacks === 0 的合法战内增益携带项',
+  )
+})
+
+test('移形位移体系、剑与心特质与三新技能模拟行为正确', () => {
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+  const yueqian = liveCatalog.abilities.get('ability.yueqian')
+  const zhanyu = liveCatalog.abilities.get('ability.zhanyu')
+  const huoyan = liveCatalog.abilities.get('ability.huoyan-fengbao')
+  assert.ok(yueqian && zhanyu && huoyan, 'simulatorCatalog.json 应包含跃迁、斩玉与火焰风暴')
+
+  const makeUnitStats = (overrides = {}) =>
+    createCombatantStats(
+      overrides.maxHitpoints ?? 5000,
+      overrides.attackPower ?? 100,
+      overrides.defense ?? 0,
+      overrides.attackIntervalSeconds ?? 100,
+      overrides.accuracy ?? 1000,
+      overrides.evasion ?? 10,
+      CombatDamageKind.Physical,
+      {
+        maxManapoints: 500,
+        spellAttack: 100,
+        ...overrides,
+      },
+    )
+
+  // 1. 跃迁付与全体友方 5s「移形」（2× 闪避），斩玉切态为「踏云」打全体敌方并消耗 1 层「移形」
+  const teamEncounter = CombatEncounterState.createAllied(
+    'sim-yixing',
+    7n,
+    [
+      {
+        stats: makeUnitStats({ evasion: 10, attackIntervalSeconds: 1.6 }),
+        skills: [
+          {
+            ability: zhanyu,
+            abilityId: 'ability.zhanyu',
+            level: 1,
+            triggers: [{ dependency: 'self', condition: 'buff-stacks', comparator: 'greater-than-equal', value: 1, buffId: 'buff.yixing' }],
+          },
+        ],
+      },
+      {
+        stats: makeUnitStats({ evasion: 15 }),
+        skills: [{ ability: yueqian, abilityId: 'ability.yueqian', level: 1, triggers: [] }],
+      },
+    ],
+    0,
+    [
+      { stats: makeUnitStats({ maxHitpoints: 20000 }), skills: [] },
+      { stats: makeUnitStats({ maxHitpoints: 20000 }), skills: [] },
+    ],
+  )
+  decideInitialActions(teamEncounter)
+  advanceCombatTo(teamEncounter, 3.0)
+  assert.equal(teamEncounter.player.buffStacks('buff.yixing'), 1)
+  assert.equal(teamEncounter.player.effectiveStats.evasion, 20)
+  assert.equal(teamEncounter.playerAllies[1].effectiveStats.evasion, 30)
+
+  const morphRes = advanceCombatTo(teamEncounter, 3.8)
+  const tayunEvents = morphRes.events.filter(e => e.abilityId === 'ability.zhanyu')
+  assert.equal(tayunEvents.length, 2, '拥有移形时斩玉应切换为踏云命中 2 名敌人')
+  assert.ok(tayunEvents.every(e => e.abilityNameOverride === '踏云'))
+  assert.equal(teamEncounter.player.buffStacks('buff.yixing'), 0, '踏云只应消耗 1 层移形')
+
+  // 2. 普攻不消耗移形
+  const basicOnly = CombatEncounterState.create(
+    'sim-basic-no-consume',
+    1n,
+    { stats: makeUnitStats({ attackIntervalSeconds: 1.0 }), skills: [] },
+    [{ stats: makeUnitStats({ maxHitpoints: 20000 }), skills: [] }],
+  )
+  basicOnly.player.setBuff({
+    buffId: 'buff.yixing',
+    expiresAtSeconds: 10,
+    stacks: 2,
+    name: '移形',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [{ channel: BuffEffectChannel.EvasionPostRatio, value: 1.0 }],
+    statRatios: null,
+    sourceUnitId: 'player',
+  })
+  decideInitialActions(basicOnly)
+  advanceCombatTo(basicOnly, 1.5)
+  assert.equal(basicOnly.player.buffStacks('buff.yixing'), 2, '普通攻击不应消耗移形层数')
+
+  // 3. 剑与心 + 移形：无视高仇恨随机选主目标（含群体 + 蓄意真伤）
+  const jianyuxinTargets = new Set()
+  for (let s = 1n; s <= 25n; s++) {
+    const enc = CombatEncounterState.create(
+      'sim-jianyuxin',
+      s,
+      {
+        stats: makeUnitStats({ maxHitpoints: 100, traits: ['trait.jianyuxin', 'trait.xuyi'] }),
+        skills: [{ ability: huoyan, abilityId: 'ability.huoyan-fengbao', level: 1, triggers: [] }],
+      },
+      [
+        { stats: makeUnitStats({ maxHitpoints: 10000 }), skills: [] },
+        { stats: makeUnitStats({ maxHitpoints: 10000 }), skills: [] },
+        { stats: makeUnitStats({ maxHitpoints: 10000 }), skills: [] },
+      ],
+    )
+    enc.enemies[0].threat = 0
+    enc.enemies[1].threat = 1_000_000
+    enc.enemies[2].threat = 0
+    enc.player.setBuff({
+      buffId: 'buff.yixing',
+      expiresAtSeconds: 10,
+      stacks: 1,
+      name: '移形',
+      resetOnWave: true,
+      missingHitpointsPerStack: 0,
+      effects: [{ channel: BuffEffectChannel.EvasionPostRatio, value: 1.0 }],
+      statRatios: null,
+      sourceUnitId: 'player',
+    })
+    enc.player.setBuff({
+      buffId: 'buff.xuyi',
+      expiresAtSeconds: BATTLE_LIFETIME_SECONDS,
+      stacks: 200,
+      name: '蓄意',
+      resetOnWave: true,
+      missingHitpointsPerStack: 0,
+      effects: [],
+      statRatios: null,
+      sourceUnitId: null,
+    })
+    decideInitialActions(enc)
+    const r = advanceCombatTo(enc, 3.1)
+    const trueBurst = r.events.find(e => e.abilityId === 'trait.xuyi' && e.damageKind === 2)
+    assert.ok(trueBurst)
+    jianyuxinTargets.add(trueBurst.targetId)
+  }
+  assert.ok(jianyuxinTargets.has('enemy:0') && jianyuxinTargets.has('enemy:2'), '剑与心在移形下应无视高仇恨随机选取主目标')
+
+  // 4. 火焰风暴按公式叠加燃魂并与特质燃魂同池累加
+  const fireEnc = CombatEncounterState.create(
+    'sim-huoyan',
+    5n,
+    {
+      stats: makeUnitStats({ skillBonusPoints: 50, traits: ['trait.ranhun'] }),
+      skills: [{ ability: huoyan, abilityId: 'ability.huoyan-fengbao', level: 2, triggers: [] }],
+    },
+    [{ stats: makeUnitStats({ maxHitpoints: 20000 }), skills: [] }],
+  )
+  decideInitialActions(fireEnc)
+  advanceCombatTo(fireEnc, 3.1)
+  assert.equal(fireEnc.enemies[0].buffStacks('buff.ranhun'), 39)
+  const tickRes = advanceCombatTo(fireEnc, 4.1)
+  const dot = tickRes.events.find(e => e.abilityId === 'trait.ranhun')
+  assert.ok(dot && Math.abs(dot.damage - (39 * 39) / 40) <= 1e-6)
+})
+
+test('火神特质：全伤害转火（不改物理/术法/真伤类别）、等级缩放、衍生阵盘与符箓均按火属性结算', async () => {
+  const rules = await import('./rules.ts')
+  const { CombatUnitStatsBook } = await import('./combatModels.ts')
+
+  assert.equal(rules.TraitIds.Huoshen, 'trait.huoshen')
+  assert.equal(rules.ALL_TRAITS.size, 38)
+  const huoshenDef = rules.ALL_TRAITS.get('trait.huoshen')
+  assert.ok(huoshenDef && huoshenDef.quality === 5 && huoshenDef.cost === 12)
+
+  // 1. 等级成长：10 点火属性增伤按 1 + 0.05 * (Lv - 1) 缩放
+  for (const [level, expected] of [[1, 10], [2, 10.5], [3, 11]]) {
+    const ratios = new Map()
+    const points = new Map()
+    rules.accumulateTraitModifiers(['trait.huoshen'], { 'trait.huoshen': level }, ratios, points)
+    assert.equal(ratios.size, 0)
+    assert.ok(Math.abs((points.get('fireDamageBonusPoints') ?? 0) - expected) <= 1e-12)
+  }
+
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+  const palmLightning = liveCatalog.abilities.get('ability.palm-lightning')
+  assert.ok(palmLightning, 'simulatorCatalog.json 应包含 ability.palm-lightning')
+
+  // 2. 普攻(物理/无属性) -> Physical + Fire；木法掌心雷(术法/木) -> Spell + Fire，均按火统计并触发燃魂
+  const basicStats = createCombatantStats(5000, 100, 0, 1.0, 1_000_000, 0, CombatDamageKind.Physical, {
+    fireDamageBonusPoints: 10,
+    traits: ['trait.huoshen', 'trait.ranhun'],
+  })
+  const enemyArmoredFire = createCombatantStats(10_000, 10, 100, 100, 0, 0, CombatDamageKind.Physical, {
+    magicResistance: 0,
+    fireDamageReductionPoints: 100,
+  })
+  const basicEnc = CombatEncounterState.create(
+    'sim-huoshen-basic',
+    1n,
+    { stats: basicStats, skills: [] },
+    [{ stats: enemyArmoredFire, skills: [] }],
+  )
+  basicEnc.statsBook = new CombatUnitStatsBook()
+  decideInitialActions(basicEnc)
+  const basicHit = advanceCombatTo(basicEnc, 1.1).events[0]
+  const expectedBasic = ((100 * 100) / 201) * 1.1 / 2
+  assert.equal(basicHit.damageKind, CombatDamageKind.Physical)
+  assert.ok(Math.abs(basicHit.damage - expectedBasic) <= 1e-8)
+  assert.equal(basicEnc.enemies[0].buffStacks('buff.ranhun'), 1)
+  const basicBookPlayer = basicEnc.statsBook.entries.find(e => e.unitKey === 'player')
+  assert.ok(basicBookPlayer)
+  assert.ok(Math.abs(basicBookPlayer.damageDealtByElement.fire - expectedBasic) <= 1e-8)
+  assert.equal(basicBookPlayer.damageDealtByElement.none, 0)
+
+  const spellStats = createCombatantStats(5000, 10, 0, 100, 1_000_000, 0, CombatDamageKind.Physical, {
+    spellAttack: 100,
+    maxManapoints: 500,
+    fireDamageBonusPoints: 10,
+    traits: ['trait.huoshen', 'trait.ranhun'],
+  })
+  const spellEnemy = createCombatantStats(10_000, 10, 0, 100, 0, 0, CombatDamageKind.Physical, {
+    magicResistance: 100,
+    fireDamageReductionPoints: 0,
+  })
+  const spellEnc = CombatEncounterState.create(
+    'sim-huoshen-spell',
+    2n,
+    { stats: spellStats, skills: [{ ability: palmLightning, abilityId: 'ability.palm-lightning', level: 1, triggers: [] }] },
+    [{ stats: spellEnemy, skills: [] }],
+  )
+  spellEnc.statsBook = new CombatUnitStatsBook()
+  decideInitialActions(spellEnc)
+  const spellHit = advanceCombatTo(spellEnc, 2.1).events[0]
+  const expectedSpell = ((110 * 110) / 211) * 1.1
+  assert.equal(spellHit.damageKind, CombatDamageKind.Spell)
+  assert.ok(Math.abs(spellHit.damage - expectedSpell) <= 1e-8)
+  assert.equal(spellEnc.enemies[0].buffStacks('buff.ranhun'), 1)
+  const spellBookPlayer = spellEnc.statsBook.entries.find(e => e.unitKey === 'player')
+  assert.ok(spellBookPlayer)
+  assert.ok(Math.abs(spellBookPlayer.damageDealtByElement.fire - expectedSpell) <= 1e-8)
+  assert.equal(spellBookPlayer.damageDealtByElement.wood, 0)
+
+  // 3. 阵盘受击反击（天雷原木法、血煞原无属性物理）均转火、吃火增伤、计入火统计并联动燃魂
+  const diskEnc = CombatEncounterState.create(
+    'sim-huoshen-disk',
+    1n,
+    {
+      stats: createCombatantStats(2000, 50, 0, 0.5, 1_000_000, 0, CombatDamageKind.Physical, {
+        spellAttack: 100,
+        maxManapoints: 200,
+        fireDamageBonusPoints: 10,
+        traits: ['trait.huoshen', 'trait.ranhun'],
+      }),
+      skills: [],
+    },
+    [{
+      stats: createCombatantStats(1_000_000, 10, 0, 100, 0, 0, CombatDamageKind.Physical, { magicResistance: 0 }),
+      skills: [],
+    }],
+  )
+  diskEnc.statsBook = new CombatUnitStatsBook()
+  diskEnc.player.manapoints = 200
+  const permBuff = (buffId) => ({
+    buffId,
+    expiresAtSeconds: 300,
+    stacks: 1,
+    name: buffId,
+    resetOnWave: false,
+    missingHitpointsPerStack: 0,
+    effects: [],
+    statRatios: null,
+    sourceUnitId: null,
+  })
+  diskEnc.player.addBuff(permBuff('formation.tianlei'))
+  diskEnc.player.addBuff(permBuff('formation.xuesha'))
+  decideInitialActions(diskEnc)
+  const diskRes = advanceCombatTo(diskEnc, 30)
+  const tianleiHit = diskRes.events.find(e => e.abilityId === 'item.tianlei-formation-disk')
+  const xueshaHit = diskRes.events.find(e => e.abilityId === 'item.xuesha-formation-disk')
+  const diskRanhun = diskEnc.enemies[0].buffStacks('buff.ranhun')
+  const diskBookRow = diskEnc.statsBook.entries.find(e => e.unitKey === 'player')
+  assert.ok(tianleiHit && xueshaHit, '30 秒高频受击应触发天雷与血煞阵盘')
+  assert.equal(tianleiHit.damageKind, CombatDamageKind.Spell)
+  assert.ok(Math.abs(tianleiHit.damage - ((60 * 60) / 61) * 1.1) <= 1e-8)
+  assert.equal(xueshaHit.damageKind, CombatDamageKind.Physical)
+  assert.ok(Math.abs(xueshaHit.damage - ((200 * 200) / 201) * 1.1) <= 1e-8)
+  assert.ok(diskBookRow)
+  assert.equal(diskBookRow.damageDealtByElement.wood, 0)
+  assert.equal(diskBookRow.damageDealtByElement.none, 0)
+  const allDiskPlayerDmg = diskRes.events
+    .filter(e => e.attackerId === 'player')
+    .reduce((sum, e) => sum + e.damage, 0)
+  assert.ok(Math.abs(diskBookRow.damageDealtByElement.fire - allDiskPlayerDmg) <= 1e-8)
+  assert.ok(diskRanhun > 0)
+
+  // 4. 蓄意爆发：主目标真伤（200，忽略火增减伤但计入火统计），副目标物理溅射转为火系物理并受火增减伤
+  const xuyiEnemyStats = createCombatantStats(10_000, 10, 0, 100, 0, 0, CombatDamageKind.Physical, {
+    magicResistance: 0,
+    fireDamageReductionPoints: 100,
+  })
+  const xuyiEnc = CombatEncounterState.create(
+    'sim-huoshen-xuyi',
+    3n,
+    {
+      stats: createCombatantStats(100, 10, 0, 0.5, 1_000_000, 0, CombatDamageKind.Physical, {
+        fireDamageBonusPoints: 10,
+        traits: ['trait.huoshen', 'trait.xuyi'],
+      }),
+      skills: [],
+    },
+    [{ stats: xuyiEnemyStats, skills: [] }, { stats: xuyiEnemyStats, skills: [] }],
+  )
+  xuyiEnc.statsBook = new CombatUnitStatsBook()
+  xuyiEnc.player.setBuff({
+    buffId: 'buff.xuyi',
+    expiresAtSeconds: Number.MAX_VALUE,
+    stacks: 200,
+    name: '蓄意',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [],
+    statRatios: null,
+    sourceUnitId: null,
+  })
+  decideInitialActions(xuyiEnc)
+  const xuyiEvents = advanceCombatTo(xuyiEnc, 0.6).events.filter(e => e.abilityId === 'trait.xuyi')
+  const primaryBurst = xuyiEvents.find(e => e.damageKind === CombatDamageKind.True)
+  const splashBurst = xuyiEvents.find(e => e.damageKind === CombatDamageKind.Physical)
+  assert.ok(primaryBurst && splashBurst)
+  assert.equal(primaryBurst.targetId, 'enemy:0')
+  assert.equal(primaryBurst.damage, 200)
+  assert.equal(splashBurst.targetId, 'enemy:1')
+  assert.ok(Math.abs(splashBurst.damage - (((200 * 200) / 201) * 1.1) / 2) <= 1e-8)
+  const xuyiBook = xuyiEnc.statsBook.entries.find(e => e.unitKey === 'player')
+  assert.ok(xuyiBook)
+  assert.equal(xuyiBook.damageDealtByElement.none, 0)
+  assert.ok(xuyiBook.damageDealtByElement.fire >= primaryBurst.damage + splashBurst.damage)
+
+  // 5. 端到端单人与组队消耗品（雷击符原 wood -> fire，不留 wood/none 伤害）
+  const soloTemplate = parityCases.runCases.find(c => c.mode === 'solo' || c.request.members.length === 1)
+  assert.ok(soloTemplate)
+  const huoshenSoloReq = structuredClone(soloTemplate.request)
+  const m0 = huoshenSoloReq.members[0]
+  m0.traitIds = ['trait.huoshen', 'trait.ranhun']
+  m0.traitLevels = { 'trait.huoshen': 2, 'trait.ranhun': 1 }
+  m0.traitUnlockedIds = ['trait.huoshen', 'trait.ranhun']
+  m0.activeSkills = []
+  m0.consumableSlots = [{ itemId: 'item.leiji-talisman', actionType: 'combat', slotGroup: 'general', slotIndex: 0 }]
+  m0.assets = [...(m0.assets ?? []), { itemId: 'item.leiji-talisman', variant: '', quantity: 5 }]
+  huoshenSoloReq.environment.gameDataFingerprint = liveCatalog.fingerprint
+  m0.gameDataFingerprint = liveCatalog.fingerprint
+  huoshenSoloReq.durationSeconds = 90
+  const soloRes = runSimulation(huoshenSoloReq, liveCatalog)
+  const soloPlayerStat = soloRes.members[0].combatStats.find(r => r.unitKey === 'player')
+  assert.ok(soloPlayerStat)
+  assert.equal(soloPlayerStat.damageDealtByElement.wood, 0, '持有火神后雷击符不应留下木系伤害统计')
+  assert.equal(soloPlayerStat.damageDealtByElement.none, 0, '持有火神后普攻不应留下无属性伤害统计')
+  assert.ok(soloPlayerStat.damageDealtByElement.fire > 0)
+  assert.ok(soloPlayerStat.damageDealtSpell > 0, '雷击符转火后仍应计入术法输出')
 })

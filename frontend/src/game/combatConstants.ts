@@ -745,8 +745,8 @@ export const ENHANCE_DURATION_BASE = 5
 export const ENHANCE_MIN_PROTECT_LEVEL = 2
 
 
-/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后 clamp [0,0.99]） */
-export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number): number {
+/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后叠加消耗品加成并 clamp [0,0.99]） */
+export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, consumableBonus = 0): number {
   const t = Math.max(1, Math.floor(targetLevel))
   const base = t <= ENHANCE_BASE_SUCCESS_RATES.length
     ? ENHANCE_BASE_SUCCESS_RATES[t - 1]
@@ -754,7 +754,8 @@ export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number):
   const clampedBase = Math.max(0.01, Math.min(0.5, base))
   const L = Math.max(0, techniqueLevel)
   const rate = L >= t ? clampedBase * (1 + 0.01 * L) : clampedBase * Math.pow(0.9, t - L)
-  return Math.max(0, Math.min(0.99, rate))
+  const bonus = Number.isFinite(consumableBonus) && consumableBonus > 0 ? consumableBonus : 0
+  return Math.max(0, Math.min(0.99, rate + bonus))
 }
 
 /** 单轮灵石消耗 = t × 10 */
@@ -766,36 +767,77 @@ export function enhanceSpiritStoneCost(targetLevel: number): number {
 export function enhanceBaseDurationSeconds(targetLevel: number): number {
   return ENHANCE_DURATION_BASE + Math.max(1, Math.floor(targetLevel))
 }
+/** 全技艺经验全局乘数：基于行动等级与基础耗时公式整体翻倍 */
+export const TECHNIQUE_GLOBAL_EXP_MULTIPLIER = 2.0
+/** 消耗上级装备锻造时的炼器额外乘数（与全局乘数叠算为 4× 原基准） */
+export const FORGING_UPGRADE_EXP_MULTIPLIER = 2.0
+
+/**
+ * 判定行动是否属于「消耗上级装备进行锻造」的炼器配方：
+ * 行动归属 forging 技艺且配方输入中至少包含 1 件数量 > 0 的 equipment.* 装备
+ * （精确覆盖 Lv.12/16/18/20/22/24 升阶锻造，排除无上级消耗的 Lv.1 装备/工具、Lv.9 散件与精炼材料）。
+ */
+export function isEquipmentUpgradeForgingAction(
+  action?: { technique?: string | null; inputs?: Record<string, number> | null } | null,
+): boolean {
+  if (!action || action.technique !== 'forging' || !action.inputs) return false
+  for (const [itemId, amount] of Object.entries(action.inputs)) {
+    if (amount > 0 && itemId.startsWith('equipment.')) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * 计算单轮生活行动、装备强化或秘法操作的技艺经验（同时也是伴生等额底蕴数量）：
+ * 与服务端 TechniqueCatalog.ComputeTechniqueExperience 保持 1:1 镜像。
+ */
+export function calculateTechniqueExperience(
+  itemLevel: number,
+  durationSeconds: number,
+  action?: { technique?: string | null; inputs?: Record<string, number> | null } | null,
+): number {
+  const baseExp = calculateBaseExperienceForLevel(itemLevel)
+  const multiplier = TECHNIQUE_GLOBAL_EXP_MULTIPLIER
+    * (isEquipmentUpgradeForgingAction(action) ? FORGING_UPGRADE_EXP_MULTIPLIER : 1.0)
+  return Math.max(1, Math.round(baseExp * (durationSeconds / 10.0) * multiplier))
+}
+
 /**
  * 装备强化单轮感悟结算（与服务端 CompleteEnhancementRepeat 镜像）：
- * - 强化技艺经验：Math.Max(1, Math.Round(BaseExperienceForLevel(itemLevel) * (duration / 10)))
- * - 六维·神识经验：Math.Round(BaseExperienceForLevel(itemLevel) * (duration / 10))
+ * - 强化技艺经验与等额底蕴：走 calculateTechniqueExperience（全局 2×）
+ * - 六维·神识经验：维持原 1× 基准公式不变
  */
 export function calculateEnhancementYields(itemLevel: number, targetLevel: number): {
   baseExp: number
   duration: number
   techniqueExp: number
   consciousnessExp: number
+  foundationGain: number
 } {
   const baseExp = calculateBaseExperienceForLevel(itemLevel)
   const duration = enhanceBaseDurationSeconds(targetLevel)
-  const techniqueExp = Math.max(1, Math.round(baseExp * (duration / 10.0)))
+  const techniqueExp = calculateTechniqueExperience(itemLevel, duration)
   const consciousnessExp = Math.round(baseExp * (duration / 10.0))
-  return { baseExp, duration, techniqueExp, consciousnessExp }
+  return { baseExp, duration, techniqueExp, consciousnessExp, foundationGain: techniqueExp }
 }
 
 /**
- * 秘法生活行动（化灵、分解、转化）单轮感悟结算（与服务端 SecretArtRules.ComputeYieldExperience 镜像）
+ * 秘法生活行动（化灵、分解、转化）单轮感悟结算（与服务端 SecretArtRules.ComputeYieldExperience 镜像）：
+ * - 技艺经验与等额底蕴：走 calculateTechniqueExperience（全局 2×）
+ * - 六维·神识经验：维持原 2× 基准公式不变
  */
 export function calculateSecretArtYields(itemLevel: number, durationSeconds: number): {
   baseExp: number
   techniqueExp: number
   consciousnessExp: number
+  foundationGain: number
 } {
   const baseExp = calculateBaseExperienceForLevel(itemLevel)
-  const techniqueExp = Math.max(1, Math.round(baseExp * (durationSeconds / 10.0)))
-  const consciousnessExp = Math.max(1, Math.round(techniqueExp * 2.0))
-  return { baseExp, techniqueExp, consciousnessExp }
+  const techniqueExp = calculateTechniqueExperience(itemLevel, durationSeconds)
+  const consciousnessExp = Math.max(1, Math.round(baseExp * (durationSeconds / 10.0))) * 2.0
+  return { baseExp, techniqueExp, consciousnessExp, foundationGain: techniqueExp }
 }
 
 
@@ -1136,7 +1178,7 @@ export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.fre
   'trait.woyaodashige': { id: 'trait.woyaodashige', name: '我要打十个', quality: 4, cost: 12, description: '敌方每多一名存活单位，增伤与免伤各提升 10 点', buff: { buffId: 'buff.woyaodashige', name: '我要打十个', damageBonusPoints: 10, damageAbsorptionPoints: 10 } },
   'trait.dantiaowang': { id: 'trait.dantiaowang', name: '单挑王', quality: 5, cost: 16, description: '双方各剩一名存活单位时，增伤、免伤、暴击伤害与行动速度各提升 20 点', buff: { buffId: 'buff.dantiaowang', name: '单挑王', damageBonusPoints: 20, damageAbsorptionPoints: 20, criticalDamagePoints: 20, actionSpeedPoints: 20 } },
   'trait.xuyi': { id: 'trait.xuyi', name: '蓄意', quality: 6, cost: 25, description: '受到的实际伤害积为蓄意层数；命中攻击时，若层数超过最大生命值，消耗全部层数对所有敌人造成等量威力伤害，主目标为真实伤害，其余为物理伤害', buff: { buffId: 'buff.xuyi', name: '蓄意' } },
-  'trait.ranhun': { id: 'trait.ranhun', name: '燃魂', quality: 5, cost: 16, description: '直接火伤按实际伤害的 2% 施加燃魂，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间', buff: { buffId: 'buff.ranhun', name: '燃魂', durationSeconds: 5, fireSpellDamagePerSecond: 1 } },
+  'trait.ranhun': { id: 'trait.ranhun', name: '燃魂', quality: 5, cost: 16, description: '直接火伤按实际伤害的 2% 施加燃烧，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间', buff: { buffId: 'buff.ranhun', name: '燃烧', durationSeconds: 5, fireSpellDamagePerSecond: 1 } },
   'trait.bukandaowo': {
     id: 'trait.bukandaowo',
     name: '看不到我',
@@ -1156,6 +1198,26 @@ export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.fre
     quality: 3,
     cost: 8,
     description: '不动如山撼未动。受到伤害时以坚韧气魄招引敌意，将所受之威等额化为敌方瞩目',
+  },
+  'trait.jianyuxin': {
+    id: 'trait.jianyuxin',
+    name: '剑与心',
+    quality: 5,
+    cost: 12,
+    description: '剑随意动，心御其锋。物理与术法攻击各提升 10%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取',
+    buff: {
+      buffId: 'buff.yixing',
+      name: '移形',
+      durationSeconds: 5,
+      evasionPostRatio: 1,
+    },
+  },
+  'trait.huoshen': {
+    id: 'trait.huoshen',
+    name: '火神',
+    quality: 5,
+    cost: 12,
+    description: '火焰尊主，万法归炎。自身所有伤害转为火属性（保留物理、术法与真实伤害类别），火属性增伤提升 10%',
   },
 })
 /**

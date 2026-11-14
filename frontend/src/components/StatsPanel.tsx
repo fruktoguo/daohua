@@ -43,12 +43,15 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const partyMembers = party?.members ?? []
   const hasTeammates = partyMembers.length > 1
 
-  // 若选中的队友离开队伍，自动回退到本人
+  // 若无队友或选中的队友离开队伍，自动回退到本人并停止无效轮询
+  const selectedMemberStillInParty = !selectedMemberId
+    || selectedMemberId === myPlayerId
+    || (hasTeammates && partyMembers.some(m => m.playerId === selectedMemberId))
   useEffect(() => {
-    if (!hasTeammates && selectedMemberId !== myPlayerId) {
+    if ((!hasTeammates && selectedMemberId !== myPlayerId) || !selectedMemberStillInParty) {
       setSelectedMemberId(myPlayerId ?? '')
     }
-  }, [hasTeammates, myPlayerId, selectedMemberId])
+  }, [hasTeammates, myPlayerId, selectedMemberId, selectedMemberStillInParty])
 
   const isSelf = !selectedMemberId || selectedMemberId === myPlayerId
   const selectedTeammate = !isSelf ? partyMembers.find(m => m.playerId === selectedMemberId) : null

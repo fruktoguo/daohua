@@ -139,6 +139,18 @@ export function OpsActionsView(): React.JSX.Element {
           >
             排空计算节点
           </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setPending({
+              title: '重建全服排行榜快照',
+              description: '立即重算 12 张全服榜单并覆写 PostgreSQL 整点派生快照（不会影响玩家权威存档）。',
+              danger: false,
+              run: () => opsPost('/leaderboards/rebuild', {}),
+            })}
+          >
+            重建排行榜
+          </button>
         </div>
       </OpsCard>
 

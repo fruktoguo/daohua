@@ -13,6 +13,7 @@ type SimulatorNodeEnvironmentDto = SimulatorEnvironmentDto['nodes'][number]
 import {
   findCombatantInCatalog, resolveCatalogItemMetadata,
 } from '../../game/ids'
+import { formatNumber } from '../../game/format'
 import { FloatingInfoCard, FloatingPopover } from '../FloatingPopover'
 import { ItemIcon, ItemReference, ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import { LogTemplateText } from '../LogFeed'
@@ -28,7 +29,7 @@ interface Props {
 
 type GroupView = 'comparison' | 'details'
 type DetailTab = 'overview' | 'combat' | 'yields' | 'logs'
-type SortKey = 'default' | 'kills' | 'exp' | 'sixDim' | 'value' | 'deaths'
+type SortKey = 'default' | 'repeats' | 'exp' | 'sixDim' | 'value' | 'deaths'
 type SortDir = 'asc' | 'desc'
 type ElementKey = keyof SimulatorCombatElementDamageDto
 
@@ -102,14 +103,15 @@ function summarizeMember(
 ) {
   const m = result.members[memberIndex] ?? result.members[0]
   const hours = result.simulatedSeconds > 0 ? result.simulatedSeconds / 3600 : 0
-  const kills = m ? m.normalKills + m.eliteKills + m.bossKills : 0
+  const completedRepeats = m?.completedRepeats ?? 0
   const exp = m?.lifetimeExperience ?? 0
   const sixDim = m ? totalRootExp(m) : 0
   const valuation = m ? computeMemberValuation(m, marketStats) : { known: 0, hasUnknown: false, unknownIds: [] }
   return {
     member: m,
     hours,
-    killsPerHour: hours > 0 ? kills / hours : 0,
+    completedRepeats,
+    repeatsPerHour: hours > 0 ? completedRepeats / hours : 0,
     expPerHour: hours > 0 ? exp / hours : 0,
     sixDimPerHour: hours > 0 ? sixDim / hours : 0,
     valuePerHour: hours > 0 ? valuation.known / hours : 0,
@@ -265,6 +267,17 @@ export const SimulatorResults = memo(function SimulatorResults({
   const safeMemberIndex = current ? Math.min(selectedMemberIndex, Math.max(0, current.members.length - 1)) : 0
   const currentMember = current?.members[safeMemberIndex]
 
+  const consumedByItem = useMemo(() => {
+    const map = new Map<string, number>()
+    if (!currentMember) return map
+    for (const delta of currentMember.assetDeltas) {
+      if (!delta.variant && delta.quantity < 0) {
+        map.set(delta.itemId, (map.get(delta.itemId) ?? 0) + Math.abs(delta.quantity))
+      }
+    }
+    return map
+  }, [currentMember])
+
   const nodeMapNameMap = useMemo(() => {
     const map = new Map<string, string>()
     for (const m of maps ?? []) {
@@ -332,7 +345,7 @@ export const SimulatorResults = memo(function SimulatorResults({
       let va = 0
       let vb = 0
       switch (sortKey) {
-        case 'kills': va = a.summary.killsPerHour; vb = b.summary.killsPerHour; break
+        case 'repeats': va = a.summary.repeatsPerHour; vb = b.summary.repeatsPerHour; break
         case 'exp': va = a.summary.expPerHour; vb = b.summary.expPerHour; break
         case 'sixDim': va = a.summary.sixDimPerHour; vb = b.summary.sixDimPerHour; break
         case 'value': va = a.summary.valuePerHour; vb = b.summary.valuePerHour; break
@@ -364,7 +377,7 @@ export const SimulatorResults = memo(function SimulatorResults({
       if (row.summary.expPerHour > bestExp.summary.expPerHour) bestExp = row
       if (row.summary.sixDimPerHour > bestSix.summary.sixDimPerHour) bestSix = row
       if (row.summary.deaths < bestSafe.summary.deaths
-        || (row.summary.deaths === bestSafe.summary.deaths && row.summary.killsPerHour > bestSafe.summary.killsPerHour)) {
+        || (row.summary.deaths === bestSafe.summary.deaths && row.summary.repeatsPerHour > bestSafe.summary.repeatsPerHour)) {
         bestSafe = row
       }
     }
@@ -537,7 +550,7 @@ export const SimulatorResults = memo(function SimulatorResults({
                 <span className="sim-champ-val">
                   {t('combat.simulator.result.deaths')} <UnitNumber value={champions.bestSafe.summary.deaths} maxDecimals={0} disableTooltip />
                   <span className="sim-champ-inline-sep">·</span>
-                  <UnitNumber value={champions.bestSafe.summary.encounters} maxDecimals={0} suffix={t('combat.simulator.encountersUnit')} disableTooltip />
+                  <UnitNumber value={champions.bestSafe.summary.repeatsPerHour} maxDecimals={1} suffix={t('combat.report.encountersPerHour')} disableTooltip />
                 </span>
               </button>
             </div>
@@ -556,8 +569,8 @@ export const SimulatorResults = memo(function SimulatorResults({
                   <tr>
                     <th>{t('combat.simulator.compare.node')}</th>
                     <th>{t('combat.simulator.difficultyLabel')}</th>
-                    <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('kills')}>
-                      <span>{t('combat.simulator.result.killsPerHour')}{renderSortArrow('kills')}</span>
+                    <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('repeats')}>
+                      <span>{t('combat.simulator.result.repeatsPerHour')}{renderSortArrow('repeats')}</span>
                     </th>
                     <th className="th-highlight-cyan sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('exp')}>
                       <span>{t('combat.simulator.result.expPerHour')}{renderSortArrow('exp')}</span>
@@ -597,7 +610,7 @@ export const SimulatorResults = memo(function SimulatorResults({
                         </td>
                         <td><span className="sim-difficulty-tag">{diffLabel(result.difficulty)}</span></td>
                         <td className="sim-num-cell">
-                          <UnitNumber value={summary.killsPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.killsPerHour')} />
+                          <UnitNumber value={summary.repeatsPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
                         </td>
                         <td className="td-highlight-cyan sim-num-cell">
                           <UnitNumber value={summary.expPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.expPerHour')} />
@@ -730,6 +743,18 @@ export const SimulatorResults = memo(function SimulatorResults({
                     </span>
                   </div>
                   <div className="sim-kpi-row-item">
+                    <span className="sim-kpi-label">{t('combat.simulator.result.repeatsPerHour')}</span>
+                    <span className="sim-kpi-val-inline">
+                      {currentHours > 0
+                        ? <UnitNumber value={currentMember.completedRepeats / currentHours} maxDecimals={1} suffix={t('combat.report.encountersPerHour')} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
+                        : '—'}
+                      <small>
+                        {t('combat.simulator.result.repeats')}{' '}
+                        <UnitNumber value={currentMember.completedRepeats} maxDecimals={0} suffix={t('combat.simulator.encountersUnit')} disableTooltip />
+                      </small>
+                    </span>
+                  </div>
+                  <div className="sim-kpi-row-item">
                     <span className="sim-kpi-label">{t('combat.simulator.result.kills')}</span>
                     <span className="sim-kpi-val-inline">
                       <UnitNumber value={currentMember.normalKills + currentMember.eliteKills + currentMember.bossKills} maxDecimals={0} tooltipLabel={t('combat.simulator.result.kills')} />
@@ -740,7 +765,6 @@ export const SimulatorResults = memo(function SimulatorResults({
                     <span className="sim-kpi-label">{t('combat.simulator.result.deaths')}</span>
                     <span className={`sim-kpi-val-inline ${currentMember.deaths > 0 ? 'text-crimson' : 'text-emerald'}`}>
                       <UnitNumber value={currentMember.deaths} maxDecimals={0} disableTooltip />
-                      <small>{t('combat.simulator.result.repeats')} <UnitNumber value={currentMember.completedRepeats} maxDecimals={0} disableTooltip /></small>
                     </span>
                   </div>
                   <div className="sim-kpi-row-item" title={t('combat.simulator.realExpHint')}>
@@ -828,14 +852,28 @@ export const SimulatorResults = memo(function SimulatorResults({
                     <div className="sim-inline-strip-section">
                       <span className="wasm-sim-strip-label">{t('combat.simulator.result.slots')}</span>
                       <div className="wasm-sim-item-chips">
-                        {currentMember.combatAutoUseSlots.map((slot, i) => (
-                          <span key={i} className="wasm-sim-tag">
-                            {slot.itemId
-                              ? <ItemReference itemId={slot.itemId} amount={slot.quantity} className="wasm-sim-asset-inline" />
-                              : `#${slot.slotIndex} —`}
-                            {slot.enabled ? '' : `（${t('combat.simulator.slotDisabled')}）`}
-                          </span>
-                        ))}
+                        {currentMember.combatAutoUseSlots.map((slot, i) => {
+                          const isVirtualUnlimited = Boolean(slot.itemId) && slot.quantity >= 900_000
+                          const consumed = slot.itemId ? (consumedByItem.get(slot.itemId) ?? 0) : 0
+                          return (
+                            <span key={i} className="wasm-sim-tag">
+                              {slot.itemId
+                                ? isVirtualUnlimited
+                                  ? (
+                                      <ItemReference
+                                        itemId={slot.itemId}
+                                        valueContent={consumed > 0
+                                          ? t('combat.simulator.result.slotUnlimitedConsumed', { count: formatNumber(consumed) })
+                                          : t('combat.simulator.result.slotUnlimited')}
+                                        className="wasm-sim-asset-inline"
+                                      />
+                                    )
+                                  : <ItemReference itemId={slot.itemId} amount={slot.quantity} className="wasm-sim-asset-inline" />
+                                : `#${slot.slotIndex} —`}
+                              {slot.enabled ? '' : `（${t('combat.simulator.slotDisabled')}）`}
+                            </span>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

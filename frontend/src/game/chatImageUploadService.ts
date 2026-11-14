@@ -10,7 +10,11 @@
  * 4. 浏览器直传蜜蜂图床游客通道（www.beeimg.cn，CORS 全开放、免登录、国内 CDN 秒开），
  *    成功后原始 Blob 同步写入 IndexedDB 离线库，配合表情包过期自愈重传机制外链永不失效。
  */
+import { getApiUrl } from '../network/apiUrl.ts'
 import { chatStickerService } from './chatStickerService.ts'
+
+const CHAT_API_TIMEOUT_MS = 15_000
+const IMAGE_HOST_UPLOAD_TIMEOUT_MS = 30_000
 
 const STORAGE_KEY_HASH_MAP = 'daohua_chat_hash_urls'
 
@@ -118,9 +122,11 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
   }
 
   // 3. 向道化主服申请上传凭证（带会话 Cookie，执行账号鉴权、每日20张上限与全服去重）
-  const ticketRes = await fetch('/api/v1/chat/upload-ticket', {
+  const ticketRes = await fetch(getApiUrl('/api/v1/chat/upload-ticket'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    signal: AbortSignal.timeout(CHAT_API_TIMEOUT_MS),
     body: JSON.stringify({ sha256, ext }),
   })
 
@@ -150,6 +156,7 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
 
   const uploadRes = await fetch(BEEIMG_UPLOAD_ENDPOINT, {
     method: 'POST',
+    signal: AbortSignal.timeout(IMAGE_HOST_UPLOAD_TIMEOUT_MS),
     body: formData,
   })
 
@@ -168,11 +175,13 @@ export async function uploadChatImage(blob: Blob): Promise<{ url: string; cached
     throw new Error(`图床返回异常地址: ${directUrl}`)
   }
 
-  // 成功上传后，异步通知主服登记全服哈希映射（其他玩家同图秒级复用）
-  fetch('/api/v1/chat/upload-confirm', {
+  // 成功上传后，异步通知主服登记全服哈希映射并消费单次上传凭据（其他玩家同图秒级复用）
+  fetch(getApiUrl('/api/v1/chat/upload-confirm'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sha256, url: directUrl }),
+    credentials: 'include',
+    signal: AbortSignal.timeout(CHAT_API_TIMEOUT_MS),
+    body: JSON.stringify({ sha256, url: directUrl, ticket: ticketData.ticket }),
   }).catch(() => {})
   // 写入客户端本地哈希缓存与 IndexedDB 离线 Blob 缓存，秒级回显且支持未来过期自愈
   saveLocalHashUrl(sha256, directUrl)

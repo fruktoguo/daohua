@@ -148,34 +148,27 @@ export function resolveBuildingSpeedRatio(
 ): number {
   if (!effects) return 0
   if (technique) {
-    let techRatio = 0
+    // 明确指定技艺时按专项速度直出，防止专项为 0 穿透回退到异种技艺（如 mining 回退 exploration）
     switch (technique) {
       case 'gathering':
-        techRatio = (effects.gatheringSpeedRatio ?? 0) > 0 ? (effects.gatheringSpeedRatio ?? 0) : (effects.explorationSpeedRatio ?? 0)
-        break
+        return (effects.gatheringSpeedRatio ?? 0) > 0
+          ? (effects.gatheringSpeedRatio ?? 0)
+          : (effects.explorationSpeedRatio ?? 0)
       case 'mining':
-        techRatio = effects.miningSpeedRatio ?? 0
-        break
+        return effects.miningSpeedRatio ?? 0
       case 'alchemy':
-        techRatio = effects.alchemySpeedRatio ?? 0
-        break
+        return effects.alchemySpeedRatio ?? 0
       case 'forging':
-        techRatio = effects.forgingSpeedRatio ?? 0
-        break
+        return effects.forgingSpeedRatio ?? 0
       case 'talisman':
-        techRatio = effects.talismanSpeedRatio ?? 0
-        break
+        return effects.talismanSpeedRatio ?? 0
       case 'formation':
-        techRatio = effects.formationSpeedRatio ?? 0
-        break
+        return effects.formationSpeedRatio ?? 0
       case 'enhancement':
-        techRatio = effects.enhancementSpeedRatio ?? 0
-        break
+        return effects.enhancementSpeedRatio ?? 0
       default:
-        techRatio = 0
         break
     }
-    if (techRatio > 0) return techRatio
   }
   switch (actionType) {
     case 'exploration':

@@ -84,8 +84,11 @@ export function buildSimulatorCatalogPayload() {
       } else if ('durationSeconds' in entry) {
         if (Array.isArray(entry.yields)) {
           for (const y of entry.yields) {
-            if (y?.buff?.buffId && !actionYieldBuffs[y.buff.buffId]) {
-              actionYieldBuffs[y.buff.buffId] = y.buff.name || y.buff.buffId
+            // 配表 yield 增益条目把 buff ID 与名称直接放在 y.id / y.name（与 GameDataCatalog.ParseYields 一致）
+            const buffId = y?.kind === 'buff' ? y?.id : y?.buff?.buffId
+            const buffName = y?.kind === 'buff' ? y?.name : y?.buff?.name
+            if (buffId && !actionYieldBuffs[buffId]) {
+              actionYieldBuffs[buffId] = buffName || buffId
             }
           }
         }

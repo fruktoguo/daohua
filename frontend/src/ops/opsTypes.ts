@@ -18,6 +18,16 @@ export interface MarketMetrics {
 }
 
 /** 概览视图。 */
+/** 排行榜运行概览（与 LeaderboardRuntime.GetStatus 对齐）。 */
+export interface OpsLeaderboardStatus {
+  ready: boolean
+  boardCount: number
+  computedAt: string | null
+  nextComputeAt: string
+  totalRankedEntries: number
+  lastDurationMs: number
+}
+
 export interface OpsOverview {
   service: string
   version: string
@@ -37,6 +47,7 @@ export interface OpsOverview {
   loadedPlayers: number
   sessions: number
   market: MarketMetrics
+  leaderboard?: OpsLeaderboardStatus | null
 }
 
 /** 健康检查单项。 */

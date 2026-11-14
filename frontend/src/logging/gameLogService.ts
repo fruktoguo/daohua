@@ -208,6 +208,7 @@ export function filterLogEntries(entries: readonly GameLogEntry[], channel: LogC
  */
 class GameLogService {
   private readonly listeners = new Set<() => void>()
+  private readonly rawBatchListeners = new Set<(playerId: string, events: readonly LogEvent[]) => void>()
   private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0 }
   private collapsedEntries: GameLogEntry[] = []
   private seenIds = new Set<string>()
@@ -216,6 +217,15 @@ class GameLogService {
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /**
+   * 订阅服务端增量日志原始批次（LogBatch 信封入口）：
+   * 在过滤/折叠前触发，供战场 VFX 等实时反应消费者识别被展示层屏蔽的高频事件（如「自动使用 雷击符/丹药」）。
+   */
+  readonly subscribeRawBatch = (listener: (playerId: string, events: readonly LogEvent[]) => void): (() => void) => {
+    this.rawBatchListeners.add(listener)
+    return () => this.rawBatchListeners.delete(listener)
   }
 
   /** 读取当前快照（不可变引用，配合 revision 判断变更） */
@@ -237,6 +247,9 @@ class GameLogService {
 
   /** 摄入增量日志批次（LogBatch 信封路径） */
   ingestBatch(playerId: string, events: readonly LogEvent[]): void {
+    if (events.length > 0 && this.rawBatchListeners.size > 0) {
+      for (const listener of this.rawBatchListeners) listener(playerId, events)
+    }
     this.ingest(playerId, events.map(event => eventToStored(playerId, event)))
   }
 
@@ -263,10 +276,14 @@ class GameLogService {
       this.seenIds.add(entry.id)
       received += 1
 
+      const incomingCount = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
       const last = this.collapsedEntries[this.collapsedEntries.length - 1]
       if (last && last.template === entry.template && last.channel === entry.channel) {
-        last.count += 1
-        last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
+        this.collapsedEntries[this.collapsedEntries.length - 1] = {
+          ...last,
+          count: last.count + incomingCount,
+          latestTimestampMs: Math.max(last.latestTimestampMs, entry.timestampMs),
+        }
       } else {
         this.collapsedEntries.push(materialize(entry))
         if (this.collapsedEntries.length > VISIBLE_LOG_LIMIT) {

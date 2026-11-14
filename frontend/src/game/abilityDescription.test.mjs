@@ -53,7 +53,7 @@ await build({
   ],
 })
 
-const { describeAbility } = await import(pathToFileURL(tempOut).href)
+const { describeAbility, describeMorphAbility } = await import(pathToFileURL(tempOut).href)
 
 test.after(() => {
   try {
@@ -84,16 +84,17 @@ test('describeAbility：甘露主描述只保留施加关系与层数构成，�
 
   const camelResult = describeAbility(ganluCamel, 1)
   assert.ok(
-    camelResult.description.includes('对生命值百分比最低的队友施加 [[8%术法攻击]] [[+ 1层]] 的 [[甘露]]。'),
-    `甘露主描述应只保留施加关系与层数构成，实际为: ${camelResult.description}`
+    camelResult.description.includes('对生命值百分比最低的队友施加 [[8%术法攻击]] [[+ 1层]] 的 [[甘露]]，持续 10 秒。'),
+    `甘露主描述应只保留施加关系、层数构成与持续时间，实际为: ${camelResult.description}`
   )
   assert.ok(
     !camelResult.description.includes('每层每秒回复') && !camelResult.description.includes('重复施加'),
     `甘露主描述不应堆叠 Buff 效果与控制细节，实际为: ${camelResult.description}`
   )
-  assert.ok(
-    camelResult.lines.includes('[[甘露]]：每层每秒回复 1 点气血，持续 10 秒'),
-    `甘露 Buff 效果应进入词条行，实际为: ${camelResult.lines.join(' | ')}`
+  assert.equal(
+    camelResult.lines.length,
+    4,
+    `甘露主卡片应仅保留四项基础属性行，实际为: ${camelResult.lines.join(' | ')}`
   )
 
   const lv2Result = describeAbility(ganluCamel, 2)
@@ -152,13 +153,18 @@ test('describeAbility：破阵子保持直接效果短句，增伤随等级成�
   }
   const lv1 = describeAbility(pozhen, 1)
   assert.ok(
-    lv1.description.includes('使己方全体伤害提升 40%，持续 10 秒。'),
-    `破阵子应保持直接效果短句，实际为: ${lv1.description}`
+    lv1.description.includes('对己方全体施加 [[破阵子]]，持续 10 秒。'),
+    `破阵子主描述应统一由独立 Buff 悬浮窗承接效果明细，实际为: ${lv1.description}`
+  )
+  assert.equal(
+    lv1.lines.length,
+    4,
+    `破阵子主卡片应仅保留四项基础属性行，实际为: ${lv1.lines.join(' | ')}`
   )
   const lv2 = describeAbility(pozhen, 2)
   assert.ok(
-    lv2.description.includes('使己方全体伤害提升 40.8%'),
-    `破阵子增伤应随等级成长，实际为: ${lv2.description}`
+    lv2.description.includes('对己方全体施加 [[破阵子]]，持续 10 秒。'),
+    `破阵子 Lv.2 主描述结构应保持一致，实际为: ${lv2.description}`
   )
 })
 
@@ -197,19 +203,24 @@ test('describeAbility：碎罡三 Buff 胶囊化，层数构成随等级成长�
   }
   const lv1 = describeAbility(suiGang, 1)
   assert.ok(
-    lv1.description.includes('对自身施加 [[碎罡]]、[[煞力]]、[[罡锋]]。'),
-    `碎罡主描述应只列高亮 Buff 名，实际为: ${lv1.description}`
+    lv1.description.includes('对自身施加 [[碎罡]]、[[1 + 30%双抗]] 层的 [[煞力]]、每 [[5 点已损气血]] [[1 层]]的 [[罡锋]]，持续 20 秒。'),
+    `碎罡主描述应交代各 Buff 层数构成与持续时间，实际为: ${lv1.description}`
   )
   assert.ok(
     !lv1.description.includes('重复施加') && !lv1.description.includes('随功法等级与技能增幅'),
     `碎罡主描述不应出现控制细节长句，实际为: ${lv1.description}`
   )
+  assert.equal(
+    lv1.lines.length,
+    4,
+    `碎罡主卡片应仅保留四项基础属性行，实际为: ${lv1.lines.join(' | ')}`
+  )
 
   const lv2 = describeAbility(suiGang, 2)
   assert.ok(
-    lv2.lines.includes('[[煞力]]：[[1 + 30.6%双抗]] 层，每层物攻 +1，持续 20 秒')
-      && lv2.lines.includes('[[罡锋]]：每 [[4.9 点已损气血]] [[1 层]]，每层命中/暴击 +1，持续 20 秒'),
-    `碎罡层数构成应随等级成长并进入词条行，实际为: ${lv2.lines.join(' | ')}`
+    lv2.description.includes('[[1 + 30.6%双抗]] 层的 [[煞力]]')
+      && lv2.description.includes('每 [[4.9 点已损气血]] [[1 层]]的 [[罡锋]]'),
+    `碎罡层数构成应随等级成长并体现在主描述中，实际为: ${lv2.description}`
   )
 })
 
@@ -231,11 +242,117 @@ test('describeAbility：嘲讽主描述保留威胁与施加关系，Buff 效果
   }
   const result = describeAbility(taunt, 1)
   assert.ok(
-    result.description.includes('引动敌意向己，获得 500 点威胁值，对自身施加 [[嘲讽]]。'),
-    `嘲讽主描述应保留威胁与施加关系，实际为: ${result.description}`
+    result.description.includes('引动敌意向己，获得 500 点威胁值，对自身施加 [[嘲讽]]，持续 60 秒。'),
+    `嘲讽主描述应保留威胁、施加关系与持续时间，实际为: ${result.description}`
+  )
+  assert.equal(
+    result.lines.length,
+    4,
+    `嘲讽主卡片应仅保留四项基础属性行，实际为: ${result.lines.join(' | ')}`
+  )
+})
+
+test('describeAbility：跃迁、斩玉(踏云)与火焰风暴按等级与机制准确描述', () => {
+  const yueqian = {
+    abilityId: 'ability.yueqian',
+    name: '跃迁',
+    description: '缩地成寸，腾挪移形。引符阵庇佑全体友方周身气机游离，步虚避锋。',
+    targetType: 'allAllies',
+    category: 'spell',
+    element: 'none',
+    cooldownMilliseconds: 24000,
+    castMilliseconds: 3000,
+    manaCost: 50,
+    buff: {
+      buffId: 'buff.yixing',
+      name: '移形',
+      durationSeconds: 5.0,
+      maxStacks: 99,
+      evasionPostRatio: 1.0,
+    },
+  }
+  const yueqianLv1 = describeAbility(yueqian, 1)
+  const yueqianLv5 = describeAbility(yueqian, 5)
+  assert.ok(
+    yueqianLv1.description.includes('对己方全体施加 [[移形]]，持续 5 秒。'),
+    `跃迁主描述应统一交代施加移形与持续时间，实际为: ${yueqianLv1.description}`
+  )
+  assert.equal(
+    yueqianLv1.lines.length,
+    4,
+    `跃迁主卡片应仅保留四项基础属性行，实际为: ${yueqianLv1.lines.join(' | ')}`
   )
   assert.ok(
-    result.lines.includes('[[嘲讽]]：威胁获取提升 400%，每秒获得 10% 最大生命的威胁，持续 60 秒'),
-    `嘲讽 Buff 效果应进入词条行，实际为: ${result.lines.join(' | ')}`
+    yueqianLv5.description.includes('对己方全体施加 [[移形]]，持续 5 秒。'),
+    `跃迁 Lv.5 主描述结构应保持一致，实际为: ${yueqianLv5.description}`
+  )
+  assert.equal(describeMorphAbility(yueqian, 1), null)
+
+  const zhanyu = {
+    abilityId: 'ability.zhanyu',
+    name: '斩玉',
+    description: '剑光凝霜斩碎玉。若身负「移形」，则借势化态为「踏云」，凌空掠影横扫全体敌阵。',
+    targetType: 'enemy',
+    category: 'physical',
+    element: 'metal',
+    cooldownMilliseconds: 8000,
+    castMilliseconds: 500,
+    manaCost: 10,
+    damageRatio: 1.0,
+    flatDamage: 10,
+    yixingMorphName: '踏云',
+    yixingMorphTargetType: 'allEnemies',
+  }
+  const zhanyuLv1 = describeAbility(zhanyu, 1)
+  assert.ok(
+    zhanyuLv1.description.includes('对单个目标造成[[100%物理攻击]] [[+10]] 金属性物理伤害；拥有[[移形]]时切换为 [[踏云]]。'),
+    `斩玉主描述应含切态踏云说明，实际为: ${zhanyuLv1.description}`
+  )
+  const morphLv1 = describeMorphAbility(zhanyu, 1)
+  assert.ok(morphLv1, '斩玉应构造踏云变招独立描述')
+  assert.equal(morphLv1.title, '踏云')
+  assert.equal(morphLv1.badge, zhanyuLv1.badge)
+  assert.equal(morphLv1.badge, '物理 · 金行')
+  assert.equal(
+    morphLv1.description,
+    '对敌方全体造成[[100%物理攻击]] [[+10]] 金属性物理伤害；施放后移除 1 层[[移形]]。'
+  )
+  assert.equal(morphLv1.lines.length, 4)
+
+  const morphLv2 = describeMorphAbility(zhanyu, 2)
+  assert.ok(
+    morphLv2 && morphLv2.description.includes('[[102%物理攻击]] [[+10.2]]'),
+    `踏云变招伤害应随功法等级缩放，实际为: ${morphLv2?.description}`
+  )
+
+  const huoyan = {
+    abilityId: 'ability.huoyan-fengbao',
+    name: '火焰风暴',
+    description: '赤焰狂飙席卷四野，烈火焚身引燃魂魄，余烬久烧不息。',
+    targetType: 'allEnemies',
+    category: 'spell',
+    element: 'fire',
+    cooldownMilliseconds: 18000,
+    castMilliseconds: 3000,
+    manaCost: 30,
+    damageRatio: 1.0,
+    flatDamage: 50,
+    ranhunBaseStacks: 5,
+    ranhunSpellAttackRatio: 0.2,
+  }
+  const huoyanLv1 = describeAbility(huoyan, 1)
+  const huoyanLv2 = describeAbility(huoyan, 2)
+  assert.ok(
+    huoyanLv1.description.includes('对敌方全体造成[[100%术法攻击]] [[+50]] 火属性术法伤害；并对命中目标施加 [[20%术法攻击]] [[+5 层]] 的 [[燃烧]]，持续 5 秒。'),
+    `火焰风暴 Lv.1 主描述异常，实际为: ${huoyanLv1.description}`
+  )
+  assert.equal(
+    huoyanLv1.lines.length,
+    4,
+    `火焰风暴主卡片应仅保留四项基础属性行，实际为: ${huoyanLv1.lines.join(' | ')}`
+  )
+  assert.ok(
+    huoyanLv2.description.includes('对敌方全体造成[[102%术法攻击]] [[+51]] 火属性术法伤害；并对命中目标施加 [[20.4%术法攻击]] [[+5.1 层]] 的 [[燃烧]]，持续 5 秒。'),
+    `火焰风暴 Lv.2 主描述应随等级成长，实际为: ${huoyanLv2.description}`
   )
 })

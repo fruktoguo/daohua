@@ -42,7 +42,7 @@ export const MOBILE_NAV_GROUP_DEFS: { readonly [K in MobileNavGroupId]: Omit<Mob
   craft: { icon: 'crafting', labelKey: 'crafting', tabs: ['crafting'], subNav: 'crafting' },
   market: { icon: 'market', labelKey: 'marketGroup', tabs: ['market', 'shop'], subNav: 'tabs' },
   bag: { icon: 'inventory', labelKey: 'inventory', tabs: ['inventory'], subNav: 'none' },
-  more: { icon: 'more', labelKey: 'more', tabs: ['social', 'codex', 'log', 'records', 'settings'], subNav: 'tabs' },
+  more: { icon: 'more', labelKey: 'more', tabs: ['social', 'codex', 'leaderboard', 'log', 'records', 'settings'], subNav: 'tabs' },
 }
 
 /** 一级分组列表（顺序即底部栏展示顺序） */
@@ -65,6 +65,7 @@ const GROUP_OF_TAB = {
   inventory: 'bag',
   social: 'more',
   codex: 'more',
+  leaderboard: 'more',
   log: 'more',
   records: 'more',
   settings: 'more',
@@ -92,6 +93,7 @@ export const TAB_ICON: Readonly<Record<TabId, IconName>> = {
   combat: 'combat',
   social: 'social',
   codex: 'codex',
+  leaderboard: 'leaderboard',
   inventory: 'inventory',
   log: 'log',
   records: 'records',

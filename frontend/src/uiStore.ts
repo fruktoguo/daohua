@@ -20,7 +20,7 @@ import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'inventory' | 'log' | 'records' | 'settings'
+export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'inventory' | 'log' | 'records' | 'settings'
 
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
@@ -65,6 +65,9 @@ interface UiStore {
   craftingMode: CraftingMode
   /** 切换技艺模式 */
   setCraftingMode: (mode: CraftingMode) => void
+  /** 侧边栏坊市二级导航折叠/展开状态 */
+  marketNavExpanded: boolean
+  setMarketNavExpanded: (expanded: boolean | ((prev: boolean) => boolean)) => void
   /** 侧边栏同道二级导航折叠/展开状态 */
   socialNavExpanded: boolean
   setSocialNavExpanded: (expanded: boolean | ((prev: boolean) => boolean)) => void
@@ -72,6 +75,9 @@ interface UiStore {
   craftingNavExpanded: boolean
   /** 切换/设置技艺二级导航折叠状态 */
   setCraftingNavExpanded: (expanded: boolean | ((prev: boolean) => boolean)) => void
+  /** 侧边栏其他二级导航折叠/展开状态 */
+  otherNavExpanded: boolean
+  setOtherNavExpanded: (expanded: boolean | ((prev: boolean) => boolean)) => void
   /** 炼丹顶部当前子分类 */
   alchemySubTab: AlchemySubTab
   /** 切换炼丹子分类 */
@@ -179,6 +185,10 @@ export const useUiStore = create<UiStore>(set => ({
           ? { enhancementSubTab: 'enhance' as EnhancementSubTab }
           : {}),
   }),
+  marketNavExpanded: false,
+  setMarketNavExpanded: expanded => set(state => ({
+    marketNavExpanded: typeof expanded === 'function' ? expanded(state.marketNavExpanded) : expanded,
+  })),
   socialNavExpanded: false,
   setSocialNavExpanded: expanded => set(state => ({
     socialNavExpanded: typeof expanded === 'function' ? expanded(state.socialNavExpanded) : expanded,
@@ -186,6 +196,10 @@ export const useUiStore = create<UiStore>(set => ({
   craftingNavExpanded: false,
   setCraftingNavExpanded: expanded => set(state => ({
     craftingNavExpanded: typeof expanded === 'function' ? expanded(state.craftingNavExpanded) : expanded,
+  })),
+  otherNavExpanded: false,
+  setOtherNavExpanded: expanded => set(state => ({
+    otherNavExpanded: typeof expanded === 'function' ? expanded(state.otherNavExpanded) : expanded,
   })),
   alchemySubTab: 'extraction',
   setAlchemySubTab: alchemySubTab => set({ alchemySubTab }),

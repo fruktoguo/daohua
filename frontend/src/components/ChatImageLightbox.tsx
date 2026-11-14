@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
+import { useModalStackLayer } from './Modal'
 
 /**
  * 聊天图片灯箱 (ChatImageLightbox)
@@ -72,6 +73,8 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
   }, [onClose])
 
   // 打开时重置变换、锁定页面滚动、注册 Esc 监听
+  useModalStackLayer(open, () => true, () => onCloseRef.current())
+
   useEffect(() => {
     if (!open) return undefined
     setTransform(INITIAL_TRANSFORM)
@@ -79,19 +82,6 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
     pinchRef.current = null
     dragRef.current = null
     lastTapRef.current = null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onCloseRef.current()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = previousOverflow
-    }
   }, [open])
 
   if (!open) return null
@@ -122,8 +112,11 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
     }
   }
 
-  /** pointer 按下：登记指针并初始化拖拽/捏合基线 */
+  /** pointer 按下：登记指针并初始化拖拽/捏合基线（忽略交互控件以防劫持关闭按钮点击） */
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.target instanceof Element && e.target.closest('button, a, input, [role="button"]')) {
+      return
+    }
     e.currentTarget.setPointerCapture(e.pointerId)
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointersRef.current.size === 1) {
@@ -231,6 +224,7 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
           aria-label={t('common.close')}
           className="chat-image-lightbox-close"
           onClick={onClose}
+          onPointerDown={e => e.stopPropagation()}
           title={t('common.close')}
           type="button"
         >

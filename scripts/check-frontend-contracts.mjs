@@ -206,6 +206,7 @@ try {
   const queuePatch = await decodePlayerSnapshotDeltaDto(queueDelta, current, Buffer.from(JSON.stringify(queueDelta)))
   assert.equal(queuePatch.queue.entries[0].completedRepeats, 4)
   assert.equal(queuePatch.queue.entries[0].remainingRepeats, -1)
+  assert.equal(queuePatch.queueEntriesUpdated, true, '含 action_queue 分段时必须标记 queueEntriesUpdated = true')
   // 坏 checksum 必须在完整业务解码阶段失败，不能被合法 envelope 提前清零。
   const badChecksum = { ...delta, changedSections: [{ ...section, checksum: '0'.repeat(64) }] }
   await assert.rejects(decodePlayerSnapshotDeltaDto(badChecksum, current, Buffer.from(JSON.stringify(badChecksum))), /checksum|校验/i)
@@ -227,9 +228,21 @@ try {
   const ordinalPatch = await respawnPatchFor(2, 6)
   assert.equal(ordinalPatch.respawnPolicy, 'target-ally-alive', '枚举序号 2 必须解码为指定队友存活')
   assert.equal(ordinalPatch.respawnTargetPlayerId, '11111111-1111-1111-1111-111111111111')
+  assert.equal(ordinalPatch.queueEntriesUpdated, false, '仅 settings 分段且暂停状态未变时不得重锚队列时钟')
   const stringPatch = await respawnPatchFor('all-allies-ready', 7)
   assert.equal(stringPatch.respawnPolicy, 'all-allies-ready', '字符串形态必须同样可解码')
   assert.equal(stringPatch.respawnTargetPlayerId, null, '非指定队友存活策略必须丢弃观察对象')
+  const pausedData = { settings: { autoUseSlots: [], queuePaused: true }, presence: 1 }
+  const pausedBody = {
+    playerId: current.playerId, stateVersion: 8, lastSimulatedAt: '2026-09-14T00:00:07Z',
+    changedSections: [{
+      section: 'settings', schemaVersion: SNAPSHOT_SCHEMA_VERSION, sectionVersion: 1, data: pausedData,
+      checksum: createHash('sha256').update(JSON.stringify(pausedData), 'utf8').digest('hex'),
+      updatedAt: '2026-09-14T00:00:07Z',
+    }],
+  }
+  const pausedPatch = await decodePlayerSnapshotDeltaDto(pausedBody, current, Buffer.from(JSON.stringify(pausedBody)))
+  assert.equal(pausedPatch.queueEntriesUpdated, true, 'queuePaused 变更时必须重锚队列时钟')
 
   // 真实坏帧计数：坏 JSON 计入失败，合法 Pong 不清零；完整业务 payload 成功应用后恢复。
   setSessionAccount({ accountId: 'account.test', playerId: 'player.test', account: 'account.test', name: '契约测试' })
@@ -279,23 +292,26 @@ try {
   const { resolveMarketInstrumentMetadata } = mod
   const { resolveItemMetadata: resolveItemMeta, withItemGrade: withGrade } = mod
   const t2Weapon = {
-    itemId: 'equipment.pishan-blade',
-    name: '披山刀',
+    itemId: 'equipment.zhansha-blade',
+    name: '斩煞刀',
     category: 'equipment',
     subCategory: 'weapon',
     tier: 2,
     sellPrice: 50,
-    equipmentDefinition: { equipmentId: 'equipment.pishan-blade', name: '披山刀', slot: 'weapon', tier: 2 },
+    equipmentDefinition: { equipmentId: 'equipment.zhansha-blade', name: '斩煞刀', slot: 'weapon', tier: 2, level: 18 },
   }
   const marketMeta = resolveMarketInstrumentMetadata(t2Weapon)
   assert.equal(marketMeta.tier, 2, '坊市标的 tier 必须保留原始等阶')
-  assert.equal(marketMeta.level, 18, '坊市标的 level 必须换算为修士等级 Lv.18，不得错误显示为 T 级')
+  assert.equal(marketMeta.level, 18, '坊市标的 level 必须直读装备显式等级 Lv.18，不得错误显示为 T 级')
   assert.equal(marketMeta.rarity, 'yellow', 'T2 标的稀有度必须为黄品 (yellow)')
   const bagMeta = withGrade(resolveItemMeta(t2Weapon.itemId) ?? { label: t2Weapon.name, glyph: '·', tone: 'gold', category: 'weapon', rarity: 'mundane', rarityLabel: '', description: '' }, 2)
   assert.equal(marketMeta.level, bagMeta.level, '坊市标的等级必须与背包等级完全对齐')
   const level18Meta = withGrade(resolveItemMeta(t2Weapon.itemId), 18)
   assert.equal(level18Meta.level, 18, 'withItemGrade 传入 level 18 时必须能反推等阶并保留 Lv.18')
   assert.equal(level18Meta.rarity, 'yellow', 'withItemGrade 传入 level 18 时稀有度必须为 yellow')
+  const explicitLv1WithT2Grade = withGrade(resolveItemMeta('equipment.pishan-blade'), 2)
+  assert.equal(explicitLv1WithT2Grade.rarity, 'yellow', 'withItemGrade 调整等阶为 2 时稀有度应切换为 yellow')
+  assert.equal(explicitLv1WithT2Grade.level, 1, '已移除等阶换算等级：withItemGrade 仅调整等阶品质，不得用 tier 覆盖装备本身显式 level')
   // 版本更新感知与防死循环熔断断言
   const { notifyServerVersion, triggerVersionReload, isReloadCircuitBroken, _resetVersionStateForTest } = mod
   _resetVersionStateForTest()

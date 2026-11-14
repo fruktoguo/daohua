@@ -91,8 +91,8 @@ export const ItemCategories = {
 } as const
 
 export const CombatRespawnPolicy = {
-  WaitAll: 0,
-  Immediate: 1,
+  Immediate: 0,
+  WaitAll: 1,
   WaitTarget: 2,
 } as const
 export type CombatRespawnPolicy = (typeof CombatRespawnPolicy)[keyof typeof CombatRespawnPolicy]
@@ -179,7 +179,7 @@ export const BUFF_CHANNELS: readonly BuffEffectChannelInfo[] = [
   { channel: BuffEffectChannel.ResistancePoints, configKey: 'resistancePoints', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.ThreatPoints, configKey: 'threatPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.Evasion, configKey: 'evasion', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
-  { channel: BuffEffectChannel.EvasionPostRatio, configKey: 'evasionPostRatio', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.EvasionPostRatio, configKey: 'evasionPostRatio', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.ActionSpeedPoints, configKey: 'actionSpeedPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.CriticalDamagePoints, configKey: 'criticalDamagePoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.HealingBonusPoints, configKey: 'healingBonusPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
@@ -454,7 +454,7 @@ export function weakenMonsterStats(stats: CombatantStats, weakenRatio: number): 
   }
 }
 
-// ---------- 特质规则（36 项注册表 + 机制函数） ----------
+// ---------- 特质规则（38 项注册表 + 机制函数） ----------
 
 export const TraitIds = {
   Unseen: 'trait.bukandaowo',
@@ -465,11 +465,22 @@ export const TraitIds = {
   DuelKing: 'trait.dantiaowang',
   Xuyi: 'trait.xuyi',
   Ranhun: 'trait.ranhun',
+  Jianyuxin: 'trait.jianyuxin',
+  Huoshen: 'trait.huoshen',
 } as const
+
+/** 解析携带「火神」特质后的实际伤害五行属性（仅覆写/附加元素，不改变伤害大类）。 */
+export function resolveDamageElement(
+  traits: readonly string[] | null | undefined,
+  baseElement: CombatElement,
+): CombatElement {
+  return containsTrait(traits, TraitIds.Huoshen) ? CombatElement.Fire : baseElement
+}
 
 export const BuffIds = {
   Xuyi: 'buff.xuyi',
   Ranhun: 'buff.ranhun',
+  Yixing: 'buff.yixing',
   Unseen: 'buff.yinshen',
   FirstSight: 'buff.chujian',
   Haste: 'buff.yusuzebuda',
@@ -533,6 +544,8 @@ const TRAIT_LIST: TraitDefinition[] = [
   { id: TraitIds.DuelKing, name: '单挑王', quality: 5, cost: 16 },
   { id: TraitIds.Xuyi, name: '蓄意', quality: 6, cost: 25 },
   { id: TraitIds.Ranhun, name: '燃魂', quality: 5, cost: 16 },
+  { id: TraitIds.Jianyuxin, name: '剑与心', quality: 5, cost: 12, statRatios: { physicalAttack: 0.10, spellAttack: 0.10 } },
+  { id: TraitIds.Huoshen, name: '火神', quality: 5, cost: 12, points: { fireDamageBonusPoints: 10 } },
 ]
 
 export const ALL_TRAITS = new Map<string, TraitDefinition>(TRAIT_LIST.map((t) => [t.id, t]))

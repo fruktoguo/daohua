@@ -154,10 +154,11 @@ for (const row of rows) {
   for (const entry of row.rewards ?? []) collectAssetRef(entry.itemId ?? entry.id)
 }
 
-// 3) 源码字面量扫描：形如 domain.path 的字符串必须是词条键或其父路径。
+// 3) 源码字面量扫描：形如 domain.path 的字符串与直接 t('...') 调用必须是词条键或其父路径。
 //    网络层协议字段路径（snapshot.ts 的错误上下文）、WebSocket 指令名、行动 ID 与纯模拟引擎内部事件码不是 UI 词条，予以排除。
 const protocolCommand = /sendCommand\(/
 const literalRe = /['"`]([\w-]+(?:\.[\w-]+)+)['"`]/g
+const directTCallRe = /(?<![A-Za-z0-9_$.])t\(\s*(['"])([^'"]+)\1/g
 const sourceFiles = walk(join(FE, 'src'), ['.ts', '.tsx'])
 const badLiterals = new Map()
 for (const file of sourceFiles) {
@@ -173,6 +174,14 @@ for (const file of sourceFiles) {
       if (!DOMAINS.includes(key.split('.')[0])) continue
       if (actions.has(key)) continue
       if (protocolCommand.test(line)) continue
+      if (has(key) || dictPrefixes.has(key)) continue
+      const where = badLiterals.get(key) ?? []
+      where.push(`${rel}:${index + 1}`)
+      badLiterals.set(key, where)
+    }
+    directTCallRe.lastIndex = 0
+    while ((match = directTCallRe.exec(line))) {
+      const key = match[2]
       if (has(key) || dictPrefixes.has(key)) continue
       const where = badLiterals.get(key) ?? []
       where.push(`${rel}:${index + 1}`)
@@ -309,13 +318,16 @@ for (const file of sourceFiles) {
   })
 }
 
-// 7) CJK 硬编码检测：UI 层（App/main/components）绕过 i18n 的中文字符串与 JSX 文本。
+// 7) CJK 硬编码检测：UI 与业务支撑层（components / game / tutorial / App / 入口）绕过 i18n 的中文字符串与 JSX 文本。
 //    豁免面（均有明确设计理由，新增豁免须在此登记）：
-//    - components/simulator/**：开发沙盘工具，非正式玩家面（tools 口径）；
+//    - */simulator/**：开发沙盘工具，非正式玩家面（tools 口径）；
 //    - MarketBrowseGrid.tsx：labelKey + fallback 双保险模式（fallback 仅在缺键时兜底，键存在即不显示）；
 //    - VectorCharacter.tsx：按服务端下发中文名匹配立绘形态，属 zh 输入耦合逻辑而非展示文案；
 //    - LoginPage.tsx：随机占位道号池，属游戏内容数据；
-//    - ErrorBoundary.tsx / main.tsx：崩溃诊断与启动失败信息，面向开发者控制台。
+//    - ErrorBoundary.tsx / main.tsx：崩溃诊断与启动失败信息，面向开发者控制台；
+//    - game/ids.ts / game/combatConstants.ts / game/qqEmojis.ts：静态实体/表情/属性兜底字典；
+//    - game/chatStickerService.ts / game/linggenEvaluation.ts / game/gameStore.ts：IndexedDB 日志/不变量异常/默认初始占位符；
+//    - game/{buildingCalculations,codexCalculations,format,storageBagLoot,chatImageUploadService}.ts & game/itemSources.tsx：存量历史辅助模块，其余 src/game 模块与新增文件均受门禁约束。
 //    行级豁免：单字 CJK（图标化字形 token，如 glyph: '修'）；includes('中文') 对译文的运行时反查。
 const cjkTwoPlus = /[\u4e00-\u9fff][\u4e00-\u9fff]/
 const zhCoupledMatchRe = /\.includes\(\s*(['"`])[^'"`]*[\u4e00-\u9fff]/
@@ -325,10 +337,30 @@ const CJK_FILE_EXEMPT = fragment =>
   fragment.endsWith('/VectorCharacter.tsx') ||
   fragment.endsWith('/LoginPage.tsx') ||
   fragment.endsWith('/ErrorBoundary.tsx') ||
-  fragment.endsWith('/main.tsx')
+  fragment.endsWith('/main.tsx') ||
+  fragment.endsWith('/game/ids.ts') ||
+  fragment.endsWith('/game/combatConstants.ts') ||
+  fragment.endsWith('/game/qqEmojis.ts') ||
+  fragment.endsWith('/game/chatStickerService.ts') ||
+  fragment.endsWith('/game/linggenEvaluation.ts') ||
+  fragment.endsWith('/game/gameStore.ts') ||
+  fragment.endsWith('/game/buildingCalculations.ts') ||
+  fragment.endsWith('/game/codexCalculations.ts') ||
+  fragment.endsWith('/game/format.ts') ||
+  fragment.endsWith('/game/storageBagLoot.ts') ||
+  fragment.endsWith('/game/chatImageUploadService.ts') ||
+  fragment.endsWith('/game/itemSources.tsx')
 for (const file of sourceFiles) {
   const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/')
-  if (!rel.startsWith('frontend/src/components/') && !rel.endsWith('frontend/src/App.tsx')) continue
+  const inScanScope =
+    rel.startsWith('frontend/src/components/') ||
+    rel.startsWith('frontend/src/game/') ||
+    rel.startsWith('frontend/src/tutorial/') ||
+    rel === 'frontend/src/App.tsx' ||
+    rel === 'frontend/src/main.tsx' ||
+    rel === 'frontend/src/mobileNav.ts' ||
+    rel === 'frontend/src/uiStore.ts'
+  if (!inScanScope) continue
   if (CJK_FILE_EXEMPT(rel)) continue
   readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
     const trimmed = line.trim()

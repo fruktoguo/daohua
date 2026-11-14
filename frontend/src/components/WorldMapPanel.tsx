@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useGameStore } from '../game/gameStore'
-import { findItemInCatalog } from '../game/ids'
+import { useGameStoreWhenVisible } from '../game/gameStore'
+import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata } from '../game/ids'
 import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { fetchNodeBuildingIndex } from '../network/apiClient'
@@ -8,6 +8,7 @@ import { gameClient } from '../network/gameClient'
 import { FloatingTooltip } from './FloatingPopover'
 import { Icon } from './Icon'
 import { ConfirmDialog } from './ConfirmDialog'
+import { ItemIcon, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
@@ -533,13 +534,14 @@ const MapNodeButton = memo(function MapNodeButton({
  */
 export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { hidden?: boolean } = {}): React.JSX.Element {
   const t = useT()
-  const maps = useGameStore(state => state.maps)
-  const world = useGameStore(state => state.world)
-  const actions = useGameStore(state => state.actions)
-  const items = useGameStore(state => state.items)
-  const buildingCatalog = useGameStore(state => state.buildings)
-  const queue = useGameStore(state => state.queue.entries)
-  const consciousness = useGameStore(state => state.combat?.consciousnessLevel ?? 0)
+  const maps = useGameStoreWhenVisible(hidden, state => state.maps)
+  const world = useGameStoreWhenVisible(hidden, state => state.world)
+  const actions = useGameStoreWhenVisible(hidden, state => state.actions)
+  const items = useGameStoreWhenVisible(hidden, state => state.items)
+  const equipmentCatalog = useGameStoreWhenVisible(hidden, state => state.equipment)
+  const buildingCatalog = useGameStoreWhenVisible(hidden, state => state.buildings)
+  const queue = useGameStoreWhenVisible(hidden, state => state.queue.entries)
+  const consciousness = useGameStoreWhenVisible(hidden, state => state.combat?.consciousnessLevel ?? 0)
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
@@ -1508,12 +1510,25 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                     <span className="eco-label-name">{t('combat.map.resourcesHeading')}</span>
                   </div>
                   <div className="world-eco-content">
-                    {nodeResources.map(res => (
-                      <span className="world-resource-pill" key={res.itemId}>
-                        {res.name}
-                        {res.quantity > 1 && <small>×{res.quantity}</small>}
-                      </span>
-                    ))}
+                    {nodeResources.map(res => {
+                      const def = findItemInCatalog(items, res.itemId)
+                      const eqDef = findEquipmentInCatalog(equipmentCatalog, res.itemId)
+                      const metadata = resolveItemMetadata(res.itemId)
+                      return (
+                        <ItemTooltipTarget
+                          className="world-resource-pill"
+                          definition={def}
+                          equipmentDefinition={eqDef}
+                          itemId={res.itemId}
+                          key={res.itemId}
+                          metadata={metadata}
+                        >
+                          <ItemIcon itemId={res.itemId} />
+                          {res.name}
+                          {res.quantity > 1 && <small>×{res.quantity}</small>}
+                        </ItemTooltipTarget>
+                      )
+                    })}
                   </div>
                 </div>
               )}

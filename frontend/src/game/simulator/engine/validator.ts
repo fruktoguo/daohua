@@ -608,7 +608,7 @@ export function validateMember(
       !Number.isFinite(carry.remainingSeconds) ||
       carry.remainingSeconds < 0 ||
       !Number.isFinite(carry.stacks) ||
-      carry.stacks <= 0
+      carry.stacks < 0
     ) {
       throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员战内增益条目无效。`);
     }

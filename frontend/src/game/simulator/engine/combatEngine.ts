@@ -25,6 +25,7 @@ import {
   parseBuffEffects,
   parseCombatElement,
   percentMultiplier,
+  resolveDamageElement,
   traitLevelScale,
   type CombatantStats,
 } from './rules.ts'
@@ -34,6 +35,7 @@ import {
   EMPTY_WAKE_MASK,
   FULL_FACT_DELTA,
   FULL_WAKE_MASK,
+  UnitChannel,
   foldPendingWake,
   maskIntersects,
   resolveTriggerListWakeMask,
@@ -76,6 +78,7 @@ export function selectTarget(
   side: bigint,
   count: number,
   channel: bigint,
+  ignoreThreat = false,
 ): CombatantState | null {
   let aliveCount = 0
   let total = 0
@@ -90,7 +93,7 @@ export function selectTarget(
   if (aliveCount === 0) return null
   if (aliveCount === 1) return first
   const r = roll(seed, side, count, channel)
-  if (total <= 1e-12) {
+  if (ignoreThreat || total <= 1e-12) {
     return pickAliveAt(opponents, Math.min(aliveCount - 1, Math.trunc(r * aliveCount)))
   }
   let ticket = r * total
@@ -112,6 +115,7 @@ export function selectTargets(
   side: bigint,
   count: number,
   channel: bigint,
+  ignoreThreatOnPrimary = false,
 ): CombatantState[] {
   const result: CombatantState[] = []
   while (result.length < maxTargets) {
@@ -127,7 +131,7 @@ export function selectTargets(
     }
     if (aliveRemaining === 0) break
     let chosen: CombatantState | null = null
-    if (total <= 1e-12) {
+    if ((ignoreThreatOnPrimary && result.length === 0) || total <= 1e-12) {
       chosen = pickAliveExcluding(
         opponents,
         result,
@@ -273,7 +277,7 @@ export function resolveHit(context: CombatHitContext): void {
       defenseEffective.parryResolve /
         (defenseEffective.parryResolve + attackEffective.breakPower + 100)
 
-  let accuracy = attackEffective.accuracy * (broken ? 2 : 1)
+  let accuracy = attackEffective.accuracy * (broken ? 2 : 1) * (context.doubleAccuracy ? 2 : 1)
   let evasion = defenseEffective.evasion * (parried ? 2 : 1)
   ;[accuracy, evasion] = applyCombatExperienceContest(
     accuracy,
@@ -478,6 +482,27 @@ function buildStrikeStats(
   }
 }
 
+export function addRanhunStacks(
+  attacker: CombatantState,
+  target: CombatantState,
+  stacks: number,
+  at: number,
+): void {
+  if (stacks <= 0 || !target.isAlive) return
+  const existing = target.buffs.find((b) => b.buffId === BuffIds.Ranhun)
+  target.setBuff({
+    buffId: BuffIds.Ranhun,
+    expiresAtSeconds: at + 5,
+    stacks: stacks + (existing ? existing.stacks : 0),
+    name: '燃烧',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [{ channel: BuffEffectChannel.FireSpellDamagePerSecond, value: 1 }],
+    statRatios: null,
+    sourceUnitId: attacker.id,
+  })
+}
+
 export function applyRanhun(
   attacker: CombatantState,
   target: CombatantState,
@@ -497,18 +522,7 @@ export function applyRanhun(
     1,
     Math.floor(actual * 0.02 * traitLevelScale(attacker.stats.traitLevels, TraitIds.Ranhun)),
   )
-  const existing = target.buffs.find((b) => b.buffId === BuffIds.Ranhun)
-  target.setBuff({
-    buffId: BuffIds.Ranhun,
-    expiresAtSeconds: at + 5,
-    stacks: stacks + (existing ? existing.stacks : 0),
-    name: '燃魂',
-    resetOnWave: true,
-    missingHitpointsPerStack: 0,
-    effects: [{ channel: BuffEffectChannel.FireSpellDamagePerSecond, value: 1 }],
-    statRatios: null,
-    sourceUnitId: attacker.id,
-  })
+  addRanhunStacks(attacker, target, stacks, at)
 }
 
 function emitTraitOnHit(
@@ -533,10 +547,11 @@ function emitTraitOnHit(
     : context.encounter.playerAllies
 
   const burst = (target: CombatantState, primary: boolean) => {
+    const burstElement = resolveDamageElement(attacker.stats.traits, CombatElement.None)
     const rawDamage = primary
       ? buff.stacks
       : resolveStrikeDamage(
-          buildStrikeStats(attacker, buff.stacks, CombatDamageKind.Physical, CombatElement.None),
+          buildStrikeStats(attacker, buff.stacks, CombatDamageKind.Physical, burstElement),
           target,
         )
     const settled = applyCombatDamage(context.encounter, attacker, target, rawDamage, false)
@@ -547,7 +562,7 @@ function emitTraitOnHit(
       primary ? CombatDamageKind.True : CombatDamageKind.Physical,
       settled.damage,
       primary ? 0 : Math.max(0, buff.stacks - settled.damage),
-      CombatElement.None,
+      burstElement,
     )
     derivedEvents.push({
       atSeconds: context.atSeconds,
@@ -748,11 +763,12 @@ function triggerFormationReactiveStrike(
         ally.manapoints = Math.max(0, ally.manapoints - manaCost)
         ally.lastTianleiTriggerAtSeconds = context.atSeconds
         const rawDamage = ally.effectiveStats.spellAttack * 0.5 + 10
+        const strikeElement = resolveDamageElement(ally.stats.traits, CombatElement.Wood)
         const strikeStats: CombatantStats = {
           ...ally.effectiveStats,
           attackPower: rawDamage,
           damageKind: CombatDamageKind.Spell,
-          element: CombatElement.Wood,
+          element: strikeElement,
           totalDamageBonusPoints:
             ally.stats.totalDamageBonusPoints + ally.buffTotal(BuffEffectChannel.DamageBonusPoints),
         }
@@ -761,6 +777,7 @@ function triggerFormationReactiveStrike(
           const hpBefore = context.target.hitpoints
           applyCombatDamage(encounter, ally, context.target, rawDmg)
           const actualDamage = hpBefore - context.target.hitpoints
+          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds)
           ally.threat += actualDamage
           encounter.statsBook?.recordHitUnit(
             ally,
@@ -768,7 +785,7 @@ function triggerFormationReactiveStrike(
             CombatDamageKind.Spell,
             actualDamage,
             0,
-            CombatElement.Wood,
+            strikeElement,
           )
           derivedEvents.push({
             atSeconds: context.atSeconds,
@@ -799,11 +816,12 @@ function triggerFormationReactiveStrike(
       if (canTrigger && roll(encounter.seed, context.side, context.count, rollState.ch++) < 0.2) {
         ally.lastXueshaTriggerAtSeconds = context.atSeconds
         const rawDamage = ally.stats.maxHitpoints * 0.1
+        const strikeElement = resolveDamageElement(ally.stats.traits, CombatElement.None)
         const strikeStats: CombatantStats = {
           ...ally.effectiveStats,
           attackPower: rawDamage,
           damageKind: CombatDamageKind.Physical,
-          element: CombatElement.None,
+          element: strikeElement,
           totalDamageBonusPoints:
             ally.stats.totalDamageBonusPoints + ally.buffTotal(BuffEffectChannel.DamageBonusPoints),
         }
@@ -812,6 +830,7 @@ function triggerFormationReactiveStrike(
           const hpBefore = context.target.hitpoints
           applyCombatDamage(encounter, ally, context.target, rawDmg)
           const actualDamage = hpBefore - context.target.hitpoints
+          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds)
           const heal = Math.min(
             ally.stats.maxHitpoints - ally.hitpoints,
             actualDamage *
@@ -831,7 +850,7 @@ function triggerFormationReactiveStrike(
             CombatDamageKind.Physical,
             actualDamage,
             0,
-            CombatElement.None,
+            strikeElement,
           )
           derivedEvents.push({
             atSeconds: context.atSeconds,
@@ -978,6 +997,16 @@ function grantAbilityBuff(
         : Math.min(stackCap, existing.stacks + initialStacks)
   }
   target.setBuff({ ...grant, stacks: nextStacks })
+  if (caster !== target && caster.skillWakePending) {
+    for (let i = 0; i < caster.skillWakePending.length; i++) {
+      const cur = caster.skillWakePending[i]
+      caster.skillWakePending[i] = {
+        ...cur,
+        allySide: cur.allySide | UnitChannel.Buff,
+        enemySide: cur.enemySide | UnitChannel.Buff,
+      }
+    }
+  }
   target.syncDerivedStacks()
 }
 
@@ -991,14 +1020,24 @@ function resolveAttack(
   statsOverride: CombatantStats | null = null,
   countOverride: number | null = null,
   abilityId: string | null = null,
+  doubleAccuracy = false,
+  abilityNameOverride: string | null = null,
+  extraRanhunStacks = 0,
 ): void {
   if (!attacker.isAlive || !target.isAlive) return
+  const rawAttackStats = statsOverride ?? attacker.stats
+  const resolvedElement = resolveDamageElement(attacker.stats.traits, rawAttackStats.element)
+  const attackStats =
+    resolvedElement === rawAttackStats.element
+      ? rawAttackStats
+      : { ...rawAttackStats, element: resolvedElement }
   const context: CombatHitContext = {
     encounter,
     attacker,
     target,
-    attackStats: statsOverride ?? attacker.stats,
+    attackStats,
     abilityId,
+    doubleAccuracy,
     side,
     count: countOverride ?? attacker.attackCount,
     atSeconds: at,
@@ -1037,6 +1076,7 @@ function resolveAttack(
     break: context.broken,
     parried: context.parried,
     abilityId,
+    abilityNameOverride,
     healing: 0,
     attackerManapointsAfter: null,
     targetManapointsAfter: null,
@@ -1046,6 +1086,9 @@ function resolveAttack(
     { attacker: target, target: attacker, hitContext: context, events, mainEventIndex },
   )
   drainPendingTriggers(encounter)
+  if (context.hit && extraRanhunStacks > 0) {
+    addRanhunStacks(attacker, target, extraRanhunStacks, at)
+  }
 }
 
 function castSkill(
@@ -1177,12 +1220,35 @@ function castSkill(
   }
 
   const count = caster.skillCastCount + 1
+  const hasYixing = caster.buffStacks(BuffIds.Yixing) > 0
+  const abilityNameOverride = hasYixing ? abilityText(ability, 'yixingMorphName') : null
+  const effectiveTargetType = hasYixing
+    ? (abilityText(ability, 'yixingMorphTargetType') ?? targetType)
+    : targetType
+  const ignorePrimaryThreat =
+    hasYixing && containsTrait(caster.stats.traits, TraitIds.Jianyuxin)
+  const ranhunBase = abilityNumber(ability, 'ranhunBaseStacks')
+  const ranhunRatio = abilityNumber(ability, 'ranhunSpellAttackRatio')
+  const extraRanhunStacks =
+    ranhunBase > 0 || ranhunRatio > 0
+      ? Math.max(
+          1,
+          Math.floor(
+            (Math.max(0, attackBase) *
+              percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear) *
+              ranhunRatio +
+              ranhunBase) *
+              levelGrowth +
+              1e-9,
+          ),
+        )
+      : 0
   const rawMaxTargets = ability.maxTargets
   const maxTargets =
     typeof rawMaxTargets === 'number' && Number.isFinite(rawMaxTargets)
       ? Math.trunc(rawMaxTargets)
       : 0
-  if (targetType === 'allEnemies') {
+  if (effectiveTargetType === 'allEnemies') {
     const picked = selectTargets(
       opponents,
       maxTargets > 0 ? maxTargets : 0x7fffffff,
@@ -1190,20 +1256,66 @@ function castSkill(
       side,
       count,
       17n,
+      ignorePrimaryThreat,
     )
     for (let i = 0; i < picked.length; i++) {
-      resolveAttack(encounter, caster, picked[i], side, encounter.elapsedSeconds, events, stats, count, id)
+      resolveAttack(
+        encounter,
+        caster,
+        picked[i],
+        side,
+        encounter.elapsedSeconds,
+        events,
+        stats,
+        count,
+        id,
+        hasYixing,
+        abilityNameOverride,
+        extraRanhunStacks,
+      )
+    }
+    if (hasYixing && picked.length > 0) {
+      caster.consumeOneBuffStack(BuffIds.Yixing)
     }
     return
   }
 
-  let single = target && target.isAlive ? target : selectTarget(opponents, encounter.seed, side, count, 16n)
+  let single =
+    !ignorePrimaryThreat && target && target.isAlive
+      ? target
+      : selectTarget(opponents, encounter.seed, side, count, 16n, ignorePrimaryThreat)
   if (single === null) return
-  resolveAttack(encounter, caster, single, side, encounter.elapsedSeconds, events, stats, count, id)
+  resolveAttack(
+    encounter,
+    caster,
+    single,
+    side,
+    encounter.elapsedSeconds,
+    events,
+    stats,
+    count,
+    id,
+    hasYixing,
+    abilityNameOverride,
+    extraRanhunStacks,
+  )
 
   const hitCount = Math.max(1, Math.trunc(abilityNumber(ability, 'hitCount')))
   for (let hitIndex = 1; hitIndex < hitCount && single.isAlive; hitIndex++) {
-    resolveAttack(encounter, caster, single, side, encounter.elapsedSeconds, events, stats, null, id)
+    resolveAttack(
+      encounter,
+      caster,
+      single,
+      side,
+      encounter.elapsedSeconds,
+      events,
+      stats,
+      null,
+      id,
+      hasYixing,
+      abilityNameOverride,
+      extraRanhunStacks,
+    )
   }
 
   const chainMax = Math.trunc(abilityNumber(ability, 'chainOnKillCount'))
@@ -1216,7 +1328,23 @@ function castSkill(
       20n + BigInt(chainIndex),
     )
     if (single === null) break
-    resolveAttack(encounter, caster, single, side, encounter.elapsedSeconds, events, stats, count, id)
+    resolveAttack(
+      encounter,
+      caster,
+      single,
+      side,
+      encounter.elapsedSeconds,
+      events,
+      stats,
+      count,
+      id,
+      hasYixing,
+      abilityNameOverride,
+      extraRanhunStacks,
+    )
+  }
+  if (hasYixing) {
+    caster.consumeOneBuffStack(BuffIds.Yixing)
   }
 }
 

@@ -13,7 +13,9 @@ import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
 import { parseLogTemplate, splitLogSegmentsByLines } from '../logging/gameLogService'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
 import { ChatMessageBody } from './ChatMessageContent'
-import { ItemReference } from './ItemDisplay'
+import { resolveAbilityAsideCards } from './EffectTooltip'
+import { ItemIcon, ItemReference } from './ItemDisplay'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { ValueText } from './ValueText'
 import { PillBonusLabel, type PillTone } from './PillLabel'
@@ -45,9 +47,11 @@ const AbilityReference = memo(function AbilityReference({ abilityId, label }: { 
   }
 
   const tooltip = describeAbility(ability, 1)
+  const asideCards = resolveAbilityAsideCards(ability, undefined, 'qi', 1)
 
   return (
     <FloatingPopover
+      asideCards={asideCards.length > 0 ? asideCards : undefined}
       closeDelay={120}
       content={
         <FloatingInfoCard
@@ -80,6 +84,7 @@ const AbilityReference = memo(function AbilityReference({ abilityId, label }: { 
             )) ?? []),
           ]}
           title={tooltip.title}
+          titleIcon={resolveItemIconUrl(abilityId)}
         />
       }
       gap={8}
@@ -89,6 +94,7 @@ const AbilityReference = memo(function AbilityReference({ abilityId, label }: { 
       trigger="hover"
       triggerClassName="log-reference log-reference--ability"
     >
+      <ItemIcon itemId={abilityId} />
       {label}
     </FloatingPopover>
   )

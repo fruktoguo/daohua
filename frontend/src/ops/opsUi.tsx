@@ -219,9 +219,12 @@ export function useOpsData<T>(
   const [loading, setLoading] = useState(true)
   const loadRef = useRef(load)
   loadRef.current = load
+  const controllerRef = useRef<AbortController | null>(null)
 
   const reload = useCallback(() => {
+    controllerRef.current?.abort()
     const controller = new AbortController()
+    controllerRef.current = controller
     setLoading(true)
     loadRef.current(controller.signal)
       .then(value => {
@@ -234,12 +237,20 @@ export function useOpsData<T>(
         setError(cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => {
+        if (controllerRef.current === controller) {
+          controllerRef.current = null
+        }
         if (!controller.signal.aborted) setLoading(false)
       })
-    return () => controller.abort()
   }, [])
 
-  useEffect(() => reload(), [reload, ...deps])
+  useEffect(() => {
+    reload()
+    return () => {
+      controllerRef.current?.abort()
+      controllerRef.current = null
+    }
+  }, [reload, ...deps])
 
   useEffect(() => {
     if (intervalMs <= 0) return

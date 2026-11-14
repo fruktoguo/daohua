@@ -20,6 +20,8 @@ export interface StoredEnhancementRecords {
   archived: Record<string, Record<number, EnhancementLevelStat>>
   /** 仍在进行中的暂存快照：actionId -> StagedEnhancementRecord */
   staged: Record<string, StagedEnhancementRecord>
+  /** 已结案归档的行动水位线：actionId -> updatedAtUnixSeconds，防刷新或断线重连快照回放重复累加 */
+  completedWatermarks?: Record<string, number>
 }
 
 /** 内存缓存结构 */
@@ -62,6 +64,9 @@ function getOrCreateCache(playerId: string): EnhancementRecordsCache {
         data = {
           archived: parsed.archived && typeof parsed.archived === 'object' ? parsed.archived : {},
           staged: parsed.staged && typeof parsed.staged === 'object' ? parsed.staged : {},
+          completedWatermarks: parsed.completedWatermarks && typeof parsed.completedWatermarks === 'object'
+            ? parsed.completedWatermarks
+            : {},
         }
       }
     }
@@ -98,17 +103,32 @@ function flushCache(playerId: string): void {
  * 2. 写入本地 localStorage；
  * 3. 若有已完成项，向服务端发送 enhancement.ack_records 命令请求清理已完成数据。
  */
+const MAX_COMPLETED_WATERMARKS = 200
+
 export function ingestStagedEnhancements(playerId: string, records: readonly StagedEnhancementRecord[] | undefined): readonly string[] {
   if (!playerId || !records || records.length === 0) return []
 
   const cache = getOrCreateCache(playerId)
+  const watermarks = cache.data.completedWatermarks ?? (cache.data.completedWatermarks = {})
   const completedToAck: string[] = []
   let changed = false
 
   for (const rec of records) {
     if (!rec || !rec.actionId || !rec.itemId) continue
+    const updatedAt = Number.isFinite(rec.updatedAtUnixSeconds) ? rec.updatedAtUnixSeconds : 0
+    const prevWatermark = watermarks[rec.actionId]
 
     if (rec.isCompleted) {
+      completedToAck.push(rec.actionId)
+      if (prevWatermark !== undefined && updatedAt <= prevWatermark) {
+        // 刷新或 WS 重连在 Ack 落盘前再次下发相同已结案行动：跳过累加仅补回 Ack
+        if (cache.data.staged[rec.actionId]) {
+          delete cache.data.staged[rec.actionId]
+          changed = true
+        }
+        continue
+      }
+
       // 已完成行动：将全部 levels 累加进本地长期总账
       if (!cache.data.archived[rec.itemId]) {
         cache.data.archived[rec.itemId] = {}
@@ -124,18 +144,36 @@ export function ingestStagedEnhancements(playerId: string, records: readonly Sta
         itemArchive[lvl].successes += stat.successes
       }
 
+      watermarks[rec.actionId] = prevWatermark !== undefined ? Math.max(prevWatermark, updatedAt) : updatedAt
+
       // 从进行中暂存移除
       if (cache.data.staged[rec.actionId]) {
         delete cache.data.staged[rec.actionId]
       }
 
-      completedToAck.push(rec.actionId)
       changed = true
     } else {
+      if (prevWatermark !== undefined && updatedAt <= prevWatermark) {
+        continue
+      }
+      const existing = cache.data.staged[rec.actionId]
+      if (existing && updatedAt < existing.updatedAtUnixSeconds) {
+        continue
+      }
       // 正在进行中：覆盖更新暂存快照
       cache.data.staged[rec.actionId] = rec
       changed = true
     }
+  }
+
+  const watermarkEntries = Object.entries(watermarks)
+  if (watermarkEntries.length > MAX_COMPLETED_WATERMARKS) {
+    watermarkEntries.sort((a, b) => a[1] - b[1])
+    const overflow = watermarkEntries.length - MAX_COMPLETED_WATERMARKS
+    for (let i = 0; i < overflow; i += 1) {
+      delete watermarks[watermarkEntries[i][0]]
+    }
+    changed = true
   }
 
   if (changed) {

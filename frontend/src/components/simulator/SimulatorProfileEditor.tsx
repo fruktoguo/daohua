@@ -1234,10 +1234,13 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
             anchor={abilityAnchor.el}
             title={t('combat.simulator.pickAbility')}
             abilities={abilities}
+            abilityExperiences={null}
             slotIndex={abilityAnchor.slot}
             levelFor={id => {
               const slotMatch = abilitySlots.find(s => s.abilityId === id)
-              return slotMatch?.level ?? 1
+              if (slotMatch) return slotMatch.level
+              const exp = member.abilityExperiences?.[id]
+              return exp !== undefined ? calculateAbilityLevelAndProgress(exp).level : 1
             }}
             triggerCount={canEditCond && currentAbilityId ? resolveActiveTriggers('ability', currentAbilityId).length : 0}
             onEditCondition={canEditCond && currentAbilityId ? () => {

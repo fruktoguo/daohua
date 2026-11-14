@@ -32,18 +32,16 @@ const {
   resolveCatalogItemMetadata,
   resolveItemMetadata,
   resolveActionLevel,
-  convertTierToLevel,
 } = await import(pathToFileURL(tempOut).href)
 
-test('代表等级解析与服务端 ResolveItemLevel 同口径：显式 level 优先于等阶换算', () => {
-  // 装备目录 level 已由服务端 ResolveEquipmentRequiredLevel 预解析（含等阶回退）
-  assert.equal(resolveCatalogItemLevel({ level: 9 }, undefined, 1), 9)
-  // 物品仅在配表显式声明 level 时下发；tier=1 的 level=3 物品不得按 1 级结算
-  assert.equal(resolveCatalogItemLevel(undefined, { level: 3 }, 1), 3)
-  assert.equal(resolveCatalogItemLevel(undefined, { level: 1 }, 1), 1)
-  // 未声明显式等级时回退等阶换算
-  assert.equal(resolveCatalogItemLevel(undefined, { level: null }, 1), convertTierToLevel(1))
-  assert.equal(resolveCatalogItemLevel(undefined, undefined, 2), convertTierToLevel(2))
+test('代表等级解析与服务端 ResolveItemLevel 同口径：直读显式 level，缺省按 1 级', () => {
+  assert.equal(resolveCatalogItemLevel({ level: 9 }, undefined), 9)
+  // tier=1 的 level=3 物品必须直读显式 3 级，不得按等阶折算为 1 级
+  assert.equal(resolveCatalogItemLevel(undefined, { level: 3 }), 3)
+  assert.equal(resolveCatalogItemLevel(undefined, { level: 1 }), 1)
+  // 未声明显式等级时统一回退 1 级，不再按 tier 推算 18/30
+  assert.equal(resolveCatalogItemLevel(undefined, { level: null }), 1)
+  assert.equal(resolveCatalogItemLevel({ tier: 2 }, undefined), 1)
   assert.equal(resolveCatalogItemLevel(null, null), 1)
 })
 

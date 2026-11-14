@@ -22,3 +22,16 @@ test('强化已有行动时仍可配置并追加新目标', async () => {
   assert.match(activeBranch, /submit\(false\)/, '新强化行动必须追加到队尾')
   assert.match(activeBranch, /app\.enhancement\.stop/, '已有强化行动仍须提供独立停止操作')
 })
+
+test('装备强化面板即时订阅强化消耗品并纳入成功率与预览展示', async () => {
+  const source = await readFile(resolve('frontend/src/components/EnhancementPage.tsx'), 'utf8')
+
+  assert.match(source, /state\.queue\?\.autoUseSlots\?\.enhancement/,
+    '强化面板必须订阅队列中的 enhancement 消耗品槽位')
+  assert.match(source, /resolveEffectiveEnhancementSuccessBonuses\s*\(/,
+    '强化面板必须计算当前生效或可自动激活的强化消耗品成功率加成')
+  assert.match(source, /enhanceSuccessRate\s*\([^)]*consumableBonuses\.totalBonus/,
+    '强化预览成功率必须纳入强化消耗品总加成')
+  assert.match(source, /app\.enhancement\.consumableSuccessNote/,
+    '存在强化消耗品加成时必须在产出预览中显示加成来源提示')
+})

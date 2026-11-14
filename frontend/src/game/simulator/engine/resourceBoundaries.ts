@@ -23,6 +23,7 @@ import {
   PercentCurveMode,
   parseBuffEffects,
   percentMultiplier,
+  resolveDamageElement,
   weakenMonsterStats,
   type CombatantStats,
 } from './rules.ts'
@@ -152,12 +153,15 @@ export function pendingActionDurationOf(unit: CombatantState): number {
   if (unit.pendingSkillIndex >= 0 && unit.pendingSkillIndex < unit.skills.length) {
     const raw = unit.skills[unit.pendingSkillIndex].ability.castMilliseconds
     const castMs = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
-    return (castMs / 1000) * percentMultiplier(unit.stats.actionSpeedPoints, PercentCurveMode.NonLinear)
+    return (castMs / 1000) * percentMultiplier(unit.effectiveStats.actionSpeedPoints, PercentCurveMode.NonLinear)
   }
   return (
     unit.stats.attackIntervalSeconds *
-    percentMultiplier(unit.stats.attackSpeedPoints, PercentCurveMode.NonLinear) *
-    percentMultiplier(unit.stats.actionSpeedPoints, PercentCurveMode.NonLinear)
+    percentMultiplier(
+      unit.stats.attackSpeedPoints + unit.buffTotal(BuffEffectChannel.AttackSpeedPoints),
+      PercentCurveMode.NonLinear,
+    ) *
+    percentMultiplier(unit.effectiveStats.actionSpeedPoints, PercentCurveMode.NonLinear)
   )
 }
 
@@ -808,11 +812,15 @@ export function activateInstantConsumables(
         (strike.manaDamageRatio * evalCaster!.stats.maxManapoints +
           strike.spellAttackRatio * evalCaster!.stats.spellAttack) *
         percentMultiplier(evalCaster!.stats.skillBonusPoints, PercentCurveMode.Linear)
+      const strikeElement = resolveDamageElement(
+        evalCaster!.stats.traits,
+        strike.element as CombatElement,
+      )
       const strikeStats: CombatantStats = {
         ...evalCaster!.stats,
         attackPower,
         damageKind: CombatDamageKind.Spell,
-        element: strike.element as CombatElement,
+        element: strikeElement,
         totalDamageBonusPoints:
           evalCaster!.stats.totalDamageBonusPoints +
           evalCaster!.buffTotal(BuffEffectChannel.DamageBonusPoints),
@@ -827,7 +835,7 @@ export function activateInstantConsumables(
         liveBattle,
         evalCaster!,
         evalTarget,
-        strike.element,
+        strikeElement,
       )
       const strikeDefId = evalTarget!.definitionId
       if (strikeDefId && player.report) {
@@ -841,7 +849,7 @@ export function activateInstantConsumables(
           CombatDamageKind.Spell,
           damage,
           Math.max(0, strikeStats.attackPower - damage),
-          strike.element as CombatElement,
+          strikeElement,
         )
       }
       slots[i] = { ...slot, cooldownUntilUnixSeconds: now + cooldown }

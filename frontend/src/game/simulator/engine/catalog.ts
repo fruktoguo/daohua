@@ -789,6 +789,7 @@ function deriveTriggerBuffIds(
   buffs.add(BuffIds.DuelKing);
   buffs.add(BuffIds.Xuyi);
   buffs.add(BuffIds.Ranhun);
+  buffs.add(BuffIds.Yixing);
   // 保持与 TraitIds 引用的机制一致
   void TraitIds;
   return buffs;

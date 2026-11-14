@@ -158,9 +158,9 @@ test('codexFilters: 逆命丹配方解析为 18 级且底蕴配方必须境界�
   assert.ok(pillItem, '配表必须存在逆命丹道具')
   assert.equal(pillItem.tier, 2, '逆命丹道具必须配置 tier: 2')
 
-  // 模拟 App.tsx / CodexPage.tsx 中的解锁判定：
+  // 模拟 App.tsx / CodexPage.tsx 中的解锁判定（直读显式 action.level，缺省 1 级）：
   const isUnlocked = (action, realmLevel, techLevel) => {
-    const reqLevel = action.level ?? (action.tier ? (action.tier <= 1 ? 1 : 18 + (action.tier - 2) * 12) : 1)
+    const reqLevel = action.level ?? 1
     if (reqLevel <= 1) return true
     if (realmLevel >= reqLevel) return true
     const isTechAllowed = !action.foundationCostRatio && Boolean(action.technique && techLevel >= reqLevel)

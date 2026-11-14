@@ -92,6 +92,7 @@ function MarketDetailNavbar({
               category={resolveItemCategoryLabel(
                 resolveItemSubCategory(instrument.itemId, instrument.definition, instrument.equipmentDefinition, instrument.subCategory || instrument.category), t)}
               className="inventory-cell"
+              enhancementLevel={enhancementLevel}
               itemId={instrument.itemId}
               level={metadata.level}
               name={displayName}

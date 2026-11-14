@@ -1,7 +1,7 @@
 // 触发条件订阅掩码与边界事实追踪（严格对应 Domain.Combat.TriggerWake / CombatFactTracker）
 
 import type { CombatantState, CombatEncounterState } from './combatModels.ts'
-import type { CombatantStats } from './rules.ts'
+import { BATTLE_LIFETIME_SECONDS, type CombatantStats } from './rules.ts'
 import type { TriggerConditionJson } from './types.ts'
 
 /** 单体事实通道位掩码 */
@@ -220,7 +220,11 @@ function captureUnitSnap(unit: CombatantState): UnitSnap {
   const buffs = unit.buffs
   for (let i = 0; i < buffs.length; i++) {
     stackSum += buffs[i].stacks
-    expirySum += buffs[i].expiresAtSeconds
+    // 排除常驻哨兵到期时间（BATTLE_LIFETIME_SECONDS / 非有限值），防止高精度吞没或溢出 +Infinity 导致漏唤醒
+    const exp = buffs[i].expiresAtSeconds
+    if (Number.isFinite(exp) && exp < BATTLE_LIFETIME_SECONDS) {
+      expirySum += exp
+    }
   }
   return {
     hp: unit.hitpoints,

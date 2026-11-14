@@ -14,7 +14,21 @@ await build({
   outfile: tempOut,
   logLevel: 'error',
 })
-const { hasActiveSustainedEffect, resolveSustainedDurationClock } = await import(pathToFileURL(tempOut))
+const {
+  hasActiveSustainedEffect,
+  resolveEffectiveEnhancementSuccessBonuses,
+  resolveSustainedDurationClock,
+} = await import(pathToFileURL(tempOut))
+
+const combatConstantsOut = path.join(tmpdir(), `daohua-combat-constants-${Date.now()}.mjs`)
+await build({
+  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/combatConstants.ts')],
+  bundle: true,
+  format: 'esm',
+  outfile: combatConstantsOut,
+  logLevel: 'error',
+})
+const { enhanceSuccessRate } = await import(pathToFileURL(combatConstantsOut))
 
 const pill = overrides => ({
   itemId: 'item.test-pill',
@@ -109,4 +123,90 @@ test('战斗槽只在 combat 阶段使用同步后的遭遇战时间', () => {
   ), { mode: 'combat', elapsedSinceSyncSeconds: 0.75 })
 })
 
+test('秘法化灵、分解、转化对强化成功率消耗品均返回冻结时钟', () => {
+  const sand = pill({ itemId: 'item.guling-sand', usableBars: ['enhancement'], enhancementSuccessBonus: 0.05 })
+  for (const actionId of ['secret_art.liquefy', 'secret_art.disassemble', 'secret_art.convert']) {
+    const secretArtAction = action({ id: actionId, type: 'enhancement', technique: 'enhancement', durationSeconds: 6 })
+    const secretArtEntry = entry({ actionId, type: 'enhancement', progressSeconds: 3, durationSeconds: 6 })
+    assert.equal(hasActiveSustainedEffect(sand, secretArtAction, 'enhancement'), false, `${actionId} 不应激活强化成功率消耗品`)
+    assert.deepEqual(
+      resolveSustainedDurationClock('enhancement', sand, secretArtAction, secretArtEntry, false, 1.5),
+      { mode: 'frozen' },
+      `${actionId} 期间应冻结强化消耗品倒计时`,
+    )
+  }
+})
+
+test('enhanceSuccessRate 正确累加消耗品成功率并钳位到 99%', () => {
+  const base = enhanceSuccessRate(1, 0)
+  assert.ok(Math.abs(enhanceSuccessRate(1, 0, 0.03) - (base + 0.03)) < 1e-12)
+  assert.ok(Math.abs(enhanceSuccessRate(1, 0, 0.08) - (base + 0.08)) < 1e-12)
+  assert.equal(enhanceSuccessRate(1, 0, 0.8), 0.99)
+  assert.equal(enhanceSuccessRate(1, 0, -0.2), base)
+})
+
+test('resolveEffectiveEnhancementSuccessBonuses 按库存与激活残余即时汇总并防重复计数', () => {
+  const powder = pill({
+    itemId: 'item.cuiling-powder',
+    name: '淬灵粉',
+    usableBars: ['enhancement'],
+    enhancementSuccessBonus: 0.03,
+  })
+  const sand = pill({
+    itemId: 'item.guling-sand',
+    name: '固灵砂',
+    usableBars: ['enhancement'],
+    enhancementSuccessBonus: 0.05,
+  })
+  const catalog = [powder, sand]
+
+  // 1. 未激活但背包库存充足：即时计入预期加成
+  const ready = resolveEffectiveEnhancementSuccessBonuses(
+    [
+      { itemId: 'item.cuiling-powder', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
+      { itemId: 'item.guling-sand', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
+    ],
+    catalog,
+    [
+      { itemId: 'item.cuiling-powder', amount: 1 },
+      { itemId: 'item.guling-sand', amount: 2 },
+    ],
+  )
+  assert.ok(Math.abs(ready.totalBonus - 0.08) < 1e-12)
+  assert.deepEqual(ready.items.map(i => i.itemId), ['item.cuiling-powder', 'item.guling-sand'])
+
+  // 2. 已充能且仍有剩余时长：即便背包已扣空（0 件），本轮依然有效
+  const activeNoInventory = resolveEffectiveEnhancementSuccessBonuses(
+    [{ itemId: 'item.cuiling-powder', quantity: 1, enabled: true, remainingDurationSeconds: 120 }],
+    catalog,
+    [],
+  )
+  assert.ok(Math.abs(activeNoInventory.totalBonus - 0.03) < 1e-12)
+
+  // 3. 禁用或无库存且无残余时长：不计入
+  const disabledOrEmpty = resolveEffectiveEnhancementSuccessBonuses(
+    [
+      { itemId: 'item.cuiling-powder', quantity: 1, enabled: false, remainingDurationSeconds: 120 },
+      { itemId: 'item.guling-sand', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
+    ],
+    catalog,
+    [{ itemId: 'item.cuiling-powder', amount: 5 }],
+  )
+  assert.equal(disabledOrEmpty.totalBonus, 0)
+  assert.equal(disabledOrEmpty.items.length, 0)
+
+  // 4. 两个未充能槽同挂一种物品但库存只有 1 件：只预约 1 件不重复翻倍
+  const singleStockTwoSlots = resolveEffectiveEnhancementSuccessBonuses(
+    [
+      { itemId: 'item.guling-sand', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
+      { itemId: 'item.guling-sand', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
+    ],
+    catalog,
+    [{ itemId: 'item.guling-sand', amount: 1 }],
+  )
+  assert.ok(Math.abs(singleStockTwoSlots.totalBonus - 0.05) < 1e-12)
+  assert.equal(singleStockTwoSlots.items.length, 1)
+})
+
 await rm(tempOut, { force: true })
+await rm(combatConstantsOut, { force: true })

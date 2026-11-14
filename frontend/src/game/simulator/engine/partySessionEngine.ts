@@ -21,6 +21,7 @@ import {
   CombatEncounterState,
   type AllyMark,
   type CombatAdvanceResult,
+  type CombatantSnapshot,
   type CombatUnitStatDocument,
   type CombatantTemplate,
 } from './combatModels.ts'
@@ -43,6 +44,7 @@ import {
   abilityLevelForExp,
   parseBuffEffects,
   percentMultiplier,
+  resolveDamageElement,
   PercentCurveMode,
   type CombatRespawnPolicy,
 } from './rules.ts'
@@ -990,6 +992,10 @@ export class ActionParticipationSessionEngine {
       const skillMult = percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
       const totalDmgBonus =
         caster.stats.totalDamageBonusPoints + caster.buffTotal(BuffEffectChannel.DamageBonusPoints)
+      const strikeElement = resolveDamageElement(
+        caster.stats.traits,
+        strike.element as CombatElement,
+      )
       const strikeStats = {
         ...caster.stats,
         attackPower:
@@ -997,7 +1003,7 @@ export class ActionParticipationSessionEngine {
             strike.spellAttackRatio * caster.stats.spellAttack) *
           skillMult,
         damageKind: CombatDamageKind.Spell,
-        element: strike.element as CombatElement,
+        element: strikeElement,
         totalDamageBonusPoints: totalDmgBonus,
       }
       let damage = resolveStrikeDamage(strikeStats, target)
@@ -1007,7 +1013,7 @@ export class ActionParticipationSessionEngine {
       applyRanhun(
         caster,
         target,
-        strike.element as CombatElement,
+        strikeElement,
         settled.actual,
         this._battle!.elapsedSeconds,
       )
@@ -1033,7 +1039,7 @@ export class ActionParticipationSessionEngine {
           CombatDamageKind.Spell,
           damage,
           Math.max(0, strikeStats.attackPower - damage),
-          strike.element as CombatElement,
+          strikeElement,
         )
       }
       this.spendBalance(memberIndex, row.itemId)
@@ -1190,6 +1196,17 @@ export class ActionParticipationSessionEngine {
 
   private overlaySessionSustained(nowUnix: number): void {
     if (!this._consumables || !this._battle) return
+    const cleared = new Set<string>()
+    const best = new Map<
+      string,
+      {
+        unitIndex: number
+        buffId: string
+        name: string
+        remainingSeconds: number
+        effects: ReturnType<typeof parseBuffEffects>
+      }
+    >()
     for (let s = 0; s < this._consumables.length; s++) {
       const row = this._consumables[s]
       const item = this._catalog.items.get(row.itemId)
@@ -1202,7 +1219,55 @@ export class ActionParticipationSessionEngine {
       ) {
         continue
       }
-      this.injectSustained(row.memberIndex, item.id, row.sustainedExpiresAtUnixSeconds - nowUnix)
+      const rawItem = this._catalog.rawItems.get(item.id)
+      const rawCons = rawItem?.consumable as Record<string, unknown> | undefined
+      const rawBuffs = rawCons && Array.isArray(rawCons.buffs)
+        ? (rawCons.buffs as Record<string, unknown>[])
+        : null
+      if (!rawBuffs) continue
+      const remainingSeconds = row.sustainedExpiresAtUnixSeconds - nowUnix
+      const baseTeamWide = item.subCategory === 'formation'
+      for (const buff of rawBuffs) {
+        const buffId = String(buff.buffId)
+        const teamWide = baseTeamWide && buff.teamWide !== false
+        const name = typeof buff.name === 'string' ? buff.name : buffId
+        for (let u = 0; u < this._battle.playerAllies.length; u++) {
+          if (!teamWide && u !== row.memberIndex) continue
+          const key = `${u}\0${buffId}`
+          cleared.add(key)
+          if (remainingSeconds <= 0) continue
+          const prev = best.get(key)
+          if (!prev || remainingSeconds > prev.remainingSeconds) {
+            best.set(key, {
+              unitIndex: u,
+              buffId,
+              name,
+              remainingSeconds,
+              effects: parseBuffEffects(buff, 1.0),
+            })
+          }
+        }
+      }
+    }
+    // 先清理受本次同步影响的持续 Buff 槽，再写入各单位有效最长剩余时间，避免未充能队友空槽误删前序队友的阵盘
+    for (const key of cleared) {
+      const sep = key.indexOf('\0')
+      const u = Number.parseInt(key.slice(0, sep), 10)
+      const buffId = key.slice(sep + 1)
+      this._battle.playerAllies[u].removeBuffsWhere((current) => current.buffId === buffId)
+    }
+    for (const entry of best.values()) {
+      this._battle.playerAllies[entry.unitIndex].addBuff({
+        buffId: entry.buffId,
+        expiresAtSeconds: this._battle.elapsedSeconds + entry.remainingSeconds,
+        stacks: 1,
+        name: entry.name,
+        resetOnWave: true,
+        missingHitpointsPerStack: 0,
+        effects: entry.effects,
+        statRatios: null,
+        sourceUnitId: null,
+      })
     }
   }
 
@@ -1215,9 +1280,10 @@ export class ActionParticipationSessionEngine {
       ? (rawCons.buffs as Record<string, unknown>[])
       : null
     if (!item || !rawBuffs) return
-    const teamWide = item.subCategory === 'formation'
+    const baseTeamWide = item.subCategory === 'formation'
     const expiresAt = this._battle.elapsedSeconds + remainingSeconds
     for (const buff of rawBuffs) {
+      const teamWide = baseTeamWide && buff.teamWide !== false
       const buffId = String(buff.buffId)
       const effects = remainingSeconds > 0 ? parseBuffEffects(buff, 1.0) : null
       const name = typeof buff.name === 'string' ? buff.name : buffId
@@ -1542,12 +1608,16 @@ export class ActionParticipationSessionEngine {
       stats: m.stats,
       skills: m.skills,
     }))
-    const allySnaps = canonical.playerAllies.map((u) => CombatEncounterState.snapshot(u))
+    const allySnaps = canonical.playerAllies.map((u) =>
+      projectSnapshotSources(CombatEncounterState.snapshot(u), memberIndex),
+    )
     const enemyTemplates: CombatantTemplate[] = canonical.enemies.map((e) => ({
       stats: e.stats,
       skills: e.skills,
     }))
-    const enemySnaps = canonical.enemies.map((e) => CombatEncounterState.snapshot(e))
+    const enemySnaps = canonical.enemies.map((e) =>
+      projectSnapshotSources(CombatEncounterState.snapshot(e), memberIndex),
+    )
     const view = CombatEncounterState.restoreAllied(
       canonical.encounterId,
       canonical.seed,
@@ -1586,6 +1656,22 @@ function highestThreatAlive(enemies: readonly CombatantState[]): CombatantState 
   return best
 }
 
+function projectSnapshotSources(
+  snapshot: CombatantSnapshot,
+  memberIndex: number,
+): CombatantSnapshot {
+  if (memberIndex === 0 || !snapshot.buffs || snapshot.buffs.length === 0) return snapshot
+  let changed = false
+  const projected = snapshot.buffs.map((buff) => {
+    if (!buff.sourceUnitId) return buff
+    const mapped = projectUnitKey(buff.sourceUnitId, memberIndex)
+    if (mapped === buff.sourceUnitId) return buff
+    changed = true
+    return { ...buff, sourceUnitId: mapped }
+  })
+  return changed ? { ...snapshot, buffs: projected } : snapshot
+}
+
 function projectExpedition(
   canonical: SimCombatExpeditionState,
   memberIndex: number,
@@ -1594,27 +1680,33 @@ function projectExpedition(
 ): SimCombatExpeditionState {
   if (memberIndex === 0) return canonical
   const self = canonical.allies!.find((a) => a.memberIndex === memberIndex)!
-  const previousSelf = canonical.playerState ?? {
-    hitpoints: canonical.playerHitpoints,
-    manapoints: canonical.playerManapoints,
-    nextAttackAtSeconds: canonical.playerNextAttackAtSeconds,
-    attackCount: canonical.playerAttackCount,
-    threat: canonical.playerThreat,
-    pendingSkillIndex: -1,
-    threatBonusPoints: 0,
-    bonusAbsorptionPoints: 0,
-    skillCooldownUntil: null,
-    skillCastCount: 0,
-    buffs: null,
-    respawnAtSeconds: null,
-    respawnPolicy: 0,
-    respawnTargetIndex: -1,
-    respawnDeadlineSeconds: null,
-    respawnWaitingUntilSeconds: null,
-    traits: [],
-    traitLevels: null,
-  }
-  const others = canonical.allies!.filter((a) => a.memberIndex !== memberIndex)
+  const projectedSelfState = projectSnapshotSources(self.state, memberIndex)
+  const previousSelf = projectSnapshotSources(
+    canonical.playerState ?? {
+      hitpoints: canonical.playerHitpoints,
+      manapoints: canonical.playerManapoints,
+      nextAttackAtSeconds: canonical.playerNextAttackAtSeconds,
+      attackCount: canonical.playerAttackCount,
+      threat: canonical.playerThreat,
+      pendingSkillIndex: -1,
+      threatBonusPoints: 0,
+      bonusAbsorptionPoints: 0,
+      skillCooldownUntil: null,
+      skillCastCount: 0,
+      buffs: null,
+      respawnAtSeconds: null,
+      respawnPolicy: 0,
+      respawnTargetIndex: -1,
+      respawnDeadlineSeconds: null,
+      respawnWaitingUntilSeconds: null,
+      traits: [],
+      traitLevels: null,
+    },
+    memberIndex,
+  )
+  const others = canonical.allies!
+    .filter((a) => a.memberIndex !== memberIndex)
+    .map((ally) => ({ ...ally, state: projectSnapshotSources(ally.state, memberIndex) }))
   others.push({
     memberIndex: 0,
     state: previousSelf,
@@ -1624,18 +1716,25 @@ function projectExpedition(
     pendingActionDurationSeconds: 0,
   })
   others.sort((left, right) => left.memberIndex - right.memberIndex)
+  const projectedEnemies = canonical.enemies
+    ? canonical.enemies.map((enemy) => ({
+        ...enemy,
+        state: projectSnapshotSources(enemy.state, memberIndex),
+      }))
+    : null
   return {
     ...canonical,
     selfIndex: memberIndex,
-    playerHitpoints: self.state.hitpoints,
-    playerManapoints: self.state.manapoints,
-    playerNextAttackAtSeconds: self.state.nextAttackAtSeconds,
-    playerAttackCount: self.state.attackCount,
-    playerThreat: self.state.threat,
-    playerState: canonical.phase === CombatExpeditionPhase.Combat ? self.state : null,
+    playerHitpoints: projectedSelfState.hitpoints,
+    playerManapoints: projectedSelfState.manapoints,
+    playerNextAttackAtSeconds: projectedSelfState.nextAttackAtSeconds,
+    playerAttackCount: projectedSelfState.attackCount,
+    playerThreat: projectedSelfState.threat,
+    playerState: canonical.phase === CombatExpeditionPhase.Combat ? projectedSelfState : null,
     playerRespawnAtSeconds:
-      canonical.phase === CombatExpeditionPhase.Combat ? self.state.respawnAtSeconds : null,
+      canonical.phase === CombatExpeditionPhase.Combat ? projectedSelfState.respawnAtSeconds : null,
     allies: others,
+    enemies: projectedEnemies,
   }
 }
 

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { calculateEquipmentSellPrice, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../../game/ids'
+import { calculateEquipmentSellPrice, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook, MarketOrder } from '../../game/types'
@@ -106,15 +106,18 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     ? (inventory.find(item => item.itemId === instrument.itemId && parseEnhancementVariant(item.variant) === level)?.amount ?? 0)
     : 0
 
-  // 选定强化等级下的已穿戴件数（用于可卖量扣除）
-  const equippedCount = useGameStore(
-    state => state.combat?.equipment?.filter(
-      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === level
-    ).length ?? 0
-  )
+  // 选定强化等级下的已穿戴（含工具）与强化队列锁定件数（用于可卖量扣除）
+  const combatEquipment = useGameStore(state => state.combat?.equipment)
+  const queueEntries = useGameStore(state => state.queue?.entries)
+  const occupiedCount = isEquipment && instrument
+    ? (getOccupiedEquipmentCounts(combatEquipment, queueEntries).get(`${instrument.itemId}#${level}`) ?? 0)
+    : 0
+  const equippedCount = combatEquipment?.filter(
+    entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === level
+  ).length ?? 0
 
-  // 选定强化等级下真正可支配售卖的件数
-  const availableAmount = Math.max(0, selectedAmount - equippedCount)
+  // 选定强化等级下真正可支配售卖的件数（扣除已穿戴与强化队列锁定）
+  const availableAmount = Math.max(0, selectedAmount - occupiedCount)
   const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
 
   // 该标的（含当前强化等级）已有的活动挂单：命中即禁止再挂新单（买/卖双向都拦）。
@@ -172,12 +175,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     return () => { cancelled = true }
   }, [book, instrument, level, minimumPrice, open, side, vendorPrice])
 
-  // 选中的强化等级切换导致可用量变动时，卖出方向自动将挂售数量钳位在可用范围内
-  useEffect(() => {
-    if (side === 'sell') {
-      setQuantity(prev => Math.max(1, availableAmount > 0 ? Math.min(prev, availableAmount) : 1))
-    }
-  }, [level, availableAmount, side])
+  // 挂单数量会在下方随买卖方向、可售库存与可承受灵石上限统一钳位
   // 强化等级切换导致回收底价变动时，确保当前挂单价格不低于新底价
   useEffect(() => {
     setPrice(prev => Math.max(minimumPrice, prev))
@@ -210,11 +208,18 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   const quantityLimit = useMemo(() => {
     if (side === 'sell') {
-      return Math.max(1, availableAmount > 0 ? availableAmount : selectedAmount)
+      return Math.max(1, availableAmount)
     }
     const maxAffordable = Math.floor(spiritAmount / Math.max(1, price))
     return Math.max(1, maxAffordable)
-  }, [price, availableAmount, selectedAmount, side, spiritAmount])
+  }, [price, availableAmount, side, spiritAmount])
+  const safeQuantityLimit = Math.max(1, quantityLimit)
+  const effectiveQuantity = Math.max(1, Math.min(quantity, safeQuantityLimit))
+
+  // 上限变动（方向切换、强化等级变化、调价、可用库存或灵石变更）时同步钳位真实挂单数量，保证展示值与提交值一致
+  useEffect(() => {
+    setQuantity(prev => Math.max(1, Math.min(prev, safeQuantityLimit)))
+  }, [safeQuantityLimit])
 
   /**
    * 本价位可立即成交的卖盘总量：限价买单只吃报价不高于自身的卖档。
@@ -240,10 +245,10 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     : quantityLimit
 
   /** 买入侧成交拆分：立即撮合量 / 留在求购列表排队的剩余量。 */
-  const immediateQuantity = side === 'buy' ? Math.min(quantity, fillableQuantity) : quantity
-  const restingQuantity = side === 'buy' ? Math.max(0, quantity - fillableQuantity) : 0
+  const immediateQuantity = side === 'buy' ? Math.min(effectiveQuantity, fillableQuantity) : effectiveQuantity
+  const restingQuantity = side === 'buy' ? Math.max(0, effectiveQuantity - fillableQuantity) : 0
 
-  const totalPrice = price * quantity
+  const totalPrice = price * effectiveQuantity
   const tax = Math.ceil(totalPrice * 0.02)
   const netEarnings = Math.max(0, totalPrice - tax)
 
@@ -257,7 +262,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       return
     }
 
-    if (!Number.isSafeInteger(price) || price < vendorPrice || !Number.isSafeInteger(quantity) || quantity <= 0) {
+    if (!Number.isSafeInteger(price) || price < vendorPrice || !Number.isSafeInteger(effectiveQuantity) || effectiveQuantity <= 0) {
       setNotice(getT()('market.error.invalidInput'))
       return
     }
@@ -271,11 +276,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       return
     }
 
-    if (side === 'sell' && quantity > availableAmount) {
+    if (side === 'sell' && effectiveQuantity > availableAmount) {
       setNotice(getT()('market.error.sellExceedsBagStock'))
       return
     }
-    if (side === 'buy' && price * quantity > spiritAmount) {
+    if (side === 'buy' && price * effectiveQuantity > spiritAmount) {
       setNotice(getT()('market.error.insufficientSpirit'))
       return
     }
@@ -286,7 +291,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       itemId: instrument.itemId,
       side,
       price,
-      quantity,
+      quantity: effectiveQuantity,
       // 与服务端变体口径一致："+N" 落强化等级簿，null 落基础簿（仅装备允许带强化变体）。
       variant: (isEquipment && level > 0) ? `+${level}` : null,
     })
@@ -296,7 +301,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [availableAmount, blockingOrder, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, quantity, setNotice, side, spiritAmount, vendorPrice])
+  }, [availableAmount, blockingOrder, effectiveQuantity, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
@@ -470,11 +475,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             ariaLabel={t('market.quantityAria')}
             compact={false}
             leadingPresets={[1]}
-            max={Math.max(1, quantityLimit)}
+            max={safeQuantityLimit}
             maxShortcut
             maxShortcutValue={maxShortcutValue}
-            onChange={setQuantity}
-            value={Math.min(quantity, Math.max(1, quantityLimit))}
+            onChange={v => setQuantity(Math.max(1, Math.min(v, safeQuantityLimit)))}
+            value={effectiveQuantity}
           />
         </div>
 
@@ -549,7 +554,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             disabled={
               connection !== 'online' ||
               blockingOrder !== null ||
-              (side === 'sell' && (availableAmount <= 0 || quantity > availableAmount)) ||
+              (side === 'sell' && (availableAmount <= 0 || effectiveQuantity > availableAmount)) ||
               (side === 'buy' && (spiritAmount < totalPrice || totalPrice <= 0))
             }
             type="submit"

@@ -48,7 +48,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 8, aspect: 'agility' }] },
   { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
   { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 3, percentage: 50, aspect: 'stamina' }] },
-  { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
+  { id: 'explore.collect-morning-dew', type: 'exploration', level: 1, durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 6, aspect: 'agility' }] },
   { id: 'explore.gather-banling-flower', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
   { id: 'explore.chop-yinlingsong', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 107, aspect: 'agility' }] },
   { id: 'explore.mine-crimson-copper', type: 'exploration', level: 18, durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 54, percentage: 50, aspect: 'attack' }, { kind: 'rootexp', per: 'repeat', amount: 53, percentage: 50, aspect: 'stamina' }] },
@@ -63,9 +63,9 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 1, 'item.banling-flower': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.tongmai-pill', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 267, aspect: 'consciousness' }] },
 
   // 精炼加工
-  { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
-  { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.herb-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.refine-iron', type: 'alchemy', level: 1, durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', level: 1, durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
+  { id: 'craft.extract-herb-essence', type: 'alchemy', level: 1, durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.herb-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 10, aspect: 'consciousness' }] },
   { id: 'craft.refine-copper', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-copper', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
   { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.spirit-pine-crystal', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
   { id: 'craft.extract-banling-essence', type: 'alchemy', level: 18, durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 200, aspect: 'consciousness' }] },
@@ -224,16 +224,6 @@ export function resolveActionDefinitions(): ActionDefinition[] {
 }
 
 /**
- * 将等阶 (Tier) 换算为修士/物品等级 (Level)
- * 等阶1 -> 1级, 等阶2 -> 18级, 等阶3 -> 30级, 等阶N(>=2) -> 18 + (N - 2) * 12 级
- */
-export function convertTierToLevel(tier = 1): number {
-  const t = Math.max(1, Math.floor(tier))
-  if (t <= 1) return 1
-  return 18 + (t - 2) * 12
-}
-
-/**
  * 将修士/物品等级 (Level) 逆向反推为等阶 (Tier, 1~8)
  * 1 级 -> 等阶 1, 18 级 -> 等阶 2, 30 级 -> 等阶 3, 每 12 级升一阶
  */
@@ -243,18 +233,18 @@ export function convertLevelToTier(level = 1): number {
 }
 
 /**
- * 解析目录物品/装备的代表等级（与服务端 CraftingRecipeRules.ResolveItemLevel 同口径）：
- * 显式 level 优先（装备目录 level 已含等阶回退，物品目录仅在配表显式声明时下发），
- * 缺省回退等阶换算；装备先于物品与服务端查表顺序一致。
+ * 解析目录物品/装备的自身显式等级（与服务端 CraftingRecipeRules.ResolveItemLevel 同口径）：
+ * 装备显式 level 优先于物品显式 level，均缺省时回退 1 级。
  */
 export function resolveCatalogItemLevel(
   equipmentDefinition?: { level?: number | null } | null,
   itemDefinition?: { level?: number | null } | null,
-  fallbackTier = 1,
 ): number {
-  return equipmentDefinition?.level
-    ?? itemDefinition?.level
-    ?? convertTierToLevel(fallbackTier)
+  const eqLevel = equipmentDefinition?.level
+  if (typeof eqLevel === 'number' && eqLevel > 0) return eqLevel
+  const itemLevel = itemDefinition?.level
+  if (typeof itemLevel === 'number' && itemLevel > 0) return itemLevel
+  return 1
 }
 
 let cachedItemsRef: ReadonlyArray<{ itemId: string }> | null = null
@@ -517,10 +507,11 @@ export function localizeActionDisplayText(
 /**
  * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的真实等级 (Level)
  * 优先级：
- * 1. 产出物品/装备的显式等级或通过等阶换算得到的等级
- * 2. 战斗遭遇 (combatEncounterId) 对应的等级
- * 3. 输入消耗材料的最大等级
- * 4. 默认 1 级
+ * 1. 行动配置显式指定的等级 (action.level)
+ * 2. 产出物品/装备的显式等级
+ * 3. 战斗遭遇 (combatEncounterId) 对应的等级
+ * 4. 输入消耗材料的最大显式等级
+ * 5. 默认 1 级
  */
 export function resolveActionLevel(
   action: ActionDefinition,
@@ -538,35 +529,31 @@ export function resolveActionLevel(
       if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
       const outId = yieldEntry.id
       const eq = eqMap?.get(outId)
-      if (eq) return resolveCatalogItemLevel(eq, undefined, eq.tier ?? 1)
+      if (eq) return resolveCatalogItemLevel(eq, undefined)
       const it = itMap?.get(outId)
-      if (it) return resolveCatalogItemLevel(undefined, it, it.tier ?? 1)
+      if (it) return resolveCatalogItemLevel(undefined, it)
       const meta = ITEM_META_CORES[outId]
-      if (meta?.level && meta.level > 0) {
-        return meta.level > 2 ? meta.level : convertTierToLevel(meta.level)
-      }
+      if (typeof meta?.level === 'number' && meta.level > 0) return meta.level
     }
   }
 
   if (action.combatEncounterId) {
     const enc = encMap?.get(action.combatEncounterId)
-    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return convertTierToLevel(enc.tier)
-    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return convertTierToLevel(2)
-    if (action.combatEncounterId.includes('boundary') || action.combatEncounterId.includes('trail')) return 9
-    return convertTierToLevel(1)
+    if (enc && typeof enc.level === 'number' && enc.level > 0) return enc.level
+    return 1
   }
 
   if (action.inputs) {
-    let maxTier = 1
+    let maxLevel = 1
     for (const inId of Object.keys(action.inputs)) {
       const eq = eqMap?.get(inId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
+      if (eq && typeof eq.level === 'number' && eq.level > maxLevel) maxLevel = eq.level
       const it = itMap?.get(inId)
-      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+      if (it && typeof it.level === 'number' && it.level > maxLevel) maxLevel = it.level
       const meta = ITEM_META_CORES[inId]
-      if (meta?.level && meta.level > maxTier) maxTier = meta.level
+      if (typeof meta?.level === 'number' && meta.level > maxLevel) maxLevel = meta.level
     }
-    if (maxTier > 1) return convertTierToLevel(maxTier)
+    if (maxLevel > 1) return maxLevel
   }
 
   return 1
@@ -746,20 +733,15 @@ export function autoUseBarLabel(bar: AutoUseBarType): string {
  * 将指定品质档应用到物品元数据上
  */
 export function withItemGrade(metadata: ItemMetadata, tier?: number): ItemMetadata {
-  const isExplicitTier = tier !== undefined
-  const rawTier = tier ?? metadata.tier ?? (metadata.level && metadata.level <= 8 ? metadata.level : 1)
+  const rawTier = tier ?? metadata.tier ?? 1
   const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
   const grade = resolveItemGrade(normalizedTier)
-  const tierChanged = isExplicitTier && metadata.tier !== undefined && normalizedTier !== metadata.tier
-  const effectiveLevel = !tierChanged && metadata.level != null
-    ? metadata.level
-    : convertTierToLevel(normalizedTier)
   return {
     ...metadata,
     rarity: grade.rarity,
     rarityLabel: grade.label,
     tier: normalizedTier,
-    level: effectiveLevel,
+    level: metadata.level ?? 1,
   }
 }
 
@@ -790,7 +772,7 @@ export interface ResolveCatalogItemMetadataOptions {
  *
  * 统一收拢：
  * 1. 等阶与品质：equipmentDefinition.tier -> 显式 tier -> itemDefinition.tier -> 静态注册表 tier（1~8 归一化）
- * 2. 展示等级：与服务端 ResolveItemLevel 同口径（equipmentDefinition.level -> itemDefinition.level -> 静态注册表 level -> convertTierToLevel(tier)）
+ * 2. 展示等级：与服务端 ResolveItemLevel 同口径（equipmentDefinition.level -> itemDefinition.level -> 静态注册表 level -> 1）
  * 3. 品类与文案：优先服务端目录，缺省回退静态注册表与中性兜底
  */
 export function resolveCatalogItemMetadata(
@@ -806,7 +788,7 @@ export function resolveCatalogItemMetadata(
     ?? explicitTier
     ?? itemDefinition?.tier
     ?? registered?.tier
-    ?? (registered?.level && registered.level <= 8 ? registered.level : 1)
+    ?? 1
   const normalizedTier = rawTier > 8 ? convertLevelToTier(rawTier) : Math.max(1, Math.floor(rawTier))
   const grade = resolveItemGrade(normalizedTier)
 
@@ -819,12 +801,9 @@ export function resolveCatalogItemMetadata(
   const categoryLabel = resolveItemCategoryLabel(resolvedSubCategory, t)
 
   const explicitLevel = equipmentDefinition?.level ?? itemDefinition?.level
-  // 外部指定了与静态注册表不同的等阶且目录未下发显式等级时，按新等阶推算等级；否则保留静态注册表等级。
-  const registeredLevelValid = registered?.level != null
-    && (registered.tier === undefined || registered.tier === normalizedTier)
   const effectiveLevel = (typeof explicitLevel === 'number' && explicitLevel > 0)
     ? explicitLevel
-    : (registeredLevelValid ? registered!.level! : convertTierToLevel(normalizedTier))
+    : (typeof registered?.level === 'number' && registered.level > 0 ? registered.level : 1)
 
   return {
     label: equipmentDefinition?.name || itemDefinition?.name || registered?.label || options.name || itemId,
@@ -1273,16 +1252,16 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.blazing-blast': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.taunt': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.taunt': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.heavy-clouds': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.heavy-clouds': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.qingping-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.qingping-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.lightning-attraction': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.lightning-attraction': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.pozhen-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.pozhen-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.star-piercer': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.star-piercer': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
+  'item.tome.heavy-clouds': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.heavy-clouds': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.qingping-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.qingping-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.lightning-attraction': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.lightning-attraction': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.pozhen-melody': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.pozhen-melody': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.star-piercer': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.star-piercer': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
   'item.tome.tuna-gong': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.tuna-gong': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.manniu-jin': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
@@ -1293,16 +1272,16 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.feiyan-gong': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.qingxin-jue': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.qingxin-jue': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
-  'item.tome.fenxue-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.fenxue-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.xiaozhoutian-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.xiaozhoutian-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.cunshen-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.cunshen-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.lianjing-huaqi-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualTome' },
-  'item.fragment.lianjing-huaqi-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'manualFragment' },
-  'item.tome.xuanyuan-yiqi-gong': { glyph: '谱', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualTome' },
-  'item.fragment.xuanyuan-yiqi-gong': { glyph: '卷', tone: 'gold', rarity: 'mystic', level: 3, subCategory: 'manualFragment' },
+  'item.tome.fenxue-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.fenxue-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.xiaozhoutian-gong': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.xiaozhoutian-gong': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.cunshen-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.cunshen-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.lianjing-huaqi-jue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.lianjing-huaqi-jue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.xuanyuan-yiqi-gong': { glyph: '谱', tone: 'gold', rarity: 'mystic', level: 30, subCategory: 'manualTome' },
+  'item.fragment.xuanyuan-yiqi-gong': { glyph: '卷', tone: 'gold', rarity: 'mystic', level: 30, subCategory: 'manualFragment' },
   'item.gathering-incense': { glyph: '草', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'spiritMaterial' },
   'item.alchemy-flame': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'refinedMaterial' },
   'item.reverse-fate-pill': { glyph: '丹', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'pill' },
@@ -1326,28 +1305,28 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.suma-robe': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
   'equipment.xingqi-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
   'equipment.taomu-talisman': { glyph: '佩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'trinket' },
-  'equipment.pogang-sword': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.zhansha-blade': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.chijin-helmet': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.yulin-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.tazhen-greaves': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
+  'equipment.pogang-sword': { glyph: '武', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'weapon' },
+  'equipment.zhansha-blade': { glyph: '武', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'weapon' },
+  'equipment.chijin-helmet': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'head' },
+  'equipment.yulin-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'armor' },
+  'equipment.tazhen-greaves': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'legs' },
   'equipment.jinfeng-scarf': { glyph: '冠', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'head' },
   'equipment.qingpi-armor': { glyph: '甲', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'armor' },
   'equipment.jixing-pants': { glyph: '裤', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'legs' },
-  'equipment.zhanfeng-scarf': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.liegang-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.tafeng-pants': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
-  'equipment.xuantie-dart': { glyph: '匕', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.xuanjia-guard': { glyph: '盾', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.yaoling-bead': { glyph: '珠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.huichun-bell': { glyph: '铃', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'off-hand' },
-  'equipment.chiwen-ring': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
-  'equipment.chaoyuan-staff': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.songfeng-zither': { glyph: '武', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'weapon' },
-  'equipment.ziwu-crown': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'head' },
-  'equipment.pichen-shirt': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'armor' },
-  'equipment.liuyun-skirt': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
-  'equipment.juling-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  'equipment.zhanfeng-scarf': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'head' },
+  'equipment.liegang-armor': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'armor' },
+  'equipment.tafeng-pants': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'legs' },
+  'equipment.xuantie-dart': { glyph: '匕', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'off-hand' },
+  'equipment.xuanjia-guard': { glyph: '盾', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'off-hand' },
+  'equipment.yaoling-bead': { glyph: '珠', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'off-hand' },
+  'equipment.huichun-bell': { glyph: '铃', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'off-hand' },
+  'equipment.chiwen-ring': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'trinket' },
+  'equipment.chaoyuan-staff': { glyph: '武', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'weapon' },
+  'equipment.songfeng-zither': { glyph: '武', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'weapon' },
+  'equipment.ziwu-crown': { glyph: '冠', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'head' },
+  'equipment.pichen-shirt': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'armor' },
+  'equipment.liuyun-skirt': { glyph: '裤', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'legs' },
+  'equipment.juling-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'trinket' },
   // 稀有材料专属特殊装备
   'equipment.baihu-dagger': { glyph: '匕', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'off-hand' },
   'equipment.rongling-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'trinket' },
@@ -1367,6 +1346,12 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.tide': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.sui-gang': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.sui-gang': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.zhanyu': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
+  'item.fragment.zhanyu': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
+  'item.tome.yueqian': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.yueqian': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.huoyan-fengbao': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.huoyan-fengbao': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
   // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐，9 级一阶装备）
   'equipment.xuantie-sword': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
   'equipment.piyan-blade': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
@@ -1412,14 +1397,10 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   if (core) {
     const rawTier = core.rarity
       ? ITEM_GRADE_ORDER.indexOf(core.rarity) + 1
-      : core.level
-      ? (core.level > 8 ? convertLevelToTier(core.level) : core.level)
       : 1
     const tier = Math.max(1, Math.min(8, rawTier))
     const grade = resolveItemGrade(tier)
-    const level = core.level != null
-      ? (core.level <= 8 && core.rarity !== 'mundane' ? convertTierToLevel(core.level) : core.level)
-      : convertTierToLevel(tier)
+    const level = core.level ?? 1
 
     return {
       label: label ?? itemId,
@@ -1447,7 +1428,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
       rarity: grade.rarity,
       rarityLabel: grade.label,
       tier,
-      level: fallback?.level ?? convertTierToLevel(tier),
+      level: fallback?.level ?? 1,
       description: description ?? fallback?.description ?? '',
     }
   }
@@ -1496,6 +1477,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 1,
+    level: 1,
     sellPrice: 30,
     isTradable: true,
     usableBars: ['exploration'],
@@ -1511,6 +1493,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 1,
+    level: 1,
     sellPrice: 82,
     isTradable: true,
     usableBars: ['combat'],
@@ -1534,6 +1517,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 1,
+    level: 1,
     sellPrice: 88,
     isTradable: true,
     usableBars: ['combat'],
@@ -1556,6 +1540,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 2,
+    level: 18,
     sellPrice: 182,
     isTradable: true,
     usableBars: ['exploration'],
@@ -1571,6 +1556,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'explorationSupply',
     tier: 1,
+    level: 1,
     sellPrice: 20,
     isTradable: true,
     usableBars: ['exploration'],
@@ -1586,6 +1572,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'alchemySupply',
     tier: 1,
+    level: 1,
     sellPrice: 22,
     isTradable: true,
     usableBars: ['alchemy'],
@@ -1601,6 +1588,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'pill',
     tier: 2,
+    level: 18,
     sellPrice: 0,
     isTradable: false,
   },
@@ -1612,6 +1600,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'explorationSupply',
     tier: 1,
+    level: 1,
     sellPrice: 120,
     isTradable: true,
     usableBars: ['exploration', 'alchemy', 'forging', 'talisman', 'formation'],
@@ -1627,6 +1616,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'explorationSupply',
     tier: 2,
+    level: 18,
     sellPrice: 380,
     isTradable: true,
     usableBars: ['exploration', 'alchemy', 'forging', 'talisman', 'formation'],
@@ -1642,6 +1632,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'enhancementSupply',
     tier: 1,
+    level: 1,
     sellPrice: 150,
     isTradable: true,
     usableBars: ['enhancement'],
@@ -1657,6 +1648,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'consumable',
     subCategory: 'enhancementSupply',
     tier: 2,
+    level: 18,
     sellPrice: 450,
     isTradable: true,
     usableBars: ['enhancement'],
@@ -1672,6 +1664,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'special',
     subCategory: 'special',
     tier: 5,
+    level: 54,
     sellPrice: 100,
     isTradable: true,
   },
@@ -1683,6 +1676,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     category: 'special',
     subCategory: 'special',
     tier: 1,
+    level: 1,
     sellPrice: 50,
     isTradable: true,
   },
@@ -1695,6 +1689,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '青锋剑',
     slot: 'weapon',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.2 },
     flatStats: { physicalAttack: 10, accuracy: 10 },
   },
@@ -1703,6 +1698,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '劈山刀',
     slot: 'weapon',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.1, physicalArmor: 0.14 },
     flatStats: { physicalAttack: 8, physicalArmor: 8, threatBonusPoints: 200 },
   },
@@ -1711,6 +1707,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '九节杖',
     slot: 'weapon',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.2 },
     flatStats: { spellAttack: 10, accuracy: 10, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
   },
@@ -1719,6 +1716,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '素心琴',
     slot: 'weapon',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.14 },
     flatStats: { spellAttack: 8, manapointRegen: 2, healingBonusPoints: 50, spellDamageBonusPoints: 5, skillBonusPoints: 5 },
   },
@@ -1727,6 +1725,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '束发巾',
     slot: 'head',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.02 },
     flatStats: { maxHitpoints: 6, physicalArmor: 4, spellResistance: 2, physicalDamageReductionPoints: 2, threatBonusPoints: 10 },
   },
@@ -1735,6 +1734,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '百衲甲',
     slot: 'armor',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalArmor: 0.16, spellResistance: 0.04 },
     flatStats: { maxHitpoints: 10, physicalArmor: 8, spellResistance: 2, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
   },
@@ -1743,6 +1743,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '扎口裤',
     slot: 'legs',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalArmor: 0.08, spellResistance: 0.02 },
     flatStats: { physicalArmor: 5, spellResistance: 1, maxHitpoints: 6, physicalDamageReductionPoints: 2, threatBonusPoints: 10 },
   },
@@ -1751,6 +1752,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '劲风巾',
     slot: 'head',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.08 },
     flatStats: { physicalAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, physicalArmor: 2, physicalDamageBonusPoints: 2 },
   },
@@ -1759,6 +1761,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '轻皮甲',
     slot: 'armor',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.16 },
     flatStats: { physicalAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, physicalArmor: 4, physicalDamageBonusPoints: 2 },
   },
@@ -1767,6 +1770,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '疾行裤',
     slot: 'legs',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.08 },
     flatStats: { physicalAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, physicalArmor: 2, physicalDamageBonusPoints: 2 },
   },
@@ -1775,6 +1779,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '混元巾',
     slot: 'head',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.08 },
     flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1783,6 +1788,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '素麻袍',
     slot: 'armor',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.16 },
     flatStats: { spellAttack: 9, accuracy: 5, criticalChance: 3, maxHitpoints: 3, spellResistance: 4, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1791,6 +1797,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '行气裤',
     slot: 'legs',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.08 },
     flatStats: { spellAttack: 5, accuracy: 3, criticalChance: 2, maxHitpoints: 2, spellResistance: 2, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1799,6 +1806,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '桃木符',
     slot: 'trinket',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.1 },
     flatStats: { criticalChance: 4, manapointRegen: 2 },
   },
@@ -1807,6 +1815,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '兽骨匕',
     slot: 'off-hand',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalAttack: 0.1 },
     flatStats: { physicalAttack: 6, accuracy: 6, physicalDamageBonusPoints: 4 },
   },
@@ -1815,6 +1824,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '桃灵珠',
     slot: 'off-hand',
     tier: 1,
+    level: 1,
     baseStatRatios: { spellAttack: 0.1 },
     flatStats: { spellAttack: 6, accuracy: 6, spellDamageBonusPoints: 4, skillBonusPoints: 4 },
   },
@@ -1823,6 +1833,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '精铁盾',
     slot: 'off-hand',
     tier: 1,
+    level: 1,
     baseStatRatios: { physicalArmor: 0.06, spellResistance: 0.06 },
     flatStats: { maxHitpoints: 10, physicalDamageReductionPoints: 4 },
   },
@@ -1831,6 +1842,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '甘露瓶',
     slot: 'off-hand',
     tier: 1,
+    level: 1,
     flatStats: { hitpointRegen: 2, manapointRegen: 1, maxManapoints: 10, cooldownReductionPoints: 3, healingBonusPoints: 5 },
   },
   'equipment.pogang-sword': {
@@ -1838,6 +1850,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '破罡剑',
     slot: 'weapon',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.32 },
     flatStats: { physicalAttack: 16, accuracy: 16 },
   },
@@ -1846,6 +1859,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '斩煞刀',
     slot: 'weapon',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.16, physicalArmor: 0.22 },
     flatStats: { physicalAttack: 13, physicalArmor: 13, threatBonusPoints: 300 },
   },
@@ -1854,6 +1868,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '朝元杖',
     slot: 'weapon',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.32 },
     flatStats: { spellAttack: 16, accuracy: 16, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
   },
@@ -1862,6 +1877,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '松风琴',
     slot: 'weapon',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.22 },
     flatStats: { spellAttack: 14, manapointRegen: 3, healingBonusPoints: 75, spellDamageBonusPoints: 15, skillBonusPoints: 15 },
   },
@@ -1870,6 +1886,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '赤牙匕',
     slot: 'off-hand',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.16 },
     flatStats: { physicalAttack: 11, accuracy: 10, physicalDamageBonusPoints: 6 },
   },
@@ -1878,6 +1895,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '曜灵珠',
     slot: 'off-hand',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.16 },
     flatStats: { spellAttack: 11, accuracy: 10, spellDamageBonusPoints: 6, skillBonusPoints: 6 },
   },
@@ -1886,6 +1904,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '赤铜盾',
     slot: 'off-hand',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalArmor: 0.1, spellResistance: 0.1 },
     flatStats: { maxHitpoints: 17, physicalDamageReductionPoints: 6 },
   },
@@ -1894,6 +1913,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '回春铃',
     slot: 'off-hand',
     tier: 2,
+    level: 18,
     flatStats: { hitpointRegen: 3.5, manapointRegen: 1.5, maxManapoints: 17, cooldownReductionPoints: 5, healingBonusPoints: 6 },
   },
   'equipment.chijin-helmet': {
@@ -1901,6 +1921,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '赤金盔',
     slot: 'head',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalArmor: 0.14, spellResistance: 0.04 },
     flatStats: { maxHitpoints: 9, physicalArmor: 6, spellResistance: 4, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
   },
@@ -1909,6 +1930,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '鱼鳞甲',
     slot: 'armor',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalArmor: 0.26, spellResistance: 0.06 },
     flatStats: { maxHitpoints: 16, physicalArmor: 12, spellResistance: 4, physicalDamageReductionPoints: 2, threatBonusPoints: 20 },
   },
@@ -1917,6 +1939,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '踏阵胫',
     slot: 'legs',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalArmor: 0.14, spellResistance: 0.04 },
     flatStats: { physicalArmor: 7, spellResistance: 3, maxHitpoints: 9, physicalDamageReductionPoints: 2, threatBonusPoints: 15 },
   },
@@ -1925,6 +1948,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '斩风巾',
     slot: 'head',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.14 },
     flatStats: { physicalAttack: 8, accuracy: 5, criticalChance: 4, maxHitpoints: 3, physicalArmor: 3, physicalDamageBonusPoints: 2 },
   },
@@ -1933,6 +1957,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '裂罡甲',
     slot: 'armor',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.26 },
     flatStats: { physicalAttack: 14, accuracy: 8, criticalChance: 5, maxHitpoints: 5, physicalArmor: 6, physicalDamageBonusPoints: 2 },
   },
@@ -1941,6 +1966,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '踏风裤',
     slot: 'legs',
     tier: 2,
+    level: 18,
     baseStatRatios: { physicalAttack: 0.14 },
     flatStats: { physicalAttack: 8, accuracy: 5, criticalChance: 4, maxHitpoints: 3, physicalArmor: 3, physicalDamageBonusPoints: 2 },
   },
@@ -1949,6 +1975,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '子午冠',
     slot: 'head',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.14 },
     flatStats: { spellAttack: 8, accuracy: 5, criticalChance: 4, maxHitpoints: 3, spellResistance: 3, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1957,6 +1984,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '辟尘衫',
     slot: 'armor',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.26 },
     flatStats: { spellAttack: 14, accuracy: 8, criticalChance: 5, maxHitpoints: 5, spellResistance: 6, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1965,6 +1993,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '流云裳',
     slot: 'legs',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.14 },
     flatStats: { spellAttack: 8, accuracy: 5, criticalChance: 4, maxHitpoints: 3, spellResistance: 3, spellDamageBonusPoints: 2, skillBonusPoints: 2 },
   },
@@ -1973,6 +2002,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     name: '聚灵佩',
     slot: 'trinket',
     tier: 2,
+    level: 18,
     baseStatRatios: { spellAttack: 0.16 },
     flatStats: { criticalChance: 7, manapointRegen: 3.5 },
   },

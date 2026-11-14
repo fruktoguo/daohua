@@ -111,7 +111,7 @@ test('特质描述：双刃剑特质升级时正向增益提升，负面惩罚�
 
 
 test('机制特质：等级成长只提升收益，固定惩罚与持续时间不变', () => {
-  assert.equal(Object.keys(TRAIT_DEFINITIONS).length, 36)
+  assert.equal(Object.keys(TRAIT_DEFINITIONS).length, 38)
   assert.match(formatTraitDescription('trait.chujian', 3), /330%，持续 2 秒/)
   assert.match(formatTraitDescription('trait.yusuzebuda', 3), /110%，伤害与治疗增幅各降低 100 点/)
   assert.match(formatTraitDescription('trait.woyaodashige', 3), /11 点/)
@@ -120,4 +120,13 @@ test('机制特质：等级成长只提升收益，固定惩罚与持续时间�
   assert.match(formatTraitDescription('trait.ranhun', 3), /2.2%.*1 点.*5 秒/)
   assert.equal(TRAIT_DEFINITIONS['trait.xuyi'].quality, 6)
   assert.equal(TRAIT_DEFINITIONS['trait.ranhun'].cost, 16)
+  assert.equal(TRAIT_DEFINITIONS['trait.jianyuxin'].quality, 5)
+  assert.equal(TRAIT_DEFINITIONS['trait.jianyuxin'].cost, 12)
+  assert.match(formatTraitDescription('trait.jianyuxin', 1), /物理与术法攻击各提升 10%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取/)
+  assert.match(formatTraitDescription('trait.jianyuxin', 3), /物理与术法攻击各提升 11%；拥有「移形」时/)
+  assert.equal(TRAIT_DEFINITIONS['trait.huoshen'].quality, 5)
+  assert.equal(TRAIT_DEFINITIONS['trait.huoshen'].cost, 12)
+  assert.match(formatTraitDescription('trait.huoshen', 1), /火属性增伤提升 10%/)
+  assert.match(formatTraitDescription('trait.huoshen', 2), /火属性增伤提升 10\.5%/)
+  assert.match(formatTraitDescription('trait.huoshen', 3), /火属性增伤提升 11%/)
 })

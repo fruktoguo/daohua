@@ -10,7 +10,7 @@ import { useT } from '../i18n'
 import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import { PartyActivityKind, type PartyActivityKind as PartyActivityKindType, type PartyDto, type PartyMemberDto, type PartyProfileDto } from '../network/protocol'
-import { useUiStore, type SocialSubTab } from '../uiStore'
+import { useUiStore } from '../uiStore'
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -1020,13 +1020,6 @@ export const DouDiZhuPage = memo(function DouDiZhuPage(): React.JSX.Element {
   </section>
 })
 
-/** 同道页子选项卡表：队伍、宗门与邀请；对弈属于队伍面板内部页签。 */
-const SOCIAL_SUB_TABS: ReadonlyArray<{ id: SocialSubTab; labelKey: string }> = [
-  { id: 'party', labelKey: 'social.sub.party' },
-  { id: 'zongmen', labelKey: 'social.sub.zongmen' },
-  { id: 'invite', labelKey: 'social.sub.invite' },
-]
-
 /** GET /api/v1/invitation 的响应形态（HTTP 低频拉取，不进 WebSocket 协议帧）。 */
 interface InvitationOverviewDto {
   inviteCode: string
@@ -1183,11 +1176,9 @@ export const PartyPage = memo(function PartyPage(): React.JSX.Element {
   )
 })
 
-/** 同道页承载队伍、宗门与邀请；对弈属于队伍面板内部页签。 */
+/** 同道页承载队伍、宗门与邀请；通用二级（队伍/宗门/邀请）由侧栏（桌面）或底部导航（竖屏）承载，对弈属于队伍面板内部页签。 */
 export const SocialPage = memo(function SocialPage(): React.JSX.Element {
-  const t = useT()
   const socialSubTab = useUiStore(state => state.socialSubTab)
-  const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
   const party = useSocialStore(state => state.party)
   const partyGameSubTab = useUiStore(state => state.partyGameSubTab)
   const isZongmen = socialSubTab === 'zongmen'
@@ -1195,18 +1186,6 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
 
   return (
     <section className={`panel social-page${isZongmen ? ' is-zongmen' : ''}${isDoudizhuTable ? ' is-doudizhu-table' : ''}`}>
-      {!isZongmen && !isDoudizhuTable && <header className="panel-header social-page-header">
-        <nav aria-label={t('social.subAria')} className="market-tabs social-mobile-tabs" role="tablist">
-          {SOCIAL_SUB_TABS.map(tab => <button
-            aria-selected={socialSubTab === tab.id}
-            className={socialSubTab === tab.id ? 'active' : ''}
-            key={tab.id}
-            onClick={() => setSocialSubTab(tab.id)}
-            role="tab"
-            type="button"
-          >{t(tab.labelKey)}</button>)}
-        </nav>
-      </header>}
       {socialSubTab === 'party' && <PartyPage />}
       {isZongmen && <div className="social-page-body"><ZongmenPage /></div>}
       {socialSubTab === 'invite' && <div className="social-page-body"><InviteView /></div>}

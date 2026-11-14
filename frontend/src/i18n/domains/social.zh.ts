@@ -181,12 +181,12 @@ export const socialZh = {
     },
     match: {
       heading: '队伍匹配',
-      desc: '登记你的目标与期望，系统会自动并入合适的公开队伍；也可在大厅中被队长邀请。',
+      desc: '登记你的目标与期望，将自动并入合适的公开队伍；也可在大厅中被队长邀请。',
       seeking: '匹配中',
     },
     lobby: {
       heading: '组队大厅',
-      desc: '按目标筛选公开队伍与匹配中的散人，身家门槛由服务端实时裁决。',
+      desc: '按目标筛选公开队伍与匹配中的散人，身家门槛将实时裁决。',
       myValuation: '我的身家 {value}',
       partiesHeading: '公开队伍',
       seekersHeading: '匹配中的散人',
@@ -350,6 +350,9 @@ export const socialZh = {
       offlineReserveQuantity: '离线储备 {quantity}',
       offlineReserveHint: '离线储备用于全队离线战斗，不可出售；成员上线或散场时退回未用余量。',
       viewDetail: '查看角色详情',
+      openCardHint: '点击查看该道友的角色名片',
+      loadoutHiddenTitle: '该道友已将配装设为私密',
+      loadoutHiddenDesc: '当前仅对同队队友展示装备、功法配置与丹符插槽；你仍可查看其角色属性、境界与技艺信息。',
     },
     // 同图共战（组队讨伐）：成员准备状态、开启槽位与活跃会话（§21.13）
     ready: {
@@ -361,7 +364,7 @@ export const socialZh = {
     // 队伍斗法开关（§7.10.4）：整队作为一个匹配单位参与 PVP 撮合，仅队长可改
     pvp: {
       label: '斗法',
-      hint: '整队作为一个单位参与斗法（PVP）撮合；仅队长可修改',
+      hint: '整队作为一个单位参与斗法撮合；仅队长可修改',
     },
     // 本人复活时机策略（§7.9.4.1）：倒地读条走完后是否立刻起身，由本人设定
     respawn: {

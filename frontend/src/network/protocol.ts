@@ -259,6 +259,8 @@ export interface PlayerSnapshotDeltaDto {
   changedAssets?: AssetBalanceDto[] | null
   /** 当前道号：身份标量不属任何分段，随增量透传使改名即时生效 */
   displayName?: string | null
+  /** 可选头像立绘标识：仅变更或显式携带时随增量下发 */
+  avatarId?: string | null
 }
 
 /** 行动计划执行次数上限（有限循环最大值，与服务端领域与协议对齐：1,000,000） */
@@ -927,6 +929,66 @@ export interface PlayerCardDto {
   techniqueLevels?: Record<string, number> | null
   /** 当前行动账本（若目标有进行中行动） */
   currentReport?: BattleReport | null
+  /** 对非队友隐藏 copyable 配装明细（玩家在隐私设置关闭公开配装时下发 true） */
+  loadoutHidden?: boolean
+}
+
+/** 全服排行榜单榜摘要元数据（GET /api/v1/leaderboards） */
+export interface LeaderboardBoardSummaryDto {
+  boardId: string
+  kind: string
+  techniqueId?: string | null
+  participantCount: number
+  topScore?: number | null
+}
+
+/** 全服排行榜总览索引（GET /api/v1/leaderboards） */
+export interface LeaderboardIndexDto {
+  computedAt: string
+  nextComputeAt: string
+  boards: LeaderboardBoardSummaryDto[]
+}
+
+/** 身家细分估值（与 LeaderboardEntryDto 复用同一线形） */
+export interface LeaderboardEntryDto {
+  rank: number
+  score: number
+  displayName: string
+  avatar?: string
+  playerId?: string | null
+  realmLevel?: number | null
+  experience?: number | null
+  experienceToNext?: number | null
+  valuation?: number | null
+  valuationBreakdown?: ValuationBreakdownDto | null
+  techniqueLevel?: number | null
+  techniqueExp?: number | null
+  duelWins?: number | null
+  duelLosses?: number | null
+  zongmenId?: string | null
+  zongmenName?: string | null
+  zongmenPrefix?: string | null
+  memberCount?: number | null
+  hallLevel?: number | null
+  playerSeq: number
+}
+
+/** 当前认证玩家在本榜的名次条目 */
+export interface LeaderboardMyRankDto {
+  rank: number
+  score: number
+  duelLosses?: number | null
+  techniqueLevel?: number | null
+}
+
+/** 全服排行榜单榜完整快照响应（GET /api/v1/leaderboards/{boardId}） */
+export interface LeaderboardSnapshotDto {
+  boardId: string
+  computedAt: string
+  nextComputeAt: string
+  participantCount: number
+  entries: LeaderboardEntryDto[]
+  myRank?: LeaderboardMyRankDto | null
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1

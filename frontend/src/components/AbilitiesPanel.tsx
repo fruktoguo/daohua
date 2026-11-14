@@ -298,6 +298,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
       {/* 功法待选列表（贴靠目标槽位浮出，顶部旁边展示大号触发条件按钮） */}
       <AbilityGridPicker
         abilities={learnedAbilities}
+        abilityExperiences={combat.abilityExperiences}
         allowEmpty
         anchor={activePicker?.anchor ?? null}
         levelFor={abilityLevelFor}

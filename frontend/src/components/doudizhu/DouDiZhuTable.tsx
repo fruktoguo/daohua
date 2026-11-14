@@ -111,7 +111,11 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const seconds = Math.max(0, Math.ceil((game.turnDeadlineAtUnixMilliseconds - serverNow) / 1000))
   const isFullscreen = fullscreen || fallbackFullscreen
   const multiplier = game.phase === 'finished' ? game.finalMultiplier : 2 ** (game.robCount + game.bombCount)
-  const name = (seat: number): string => party.members.find(member => member.playerId === game.playerIds[seat])!.displayName
+  const findMember = (playerId: string | undefined) =>
+    playerId ? (party.members.find(member => member.playerId === playerId) ?? null) : null
+  const memberDisplayName = (playerId: string | undefined, seat: number): string =>
+    findMember(playerId)?.displayName ?? t('social.doudizhu.seat', { seat: seat + 1 })
+  const name = (seat: number): string => memberDisplayName(game.playerIds[seat], seat)
   const allPlays = game.history
   let trickStart = 0
   for (let i = 1; i < allPlays.length; i++) if (allPlays[i].isPass && allPlays[i - 1].isPass) trickStart = i + 1
@@ -361,25 +365,28 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     </div>
   }
   function renderSeat(seat: number): React.JSX.Element {
-    const member = party.members.find(entry => entry.playerId === game.playerIds[seat])!
+    const seatPlayerId = game.playerIds[seat] ?? ''
+    const member = findMember(seatPlayerId)
+    const displayName = member?.displayName ?? t('social.doudizhu.seat', { seat: seat + 1 })
+    const spiritStones = member?.spiritStones ?? 0
     const own = seat === mySeat, position = own ? 'self' : (seat - mySeat + 3) % 3 === 1 ? 'left' : 'right'
     const lastBid = [...game.bids].reverse().find(bid => bid.seat === seat)
     const earlierCall = lastBid && game.bids.some(bid => bid.version < lastBid.version && bid.action !== 'pass')
     const bidText = lastBid ? t(`social.doudizhu.${lastBid.action === 'pass' ? earlierCall ? 'robPass' : 'callPass' : lastBid.action}`) : ''
-    const portrait = <CharacterAvatar actorId={resolvePlayerActorId(member.avatar)} className="ddz-avatar" isFlipped={own || position === 'right'} name={member.displayName} role="player" />
-    return <article className={`ddz-seat ddz-seat-${position}${canOperate && game.currentSeat === seat ? ' is-turn' : ''}`} data-seat={seat} key={member.playerId}>
+    const portrait = <CharacterAvatar actorId={resolvePlayerActorId(member?.avatar)} className="ddz-avatar" isFlipped={own || position === 'right'} name={displayName} role="player" />
+    return <article className={`ddz-seat ddz-seat-${position}${canOperate && game.currentSeat === seat ? ' is-turn' : ''}`} data-seat={seat} key={member?.playerId ?? (seatPlayerId || seat)}>
       <div className="ddz-profile">
-        <strong className="ddz-player-name">{member.displayName}</strong>
+        <strong className="ddz-player-name">{displayName}</strong>
         <span className={`ddz-role${game.landlordSeat === seat ? ' is-landlord' : ''}`}>{!hasLandlord ? '　' : t(game.landlordSeat === seat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</span>
         <div className="ddz-avatar-row">
-          {own ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
-            <div className="ddz-interaction-header">{t('social.doudizhu.interactWith', { name: member.displayName })}</div>
+          {own || !member ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
+            <div className="ddz-interaction-header">{t('social.doudizhu.interactWith', { name: displayName })}</div>
             <div className="ddz-prop-grid">{PROPS.map(prop => <button className="ddz-prop-button" key={prop} type="button" onClick={() => sendInteraction(member.playerId, prop, close)}><svg className="ddz-prop-art" viewBox="0 0 64 64"><use href={`#ddz-prop-${prop}`} /></svg><span>{t(`social.doudizhu.prop.${prop}`)}</span></button>)}</div>
             <div className="ddz-quick-phrases">{PHRASES.map(phrase => <button className="ddz-phrase-button" key={phrase} type="button" onClick={() => sendInteraction(member.playerId, phrase, close)}>{t(`social.doudizhu.phrase.${phrase}`)}</button>)}</div>
           </>}>{portrait}<span className="ddz-interact-label">{t('social.doudizhu.interact')}</span></FloatingPopover>}
           {!own && <span className="ddz-hand-counter" aria-label={t('social.doudizhu.cardsLeft', { count: game.handsRemaining[seat] })}><i className="ddz-mini-back" /><b>{intro ? landedCount(seat) : revealing && game.landlordSeat === seat ? 17 + game.bottomCards.filter((_, i) => revealAge >= 1080 + i * 190).length : game.handsRemaining[seat]}</b></span>}
         </div>
-        <div className="ddz-wallet" aria-label={`${member.displayName} ${formatNumber(member.spiritStones)}`}><ItemIcon itemId="currency.spirit-stone" /><span>{formatNumber(member.spiritStones)}</span></div>
+        <div className="ddz-wallet" aria-label={`${displayName} ${formatNumber(spiritStones)}`}><ItemIcon itemId="currency.spirit-stone" /><span>{formatNumber(spiritStones)}</span></div>
         <span className="ddz-seat-status">{game.hostedSeats[seat] ? t('social.doudizhu.hosted') : canOperate && game.currentSeat === seat ? t('social.doudizhu.turn') : '　'}</span>
       </div>
       {!own && <div className="ddz-opponent-play">{renderPlay(seat)}</div>}
@@ -445,7 +452,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
         <h2>{t((game.landlordSeat === mySeat) === game.landlordWon ? 'social.doudizhu.youWon' : 'social.doudizhu.youLost')}</h2>
         {game.spring && <strong>{t(game.landlordWon ? 'social.doudizhu.spring' : 'social.doudizhu.antiSpring')}</strong>}
         <div className="ddz-result-summary">{t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })} · ×{game.finalMultiplier}</div>
-        {game.playerIds.map((id, seat) => { const member = party.members.find(entry => entry.playerId === id)!; return <div className="ddz-result-row" key={id}><CharacterAvatar actorId={resolvePlayerActorId(member.avatar)} role="player" name={member.displayName} /><span>{member.displayName}<small>{t(seat === game.landlordSeat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</small></span><b className={game.settlementDeltas[seat] < 0 ? 'is-negative' : ''}>{game.settlementDeltas[seat] >= 0 ? '+' : '−'}{formatNumber(Math.abs(game.settlementDeltas[seat]))}</b></div> })}
+        {game.playerIds.map((id, seat) => { const member = findMember(id); const displayName = memberDisplayName(id, seat); return <div className="ddz-result-row" key={id}><CharacterAvatar actorId={resolvePlayerActorId(member?.avatar)} role="player" name={displayName} /><span>{displayName}<small>{t(seat === game.landlordSeat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</small></span><b className={game.settlementDeltas[seat] < 0 ? 'is-negative' : ''}>{game.settlementDeltas[seat] >= 0 ? '+' : '−'}{formatNumber(Math.abs(game.settlementDeltas[seat]))}</b></div> })}
         <div className="ddz-result-buttons"><button type="button" onClick={onEnd}>{t('social.doudizhu.end')}</button><button className="ddz-primary" type="button" disabled={!canStart} onClick={onStart}>{t('social.doudizhu.playAgain')}</button></div>
         {!isLeader && <small>{t('social.doudizhu.waitLeader')}</small>}
       </section></div>}
