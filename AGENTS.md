@@ -54,8 +54,13 @@ Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部�
 
 - 项目内部代表名统一使用 `daohua` / `DaoHua` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
 - 当前内测阶段允许直接破坏历史数据、存档格式和部署拓扑兼容性；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
-- **本地开发阶段兼容清零（硬规则）**：当前工作默认处于本地开发/内测阶段，不设计、不实现任何历史兼容路径。旧数据、旧快照、旧数据库 schema、旧 API/WebSocket 字段、旧协议、旧部署拓扑和旧组件模型均可直接废弃；禁止为了它们新增 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter、旧字段回填或过渡分支。允许一次性改表、改快照、删旧模型和清空本地数据。所谓“行为基线”只用于保护当前明确的业务结算语义，不等于保留历史格式或历史调用方式。**清零玩家存档前必须先尝试对应版本的迁移脚本；迁移不可用或失败时，不得在无人值守下自动删除——必须暂停启动并在控制台交互确认（无 TTY 直接中止），操作者明确确认后才允许执行重置。**
-- **兼容性迁移目录（唯一例外）**：数据库兼容性迁移脚本允许存在，但必须统一收拢在仓库根目录 `migrations/` 独立文件夹中，满足**可整体删除**约束：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文；空库启动永远由权威 `PostgresSchema.Sql` 直建，删除 `migrations/` 后全新初始化行为完全不变。仍禁止在代码中实现 migration runner 或对迁移目录的运行时依赖。文件统一为 `NNNN_vX_to_vY.sql`：`platform.schema_version`（本地库内容版本，涵盖表结构与存档载荷标签）兼容性迁移，序号全局递增；存档 `SectionCodec.CurrentSchemaVersion` 每次升级时 `PostgresSchema.Version` 须同步 +1，并在对应版本迁移文件里内嵌 `UPDATE ... SET schema_version` 标签推进（前提：新字段可缺省解码，否则该版本走交互确认清零）。快照协议按 `minReaderSchemaVersion` 读者地板判定客户端兼容性：可缺省解码的 additive 升级保持 `SectionCodec.MinReadableSchemaVersion` 不抬（旧客户端透明续用），仅破坏性变更才推进地板并强制客户端更新。本地开发启动链（`reset-outdated-players.sh` 经 `dev.sh`）可自动执行本链，人工亦可显式调用 `migrate-local-db.sh`。
+- **本地开发阶段兼容清零（硬规则）**：当前工作默认处于本地开发/内测阶段，不设计、不实现任何历史兼容路径。旧数据、旧快照、旧数据库 schema、旧 API/WebSocket 字段、旧协议、旧部署拓扑和旧组件模型均可直接废弃；禁止为了它们新增 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter、旧字段回填或过渡分支。允许一次性改表、改快照、删旧模型和清空本地数据。所谓“行为基线”只用于保护当前明确的业务结算语义，不等于保留历史格式或历史调用方式。**清零玩家存档前会先尝试 `migrations/` 中已有对应版本的迁移脚本；若无可用脚本或迁移失败，不得在无人值守下自动删除——必须暂停启动并在控制台交互确认（无 TTY 直接中止），操作者明确确认后才允许执行重置。**
+- **持久化版本变更台账（硬规则）**：自 `v55` 起，**日常开发取消强制手写单次 `migrations/NNNN_vX_to_vY.sql`**，改为强制登记制度——凡改动以下任意一类持久化相关内容，必须推进 `PostgresSchema.Version`（全局递增，玩家分段载荷变动时 `SectionCodec.CurrentSchemaVersion` 同步 +1），并在唯一滚动总台账 [`docs/backend/db-version-changes.md`](docs/backend/db-version-changes.md) 追加 `## vX -> vY` 章节，明确写清**① 变了什么、② 是否需要处理存量数据、③ 如果要处理怎么处理**：
+  1. 数据库 DDL、索引、约束或角色权限（`PostgresSchema.Sql`、`deploy/postgres-local-roles.sql`）；
+  2. 玩家八分段或持久化 JSON 检查点结构/语义（`SectionCodec` 等）；
+  3. 影响旧存档加载的配表改动（`config/game-data/**` 删除/重命名 ID、修改影响存盘数值语义的单位等）。
+  快照协议按 `minReaderSchemaVersion` 读者地板判定客户端兼容性：可缺省解码的 additive 升级保持 `SectionCodec.MinReadableSchemaVersion` 不抬（旧客户端透明续用），仅破坏性变更才推进地板并强制客户端更新。
+- **兼容性迁移目录（唯一例外）**：数据库兼容性迁移脚本统一收拢在仓库根目录 `migrations/` 独立文件夹中（主要供正式服 `prod-release` 阶段读取 `docs/backend/db-version-changes.md` 统一合并编写跨版本脚本，或少数高危改动的显式/本地自愿脚本），满足**可整体删除**约束：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文；空库启动永远由权威 `PostgresSchema.Sql` 直建，删除 `migrations/` 后全新初始化行为完全不变。仍禁止在代码中实现 migration runner 或对迁移目录的运行时依赖。文件统一为 `NNNN_vX_to_vY.sql`（禁止同一 `vX` 出现多个分叉起始脚本），序号全局递增；`update ... schema_version` 标签推进内嵌在发版合并脚本或手工迁移步骤中执行。本地开发启动链（`reset-outdated-players.sh` 经 `dev.sh`）若存在可用链则先执行，未编写单次脚本或不可迁移时由开发者交互确认 `RESET` 清零本地玩家数据。
 - 本地开发可以直接破坏代码和数据结构；只有实际操作远程/生产数据时才执行备份、审批和可恢复性检查，这属于数据安全要求，不得反向变成代码兼容层。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
@@ -159,8 +164,8 @@ docker compose -f deploy/compose.prod.yaml down
 | `release-prod.sh` | 正式服一键全自动打包与发布：前置门禁自检、三路并发（CCR 镜像构建推送 + 远端数据备份 + odin 掌机 arm64 交叉编译预传）、自动提取不可变 sha256 镜像并触发部署与双层烟测、HD 画质包自动生成上传（`/hd/*`）；**Android APK 默认不构建**，仅 `--with-apk` 显式要求时编译并发布 GitHub Releases |
 | `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
-| `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工执行；运行时与门禁均不引用 |
-| `reset-outdated-players.sh` | 本地库版本漂移处置：存档行或 `platform.schema_version` 落后时优先执行 `migrations/` 迁移链（经 `migrate-local-db.sh`）；迁移后仍有不可迁移存档漂移时须控制台交互确认（输入 RESET）才重置玩家游戏域数据（保留账号/角色名），拒绝或无 TTY 则中止启动；`dev.sh` 启动时自动调用，仅作用于本地回环库，`--dry-run` 只检测 |
+| `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 已有可用脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工显式执行；日常未随 commit 写 `.sql` 时链不会覆盖最新开发版本；运行时与门禁均不引用 |
+| `reset-outdated-players.sh` | 本地库版本漂移处置：存档行或 `platform.schema_version` 落后时先尝试 `migrations/` 已有可用脚本（经 `migrate-local-db.sh`）；无对应过渡脚本或仍有不可迁移漂移时须控制台交互确认（输入 RESET）才重置玩家游戏域数据（保留账号/角色名），拒绝或无 TTY 则中止启动；`dev.sh` 启动时自动调用，仅作用于本地回环库，`--dry-run` 只检测 |
 | `backup-pull-sync.sh` | 计算节点端定时拉取云端主服 PostgreSQL 备份、本地长期归档与 SHA-256 完整性对账脚本（位于 `deploy/`） |
 | `install-backup-sync.sh` | 计算节点端一键安装并启用 systemd 备份拉取定时器脚本（位于 `deploy/`） |
 |`taptap-publish.sh`|TapTap 开发者中心包体管理与发布：检查 CLI 环境与认证上下文（`status`）、发起设备码授权（`login`）、物料盘点（`inspect`）、Android APK 安全上传（`upload`，支持 `--dry-run`/`--yes`）、应用提审前资料缺口与合规预检（`review-check`）|
@@ -324,6 +329,7 @@ docs: 补充数据备份和回滚说明
 - Docker 构建、镜像名、标签或平台。
 - 环境变量、健康端点、Caddy、CCR、部署和回滚方式。
 - 数据卷、备份、恢复、存档格式或运行拓扑。
+- 数据库结构/权限、`SectionCodec` 存档载荷/标签或影响旧档加载的 `config/game-data/**` 配表 ID 删改（必须推进版本号并在 `docs/backend/db-version-changes.md` 登记 `vX -> vY` 变更内容与存量处理方案）。
 - 对外 API、WebSocket 协议和生产安全边界。
 - 前端公共组件、统一模板或基础交互规范变更（同步更新 `docs/frontend/common-components.md`）。
 - 非 Bug 修复开发任务规划与进度（必须同步更新 `docs/tasks.md` 及 `docs/tasks/*.md` 独立详情文档）。

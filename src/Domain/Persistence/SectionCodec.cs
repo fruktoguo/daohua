@@ -77,8 +77,10 @@ public static class SectionCodec
     /// 发布瞬间战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。
     /// v43：progression 分段新增生涯斗法胜负计数 duelWins/duelLosses，settings 分段新增
     /// publicLoadoutVisible 配装隐私开关（默认 true），均可缺省解码，不改变最低可读版本地板 v41。
-    /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
-    /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
+    /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 docs/backend/db-version-changes.md
+    /// 登记 vX -&gt; vY 的字段变动、是否可缺省解码、MinReadableSchemaVersion 取舍及存量迁移方式；
+    /// 日常不再强制手写单次 migrations/*.sql，待 prod-release 时统一合写存档标签推进或手动迁移；
+    /// 本地开发漂移仍由 reset-outdated-players.sh 优先跑已有链式脚本、缺失则交互确认 RESET 清零。运行时解码仍只接受当前版本。</summary>
     public const int CurrentSchemaVersion = 43;
     /// <summary>
     /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。

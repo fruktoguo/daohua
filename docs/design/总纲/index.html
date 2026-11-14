@@ -1520,10 +1520,11 @@ $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数�
 ## 4.3 防具双防配比与输出装备抗性固定化
 - **物理防御/生存套**（头/衣/裤）：主护甲取原预算 80%，剩余 20% 转为法术抗性；固定值全量倾斜生命上限与双防；每件附带 **+2% 物理伤害减免**（`physicalDamageReductionPoints: 2`）与 **威胁增幅**（衣服 +150%~+200%、头腿各 +100%~+150%）。
 - **物理伤害/输出套**（头/衣/裤）：纯物攻百分比，不再配置微量百分比护甲（低基数下百分比抗性无效，改为纯固定值护甲）；固定值倾斜物攻、命中、暴击、生命与微量固定护甲；每件附带 **+2% 物理伤害增幅**（`physicalDamageBonusPoints: 2`）。
+- **物理输出武器增伤对齐律**：剑系物理输出武器（不含刀系承伤/威胁坦克武器）统一配置与同档位法杖等值的 **物理伤害增幅**（`physicalDamageBonusPoints`：青锋剑 +5%、玄铁长剑 +6%、破罡剑 +15%、断尘残刃剑 +20%）；物理输出副手与输出防具亦按同口径设置对应物理增伤点数。
 - **法术伤害/输出套**（头/衣/裤）：对齐物理输出套构成，纯法攻百分比，不再配置百分比双抗；固定值倾斜法攻、命中、暴击、生命与微量固定法抗；每件**同时**附带 **+2% 术法伤害增幅**（`spellDamageBonusPoints: 2`）与 **+2% 技能增幅**（`skillBonusPoints: 2`），两项同值并列。
 - **法系双增伤守恒律（硬约束）**：一切法系装备（`baseStatRatios` 或 `flatStats` 含 `spellAttack`，即武器/头/衣/裤/副手五槽）的 `spellDamageBonusPoints` 与 `skillBonusPoints` **必须同值并存**——凡原本只配其中一项的，一律补齐为与已有一项完全相同的点数；缺项或不等值视为配表缺陷。理由：`deterministic` 战斗结算中两者处于**不同乘区**（`spellDamageBonusPoints` 在抗性穿透后的分类增伤层、`skillBonusPoints` 并入出手原始威力基数），任一缺项都会让法系装备单乘区收益落后于物理同阶装备。**饰品（trinket）不在此约束内**——三件法系饰品（桃木符/碧波静心佩/聚灵佩）与物理饰品镜像一致，不配置任何增伤点数。
 - **稀有专属装备通用特殊属性继承律**：稀有材料打造的专属装备（如白虎煞牙匕、撼地金刚铠、九幽煞骨冠、陨星踏虚胫、坠星天核杖等）所附带的专属特效（暴伤、反伤、全伤吸收、行动速度、冷却缩减、掉宝等）属于**额外白送奖励**；同部位同流派制式装备原本具备的通用特殊属性（物理/术法增伤、技能增幅、物理减伤、重甲威胁等）**必须完整保留与继承**，不得因新增专属词条而将通用特殊属性丢弃。
-- 拆分后防御与攻击总值严格守恒：比例值按 0.02 粒度取整，固定值主属性就近取整、副属性补齐，每件防具的白板预算严格守恒。（`spellDamageBonusPoints` / `skillBonusPoints` 属特殊点数不计白板预算，上述补齐不破坏守恒。）
+- 拆分后防御与攻击总值严格守恒：比例值按 0.02 粒度取整，固定值主属性就近取整、副属性补齐，每件防具的白板预算严格守恒。（`physicalDamageBonusPoints` / `spellDamageBonusPoints` / `skillBonusPoints` 属特殊点数不计白板预算，上述补齐不破坏守恒。）
 
 ## 4.4 副手四路线定义
 副手替代原鞋履槽位（`slot: "off-hand"`），每阶四件任选其一，四路线的白板构成与特殊点数如下：
@@ -1551,7 +1552,7 @@ $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数�
 - **兽牙坠** (`equipment.shouya-pendant`): 百炼铁×5 + 兽骨×1 | 物攻 +10%, 暴击+4, 回血+2 (22点)
 
 ### 2. T1 物理输出【疾风短打套】（Q1 凡品 · 物理输出 · 全套预算 168）
-- **青锋剑** (`equipment.qingfeng-sword`): 百炼铁×7 + 兽骨×1 | 物攻 +20%, 物攻+10, 命中+10 (40点)
+- **青锋剑** (`equipment.qingfeng-sword`): 百炼铁×7 + 兽骨×1 | 物攻 +20%, 物攻+10, 命中+10 | 物伤 +5% (40点)
 - **劲风巾** (`equipment.jinfeng-scarf`): 百炼铁×5 + 兽皮×1 | 物攻 +8%, 物攻+5, 命中+3, 暴击+2, 生命+2, 护甲+2 | 物伤 +2% (22点)
 - **轻皮甲** (`equipment.qingpi-armor`): 百炼铁×7 + 兽皮×1 | 物攻 +16%, 物攻+9, 命中+5, 暴击+3, 生命+3, 护甲+4 | 物伤 +2% (40点)
 - **疾行裤** (`equipment.jixing-pants`): 百炼铁×5 + 兽皮×1 | 物攻 +8%, 物攻+5, 命中+3, 暴击+2, 生命+2, 护甲+2 | 物伤 +2% (22点)
@@ -1581,7 +1582,7 @@ $$\text{强化总倍率} = 1.05^{\text{强化等级}} \quad (\text{每级指数�
 - **赤纹戒** (`equipment.chiwen-ring`): 兽牙坠×2 + 赤铜精×5 + 兽牙×1 | 物攻 +16%, 暴击+7, 回血+3.5 | (37点)
 
 ### 5. T2 物理输出【破罡裂风套】（Q2 黄品 1.15× · 全套预算 276）
-- **破罡剑** (`equipment.pogang-sword`): 青锋剑×2 + 赤铜精×7 + 兽牙×1 | 物攻 +32%, 物攻+16, 命中+16 (64点)
+- **破罡剑** (`equipment.pogang-sword`): 青锋剑×2 + 赤铜精×7 + 兽牙×1 | 物攻 +32%, 物攻+16, 命中+16 | 物伤 +15% (64点)
 - **斩风巾** (`equipment.zhanfeng-scarf`): 劲风巾×2 + 赤铜精×5 + 兽牙×1 | 物攻 +14%, 物攻+8, 命中+5, 暴击+4, 生命+3, 护甲+3 | 物伤 +2% (37点)
 - **裂罡甲** (`equipment.liegang-armor`): 轻皮甲×2 + 赤铜精×7 + 兽牙×1 | 物攻 +26%, 物攻+14, 命中+8, 暴击+5, 生命+5, 护甲+6 | 物伤 +2% (64点)
 - **踏风裤** (`equipment.tafeng-pants`): 疾行裤×2 + 赤铜精×5 + 兽牙×1 | 物攻 +14%, 物攻+8, 命中+5, 暴击+4, 生命+3, 护甲+3 | 物伤 +2% (37点)
@@ -3918,14 +3919,14 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 
 - 竖屏（≤960px）底部导航固定为 **7 个一级分组**：内视 / 坊市 / 历练 / 详情 / 技艺 / 背包 / 更多；组内页签多于一个时在其上方浮现子行完成二次选择，单页签分组不渲染子行、保持一击直达。
 - 分组与组内页签的真源是 `frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUP_DEFS` 键即分组标识，`MOBILE_NAV_GROUP_ORDER` 决定展示顺序，`GROUP_OF_TAB` 以 `satisfies Record<TabId, …>` 保证每个页签都有归属且无多余键）。
-- 组内构成：坊市＝坊市/商店；历练＝历练/地图；更多＝同道/图鉴/排行榜/日志/记录/设置；技艺组的子行是技艺模式切换条（炼丹/炼器/符箓/阵法/强化，含技艺等级），由 `CraftingModeTabs` 渲染，页面主体内不再重复出现；同道通用二级（队伍/宗门/邀请）由 `SocialSubTabs` 渲染在「更多」子行之上的底部子行中，`SocialPage` 内不再单独渲染页头切换条，而「队伍」内部的「队伍 / 对弈」切换（`PartyGameTabs`）属于玩法内子页签，保留在队伍面板顶部。
+- 组内构成：坊市＝坊市/商店；历练＝历练/地图；更多＝同道/图鉴/排行榜/更新日志/日志/记录/设置；技艺组的子行是技艺模式切换条（炼丹/炼器/符箓/阵法/强化，含技艺等级），由 `CraftingModeTabs` 渲染，页面主体内不再重复出现；同道通用二级（队伍/宗门/邀请）由 `SocialSubTabs` 渲染在「更多」子行之上的底部子行中，`SocialPage` 内不再单独渲染页头切换条，而「队伍」内部的「队伍 / 对弈」切换（`PartyGameTabs`）属于玩法内子页签，保留在队伍面板顶部。
 - 交互：点击非当前分组 → 切到该组记忆落点并展开子行（1 击到达内容）；点击当前分组 → 不改变当前页签；点击子项 → 切换页签且子行保持展开。落点按分组记忆于 `uiStore.mobileNavMemory`，任何 `setActiveTab`（含代码直跳与新手引导）都会更新所属分组的落点。
 - 角标必须上提到分组层：日志未读与同道待处理邀请在「更多」分组图标上合计露出，子行各自只显示自己那份（日志报未读条数、同道报邀请数；进入同道页后，若停留在宗门/邀请页，邀请角标继续在「队伍」子项上提示），否则私聊与组队邀请会在二级沉底后完全静默。
 - 导航高度由 `BottomNav` 实测反写 `--mobile-nav-offset`，页面底部占位与提示气泡避让统一引用该变量，不得再出现硬编码的 `72px`。
 - 页签可达性：`docs/tasks` 以外的竖屏入口必须落在某个分组内（仅 `alchemy` 为例外——它是直达技艺-炼丹的别名，由 `setActiveTab` 归一为 `crafting`）；新手引导锚点 `[data-tour="nav-map"]` 同时挂在桌面侧边栏与「历练」组的地图子项上，取首个可见元素。
 - 竖屏「详情」全屏专注模式：`@media (orientation: portrait)` 下「详情」页标题行最右侧展示放大/恢复切换按钮（`aria-expanded`，≤640px 效率条折行时仍固定居于标题第一行最右端，横屏不展示）；点击放大后详情面板按 `position: fixed; inset: 0; height: 100dvh; z-index: 55` 覆盖顶栏（`20`）与底部导航（`40`）并适配 `env(safe-area-inset-*)`，内容区维持独立纵向滚动且浅/深双主题铺实 `--panel` 底色；各类模态弹窗、悬浮窗、新手引导与提示气泡仍高于该层级；再次点击恢复按钮、无顶层弹窗时按 `Esc`、离开详情页或切出竖屏自动恢复常规布局。
 - 桌面端（横屏）侧边栏（`Sidebar`）保持高可达平铺与适度收拢并行：
-  - 主区保留「内视 / 历练 / 地图 / 详情」一级直达，并将「坊市（坊市 / 商店）」「技艺（炼丹 / 炼器 / 符箓 / 阵法 / 秘法）」「同道（队伍 / 宗门 / 邀请）」「其他（图鉴 / 排行榜）」组织为可折叠二级分组（`.nav-group` + `.nav-sub-menu`），其中「坊市 / 商店」分组口径与竖屏一致；
+  - 主区保留「内视 / 历练 / 地图 / 详情」一级直达，并将「坊市（坊市 / 商店）」「技艺（炼丹 / 炼器 / 符箓 / 阵法 / 秘法）」「同道（队伍 / 宗门 / 邀请）」「其他（图鉴 / 排行榜 / 更新日志）」组织为可折叠二级分组（`.nav-group` + `.nav-sub-menu`），其中「坊市 / 商店」分组口径与竖屏一致；
   - 侧栏底部（`.sidebar-footer`）保持「记录 / 设置」吸底直达不变。
 
 ## 13.2 核心公共组件速查 (强制收拢规范)
@@ -3936,6 +3937,7 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 5. **`QuantitySelector`**：数量输入、常用预设按钮与 `∞` 无限循环按键。
 6. **`UnitNumber`**：万进紧凑展示（最多6位数字、2位小数、向下取整），Hover 弹出中文四位分段对照（如 `1234亿 7777万 5211`）。
 7. **`CharacterAvatar`**：角色/妖兽立绘统一 128px WebP q80 运行时资源（矢量母模归档 `art/avatars/`，缺图回退默认立绘），敌方自动镜像翻转（`scaleX(-1)`）。
+8. **通用富文本实体引用与更新日志提示 (`RichTemplateText` / `ChangelogNoticeModal`)**：战报、传音与更新日志正文共用 `{{kind:id|label}}` 富文本分词与图鉴同款悬浮详情卡（覆盖物品/装备/秘籍 `item`、功法 `ability`、特质 `trait`、建筑 `building`、状态 `buff`、妖兽 `enemy`/`encounter`、行动 `action`、地点 `location`、机制 `mechanic`）。更新公告首次弹窗严格绑定更新日志自带的独立 `noticeId`（与程序版本号解耦），仅当出现本地未关闭的新 `noticeId` 且主目录就绪、非新手引导中时自动弹出，关闭后持久化去重直至出现更新的更新提示记录。
 
 ## 13.3 普攻与受击反馈层级
 
@@ -4110,7 +4112,7 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
   - `incomingRequests[]` / `outgoingRequests[]`：`FriendRequestDto { requestId, playerId, displayName, createdAtUnixMilliseconds }`；
   - `party?`：`PartyDto { partyId, leaderId, name, activityKind, mapId, minValuation, isPublic, members[] }`，`PartyMemberDto { playerId, displayName, online, valuation }`，队伍上限 5 人；
   - `partyInvitation?`：`PartyInvitationDto { partyId, inviterId, inviterName, partyName }`；
-  - `nearbyPlayers[]`：`NearbyPlayerDto { playerId, displayName }`（同节点在线修士，含自己）；
+  - `nearbyPlayers[]`：`NearbyPlayerDto { playerId, displayName }`（同节点非机器人在线修士，含自己；`identity.accounts.is_bot = true` 的市场机器人隐藏，不进入附近列表与附近频道广播）；
   - `seeking?`：`PartySeekerDto { activityKind, mapId, minValuation, createdAtUnixMilliseconds }`（本人匹配中登记，未登记为 null）。
 
 `requestId` 回传用于指令配对；为 null 表示服务端主动推送（好友上线、队伍变更、附近修士变化）。
@@ -4121,7 +4123,7 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 
 - `ChatRuntime`（单例）：频道作用域解析、消息落库与广播、历史回放；
 - `SocialRuntime`（单例）：好友与队伍的持久化读写、在线状态、附近修士快照；
-- `OnlinePresenceRegistry`：在线会话 → 玩家 ID / 道号 / 当前节点，供世界、附近广播与在线状态判定；
+- `OnlinePresenceRegistry`：在线会话 → 玩家 ID / 道号 / 当前节点 / 是否机器人（`isBot`），供世界、附近广播与在线状态判定；`isBot = true` 账号保留在线位与自身行动同步，但不写入节点倒排索引、不出现在附近列表，节点变动也不向同节点修士推播 `PresenceChanged`；
 - `WebSocketRuntime`：入站 `ChatSend` / `SocialAction` 分发，出站 `ChatMessage` / `ChatHistory` / `SocialState` 推送；
 - 玩家节点变化（`world.travel` 抵达、握手加载快照）触发 `OnlinePresenceRegistry.UpdateNode`，并重算附近修士快照。
 
@@ -5888,7 +5890,7 @@ CREATE TABLE economy.shop_daily_purchases (
 <!-- FILE:26-全服排行榜与整点快照投影.md -->
 # 第二十六篇 全服排行榜与整点快照投影
 
-> 状态：已实装（TASK-20261113-08，Schema v54 / 存档标签 v43）。本文是全服排行榜的唯一权威设计真源。
+> 状态：已实装（TASK-20261113-08，Schema v54 / 存档标签 v43；TASK-20261114-24 增补 Schema v55 `is_bot` 排除口径）。本文是全服排行榜的唯一权威设计真源。
 > 规约锚点：`docs/backend/commercial-persistence-architecture.md` §31/§117——排行榜只允许是**派生读模型**，绝不反向成为权威真相；本系统全部数据可由玩家分段与关系表确定性重建。
 
 ## 26.1 定位与红线
@@ -5898,7 +5900,7 @@ CREATE TABLE economy.shop_daily_purchases (
 - **零读放大**：任何客户端请求不得触发解码/排序/聚合查询；读路径只命中内存预序列化字节。
 - **不引新组件**：不引入 Redis/二级缓存/独立排行服务；单进程内存 + PostgreSQL 物化表即满足 2c4g/5000+ 账号容量目标。
 - **只读派生**：榜单数据绝不参与行动结算、入队裁决、撮合或任何奖励发放；排行结果回写领域状态是被禁止的。
-- 封禁/停用账号（`identity.players.status ≠ 1`）不入榜；未产生过 section 的新注册号自然缺席。
+- 封禁/停用账号（`identity.players.status ≠ 1`）与机器人账号（`identity.accounts.is_bot = true`）不入榜；未产生过 section 的新注册号自然缺席。
 
 ## 26.2 榜单清单（12 榜）
 
@@ -5914,7 +5916,7 @@ CREATE TABLE economy.shop_daily_purchases (
 - 每榜对外展示 **Top 50**；个人名次对全部参与者精确（含榜外）。
 - **入榜门槛**：主排序值 ≤0 者不占名次（如灵石 0、技艺 0 级、斗法 0 胜），名次表不写零分行；`participantCount` 仍统计全部活跃账号。
 - 技艺榜枚举以 `TechniqueCatalog.All` 为准；新增技艺自动成榜，无需改代码结构。
-- 宗门榜行实体为宗门而非玩家，`playerId` 字段置空、以 `zongmenId` 标识；已解散宗门（`disbanded_at` 非空）剔除。
+- 宗门榜行实体为宗门而非玩家，`playerId` 字段置空、以 `zongmenId` 标识；已解散宗门（`disbanded_at` 非空）剔除；成员统计仅计 `identity.players.status = 1 AND NOT identity.accounts.is_bot`（排除机器人成员，全机器人宗门有效成员为 0 自动不上榜）。
 
 ## 26.3 生涯击破同道（斗法榜数据前置）
 
@@ -5933,7 +5935,7 @@ CREATE TABLE economy.shop_daily_purchases (
 
 | 类别 | 来源 | 说明 |
 | :--- | :--- | :--- |
-| 花名册 | `identity.players` | `player_id/display_name/player_seq`，过滤 `status=1` |
+| 花名册 | `identity.players` JOIN `identity.accounts` | `player_id/display_name/player_seq`，过滤 `i.status = 1 AND NOT a.is_bot` |
 | 境界/斗法/展示 | `game.player_projection` 扩列 | `realm_rank`（已有）+ 新增 `experience/lifetime_experience/duel_wins/duel_losses/avatar`，由 `UpsertProjectionAsync` 同事务提取（progression/settings 载荷本就被解析，扩列零新增解码） |
 | 技艺/身家 | `player_state_sections` `loadout` 分段批量解码 | 走 `PostgresSectionRepository.LoadSectionsAsync` 同口径（落盘行 + 刷盘队列较新版本叠加）；`TechniqueExperiences` 定级、`Equipment`+`AbilityExperiences` 估值 |
 | 灵石/宗门 | `economy.player_asset_balances` / `social.zongmen*` / `game.node_buildings` | 纯 SQL 聚合 |
@@ -5985,6 +5987,7 @@ CREATE INDEX ix_leaderboard_ranks_board ON game.leaderboard_ranks(board_id, rank
 ```
 
 - `progression` 载荷 `duelWins`/`duelLosses` 为可缺省新增（同步 `settings` 载荷 `publicLoadoutVisible` 可缺省新增）→ 存档标签顺延至 `v43`（最低可读保持 `v41`），数据库表结构随上列 DDL 升至 `v54`；`migrations/0054_v53_to_v54.sql` 内嵌 `platform.schema_version` 标签推进。
+- `v55`（`migrations/0055_v54_to_v55.sql`）：`identity.accounts` 新增 `is_bot boolean NOT NULL DEFAULT false` 并自动将既有 `bot_%` 机器人账号标为 `true`（存档标签保持 `v43` 不变）；物化加载玩家与宗门成员计数时一律过滤 `NOT is_bot`。
 - 名次行仅 `score>0` 参与者；预计行数 ≈ 账号数 × 命中榜数（远低于 6 万上限）。
 - 快照表只保留最新一份（按 `board_id` upsert）；历史榜单不留存（无业务诉求，留存治理零负担）。
 

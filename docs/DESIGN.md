@@ -268,7 +268,7 @@
 
 核心红线（详见仓库根目录 `../AGENTS.md`）：
 
-- **兼容清零**：禁 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter；唯一例外是 `../migrations/` 手工 SQL 目录（可整体删除约束）。
+- **兼容清零**：禁 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter；持久化演进须在 [`backend/db-version-changes.md`](backend/db-version-changes.md) 强制登记 `vX -> vY` 变更台账，发版时再统一合写到 `../migrations/` 迁移脚本（可整体删除约束）或执行停写手工迁移。
 - **禁止过度防御**：只在外部输入、跨边界数据、持久化载荷、明确领域不变量处校验；内部路径不层层判空、不吞异常、不静默兜底。
 - **协议信封强对齐**：服务端改 `WireMessageType`/信封结构必须同提交对齐前端枚举解析并补往返单测。
 - **数值唯一类型**：计算与存储全 `double`，百分比存点数。

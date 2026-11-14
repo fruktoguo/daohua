@@ -1,7 +1,7 @@
 ---
 name: prod-release
 description: >-
-  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），每次发布自动同步 HD 画质包至 `/hd/*`，Android APK 仅在 `--with-apk` 显式要求时构建并发布 GitHub Releases；采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），覆盖门禁、库版本与配表删项前置对账、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
+  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），每次发布自动同步 HD 画质包至 `/hd/*`，Android APK 仅在 `--with-apk` 显式要求时构建并发布 GitHub Releases；采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），并在发布前读取 `docs/backend/db-version-changes.md` 按版本跨度统一合写迁移脚本或执行停写手动迁移，覆盖门禁、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
 ---
 
 # 正式服快速发布（yuohira 主服 + odin 计算节点）
@@ -13,13 +13,13 @@ description: >-
 `.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`。门禁通过后**流 A（镜像构建推送）、流 B（远端备份）、流 C（odin 交叉编译与预上传）三路并发启动**；主服与 odin 双端切换完成后，**阶段 3.6 自动重新生成并上传 HD 画质包至 `/hd/*`**；**阶段 3.5 APK 构建默认跳过**，仅 `--with-apk` 显式要求时独占编译 Android 完全版安装包并发布到 GitHub Releases：
 
 ```text
-阶段 0：本机与远端单回合并发预检 → verify.sh --full 全量门禁
+阶段 0：本机与远端并发预检 → 读取 db-version-changes.md 跨度台账 → 路线裁决（合写迁移脚本定稿提交 或 选定 prod 手动迁移） → verify.sh --full 全量门禁
   ↓（门禁全绿后三路并发）
   ├─ 流 A（阶段 1）：docker-build-prod.sh --push 构建并推送成对镜像
   ├─ 流 B（阶段 2）：yuohira 远端 backup.sh + verify-backup.sh（含迁移脚本预置）
   └─ 流 C（阶段 4a）：本地 dotnet publish linux-arm64 → scp 预传至 odin:/root/daohua-compute.new/
   ↓（三路汇合）
-阶段 2.5：（仅 schema 升级/配表删项时）停服 → 迁移链 / 存档替换
+阶段 2.5：（仅 db_ver < target_ver 或有存量配表删改时）路线 A 自动链（合并迁移 SQL） ∥ 路线 B 停写人工迁移（SQL/.mjs/配表） → 校验标签收敛
   ↓（双端并发切换）
   ├─ 阶段 3：deploy-prod.sh 成对 @sha256 更新主服 + 回环/公网双层烟测
   └─ 阶段 4b：odin 原子换目录 + 重启进程
@@ -45,12 +45,14 @@ description: >-
 git status --short && git submodule status && git rev-parse --short HEAD
 docker info >/dev/null && jq -er '.auths["ccr.ccs.tencentyun.com"].auth | length' ~/.docker/config.json
 
-# 2. yuohira 远端状态：当前运行镜像 commit、数据库当前 schema 版本、代码目标 schema 版本
+# 2. yuohira 远端状态：当前运行镜像 commit、数据库当前 schema 版本、存档分段标签分布、代码目标版本
 ssh -o BatchMode=yes yuohira '
   sudo docker image inspect "$(sudo docker inspect --format "{{.Image}}" daohua-app)" --format "old_rev={{index .Config.Labels \"org.opencontainers.image.revision\"}}"
   sudo docker exec daohua-db psql -U daohua -d daohua -tAc "SELECT max(version) FROM platform.schema_version"
+  sudo docker exec daohua-db psql -U daohua -d daohua -tAc "SELECT coalesce(min(schema_version),0), coalesce(max(schema_version),0) FROM game.player_state_heads"
 '
 grep -oE 'Version = [0-9]+' src/Server/Clean/PostgresSchema.cs
+grep -oE 'CurrentSchemaVersion = [0-9]+' src/Domain/Persistence/SectionCodec.cs
 
 # 3. odin 远端可达与 Clash 出站网络预检（必须返回 200）
 ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https://daohua.yuohira.com/healthz'
@@ -65,6 +67,19 @@ ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https:
    git diff <old_rev>..HEAD -- config/game-data/ | grep -E '^[+-]\s*"id":'
    ```
    若存在被删除的 `equipment.*` / `item.*` / `forge.*` / `building.*` ID，立即只读查询生产库 `economy.player_asset_balances` 与 `game.player_state_sections` 是否有存量玩家持有，**在发布前向用户确认替换映射**（见阶段 6），避免新服启动后玩家加载抛 `DomainException`。
+
+4. **读取数据库/存档版本变更台账（强制，决定构建前迁移脚本是否需补充）**：
+   - 将阶段 0 查出的线上 `max(version)` 记为 `db_ver`，将代码 `PostgresSchema.Version` 记为 `target_ver`、`SectionCodec.CurrentSchemaVersion` 记为 `target_section_ver`。
+   - **当 `db_ver < target_ver` 或 `git diff <old_rev>..HEAD` 涉及持久化/配表删改时**：
+     1. 通读 [`docs/backend/db-version-changes.md`](../../../docs/backend/db-version-changes.md) 中覆盖 **`[db_ver -> ... -> target_ver]` 全部版本段落**的「变了什么 / 是否需要处理 / 怎么处理」。
+     2. 与 `git diff <old_rev>..HEAD -- src/Server/Clean/PostgresSchema.cs src/Domain/Persistence/SectionCodec.cs config/game-data/` 交叉对账；若发现源码或配表有持久化变更却漏记于 `db-version-changes.md`，须立即补记或向用户澄清后再推进，**严禁在信息缺失下盲目构建发布**。
+     3. 盘点 `migrations/` 从 `db_ver` 起沿着现有 `NNNN_vX_to_vY.sql` 链能够连续覆盖到的最高前沿版本 `covered_ver`（若日常未写脚本，则 `covered_ver == db_ver`）。若 `covered_ver < target_ver`，向用户汇总待处理清单并裁决采用下述两条路线之一（必须在阶段 1 构建镜像并要求工作区干净之前定稿）：
+        - **路线 A · 统一编写合并迁移脚本（常规 DDL/索引/权限/回填/可缺省存档标签/SQL 可处理配表替换，优先推荐）**：
+          - 将 `[covered_ver -> ... -> target_ver]` 全部未覆盖变更**合并编写成单个事务脚本 `migrations/NNNN_v{covered_ver}_to_v{target_ver}.sql`**（含幂等 DDL、角色 `GRANT`/`OWNER`、存量回填/配表 SQL 替换、仅当存档标签变化时对 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version = <target_section_ver>` 推进、以及结尾 `INSERT INTO platform.schema_version` 写入 `target_ver`）。
+          - **红线**：检查 `migrations/` 不得出现同一起始版本 `from_version` 的分叉脚本；同步更新 [`migrations/README.md`](../../../migrations/README.md)，通过本地 `migrate-local-db.sh --dry-run` 或测试库校验后，在执行 `release-prod.sh` / `docker-build-prod.sh` **之前提交工作区**（注意：合并脚本需随工作区提交后方可触发镜像构建，否则构建拒绝 dirty worktree）。之后可走常规 `release-prod.sh` 一键流水线，阶段 2.5 会通过 `deploy-prod.sh` 自动执行链式迁移。
+        - **路线 B · prod 时手动迁移（涉及真实资产退赔、离线 Brotli/JSON 载荷重编码 `.mjs` 重算校验和、复杂配表删项清理或用户指定手工操作）**：
+          - 先向用户展示完整手工迁移计划与校验 SQL 并获确认。
+          - **严禁直接执行一体化的 `scripts/release-prod.sh`**（该脚本会在建完镜像后立刻运行 `deploy-prod.sh` 触发版本闸门并失败）。改走分步流程：先完成 **阶段 1（`docker-build-prod.sh --push`）∥ 阶段 2（远端全库备份）∥ 阶段 4a（odin 交叉编译预传）**；然后在 **阶段 2.5** 人工停写容器并执行手动 SQL / `.mjs` 修复脚本、确认版本与三张存档表标签全部收敛后，再执行 **阶段 3（`deploy-prod.sh --image ... --compute-image ...`）∥ 阶段 4b**、阶段 3.6 与阶段 5。
 4. **Windows 本地环境三件套**（跑 `verify.sh` 前处理）：
    - **Vite 锁 `esbuild.exe`**：若本地开着 `npm --prefix frontend run dev`，`npm ci` 会报 `EPERM unlink esbuild.exe`；先 `taskkill //F //IM esbuild.exe` 停掉本地前端开发服。
    - **Docker Desktop 与测试库供给**：Docker Desktop 启动后 `daohua-local-db` 容器自动绑定 `127.0.0.1:5432`；Windows 下 `docker ps` 带 `\r\n` 会让 `verify.sh` 内置 `grep -qx` 误判。直接幂等建库并显式传入连接串运行 `verify.sh`：
@@ -118,25 +133,28 @@ rm -rf /tmp/daohua-compute-odin \
 
 ---
 
-## 阶段 2.5：生产库版本迁移（仅当库版本 < `PostgresSchema.Version` 时执行）
+## 阶段 2.5：生产库版本迁移（仅当库版本 < `PostgresSchema.Version` 或存在待修存档/配表时执行）
 
-- 若阶段 0 查出生产库 `max(version) == PostgresSchema.Version`：直接跳过本阶段进入阶段 3。
-- 若生产库版本落后：**严禁先部署新镜像**（新镜像启动门禁会 fail-fast 并被 `ccr-auto-update.sh` 自动回滚拉黑）。必须先向用户说明迁移范围并获准后，按以下顺序执行：
+- 若阶段 0 查出生产库 `max(version) == PostgresSchema.Version` 且 `min/max(schema_version) == SectionCodec.CurrentSchemaVersion` 且无存量配表删改处理需求：直接跳过本阶段进入阶段 3。
+- 若生产库版本落后或需存量数据处置：**严禁先替换启动新镜像**（新镜像启动门禁会 fail-fast 并被 `ccr-auto-update.sh` 自动回滚拉黑）。必须先向用户说明来自 `docs/backend/db-version-changes.md` 的 `[db_ver -> target_ver]` 迁移范围及所选路线并获准：
+  - **路线 A（已在阶段 0 提交合并迁移 SQL 至 `migrations/NNNN_v{covered}_to_v{target}.sql`）**：可直接继续由阶段 3 的 `scripts/deploy-prod.sh` 自动调用 `/opt/daohua/migrate-prod-db.sh` 完成「停写 → 备份 → 链式应用 `migrations/NNNN_vX_to_vY.sql` → `schema_version` 零残留校验」；若需人工观测缩短停机，按下列等价步骤执行。
+  - **路线 B（prod 时手动迁移）**：必须先完成阶段 1（推送镜像）∥ 阶段 2（远端全库备份），再执行下列 `1 → 4` 步人工停写与迁移验收，**保持旧写者容器停止**直至阶段 3 `deploy-prod.sh` 启动新镜像（`migrate-prod-db.sh` 检测到库版本与标签已全部收敛时会自动放行重启）：
   1. **预拉取新镜像**（缩短停机窗口）：`ssh yuohira "sudo docker pull <app@sha256> && sudo docker pull <compute@sha256>"`
   2. **停自动更新 timer 与全部写者容器**：
      ```bash
      ssh -o BatchMode=yes yuohira '
        sudo systemctl stop daohua-ccr-auto-update.timer
-       sudo docker stop daohua-app
+       sudo docker stop daohua-app daohua-compute 2>/dev/null || sudo docker stop daohua-app
        sudo docker rm -f daohua-persistence-worker 2>/dev/null || true
      '
      ```
      等待 `SELECT count(*) FROM game.player_runtime_leases WHERE lease_until > clock_timestamp()` 归零（优雅停机通常立即释放，最长 45s），再跑一次 `sudo /opt/daohua/backup.sh` 留存静默态快照。
-  3. **按 `vX_to_vY` 链式执行落后脚本**：
-     - 普通脚本：`sudo docker exec -i daohua-db psql -X -v ON_ERROR_STOP=1 -U daohua -d daohua < migrations/NNNN_vX_to_vY.sql`
+  3. **按路线执行迁移 SQL / 人工修复脚本**：
+     - **路线 A 链式脚本**：`sudo docker exec -i daohua-db psql -X -v ON_ERROR_STOP=1 -U daohua -d daohua < migrations/NNNN_vX_to_vY.sql`
+     - **路线 B 人工迁移**：严格依照 `docs/backend/db-version-changes.md` 各节第 3 步指引，顺序执行 DDL/回填/离线 Brotli JSON `.mjs`/配表替换脚本；若推进玩家八分段载荷版本，同步更新 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version` 至 `SectionCodec.CurrentSchemaVersion`，并将 `target_ver` 写入 `platform.schema_version`。
      - 若含 `CREATE INDEX CONCURRENTLY`（如 `0026`）：不能在事务块内执行，且若脚本末尾未写 `schema_version` 需补 `INSERT INTO platform.schema_version(version, applied_at) VALUES (Y, now()) ON CONFLICT DO NOTHING;`
      - 若迁移新建了表或 `IDENTITY` 序列：必须执行 `GRANT SELECT, INSERT, UPDATE, DELETE ON <新表> TO daohua_api;`、`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ... TO daohua_api, daohua_worker;` 与 `ALTER TABLE <新表> OWNER TO daohua_bootstrap;`（对齐 `deploy/postgres-local-roles.sql`）。
-  4. **验证版本对账**：确认 `platform.schema_version`、`game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 全部到达目标版本。
+  4. **验证版本对账**：确认 `SELECT max(version) FROM platform.schema_version` 等于 `PostgresSchema.Version`，且 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 无任何一行 `schema_version <> SectionCodec.CurrentSchemaVersion`。
 
 ---
 
@@ -227,7 +245,7 @@ ssh -o BatchMode=yes yuohira '
 
 ### 存档内含已移除配表 ID（如旧装备/旧配方改名）
 
-当配表删除或重命名了某装备/物品 ID（如 `equipment.xingshan-boots` 改为 `equipment.tiepi-guard`），存量玩家加载会抛 `DomainException`（`LoadOwnedAsync` 异常块会自动回滚内存态并归还租约，不留脏缓存）。获用户确认替换关系后，可在远端通过 `node` + `psql` 单事务在线无损替换：
+当配表删除或重命名了某装备/物品 ID（如 `equipment.xingshan-boots` 改为 `equipment.tiepi-guard`），按规范应已在 `docs/backend/db-version-changes.md` 中登记对应 `vX -> vY` 映射与处理方式；否则存量玩家加载会抛 `DomainException`（`LoadOwnedAsync` 异常块会自动回滚内存态并归还租约，不留脏缓存）。结合变更台账与阶段 0 对账清单获用户确认替换关系后，可在远端通过 `node` + `psql` 单事务在线无损替换：
 
 1. `LOCK TABLE game.player_runtime_leases, game.player_state_heads, game.player_state_sections, platform.section_flush_queue, economy.player_asset_balances, economy.transaction_lines IN SHARE ROW EXCLUSIVE MODE;`
 2. 校验受影响玩家无活跃租约、无待刷盘队列行；

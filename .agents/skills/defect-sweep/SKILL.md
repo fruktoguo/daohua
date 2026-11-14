@@ -34,7 +34,7 @@ description: >-
 | 1 | 协议与信封契约 | `src/Protocol/Contracts.cs`、`src/Server/Clean/ProtocolSnapshotMapper.cs` ↔ `frontend/src/network/{protocol,snapshot,gameClient}.ts` | `WireMessageType` 单边新增或编号漂移、字段名/可空性不一致、快照 gap 未检测、delta 合并竞态、`requestId` 失配 |
 | 2 | 领域不变量 | `src/Domain/Player`、`src/Domain/Simulation`、`src/Domain/Combat` | 队列 `RemainingRepeats == -1` 被自动出队、非 `double` 数值、在线/离线/重连三路径结算不一致、快进非确定性、掉落/经验越界 |
 | 3 | ECS 通道与闸门 | `src/Ecs` + `docs/backend/ecs-development-guide.md` | 绕过 `MutatePlayer` 直改聚合、脏标记差集漏字段、`CanBulkAdvance` 资格误判、`ShouldUpdate` 闸门失效、段内派发顺序错乱 |
-| 4 | 持久化与迁移 | `src/Server/Clean/Postgres*Repository.cs`、`PostgresSchema.cs`、`migrations/` | `SectionCodec.CurrentSchemaVersion` 与 `PostgresSchema.Version` 不同步、CAS/fence 缺失、outbox 丢写、写回失败无恢复证据、表与存档标签脱节 |
+| 4 | 持久化与迁移 | `src/Server/Clean/Postgres*Repository.cs`、`PostgresSchema.cs`、`SectionCodec.cs`、`docs/backend/db-version-changes.md`、`migrations/` | 持久化/破档配表改动未递增 `PostgresSchema.Version`、未同步登记 `docs/backend/db-version-changes.md`、CAS/fence 缺失、outbox 丢写、写回失败无恢复证据、表权限/存档标签与建库脚本脱节 |
 | 5 | 市场与经济 | `src/Server/Clean/Market*`、`src/Domain/Market`、`src/Server/Clean/PostgresEconomyRepository.cs` | 非 Serializable、缺行锁、一个分区两个写者、扣款与发货非原子、盘口/回收价与配表不符 |
 | 6 | 前端网络与状态 | `frontend/src/network/`、`uiStore.ts` 与各状态 store | 无限静默重连、错误不可见、空函数体 store 方法、高频更新整体重建、竞态下陈旧视图覆盖新快照 |
 | 7 | 前端 UI 稳定性与公共组件 | `frontend/src/components/`、`frontend/src/styles/`、`docs/frontend/common-components.md` | 输入焦点/选区/滚动位置丢失、布局跳动与文本溢出、自制组件未复用统一模板、事件与定时器未清理、悬浮层裁切 |

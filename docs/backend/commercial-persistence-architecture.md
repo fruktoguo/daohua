@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用最新 schema 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级由 `migrations/` 独立 SQL 脚本完成（本地开发启动链经 `reset-outdated-players.sh`/`dev.sh` 自动执行 `migrate-local-db.sh`，也可人工显式执行；运行时与门禁均不引用）。 |
+| 兼容性 | 当前内测直接采用最新 schema 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；日常改动必须推进版本号并在 [`db-version-changes.md`](db-version-changes.md) 登记「变了什么/是否处理/怎么处理」，不再强制随开发编写单次迁移 SQL；既有库在发布前按版本跨度于 `migrations/` 统一合写迁移脚本或由停写手工迁移完成升级（本地开发启动链优先尝试已有脚本、缺失则经 `reset-outdated-players.sh` 交互 `RESET`；运行时与门禁均不引用）。 |
 
 ### 2. 明确不在本次持久化范围的内容
 
@@ -127,7 +127,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 | 表 | 关键字段 | 约束与用途 |
 | --- | --- | --- |
-| identity.accounts | account_id, login_normalized, password_hash, status, created_at | 登录名唯一；不把玩家运行态塞进账号表。 |
+| identity.accounts | account_id, login_normalized, password_hash, status, created_at, is_bot | 登录名唯一；`is_bot`（默认 false）标识市场等内置机器人账号；不把玩家运行态塞进账号表。 |
 | identity.players | player_id, account_id, display_name_normalized, created_at, last_seen_at | account_id 外键；道号唯一索引；允许一个账号未来拥有多个角色。 |
 | identity.auth_sessions | session_id, account_id, expires_at, revoked_at, last_used_at | 只保存可撤销会话元数据和哈希，不保存访问令牌明文。 |
 | identity.data_protection_keys | key_id, xml_payload, created_at, expires_at | 供多实例 Cookie/Data Protection 使用；访问权限限制在 API/Worker 数据库角色，磁盘与备份由基础设施加密。 |
