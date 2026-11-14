@@ -159,4 +159,28 @@ public sealed class TriggerWakeTests
         Assert.True((d1.AllyUnion & UnitChannel.Hp) != 0);
         Assert.True((d1.EnemyUnion & UnitChannel.Hp) == 0);
     }
+
+    /// <summary>常驻 Buff（double.MaxValue / +Infinity）必须排除出过期时间戳求合，避免溢出 +Infinity 或吞没限时 Buff 续期变化。</summary>
+    [Fact]
+    public void FactTracker_PermanentBuffDoesNotOverflowOrSwallowTimedBuffChanges()
+    {
+        var stats = CombatantStats.Create(5_000, 50, 10, 1.0);
+        var encounter = CombatEncounterState.CreateAllied("wake.perm", 43,
+            [new CombatantTemplate(stats)], 0, [new CombatantTemplate(stats)]);
+        encounter.PlayerAllies[0].AddBuff(new CombatBuffState("formation.perm1", double.MaxValue, 1, "永驻阵一"));
+        encounter.PlayerAllies[0].AddBuff(new CombatBuffState("formation.perm2", double.MaxValue, 1, "永驻阵二"));
+        encounter.PlayerAllies[0].AddBuff(new CombatBuffState("buff.timed", 10.0, 1, "限时增益"));
+
+        var tracker = new CombatFactTracker(encounter);
+        // 仅刷新限时 Buff 到期时间（同层数、同总数）：若被 MaxValue 吞没会漏置 UnitChannel.Buff
+        encounter.PlayerAllies[0].SetBuff(new CombatBuffState("buff.timed", 15.0, 1, "限时增益"));
+        var d1 = tracker.Advance(encounter);
+        Assert.True((d1.Allies![0] & UnitChannel.Buff) != 0);
+        Assert.True((d1.AllyUnion & UnitChannel.Buff) != 0);
+
+        // 增删常驻 Buff 亦必须立即置位 UnitChannel.Buff
+        encounter.PlayerAllies[0].RemoveBuffsWhere(b => b.BuffId == "formation.perm2");
+        var d2 = tracker.Advance(encounter);
+        Assert.True((d2.Allies![0] & UnitChannel.Buff) != 0);
+    }
 }

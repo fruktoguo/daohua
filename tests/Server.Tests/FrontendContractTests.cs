@@ -259,4 +259,47 @@ public sealed class FrontendContractTests
         var attrMaxHp = attributesElem.GetProperty("maxHitpoints").GetDouble();
         Assert.Equal(t5Stats.MaxHitpoints, attrMaxHp);
     }
+
+    /// <summary>行动队列中的斗法回放必须投影 viewerIsInitiator 与 forfeited 标记，避免客户端误判胜负与认输状态。</summary>
+    [Fact]
+    public void ToActionQueueSection_ProjectsDuelViewerIsInitiatorAndForfeited()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var opponentStats = CombatantStats.Create(100, 10, 0, 2);
+        var duel = new DuelPlaybackState(
+            "duel-1",
+            Guid.NewGuid().ToString("N"),
+            "青云客",
+            ViewerIsInitiator: false,
+            CombatOutcome.EnemyWon,
+            12.5,
+            [],
+            [],
+            [],
+            opponentStats,
+            42,
+            5,
+            Resolved: true,
+            Forfeited: true);
+        var expedition = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Duel, 0, 12.5, 999L,
+            0, 100, 10, 1, 0, 0, CombatOutcome.Running, 1, [])
+        {
+            Duel = duel
+        };
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), 1, PvpEnabled: true),
+            DateTimeOffset.UtcNow,
+            ActionQueueStatus.Running,
+            0, 1, 0,
+            expedition);
+
+        var projected = ProtocolSnapshotMapper.ToActionQueueSection([action], catalog);
+        var json = JsonSerializer.Serialize(projected, ProtocolJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        var duelElem = doc.RootElement[0].GetProperty("expedition").GetProperty("duel");
+        Assert.False(duelElem.GetProperty("viewerIsInitiator").GetBoolean());
+        Assert.True(duelElem.GetProperty("forfeited").GetBoolean());
+    }
 }

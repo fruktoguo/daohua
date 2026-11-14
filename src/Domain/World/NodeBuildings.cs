@@ -65,12 +65,12 @@ public sealed record BuildingEffectSet(
         EnhancementSpeedRatio + other.EnhancementSpeedRatio,
         CombatManapointRegen + other.CombatManapointRegen);
 
-    /// <summary>行动类别与技艺对应的建造加速比率；未覆盖类别返回 0。</summary>
+    /// <summary>行动类别与技艺对应的建造加速比率；显式指定技艺时严格隔离分支不穿透回退；未覆盖类别返回 0。</summary>
     public double SpeedRatioFor(ActionKind kind, string? technique = null)
     {
-        if (technique is not null)
+        if (!string.IsNullOrWhiteSpace(technique))
         {
-            var techRatio = technique switch
+            return technique switch
             {
                 "gathering" => GatheringSpeedRatio > 0 ? GatheringSpeedRatio : ExplorationSpeedRatio,
                 "mining" => MiningSpeedRatio,
@@ -81,7 +81,6 @@ public sealed record BuildingEffectSet(
                 "enhancement" => EnhancementSpeedRatio,
                 _ => 0
             };
-            if (techRatio > 0) return techRatio;
         }
 
         return kind switch

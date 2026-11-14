@@ -183,7 +183,8 @@ public sealed class PostgresAccountRiskRepository(
 
     /// <summary>按固定顺序持有信号锁，等待后在 ReadCommitted 快照中检查已提交的额度。</summary>
     internal static async ValueTask<AccountRiskDecision> EvaluateAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
-        Guid accountId, IReadOnlyList<AccountRiskSignalHash> signals, AccountRiskPolicy policy, CancellationToken cancellationToken, bool registration = true)
+        Guid accountId, IReadOnlyList<AccountRiskSignalHash> signals, AccountRiskPolicy policy, CancellationToken cancellationToken,
+        bool registration = true, bool requireDeviceSignal = true)
     {
         if (!policy.Enabled || (registration && !policy.RegistrationEnabled)) return new(true, null, null, signals);
         var orderedSignals = signals.OrderBy(item => item.Kind, StringComparer.Ordinal).ThenBy(item => item.Hash, StringComparer.Ordinal).ToArray();
@@ -205,7 +206,7 @@ public sealed class PostgresAccountRiskRepository(
         var idEnabled = policy.Modules.Single(item => item.Id == "deviceId").Enabled;
         var configEnabled = policy.Modules.Single(item => item.Id == "deviceConfigHash").Enabled;
         var hasRequiredDevice = deviceSignals.Any(item => item.Kind == (idEnabled ? AccountRiskSignalKind.DeviceId : AccountRiskSignalKind.DeviceConfig));
-        if (policy.RequireDeviceSignal && (idEnabled || configEnabled) && !hasRequiredDevice)
+        if (requireDeviceSignal && policy.RequireDeviceSignal && (idEnabled || configEnabled) && !hasRequiredDevice)
             return Deny(AccountRiskErrorCodes.RiskSignalRequired, FormatRiskMessage("SEC-S01"), signals, "设备信号缺失");
         if (signals.Any(item => item.Kind == AccountRiskSignalKind.Headless))
             return Deny(AccountRiskErrorCodes.HeadlessBrowserBlocked, FormatRiskMessage("SEC-B01"), signals, "自动化运行环境");

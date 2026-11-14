@@ -122,19 +122,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             _fenceToken = await ReadFenceTokenAsync(cancellationToken);
             var orders = await _store.LoadActiveOrdersAsync(cancellationToken);
             RestoreBooks(orders);
-            try
-            {
-                var stats = await _store.LoadItemStatsAsync(cancellationToken: cancellationToken);
-                foreach (var s in stats)
-                {
-                    if (s.ReferencePrice is { } refPrice && refPrice > 0)
-                        _referencePrices[new MarketInstrument(new ItemId(s.AssetId), s.Variant)] = refPrice;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "加载历史行情参考价失败，将按需建立");
-            }
+            await RefreshReferencePricesBestEffortAsync(clearExisting: false, cancellationToken);
             await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
             _ready = true;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -823,6 +811,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             await _gate.WaitAsync(cancellationToken);
             try
             {
+                await RefreshReferencePricesBestEffortAsync(clearExisting: true, cancellationToken);
                 RestoreBooks(orders);
                 _fenceToken = fence;
                 // 与启动顺序一致：先结算恢复期间到期的订单，再放行写请求。
@@ -839,6 +828,25 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             if (_recoveryLog.TryAcquire())
                 _logger.LogError(exception, "市场分片写权恢复失败 partition={PartitionId}，退避后重试", PartitionId);
             return false;
+        }
+    }
+
+    private async Task RefreshReferencePricesBestEffortAsync(bool clearExisting, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stats = await _store.LoadItemStatsAsync(cancellationToken: cancellationToken);
+            if (clearExisting)
+                _referencePrices.Clear();
+            foreach (var s in stats)
+            {
+                if (s.ReferencePrice is { } refPrice && refPrice > 0)
+                    _referencePrices[new MarketInstrument(new ItemId(s.AssetId), s.Variant)] = refPrice;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "加载历史行情参考价失败，将按需建立");
         }
     }
 

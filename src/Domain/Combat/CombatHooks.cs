@@ -50,6 +50,8 @@ public sealed class CombatHitContext
     public required CombatantStats AttackStats { get; set; }
     /// <summary>技能来源标识；null 表示普通攻击。</summary>
     public string? AbilityId { get; init; }
+    /// <summary>本次攻击是否由「移形」提供 2× 命中加倍（仅伤害型技能触发）。</summary>
+    public bool DoubleAccuracy { get; init; }
     /// <summary>是否技能结算（AbilityId 非空）。</summary>
     public bool IsSkill => AbilityId is not null;
     /// <summary>攻击方阵营侧位（确定性抽样维度）。</summary>

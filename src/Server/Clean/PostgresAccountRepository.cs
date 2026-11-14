@@ -79,8 +79,13 @@ public interface IAccountRepository
         string newPassword,
         byte[]? keepSessionTokenHash,
         CancellationToken cancellationToken = default);
-    /// <summary>通过 TapTap OpenID 登录或自动创建账号（一人一号强绑定），签发会话。</summary>
-    ValueTask<AccountLoginResult> LoginOrRegisterTapTapAsync(string openId, string? tapName, CancellationToken cancellationToken = default);
+    /// <summary>通过 TapTap OpenID 登录或自动创建账号（一人一号强绑定），执行风控校验并签发会话。</summary>
+    ValueTask<AccountLoginResult> LoginOrRegisterTapTapAsync(
+        string openId,
+        string? tapName,
+        AccountRiskSignals? riskSignals = null,
+        CancellationToken cancellationToken = default,
+        AccountRiskPolicy? policySnapshot = null);
     /// <summary>为当前已登录账号绑定 TapTap OpenID；冲突或已被绑定返回 false。</summary>
     ValueTask<bool> BindTapTapOpenIdAsync(Guid accountId, string openId, CancellationToken cancellationToken = default);
 }
@@ -621,13 +626,17 @@ public sealed class PostgresAccountRepository(
     public async ValueTask<AccountLoginResult> LoginOrRegisterTapTapAsync(
         string openId,
         string? tapName,
-        CancellationToken cancellationToken = default)
+        AccountRiskSignals? riskSignals = null,
+        CancellationToken cancellationToken = default,
+        AccountRiskPolicy? policySnapshot = null)
     {
         if (string.IsNullOrWhiteSpace(openId))
             return FailureLogin("INVALID_OPENID", "TapTap OpenID 不能为空。");
 
         var cleanOpenId = openId.Trim();
         var now = DateTimeOffset.UtcNow;
+        var riskPolicy = policySnapshot ?? riskPolicyRegistry.Current;
+        var riskHashes = riskHasher.Hash(riskSignals, riskPolicy);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
         // 1. 优先根据 taptap_openid 查询已有账号
@@ -656,8 +665,21 @@ public sealed class PostgresAccountRepository(
 
                 await reader.DisposeAsync();
 
-                // 签发新会话
+                // 已有账号登录同事务执行风控检查并记录审计事件。
                 await using var tx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+                var decision = await PostgresAccountRiskRepository.EvaluateAsync(
+                    connection, tx, accountId, riskHashes, riskPolicy, cancellationToken,
+                    registration: false, requireDeviceSignal: false);
+                await PostgresAccountRiskRepository.AppendEventAsync(
+                    connection, tx, accountId, decision, now, cancellationToken, "login");
+                if (!decision.Allowed)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                    return FailureLogin(decision.ErrorCode!, decision.Message!);
+                }
+
+                await PostgresAccountRiskRepository.PersistSignalsAsync(
+                    connection, tx, accountId, riskHashes, now, cancellationToken);
                 await using (var update = new NpgsqlCommand("UPDATE identity.players SET last_seen_at = now() WHERE player_id = $1", connection, tx))
                 {
                     update.Parameters.Add(new NpgsqlParameter { Value = playerId });
@@ -688,9 +710,21 @@ public sealed class PostgresAccountRepository(
             ? tapName.Trim()
             : $"道友_{Random.Shared.Next(1000, 9999)}";
 
-        await using var createTx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var createTx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
+            // 自动创号同普通注册一样先过风控限流/关联检查，防通过 TapTap 端点批量造号。
+            var regDecision = await PostgresAccountRiskRepository.EvaluateAsync(
+                connection, createTx, newAccountId, riskHashes, riskPolicy, cancellationToken,
+                registration: true, requireDeviceSignal: false);
+            if (!regDecision.Allowed)
+            {
+                await PostgresAccountRiskRepository.AppendEventAsync(
+                    connection, createTx, null, regDecision, now, cancellationToken);
+                await createTx.CommitAsync(cancellationToken);
+                return FailureLogin(regDecision.ErrorCode!, regDecision.Message!);
+            }
+
             await using (var insertAccount = new NpgsqlCommand("""
                 INSERT INTO identity.accounts
                     (account_id, login_normalized, password_hash, password_salt,
@@ -743,6 +777,11 @@ public sealed class PostgresAccountRepository(
             var sessionToken = CreateSessionToken();
             var sessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken));
             await InsertSessionAsync(connection, createTx, newAccountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
+
+            if (riskHashes.Count > 0)
+                await PostgresAccountRiskRepository.PersistSignalsAsync(connection, createTx, newAccountId, riskHashes, now, cancellationToken);
+            await PostgresAccountRiskRepository.AppendEventAsync(
+                connection, createTx, newAccountId, regDecision, now, cancellationToken);
 
             await outbox.AppendAsync(connection, createTx, newAccountId, "account", "auth.account.register_taptap", JsonSerializer.SerializeToUtf8Bytes(new { accountId = newAccountId, playerId = newPlayerId, openId = cleanOpenId }), now, cancellationToken);
             await createTx.CommitAsync(cancellationToken);

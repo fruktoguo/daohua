@@ -287,6 +287,54 @@ public sealed class EconomyCommitTests
         Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", marketTx));
     }
 
+    /// <summary>PersistLedger=false 瞬时经济防重：不写流水账本、同幂等键重放命中短期幂等表不重复加减余额，且 24 小时后由留存任务批量清理。</summary>
+    [Fact]
+    public async Task PersistLedgerFalse_TransientIdempotency_PreventsDuplicateDeltaAndPrunesAfter24Hours()
+    {
+        var (source, repository, player) = await ArrangeAsync();
+        await Sql(source, "INSERT INTO economy.player_asset_balances VALUES ($1,'item.test-herb','',10,1,now())", player);
+        var now = DateTimeOffset.UtcNow;
+        var key = $"transient:{Guid.NewGuid():N}";
+        var request = new EconomyTransactionRequest(
+            Guid.NewGuid(), key, "simulation.reward", player,
+            [new(player, "item.test-herb", "", 5)],
+            now,
+            ResultPayload: new byte[] { 7, 8 },
+            PersistLedger: false);
+
+        var first = await repository.CommitAsync(request);
+        Assert.True(first.Applied);
+        Assert.False(first.AlreadyCommitted);
+        Assert.Equal(15d, Convert.ToDouble(await Scalar(source,
+            "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-herb'", player)));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE actor_id=$1", player));
+        Assert.Equal(1L, await Scalar(source,
+            "SELECT count(*) FROM economy.transient_idempotency WHERE player_id=$1 AND idempotency_key=$2", player, key));
+
+        // 模拟结局未知重放：PersistLedger=false 仍必须命中瞬时幂等表返回 AlreadyCommitted，不能二次入账。
+        var replay = await repository.CommitAsync(request);
+        Assert.True(replay.Applied);
+        Assert.True(replay.AlreadyCommitted);
+        Assert.Null(replay.Balances);
+        Assert.Equal(15d, Convert.ToDouble(await Scalar(source,
+            "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='item.test-herb'", player)));
+
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = "Host=unused;Database=unused"
+        }).Build());
+        var retention = new PostgresRetentionRepository(source, options, NullLogger<PostgresRetentionRepository>.Instance);
+
+        await retention.PruneAsync(now.AddHours(23), CancellationToken.None);
+        Assert.Equal(1L, await Scalar(source,
+            "SELECT count(*) FROM economy.transient_idempotency WHERE player_id=$1 AND idempotency_key=$2", player, key));
+
+        var pruned = await retention.PruneAsync(now.AddHours(25), CancellationToken.None);
+        Assert.True(pruned.TransientIdempotency >= 1);
+        Assert.Equal(0L, await Scalar(source,
+            "SELECT count(*) FROM economy.transient_idempotency WHERE player_id=$1 AND idempotency_key=$2", player, key));
+    }
+
     private static async Task<(NpgsqlDataSource Source, PostgresEconomyRepository Repository, Guid Player)> ArrangeAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("经济提交集成测试");

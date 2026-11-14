@@ -626,6 +626,7 @@ public sealed partial class PlayerAggregate
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, nowUnix,
             new PlayerStatsDelta { DuelLosses = 1, Deaths = 1 });
         Progression.TotalDefeats += 1;
+        Progression.DuelLosses += 1;
         _actions[0].Expedition = expedition! with
         {
             Duel = duel with { Resolved = true, Forfeited = true, ViewerOutcome = CombatOutcome.EnemyWon }

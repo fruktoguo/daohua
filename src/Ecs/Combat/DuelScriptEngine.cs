@@ -64,7 +64,8 @@ public static class DuelScriptEngine
                 attackerIsInitiator ? initiatorMp : defenderMp,
                 targetIsInitiator ? initiatorMp : defenderMp,
                 combatEvent.Break,
-                combatEvent.Parried));
+                combatEvent.Parried,
+                combatEvent.AbilityNameOverride));
         }
         return new DuelScript(outcome, Math.Max(encounter.ElapsedSeconds, 1e-9), events,
             initiator.StagedItems, defender.StagedItems, initiatorStats, defenderStats);

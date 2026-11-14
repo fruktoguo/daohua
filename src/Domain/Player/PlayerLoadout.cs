@@ -368,18 +368,22 @@ public sealed partial class PlayerAggregate
         var previousExp = Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var stored) ? stored : 0;
         var nextExp = previousExp + experience;
         Loadout.TechniqueExperiences[techniqueId] = nextExp;
+        // 技艺经验等额伴生底蕴（无论修为是否已满，不经 CreditExperience、不计入 LifetimeExperience）。
+        Progression.Foundation += experience;
         var levelBefore = Domain.GameData.TechniqueCatalog.LevelFor(previousExp, progression);
         var levelAfter = Domain.GameData.TechniqueCatalog.LevelFor(nextExp, progression);
-        // 技艺经验与升段计入行动统计账本（technique 级 LevelUp，TargetId 为技艺 ID）。
+        // 技艺经验、等额底蕴与升段计入行动统计账本（technique 级 LevelUp，TargetId 为技艺 ID）。
         var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
         RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
+            Foundation = experience,
             TechniqueId = techniqueId,
             TechniqueExperience = experience,
             LevelUp = levelAfter > levelBefore
                 ? new PlayerReportLevelUp("technique", techniqueId, levelBefore, levelAfter) : null
         });
         Touch(PlayerSectionKind.Loadout);
+        Touch(PlayerSectionKind.Progression);
     }
 
     /// <summary>装配不授予功法或属性成长，只修改已授权的槽位配置与功法触发条件。</summary>

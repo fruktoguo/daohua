@@ -164,10 +164,11 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             }
         }
 
-        // 已存在的 pending 行直接刷新为最新输入；job_id 同步替换保持列与载荷一致。
+        // 已存在的 pending 行直接刷新为最新输入，并重置重试计数与退避窗口使新任务立即恢复可领状态。
         await using (var refresh = new NpgsqlCommand("""
             UPDATE platform.compute_jobs
-            SET job_id = $2, target_time = $3, input_payload = $4, updated_at = $5
+            SET job_id = $2, target_time = $3, input_payload = $4, updated_at = $5,
+                attempts = 0, next_attempt_at = NULL, last_error = NULL
             WHERE player_id = $1 AND status = 'pending'
             """, connection, transaction))
         {

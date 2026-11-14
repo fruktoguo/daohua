@@ -67,13 +67,19 @@ public sealed class LocalComputeExecutorWorker(
         _process.Refresh();
         var cpu = _process.TotalProcessorTime;
         var wall = DateTimeOffset.UtcNow;
+        var updatedSample = false;
         if (_cpuSample is { } prev)
         {
             var dWall = (wall - prev.Wall).TotalSeconds;
             if (dWall > 0.5)
+            {
                 _cpuFraction = (cpu - prev.Cpu).TotalSeconds / (dWall * Environment.ProcessorCount);
+                _cpuSample = (cpu, wall);
+                updatedSample = true;
+            }
         }
-        _cpuSample = (cpu, wall);
+        if (_cpuSample is null && !updatedSample)
+            _cpuSample = (cpu, wall);
         return _cpuFraction * 100d <= options.ComputeLocalFallbackMaxCpuPercent;
     }
 

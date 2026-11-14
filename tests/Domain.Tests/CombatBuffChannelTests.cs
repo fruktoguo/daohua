@@ -121,4 +121,49 @@ public sealed class CombatBuffChannelTests
         // 聚合口径（buffId 为 null）：全部战内层数（外部视图按 null 查询恒 0）。
         Assert.Equal(5, unit.BuffStacks(null));
     }
+
+    /// <summary>
+    /// 移形通道与层数语义门禁：EvasionPostRatio 为 Instance 且 GrowsWithLevel = false，
+    /// 叠层不放大终乘闪避、BuffEffectParser 高成长倍率不放大、ConsumeOneBuffStack 逐次扣减 1 层并保持到期时间。
+    /// </summary>
+    [Fact]
+    public void YixingEvasionPostRatioDoesNotScaleWithStacksOrLevelGrowthAndConsumesOneStackAtATime()
+    {
+        using var yixingSpec = System.Text.Json.JsonDocument.Parse(
+            """{"buffId":"buff.yixing","name":"移形","durationSeconds":5.0,"maxStacks":99,"evasionPostRatio":1.0}""");
+        var parsedEffects = BuffEffectParser.Parse(yixingSpec.RootElement, effectGrowth: 2.5);
+        var parsedEffect = Assert.Single(parsedEffects!);
+        Assert.Equal(BuffEffectChannel.EvasionPostRatio, parsedEffect.Channel);
+        Assert.Equal(1.0, parsedEffect.Value, 12);
+
+        var unit = new CombatantState("player",
+            CombatantStats.Create(1000, 50, 10, 2, accuracy: 100, evasion: 15));
+        unit.AddBuff(new CombatBuffState(
+            CombatTraitRules.YixingBuffId,
+            ExpiresAtSeconds: 12.5,
+            Stacks: 5,
+            Name: "移形",
+            ResetOnWave: true,
+            Effects: parsedEffects));
+
+        Assert.Equal(1.0, unit.BuffTotal(BuffEffectChannel.EvasionPostRatio), 12);
+        Assert.Equal(30.0, unit.EffectiveStats.Evasion, 12);
+
+        Assert.True(unit.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId));
+        var afterFirstConsume = Assert.Single(unit.Buffs);
+        Assert.Equal(4, afterFirstConsume.Stacks);
+        Assert.Equal(12.5, afterFirstConsume.ExpiresAtSeconds, 12);
+        Assert.Equal(30.0, unit.EffectiveStats.Evasion, 12);
+
+        for (var i = 0; i < 3; i++)
+            Assert.True(unit.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId));
+        Assert.Equal(1, Assert.Single(unit.Buffs).Stacks);
+        Assert.Equal(30.0, unit.EffectiveStats.Evasion, 12);
+
+        Assert.True(unit.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId));
+        Assert.Empty(unit.Buffs);
+        Assert.Equal(0, unit.BuffTotal(BuffEffectChannel.EvasionPostRatio), 12);
+        Assert.Equal(15.0, unit.EffectiveStats.Evasion, 12);
+        Assert.False(unit.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId));
+    }
 }

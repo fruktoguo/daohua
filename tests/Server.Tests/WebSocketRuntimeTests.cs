@@ -1,5 +1,7 @@
 using System.Net.WebSockets;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Protocol;
 using Server.Clean;
 using Xunit;
 
@@ -108,5 +110,44 @@ public sealed class WebSocketRuntimeTests
         await WebSocketEndpoint.SendLoopAsync(socket, session, () => { }, cts.Token, logger);
 
         Assert.DoesNotContain(logger.Logs, l => l.Level >= LogLevel.Error);
+    }
+
+    /// <summary>ActionIntentResponse 拒绝应答不得伪造 accepted=true/status=queued；PartyLobbyEntryDto 正确序列化 openSlots。</summary>
+    [Fact]
+    public void ProtocolContracts_ActionIntentResponseAndPartyLobbyEntry_SerializeRejectionAndOpenSlots()
+    {
+        var queued = new ActionIntentResponse("req-1", "act-1", "cultivation.draw-qi", DateTimeOffset.UnixEpoch, 5);
+        var queuedJson = JsonSerializer.Serialize(queued, ProtocolJson.Options);
+        using (var queuedDoc = JsonDocument.Parse(queuedJson))
+        {
+            Assert.True(queuedDoc.RootElement.GetProperty("accepted").GetBoolean());
+            Assert.Equal("queued", queuedDoc.RootElement.GetProperty("status").GetString());
+        }
+
+        var rejected = new ActionIntentResponse(
+            "req-2", string.Empty, "secret_art.liquefy", DateTimeOffset.UnixEpoch, 0,
+            Accepted: false, Status: "rejected", Message: "目标物品无效");
+        var rejectedJson = JsonSerializer.Serialize(rejected, ProtocolJson.Options);
+        using (var rejectedDoc = JsonDocument.Parse(rejectedJson))
+        {
+            Assert.False(rejectedDoc.RootElement.GetProperty("accepted").GetBoolean());
+            Assert.Equal("rejected", rejectedDoc.RootElement.GetProperty("status").GetString());
+            Assert.Equal("目标物品无效", rejectedDoc.RootElement.GetProperty("message").GetString());
+        }
+
+        var lobbyEntry = new PartyLobbyEntryDto(
+            Guid.NewGuid().ToString("D"),
+            "青云小队",
+            "combat",
+            "node.cloud-creek",
+            Guid.NewGuid().ToString("D"),
+            "队长",
+            100,
+            1_700_000_000_000L,
+            [],
+            OpenSlots: 2);
+        var lobbyJson = JsonSerializer.Serialize(lobbyEntry, ProtocolJson.Options);
+        using var lobbyDoc = JsonDocument.Parse(lobbyJson);
+        Assert.Equal(2, lobbyDoc.RootElement.GetProperty("openSlots").GetInt32());
     }
 }

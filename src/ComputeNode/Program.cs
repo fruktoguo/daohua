@@ -6,6 +6,11 @@
 //   2. 独立 HTTP 调试口：/internal/v1/compute/advance-batch 仅凭 X-Compute-Token 鉴权，
 //      供手动/旁路验证批次执行（生产派发不走该口）。
 using DaoHua.ComputeNode;
+using YuoCore.Ecs;
+
+// ComputeNode 不接管默认静态世界指针，但必须关闭 YuoCore 系统的异常吞并开关，
+// 防止 ECS System 抛出 DomainException 或不变量违例时仅打印 stderr 并回传半截 Success=true。
+YuoWorld.CloseSystemTry = true;
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -247,6 +247,7 @@ public sealed class CombatFactTracker
         public double Mana;
         public bool Alive;
         public int BuffCount;
+        public int PermanentBuffCount;
         public double BuffStackSum;
         public double BuffExpirySum;
         public double Threat;
@@ -328,8 +329,8 @@ public sealed class CombatFactTracker
             if (prev.Mana != snap.Mana) ch |= UnitChannel.Mana;
             if (prev.Alive != snap.Alive) ch |= UnitChannel.Alive | UnitChannel.Hp;
             if (prev.Threat != snap.Threat) ch |= UnitChannel.Threat;
-            if (prev.BuffCount != snap.BuffCount || prev.BuffStackSum != snap.BuffStackSum
-                || prev.BuffExpirySum != snap.BuffExpirySum) ch |= UnitChannel.Buff;
+            if (prev.BuffCount != snap.BuffCount || prev.PermanentBuffCount != snap.PermanentBuffCount
+                || prev.BuffStackSum != snap.BuffStackSum || prev.BuffExpirySum != snap.BuffExpirySum) ch |= UnitChannel.Buff;
             // 新增数组槽位（波次注入）无上一次快照：全通道翻转。
             if (snapshots[i].Stats is null && snap.Stats is not null) ch = (UnitChannel)0xFF;
             snapshots[i] = snap;
@@ -349,11 +350,18 @@ public sealed class CombatFactTracker
     private static UnitSnapshot Capture(CombatantState unit)
     {
         double stackSum = 0, expirySum = 0;
+        var permanentCount = 0;
         var buffs = unit.Buffs;
         for (var i = 0; i < buffs.Count; i++)
         {
             stackSum += buffs[i].Stacks;
-            expirySum += buffs[i].ExpiresAtSeconds;
+            var exp = buffs[i].ExpiresAtSeconds;
+            // 常驻 Buff（如 double.MaxValue 哨兵或非有限值）独立计数不计入过期时间和，
+            // 防止溢出为 +Infinity 或精度吞没限时 Buff 导致等层续期/等数替换漏置唤醒位。
+            if (!double.IsFinite(exp) || exp >= double.MaxValue / 2)
+                permanentCount++;
+            else
+                expirySum += exp;
         }
         return new UnitSnapshot
         {
@@ -361,6 +369,7 @@ public sealed class CombatFactTracker
             Mana = unit.Manapoints,
             Alive = unit.IsAlive,
             BuffCount = buffs.Count,
+            PermanentBuffCount = permanentCount,
             BuffStackSum = stackSum,
             BuffExpirySum = expirySum,
             Threat = unit.EffectiveThreat,

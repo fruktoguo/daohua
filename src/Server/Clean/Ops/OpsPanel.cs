@@ -115,7 +115,8 @@ public static class OpsPanel
             IPlayerRuntime players,
             SessionRegistry sessions,
             MarketRuntime market,
-            ServerOptions serverOptions) => Results.Ok(new
+            ServerOptions serverOptions,
+            Server.Clean.Leaderboards.LeaderboardRuntime? leaderboard) => Results.Ok(new
         {
             service = serverOptions.ServiceName,
             version = releaseVersion,
@@ -134,7 +135,8 @@ public static class OpsPanel
             gameDataFingerprint = gameData.Fingerprint,
             loadedPlayers = players.LoadedCount,
             sessions = sessions.Count,
-            market = market.GetMetrics()
+            market = market.GetMetrics(),
+            leaderboard = leaderboard?.GetStatus()
         }));
 
         group.MapGet("/api/health", async (HealthCheckService health, CancellationToken cancellationToken) =>
@@ -415,7 +417,7 @@ public static class OpsPanel
                     .OrderBy(item => item.presence)
                     .ToArray(),
                 slowest = snapshots
-                    .OrderByDescending(snapshot => snapshot.LastSimulatedAt)
+                    .OrderBy(snapshot => snapshot.LastSimulatedAt)
                     .Take(20)
                     .Select(snapshot => new
                     {
@@ -568,6 +570,21 @@ public static class OpsPanel
             registry.DrainAll("ops drain");
             Audit(loggerFactory, context, "compute-drain-all", null);
             return Results.Ok(new { action = "compute-drain", scope = "all", nodeCount = registry.NodeCount });
+        });
+
+        group.MapPost("/api/leaderboards/rebuild", async (
+            HttpContext context,
+            OpsOptions opts,
+            ILoggerFactory loggerFactory,
+            Server.Clean.Leaderboards.LeaderboardRuntime? leaderboard,
+            CancellationToken ct) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            if (leaderboard is null)
+                return Results.NotFound(new { code = "LEADERBOARD_UNAVAILABLE", message = "当前进程角色未启用排行榜服务。" });
+            await leaderboard.RebuildAsync(ct);
+            Audit(loggerFactory, context, "leaderboard.rebuild", null);
+            return Results.Ok(leaderboard.GetStatus());
         });
 
         // 市场快捷操作：系统身份批量挂售/收购与撤单（端点实现在 OpsMarketActions）。

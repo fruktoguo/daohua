@@ -137,10 +137,14 @@ static void ValidateReferences(string directory)
     var items = CollectIds(directory, "items");
     var buildingIds = CollectIds(directory, "buildings");
     var percentPointKeys = PercentPointKeys();
+    var monsterModifierKeys = MonsterModifierKeys();
     var abilityBuffKeys = AbilityBuffKeys();
     var consumableBuffKeys = ConsumableBuffKeys();
     var nodeIds = new HashSet<string>(StringComparer.Ordinal);
     var mapEdges = new List<(string From, string To, string File)>();
+    var nodeActionRefs = new List<(string NodeId, string ActionId, string File)>();
+    var actionAllowedNodes = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+    var actionExcludedNodes = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
     foreach (var file in JsonFiles(directory, "maps"))
     {
@@ -154,7 +158,10 @@ static void ValidateReferences(string directory)
                 foreach (var id in StringArray(node, "encounterIds"))
                     Require(encounters.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的遭遇 {id}。");
                 foreach (var id in StringArray(node, "availableActionIds"))
+                {
                     Require(actions.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的行动 {id}。");
+                    if (nodeId.Length > 0) nodeActionRefs.Add((nodeId, id, Rel(directory, file)));
+                }
                 // 节点可建列表：buildableList 自定义 ID 或 buildableTemplate 分组模板二选一。
                 foreach (var id in StringArray(node, "buildableList"))
                     Require(buildingIds.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 可建列表引用了不存在的建筑 {id}。");
@@ -250,20 +257,30 @@ static void ValidateReferences(string directory)
                 Require(minQuantity > 0, $"{Rel(directory, file)} 怪物 {id} 掉落 {dropItemId} 的 minQuantity 必须大于 0。");
                 Require(maxQuantity >= minQuantity, $"{Rel(directory, file)} 怪物 {id} 掉落 {dropItemId} 的 maxQuantity ({maxQuantity}) 必须大于等于 minQuantity ({minQuantity})。");
             }
-            // modifiers 段为百分比点数词汇表；五行抗性等历史误植键直接拒绝。
+            // 严禁将 modifiers 战斗效果/固定伤减字段误写成怪物顶层 JSON 键，防止静默失效。
+            foreach (var topKey in ObjectKeys(monster))
+                Require(!monsterModifierKeys.Contains(topKey),
+                    $"{Rel(directory, file)} 怪物 {id} 的 {topKey} 不得位于顶层，请移至 modifiers.{topKey}。");
+            // modifiers 段只允许百分比点数与固定伤/减伤授权词汇表；五行抗性等历史误植键直接拒绝。
             foreach (var key in ObjectKeys(Property(monster, "modifiers")))
-                Require(percentPointKeys.Contains(key), $"{Rel(directory, file)} 怪物 {id} 的 modifiers.{key} 不在授权词汇表内。");
+                Require(monsterModifierKeys.Contains(key), $"{Rel(directory, file)} 怪物 {id} 的 modifiers.{key} 不在授权词汇表内。");
         }
     }
 
-    // 装备 flatStats 中 Points 结尾的键为百分比点数通道，与怪物 modifiers 共用同一授权词汇表。
+    // 装备 flatStats 中 Points 结尾的键为百分比点数通道，与怪物 modifiers 共用同一授权词汇表；
+    // 同时要求所有装备显式声明正整数穿戴等级 level，杜绝回退等阶换算。
     foreach (var file in JsonFiles(directory, "equipment"))
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var equipment in Elements(doc.RootElement))
+        {
+            var eqLevelProp = Property(equipment, "level");
+            Require(eqLevelProp.ValueKind == JsonValueKind.Number && eqLevelProp.TryGetInt32(out var eqLevel) && eqLevel >= 1,
+                $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 必须声明正整数 level（>= 1）。");
             foreach (var key in ObjectKeys(Property(equipment, "flatStats")).Where(name => name.EndsWith("Points", StringComparison.Ordinal)))
                 Require(percentPointKeys.Contains(key),
                     $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 的 flatStats.{key} 不在授权词汇表内。");
+        }
     }
 
     // 技能 Buff 与消耗品 Buff 修饰键同样是授权词汇表；ratio 后缀旧键已废除。
@@ -288,6 +305,13 @@ static void ValidateReferences(string directory)
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var item in Elements(doc.RootElement))
         {
+            var kind = Text(item, "kind");
+            if (!string.Equals(kind, "currency", StringComparison.Ordinal))
+            {
+                var itemLevelProp = Property(item, "level");
+                Require(itemLevelProp.ValueKind == JsonValueKind.Number && itemLevelProp.TryGetInt32(out var itemLevel) && itemLevel >= 1,
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 必须声明正整数 level（>= 1）。");
+            }
             var consumable = Property(item, "consumable");
             foreach (var key in ObjectKeys(consumable))
                 Require(ConsumableKeys().Contains(key),
@@ -346,14 +370,30 @@ static void ValidateReferences(string directory)
             var encounterId = Text(action, "combatEncounterId");
             if (encounterId.Length > 0)
                 Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
-            foreach (var nodeId in StringArray(action, "availableNodeIds"))
+            var availableNodes = StringArray(action, "availableNodeIds").ToHashSet(StringComparer.Ordinal);
+            var excludedNodes = StringArray(action, "excludedNodeIds").ToHashSet(StringComparer.Ordinal);
+            foreach (var nodeId in availableNodes)
                 Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
-            foreach (var nodeId in StringArray(action, "excludedNodeIds"))
+            foreach (var nodeId in excludedNodes)
                 Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
             // 地点约束互斥：白名单与黑名单同配语义含糊，直接拒绝。
-            Require(!(StringArray(action, "availableNodeIds").Any() && StringArray(action, "excludedNodeIds").Any()),
+            Require(!(availableNodes.Count > 0 && excludedNodes.Count > 0),
                 $"{Rel(directory, file)} 行动 {id} 的 availableNodeIds 与 excludedNodeIds 互斥。");
+            if (id.Length > 0)
+            {
+                actionAllowedNodes[id] = availableNodes;
+                actionExcludedNodes[id] = excludedNodes;
+            }
         }
+    }
+
+    // 反向交叉校验：地图节点挂载了行动时，该行动自身的 availableNodeIds / excludedNodeIds 必须允许该节点。
+    foreach (var (nodeId, actionId, mapFile) in nodeActionRefs)
+    {
+        if (actionExcludedNodes.TryGetValue(actionId, out var excluded) && excluded.Contains(nodeId))
+            Require(false, $"{mapFile} 节点 {nodeId} 挂载了行动 {actionId}，但该行动在 excludedNodeIds 中排除了 {nodeId}。");
+        if (actionAllowedNodes.TryGetValue(actionId, out var allowed) && allowed.Count > 0 && !allowed.Contains(nodeId))
+            Require(false, $"{mapFile} 节点 {nodeId} 挂载了行动 {actionId}，但该行动的 availableNodeIds 未包含 {nodeId}。");
     }
 
     foreach (var file in JsonFiles(directory, "buildings"))
@@ -373,6 +413,36 @@ static void ValidateReferences(string directory)
                     $"{Rel(directory, file)} 建筑 {id} 材料引用了不存在的物品 {Text(material, "itemId")}。");
                 Require(Number(material, "quantity", 0) > 0,
                     $"{Rel(directory, file)} 建筑 {id} 材料 {Text(material, "itemId")} 数量必须为正数。");
+            }
+        }
+    }
+
+    foreach (var file in JsonFiles(directory, "shop"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var offer in Elements(doc.RootElement))
+        {
+            var id = Text(offer, "id");
+            Require(id.StartsWith("shop.", StringComparison.Ordinal) && id.Length <= 64,
+                $"{Rel(directory, file)} 商店商品 ID 无效：{id}（必须以 shop. 开头且长度 ≤64）。");
+            var itemId = Text(offer, "itemId");
+            Require(items.Contains(itemId),
+                $"{Rel(directory, file)} 商店商品 {id} 引用了不存在的物品 {itemId}。");
+            var currencyId = Text(offer, "currencyItemId");
+            if (currencyId.Length == 0) currencyId = Text(offer, "currencyId");
+            if (currencyId.Length == 0) currencyId = "currency.spirit-stone";
+            Require(items.Contains(currencyId),
+                $"{Rel(directory, file)} 商店商品 {id} 引用了不存在的货币 {currencyId}。");
+            var unitPrice = Number(offer, "unitPrice", 0);
+            Require(unitPrice > 0 && double.IsFinite(unitPrice) && unitPrice == Math.Floor(unitPrice),
+                $"{Rel(directory, file)} 商店商品 {id} 的 unitPrice={unitPrice} 必须是正整数。");
+            var dailyLimitProp = Property(offer, "dailyLimit");
+            if (dailyLimitProp.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+            {
+                Require(dailyLimitProp.ValueKind == JsonValueKind.Number
+                        && dailyLimitProp.TryGetInt32(out var dailyLimit)
+                        && dailyLimit > 0,
+                    $"{Rel(directory, file)} 商店商品 {id} 的 dailyLimit 必须是正整数。");
             }
         }
     }
@@ -441,6 +511,19 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints",
     "dropBonusPoints", "cultivationExpBonusPoints", "combatExpBonusPoints"
 };
+
+/// <summary>怪物 modifiers 授权词汇表：在百分比点数基础上追加 6 个固定伤害与固定减伤平面通道（对齐 GameDataCatalog）。</summary>
+static HashSet<string> MonsterModifierKeys()
+{
+    var keys = new HashSet<string>(PercentPointKeys(), StringComparer.Ordinal);
+    keys.Add("fixedDamageBonus");
+    keys.Add("fixedDamageReduction");
+    keys.Add("fixedPhysicalDamageBonus");
+    keys.Add("fixedPhysicalDamageReduction");
+    keys.Add("fixedSpellDamageBonus");
+    keys.Add("fixedSpellDamageReduction");
+    return keys;
+}
 
 /// <summary>技能战内 Buff 授权键：读条/免伤/增伤/威胁点数与回复、时长、叠层上限与层数派生通道。</summary>
 static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)

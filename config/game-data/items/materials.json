@@ -332,7 +332,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
-    "sellPrice": 620,
+    "sellPrice": 420,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -357,7 +357,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
-    "sellPrice": 580,
+    "sellPrice": 392,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -384,7 +384,7 @@
     "kind": "consumable",
     "category": "consumable",
     "tier": 1,
-    "sellPrice": 680,
+    "sellPrice": 432,
     "consumable": {
       "usableInActionTypes": [
         "combat"

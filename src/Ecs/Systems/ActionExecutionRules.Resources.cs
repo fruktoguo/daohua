@@ -423,19 +423,20 @@ internal static partial class ActionExecutionRules
                 if (targetIndex < 0) continue;
                 // 打击威力 = (灵力倍率×灵力上限 + 术攻倍率×术攻) ×(1+技能增幅点数/100)，
                 // 增幅并入原始威力乘位，与技能命中口径一致（总纲 §7.7.1）。
+                var strikeElement = CombatTraitRules.ResolveDamageElement(evalCaster.Stats.Traits, strike.Element);
                 var strikeStats = evalCaster.Stats with
                 {
                     AttackPower = (strike.ManaDamageRatio * evalCaster.Stats.MaxManapoints
                         + strike.SpellAttackRatio * evalCaster.Stats.SpellAttack)
                         * PercentValue.Multiplier(evalCaster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
                     DamageKind = CombatDamageKind.Spell,
-                    Element = strike.Element
+                    Element = strikeElement
                 };
                 strikeStats = strikeStats with { TotalDamageBonusPoints = evalCaster.Stats.TotalDamageBonusPoints + evalCaster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                 var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, evalTarget);
                 player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - manaCost);
                 SyncConsumableResourcesToBattle(player, player.Actions[0], liveBattle);
-                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, liveBattle, evalCaster, evalTarget, strike.Element);
+                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, liveBattle, evalCaster, evalTarget, strikeElement);
                 // 雷击符打击计入行动统计簿：本机术法输出；目标怪按类型桶计术法承伤与减免（原始威力 − 实收）。
                 if (evalTarget!.DefinitionId is { } strikeMonsterId
                     && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)

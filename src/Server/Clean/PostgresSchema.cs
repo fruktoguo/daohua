@@ -72,8 +72,11 @@ public static class PostgresSchema
     /// v50：social.chat_messages 增 sender_realm 发送者境界列；social.parties 默认 open_slots 设为 3，个人分段载荷不变。
     /// v51：队伍斗地主（总纲 §21.15）——social.parties 增 doudizhu_stake、party_members 增独立准备标记，
     /// 新增 social.doudizhu_games 权威牌局检查点；个人分段载荷不变。
-    /// v52：战斗快照定格特质装配与等级，玩家载荷标签 v42；表结构未变。
-    public const int Version = 52;
+    /// v53：新增瞬时经济幂等防重表 economy.transient_idempotency；玩家载荷标签保持 v42。
+    /// v54：全服排行榜整点快照（game.leaderboard_snapshots / game.leaderboard_ranks）与
+    /// game.player_projection 扩列（experience/lifetime_experience/duel_wins/duel_losses/avatar）；
+    /// progression 增 duelWins/duelLosses、settings 增 publicLoadoutVisible（均可缺省解码），玩家载荷标签推进至 v43。
+    public const int Version = 54;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -237,6 +240,11 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS game.player_projection (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         realm_rank double precision NOT NULL DEFAULT 0,
+        experience double precision NOT NULL DEFAULT 0,
+        lifetime_experience double precision NOT NULL DEFAULT 0,
+        duel_wins double precision NOT NULL DEFAULT 0,
+        duel_losses double precision NOT NULL DEFAULT 0,
+        avatar varchar(64) NOT NULL DEFAULT 'player',
         current_node_id varchar(128) NULL,
         presence varchar(32) NOT NULL DEFAULT 'offline',
         offline_since timestamptz NULL,
@@ -244,6 +252,25 @@ public static class PostgresSchema
         projection_version bigint NOT NULL DEFAULT 1,
         updated_at timestamptz NOT NULL
     );
+
+    -- 全服排行榜整点快照（派生读模型，整榜可重建）。
+    CREATE TABLE IF NOT EXISTS game.leaderboard_snapshots (
+        board_id varchar(64) PRIMARY KEY,
+        computed_at timestamptz NOT NULL,
+        participant_count integer NOT NULL CHECK (participant_count >= 0),
+        payload jsonb NOT NULL
+    );
+
+    -- 全服排行榜个人名次投影（仅收录 score > 0 参与者）。
+    CREATE TABLE IF NOT EXISTS game.leaderboard_ranks (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        board_id varchar(64) NOT NULL,
+        rank integer NOT NULL CHECK (rank > 0),
+        score double precision NOT NULL CHECK (score > 0),
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, board_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_leaderboard_ranks_board ON game.leaderboard_ranks(board_id, rank);
 
     CREATE TABLE IF NOT EXISTS game.node_buildings (
         node_id varchar(128) NOT NULL,
@@ -325,6 +352,16 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL,
         PRIMARY KEY (player_id, offer_id, day_index)
     );
+
+    -- 瞬时经济事务短期幂等防重表：仅承载 PersistLedger=false 的幂等键去重，由留存任务按 24 小时滚动清理。
+    CREATE TABLE IF NOT EXISTS economy.transient_idempotency (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        idempotency_key varchar(200) NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (player_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS ix_transient_idempotency_created_at
+        ON economy.transient_idempotency(created_at);
 
     CREATE TABLE IF NOT EXISTS market.partition_leases (
         partition_id integer PRIMARY KEY CHECK (partition_id >= 0),
@@ -683,7 +720,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

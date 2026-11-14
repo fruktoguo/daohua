@@ -191,5 +191,66 @@
     "manaCost": 10.0,
     "rootAttribute": "meridians",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.yueqian",
+    "name": "跃迁",
+    "description": "缩地成寸，腾挪移形。引符阵庇佑全体友方周身气机游离，步虚避锋。",
+    "style": "talisman",
+    "tier": 2,
+    "category": "spell",
+    "element": "none",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 3000,
+    "targetType": "allAllies",
+    "damageRatio": 0.0,
+    "buff": {
+      "buffId": "buff.yixing",
+      "name": "移形",
+      "durationSeconds": 5.0,
+      "maxStacks": 99,
+      "resetOnWave": true,
+      "evasionPostRatio": 1.0
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "buff-stacks",
+        "comparator": "equal",
+        "value": 0.0,
+        "buffId": "buff.yixing"
+      }
+    ],
+    "manaCost": 50.0,
+    "rootAttribute": "consciousness",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.huoyan-fengbao",
+    "name": "火焰风暴",
+    "description": "赤焰狂飙席卷四野，烈火焚身引燃魂魄，余烬久烧不息。",
+    "style": "fiveElements",
+    "tier": 2,
+    "category": "spell",
+    "element": "fire",
+    "cooldownMilliseconds": 18000,
+    "castMilliseconds": 3000,
+    "targetType": "allEnemies",
+    "damageRatio": 1.0,
+    "flatDamage": 50,
+    "ranhunBaseStacks": 5,
+    "ranhunSpellAttackRatio": 0.2,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 30.0,
+    "rootAttribute": "consciousness",
+    "discipline": "spell"
   }
 ]

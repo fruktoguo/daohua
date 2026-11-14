@@ -1,9 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
-using System.Globalization;
-using System.Text.Json;
 using Domain.GameData;
-using Domain.Market;
 using Domain.Persistence;
 using Domain.Player;
 using Protocol;
@@ -12,11 +9,7 @@ namespace Server.Clean.Social;
 
 /// <summary>
 /// 身家（valuation）估值服务：招募匹配用的量化参照，不是战斗属性（docs/design/总纲/21 §21.3）。
-/// 口径：
-///   身家 = Σ 已穿戴装备单价（强化 +N 按 "itemId:+N" 变体独立计价）
-///        + Σ 每门已参悟功法（参悟等级 × 对应秘籍单价）；
-///   单价 = 坊市市场参考价（最近 10 次成交单价的单值滑动平均，单笔多次购买算做一次） ?? 配表回收价 ItemDefinition.SellPrice ?? 0；
-///   功法↔物品映射：ability.X → item.tome.X，配表无该秘籍时回落 item.fragment.X。
+/// 口径：委托 <see cref="ValuationMath"/> 单一计算真源；
 /// 数据源：已装载玩家读运行时快照，离线玩家读 loadout 分段（含刷盘队列叠加）；
 /// 入队裁决与匹配自动并入使用实时值，列表展示允许 ≤30s 的估值缓存。
 /// </summary>
@@ -24,12 +17,6 @@ public sealed class PartyValuationService
 {
     /// <summary>展示路径估值缓存的寿命。</summary>
     private static readonly TimeSpan DisplayCacheTtl = TimeSpan.FromSeconds(30);
-    /// <summary>功法 ID 前缀；去掉它即得到秘籍/残卷物品 ID 后缀。</summary>
-    private const string AbilityIdPrefix = "ability.";
-    /// <summary>残卷物品 ID 前缀（秘籍缺配表时的回单价目）。</summary>
-    private const string FragmentPrefix = "item.fragment.";
-    /// <summary>单本残卷研读注入的标准经验点数（EcsPlayerRuntimeAdapter 对齐）。</summary>
-    private const double ExpPerFragment = 500d;
 
     private readonly IPlayerRuntime _runtime;
     private readonly PostgresSectionRepository _sections;
@@ -51,17 +38,7 @@ public sealed class PartyValuationService
         _sections = sections;
         _market = market;
         _catalog = catalog;
-
-        var costCache = new Dictionary<string, double>(StringComparer.Ordinal);
-        var basePrices = new Dictionary<string, double>(catalog.RawEquipments.Count, StringComparer.Ordinal);
-        foreach (var equipmentId in catalog.RawEquipments.Keys)
-        {
-            if (EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, equipmentId, costCache) is { } price && price > 0)
-            {
-                basePrices[equipmentId] = price;
-            }
-        }
-        _baseSellPrices = basePrices.ToFrozenDictionary(StringComparer.Ordinal);
+        _baseSellPrices = ValuationMath.BuildBaseSellPrices(catalog);
     }
 
     /// <summary>实时身家细分：入队裁决、名片构建与匹配自动并入使用，不走缓存。</summary>
@@ -151,88 +128,7 @@ public sealed class PartyValuationService
 
     /// <summary>按口径合计战斗装备、功法与技艺工具价值；非有限结果归零。</summary>
     private ValuationResult Compute(PlayerLoadoutDocument loadout)
-    {
-        var equipmentTotal = 0d;
-        var toolsTotal = 0d;
-        foreach (var slot in loadout.Equipment)
-        {
-            var price = EquipmentUnitPrice(slot.ItemId, slot.EnhancementLevel);
-            if (IsTool(slot.ItemId))
-                toolsTotal += price;
-            else
-                equipmentTotal += price;
-        }
-
-        var abilitiesTotal = 0d;
-        if (loadout.AbilityExperiences is not null)
-        {
-            foreach (var (abilityId, exp) in loadout.AbilityExperiences)
-            {
-                if (!double.IsFinite(exp) || exp < 0) continue;
-                var suffix = abilityId.StartsWith(AbilityIdPrefix, StringComparison.Ordinal)
-                    ? abilityId[AbilityIdPrefix.Length..]
-                    : abilityId;
-                var fragmentPrice = FragmentUnitPrice(suffix);
-                if (fragmentPrice <= 0) continue;
-
-                // 功法按总经验折算残卷数量（每 500 经验 = 1 本残卷），已学功法底线按 1 本残卷计
-                var fragmentCount = Math.Max(1.0, exp / ExpPerFragment);
-                abilitiesTotal += fragmentCount * fragmentPrice;
-            }
-        }
-
-        return new ValuationResult(
-            double.IsFinite(equipmentTotal) ? equipmentTotal : 0,
-            double.IsFinite(abilitiesTotal) ? abilitiesTotal : 0,
-            double.IsFinite(toolsTotal) ? toolsTotal : 0);
-    }
-
-    private bool IsTool(string itemIdText)
-    {
-        if (_catalog.RawEquipments.TryGetValue(itemIdText, out var element)
-            && element.TryGetProperty("slot", out var slotProp)
-            && slotProp.ValueKind == JsonValueKind.String)
-        {
-            return slotProp.GetString()?.StartsWith("tool-", StringComparison.Ordinal) == true;
-        }
-        return false;
-    }
-
-    /// <summary>装备单价：配表已知装备才算价，市场参考价优先；无参考价按包含强化折旧的商店回收价兜底，无回收价计 0。</summary>
-    private double EquipmentUnitPrice(string itemIdText, double enhancementLevel)
-    {
-        if (!_catalog.RawEquipments.ContainsKey(itemIdText)) return 0;
-        var levelInt = (int)Math.Floor(enhancementLevel);
-        var variant = levelInt > 0
-            ? string.Create(CultureInfo.InvariantCulture, $"+{levelInt:0}")
-            : string.Empty;
-        var instrument = new MarketInstrument(new ItemId(itemIdText), variant);
-        var refPrice = _market?.TryGetReferencePrice(instrument);
-        if (refPrice is > 0) return refPrice.Value;
-
-        // 无市场参考价时，回退到系统商店回收价（原料成本×2.0工匠增值 + 强化造价折旧，总纲 §4.6）
-        if (_baseSellPrices.TryGetValue(itemIdText, out var basePrice) && basePrice > 0)
-        {
-            return EnhancementRules.CalculateEquipmentSellPrice(basePrice, levelInt);
-        }
-        return 0;
-    }
-
-    /// <summary>残卷单价：只读取残卷标的（残卷坊市参考价优先，无则回退残卷配表回收价）。</summary>
-    private double FragmentUnitPrice(string suffix)
-    {
-        var fragmentId = new ItemId(FragmentPrefix + suffix);
-
-        // 1. 残卷坊市参考价优先
-        if (_market?.TryGetReferencePrice(new MarketInstrument(fragmentId)) is { } fragRef && fragRef > 0)
-            return fragRef;
-
-        // 2. 残卷配表回收价保底
-        if (_catalog.Items.TryGetValue(fragmentId, out var fragDef))
-            return Math.Max(0, fragDef.SellPrice);
-
-        return 0;
-    }
+        => ValuationMath.Compute(loadout, _catalog, _baseSellPrices, _market);
 }
 
 /// <summary>身家估值细分计算结果。</summary>

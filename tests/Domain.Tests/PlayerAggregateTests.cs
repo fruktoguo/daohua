@@ -466,4 +466,42 @@ public sealed class PlayerAggregateTests
         var credit = PlayerProgression.ComputeExperienceCredit(10.0, 1000.0, 0.0, -1e-15);
         Assert.Equal(10.0, credit);
     }
+
+    /// <summary>
+    /// RestoreFrom 必须完整复原 OfflineSinceAt、节点建筑 4 字段、Combat.Buffs 与 Settings.UnlockedAvatars，
+    /// 确保回滚与权威重同步前后导出快照逐位一致。
+    /// </summary>
+    [Fact]
+    public void RestoreFrom_RestoresOfflineSinceAtNodeBuildingsCombatBuffsAndUnlockedAvatars()
+    {
+        var playerId = PlayerId.New();
+        var accountId = AccountId.New();
+        var source = PlayerAggregate.Create(playerId, accountId, "权威", Baseline, "catalog-a");
+        source.SetPresence(PresenceState.Offline, Baseline.AddMinutes(5));
+        source.World.NodeId = "node.yunxi-village";
+        source.World.NodeBuildingNodeId = "node.yunxi-village";
+        source.World.NodeBuildingEffects = new BuildingEffectSet(ForgingSpeedRatio: 0.25, MiningSpeedRatio: 0.15);
+        source.World.NodeBuildings =
+        [
+            new NodeBuildingState("building.forge", 2, 3, 1234, new Dictionary<string, double> { ["item.refined-iron"] = 5 })
+        ];
+        source.World.NodeBuildingUsages = [new NodeBuildingUsage("building.forge", 4, 110, 1.0)];
+        source.Combat.Buffs = new PlayerCombatBuffState(
+            [new CombatBuffCarry("buff.carry", 12.5, 2, "携带", Effects: [new BuffEffect(BuffEffectChannel.AttackSpeedPoints, 15)])]);
+        source.UnlockAvatar("gothic-lolita");
+        var expected = source.ExportState();
+
+        var target = PlayerAggregate.Create(playerId, accountId, "旧本", Baseline, "catalog-a");
+        target.SetPresence(PresenceState.Online, Baseline);
+        target.RestoreFrom(expected);
+
+        Assert.Equal(expected.OfflineSinceAt, target.OfflineSinceAt);
+        Assert.Equal(expected.World.NodeBuildingNodeId, target.World.NodeBuildingNodeId);
+        Assert.Equal(expected.World.NodeBuildingEffects, target.World.NodeBuildingEffects);
+        Assert.Equal(expected.World.NodeBuildings, target.World.NodeBuildings);
+        Assert.Equal(expected.World.NodeBuildingUsages, target.World.NodeBuildingUsages);
+        Assert.Equal(expected.Combat.Buffs, target.Combat.Buffs);
+        Assert.Contains("gothic-lolita", target.Settings.UnlockedAvatars);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(expected), System.Text.Json.JsonSerializer.Serialize(target.ExportState()));
+    }
 }

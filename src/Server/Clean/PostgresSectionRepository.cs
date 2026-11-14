@@ -151,6 +151,44 @@ public sealed class PostgresSectionRepository(
             head = new PlayerStateHead(playerId, 0, SectionCodec.CurrentSchemaVersion, identity.CreatedAt, string.Empty, string.Empty, identity.CreatedAt);
         }
 
+        // 先按已持久化提交头与已持久化 sections 验真：不能被后续待刷盘队列覆盖掩盖篡改的持久化头/分段。
+        if (head.StateVersion > 0)
+        {
+            if (head.SchemaVersion != SectionCodec.CurrentSchemaVersion
+                || sections.Count != PlayerSectionKinds.All.Count
+                || PlayerSectionKinds.All.Any(kind => !sections.ContainsKey(kind))
+                || sections.Values.Any(section => section.PlayerId != playerId || section.StateVersion > head.StateVersion))
+                throw new InvalidDataException("玩家持久化 section 不完整或版本越界。");
+
+            // 持久化分段校验元数据漂移自愈（仅针对载荷完好、校验元数据脱节的持久化行）：先修复元数据再核对持久化 head.Checksum。
+            var persistedCorrections = new List<(StoredSection Section, long QueueId)>();
+            foreach (var kind in sections.Keys.ToArray())
+            {
+                var section = sections[kind];
+                if (!SectionCodec.TryRepairSection(section, out var corrected))
+                    throw new InvalidDataException($"玩家 section {kind} 载荷损坏且无法自愈。");
+                if (corrected is null) continue;
+                sections[kind] = corrected;
+                persistedCorrections.Add((corrected, 0L));
+            }
+
+            var persistedChecksum = SectionCodec.ComputeHeadChecksum(sections.Values);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(persistedChecksum),
+                    Encoding.ASCII.GetBytes(head.Checksum)))
+                throw new InvalidDataException("玩家持久化头校验和不匹配。");
+
+            if (persistedCorrections.Count > 0)
+            {
+                await ApplyChecksumRepairsAsync(connection, transaction, playerId, persistedCorrections,
+                    persistedChecksum, cancellationToken);
+                logger?.LogWarning("玩家 {PlayerId} 的 {Count} 个持久化存档分段校验元数据漂移，已自愈回写：{Kinds}",
+                    playerId, persistedCorrections.Count,
+                    string.Join(',', persistedCorrections.Select(item => item.Section.SectionKind)));
+                RuntimeInstrumentation.Count("persistence.section_checksum_repaired");
+            }
+        }
+
         // section 进入 durable 刷盘收件箱后，worker 可能尚未完成落库。
         // 加载必须把队列中的更新叠加到 game 表，否则进程在这段窗口崩溃会回退到旧快照。
         var pendingSources = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -181,7 +219,7 @@ public sealed class PostgresSectionRepository(
 
         head = BuildEffectiveHead(identity, head, sections, pendingSections);
 
-        if (head.StateVersion > 0)
+        if (head.StateVersion > 0 && pendingSources.Count > 0)
         {
             if (head.SchemaVersion != SectionCodec.CurrentSchemaVersion
                 || sections.Count != PlayerSectionKinds.All.Count
@@ -189,31 +227,27 @@ public sealed class PostgresSectionRepository(
                 || sections.Values.Any(section => section.PlayerId != playerId || section.StateVersion > head.StateVersion))
                 throw new InvalidDataException("玩家持久化 section 不完整或版本越界。");
 
-            // 校验元数据漂移自愈：checksum/rawBytes 与载荷脱节但载荷本体完好的存档就地修正并回写，
-            // 避免历史写入缺陷把玩家锁在登录外；载荷本体不可解码视为真损坏，仍拒绝加载。
-            var corrections = new List<(StoredSection Section, long QueueId)>();
-            foreach (var (kind, section) in sections)
+            var pendingCorrections = new List<(StoredSection Section, long QueueId)>();
+            foreach (var (kind, queueId) in pendingSources)
             {
+                var section = sections[kind];
                 if (!SectionCodec.TryRepairSection(section, out var corrected))
-                    throw new InvalidDataException($"玩家 section {kind} 载荷损坏且无法自愈。");
+                    throw new InvalidDataException($"玩家队列 section {kind} 载荷损坏且无法自愈。");
                 if (corrected is null) continue;
                 sections[kind] = corrected;
-                corrections.Add((corrected, pendingSources.TryGetValue(kind, out var queueId) ? queueId : 0L));
+                pendingCorrections.Add((corrected, queueId));
             }
-            if (corrections.Count > 0)
+            if (pendingCorrections.Count > 0)
             {
                 head = head with { Checksum = SectionCodec.ComputeHeadChecksum(sections.Values) };
-                await ApplyChecksumRepairsAsync(connection, transaction, playerId, corrections,
-                    head.Checksum, cancellationToken);
-                logger?.LogWarning("玩家 {PlayerId} 的 {Count} 个存档分段校验元数据漂移，已自愈回写：{Kinds}",
-                    playerId, corrections.Count,
-                    string.Join(',', corrections.Select(item => item.Section.SectionKind)));
+                // 仅队列行自愈时禁止回写 game.player_state_heads.checksum（headChecksum: null），防止未刷盘队列污染持久化头校验和。
+                await ApplyChecksumRepairsAsync(connection, transaction, playerId, pendingCorrections,
+                    headChecksum: null, cancellationToken);
+                logger?.LogWarning("玩家 {PlayerId} 的 {Count} 个待刷盘队列分段校验元数据漂移，已自愈回写：{Kinds}",
+                    playerId, pendingCorrections.Count,
+                    string.Join(',', pendingCorrections.Select(item => item.Section.SectionKind)));
                 RuntimeInstrumentation.Count("persistence.section_checksum_repaired");
             }
-
-            var checksum = SectionCodec.ComputeHeadChecksum(sections.Values);
-            if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(checksum), Encoding.ASCII.GetBytes(head.Checksum)))
-                throw new InvalidDataException("玩家持久化头校验和不匹配。");
         }
 
         var pendingAction = pendingSections.FirstOrDefault(item => item.SectionKind == PlayerSectionKinds.ActionQueue);
@@ -258,13 +292,15 @@ public sealed class PostgresSectionRepository(
     public async ValueTask<StoredSection?> LoadSectionAsync(Guid playerId, string sectionKind, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        // 持久化分段与刷盘收件箱须处于同一 RepeatableRead 快照，防止刷盘并发删除队列行引发错读回退。
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         StoredSection? persisted = null;
         await using (var command = new NpgsqlCommand("""
             SELECT player_id, section_kind, section_version, schema_version, codec,
                    payload, raw_bytes, checksum, updated_at
             FROM game.player_state_sections
             WHERE player_id = $1 AND section_kind = $2
-            """, connection))
+            """, connection, transaction))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = playerId });
             command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
@@ -282,7 +318,7 @@ public sealed class PostgresSectionRepository(
             FROM platform.section_flush_queue
             WHERE player_id = $1 AND section_kind = $2
             ORDER BY state_version DESC, queue_id DESC
-            """, connection))
+            """, connection, transaction))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = playerId });
             command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
@@ -301,6 +337,7 @@ public sealed class PostgresSectionRepository(
                 }
             }
         }
+        await transaction.CommitAsync(cancellationToken);
         // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
         if (persisted is not null
             && SectionCodec.TryRepairSection(persisted, out var corrected)
@@ -324,12 +361,13 @@ public sealed class PostgresSectionRepository(
         var ids = playerIds.ToArray();
         var result = new Dictionary<Guid, StoredSection>(ids.Length);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         await using (var command = new NpgsqlCommand("""
             SELECT player_id, section_kind, section_version, schema_version, codec,
                    payload, raw_bytes, checksum, updated_at
             FROM game.player_state_sections
             WHERE player_id = ANY($1) AND section_kind = $2
-            """, connection))
+            """, connection, transaction))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = ids });
             command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
@@ -346,7 +384,7 @@ public sealed class PostgresSectionRepository(
                    payload, raw_bytes, checksum, updated_at
             FROM platform.section_flush_queue
             WHERE player_id = ANY($1) AND section_kind = $2
-            """, connection))
+            """, connection, transaction))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = ids });
             command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
@@ -365,6 +403,7 @@ public sealed class PostgresSectionRepository(
                 }
             }
         }
+        await transaction.CommitAsync(cancellationToken);
         // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
         foreach (var (id, section) in result)
             if (SectionCodec.TryRepairSection(section, out var corrected) && corrected is not null)
@@ -434,7 +473,7 @@ public sealed class PostgresSectionRepository(
     private static async Task ApplyChecksumRepairsAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction,
         Guid playerId, IReadOnlyList<(StoredSection Section, long QueueId)> corrections,
-        string headChecksum, CancellationToken cancellationToken)
+        string? headChecksum, CancellationToken cancellationToken)
     {
         foreach (var (section, queueId) in corrections)
         {
@@ -455,6 +494,7 @@ public sealed class PostgresSectionRepository(
             command.Parameters.Add(new NpgsqlParameter { Value = section.RawBytes });
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
+        if (headChecksum is null) return;
         await using var headUpdate = new NpgsqlCommand("""
             UPDATE game.player_state_heads
             SET checksum = $2
@@ -1362,8 +1402,13 @@ public sealed class PostgresSectionRepository(
         CancellationToken cancellationToken)
     {
         double? realmRank = null;
+        double? experience = null;
+        double? lifetimeExperience = null;
+        double? duelWins = null;
+        double? duelLosses = null;
         string? nodeId = null;
         string? presence = null;
+        string? avatar = null;
         DateTimeOffset? offlineSince = null;
         var hasSettings = false;
         foreach (var item in applied)
@@ -1371,36 +1416,47 @@ public sealed class PostgresSectionRepository(
             switch (item.SectionKind)
             {
                 case PlayerSectionKinds.Progression:
-                    realmRank = ReadProjectionDouble(item, "realmLevel");
+                    (realmRank, experience, lifetimeExperience, duelWins, duelLosses) = ReadProgressionProjection(item);
                     break;
                 case PlayerSectionKinds.World:
                     nodeId = ReadProjectionString(item, "nodeId");
                     break;
                 case PlayerSectionKinds.Settings:
                     hasSettings = true;
-                    presence = ReadProjectionPresence(item);
-                    offlineSince = ReadProjectionOfflineSince(item);
+                    (presence, offlineSince, avatar) = ReadSettingsProjection(item);
                     break;
             }
         }
 
         await using var command = new NpgsqlCommand("""
             INSERT INTO game.player_projection
-                (player_id, realm_rank, current_node_id, presence, offline_since, last_active_at, projection_version, updated_at)
-            VALUES ($1, COALESCE($2, 0), $3, COALESCE($4, 'offline'), CASE WHEN $7 THEN $8 ELSE NULL END, $5, 1, $5)
+                (player_id, realm_rank, experience, lifetime_experience, duel_wins, duel_losses, avatar,
+                 current_node_id, presence, offline_since, last_active_at, projection_version, updated_at)
+            VALUES ($1, COALESCE($2, 0), COALESCE($3, 0), COALESCE($4, 0), COALESCE($5, 0), COALESCE($6, 0), COALESCE($9, 'player'),
+                    $7, COALESCE($8, 'offline'), CASE WHEN $12 THEN $13 ELSE NULL END, $10, 1, $10)
             ON CONFLICT (player_id) DO UPDATE SET
                 realm_rank = COALESCE($2, game.player_projection.realm_rank),
-                current_node_id = COALESCE($3, game.player_projection.current_node_id),
-                presence = COALESCE($4, game.player_projection.presence),
-                offline_since = CASE WHEN $7 THEN $8 ELSE game.player_projection.offline_since END,
-                last_active_at = CASE WHEN $6 THEN $5 ELSE game.player_projection.last_active_at END,
+                experience = COALESCE($3, game.player_projection.experience),
+                lifetime_experience = COALESCE($4, game.player_projection.lifetime_experience),
+                duel_wins = COALESCE($5, game.player_projection.duel_wins),
+                duel_losses = COALESCE($6, game.player_projection.duel_losses),
+                avatar = COALESCE($9, game.player_projection.avatar),
+                current_node_id = COALESCE($7, game.player_projection.current_node_id),
+                presence = COALESCE($8, game.player_projection.presence),
+                offline_since = CASE WHEN $12 THEN $13 ELSE game.player_projection.offline_since END,
+                last_active_at = CASE WHEN $11 THEN $10 ELSE game.player_projection.last_active_at END,
                 projection_version = game.player_projection.projection_version + 1,
-                updated_at = $5
+                updated_at = $10
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)realmRank ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)experience ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)lifetimeExperience ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)duelWins ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)duelLosses ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)nodeId ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)presence ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)avatar ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         command.Parameters.Add(new NpgsqlParameter { Value = markActive });
         // 离线锚点允许写回 NULL（转在线清空）：以「本批是否含 settings」判定是否权威覆写，不能用 COALESCE。
@@ -1413,13 +1469,62 @@ public sealed class PostgresSectionRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static double? ReadProjectionDouble(StoredSection item, string property)
+    internal static (double? RealmRank, double? Experience, double? LifetimeExperience, double? DuelWins, double? DuelLosses)
+        ReadProgressionProjection(StoredSection item)
     {
         using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
-        return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetDouble()
-            : null;
+        var root = document.RootElement;
+        return (
+            TryReadFiniteDouble(root, "realmLevel"),
+            TryReadFiniteDouble(root, "experience"),
+            TryReadFiniteDouble(root, "lifetimeExperience"),
+            TryReadFiniteDouble(root, "duelWins"),
+            TryReadFiniteDouble(root, "duelLosses"));
     }
+
+    internal static (string? Presence, DateTimeOffset? OfflineSince, string? Avatar) ReadSettingsProjection(StoredSection item)
+    {
+        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
+        var root = document.RootElement;
+        string? presence = null;
+        if (root.TryGetProperty("presence", out var presenceProp)
+            && presenceProp.ValueKind == JsonValueKind.Number
+            && presenceProp.TryGetInt32(out var code))
+        {
+            presence = code switch
+            {
+                (int)PresenceState.Offline => "offline",
+                (int)PresenceState.Online => "online",
+                (int)PresenceState.Suspended => "suspended",
+                _ => null
+            };
+        }
+
+        var offlineSince = root.TryGetProperty("offlineSinceAt", out var offlineProp)
+            && offlineProp.ValueKind == JsonValueKind.String
+            && offlineProp.TryGetDateTimeOffset(out var parsed)
+                ? parsed.ToUniversalTime()
+                : (DateTimeOffset?)null;
+
+        string? avatar = null;
+        if (root.TryGetProperty("avatar", out var avatarProp)
+            && avatarProp.ValueKind == JsonValueKind.String)
+        {
+            var raw = avatarProp.GetString();
+            if (!string.IsNullOrWhiteSpace(raw))
+                avatar = raw.Length <= 64 ? raw : raw[..64];
+        }
+
+        return (presence, offlineSince, avatar);
+    }
+
+    private static double? TryReadFiniteDouble(JsonElement root, string property)
+        => root.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetDouble(out var number)
+            && double.IsFinite(number)
+                ? number
+                : null;
 
     private static string? ReadProjectionString(StoredSection item, string property)
     {
@@ -1427,32 +1532,6 @@ public sealed class PostgresSectionRepository(
         return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
-    }
-
-    private static string? ReadProjectionPresence(StoredSection item)
-    {
-        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
-        if (!document.RootElement.TryGetProperty("presence", out var value)) return null;
-        // PresenceState 以数值枚举持久化：0=offline 1=online 2=suspended。
-        var code = value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed) ? parsed : -1;
-        return code switch
-        {
-            (int)PresenceState.Offline => "offline",
-            (int)PresenceState.Online => "online",
-            (int)PresenceState.Suspended => "suspended",
-            _ => null
-        };
-    }
-
-    /// <summary>读取 settings 载荷中的离线锚点；字段缺省或显式 null 统一返回 null（在线或旧档）。</summary>
-    private static DateTimeOffset? ReadProjectionOfflineSince(StoredSection item)
-    {
-        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
-        return document.RootElement.TryGetProperty("offlineSinceAt", out var value)
-            && value.ValueKind == JsonValueKind.String
-            && value.TryGetDateTimeOffset(out var parsed)
-                ? parsed.ToUniversalTime()
-                : null;
     }
 
     /// <summary>整组释放 flush 队列租约：按 queue_id 定位本批认领行，attempts+1 并按其旧值算指数退避。</summary>

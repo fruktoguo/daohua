@@ -261,25 +261,43 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         };
         // 技能出手以施放方累计完成次数为抽样计数，保证确定性随机流不依赖槽位语义。
         var count = caster.SkillCastCount + 1;
+        var hasYixing = caster.BuffStacks(CombatTraitRules.YixingBuffId) > 0;
+        var abilityNameOverride = hasYixing ? AbilityText(ability, "yixingMorphName") : null;
+        var effectiveTargetType = hasYixing ? (AbilityText(ability, "yixingMorphTargetType") ?? targetType) : targetType;
+        var ignorePrimaryThreat = hasYixing && CombatTraitRules.ContainsTrait(caster.Stats.Traits, CombatTraitRules.JianyuxinTraitId);
+        var ranhunBase = AbilityNumber(ability, "ranhunBaseStacks");
+        var ranhunRatio = AbilityNumber(ability, "ranhunSpellAttackRatio");
+        var extraRanhunStacks = ranhunBase > 0 || ranhunRatio > 0
+            ? Math.Max(1, Math.Floor((Math.Max(0, attackBase) * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear) * ranhunRatio + ranhunBase) * levelGrowth + 1e-9))
+            : 0;
         var maxTargets = ability.TryGetProperty("maxTargets", out var maxTargetsProperty)
             && maxTargetsProperty.TryGetInt32(out var parsed) ? parsed : 0;
-        if (targetType == "allEnemies")
+        if (effectiveTargetType == "allEnemies")
         {
-            // AoE 对一切施放单位通用：按威胁顺序不可重复抽取至多 maxTargets 个敌方目标。
-            foreach (var picked in SelectTargets(opponents, maxTargets > 0 ? maxTargets : int.MaxValue,
-                encounter.Seed, side, count, 17))
-                ResolveAttack(encounter, caster, picked, side, encounter.ElapsedSeconds, ref events, stats, count, id);
+            // AoE 对一切施放单位通用：按威胁顺序（剑与心+移形时主目标无视仇恨随机）不可重复抽取至多 maxTargets 个敌方目标。
+            var pickedList = SelectTargets(opponents, maxTargets > 0 ? maxTargets : int.MaxValue,
+                encounter.Seed, side, count, 17, ignorePrimaryThreat);
+            for (var i = 0; i < pickedList.Count; i++)
+                ResolveAttack(encounter, caster, pickedList[i], side, encounter.ElapsedSeconds, ref events, stats, count, id,
+                    doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
+            if (hasYixing && pickedList.Count > 0)
+                caster.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId);
             return;
         }
-        var single = target is { IsAlive: true } ? target : SelectTarget(opponents, encounter.Seed, side, count, 16);
+        // 触发剑与心+移形时必须跳过外层按仇恨预选的 target，强制等概率重新抽取主要目标。
+        var single = !ignorePrimaryThreat && target is { IsAlive: true }
+            ? target
+            : SelectTarget(opponents, encounter.Seed, side, count, 16, ignorePrimaryThreat);
         if (single is null) return;
-        ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id);
+        ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id,
+            doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
         // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害——后续段沿用
         // 普攻计数随机流（countOverride=null → 取 attacker.AttackCount 自增序列），各段命中/
         // 暴击独立掷点；目标中途死亡即终止剩余连段，不转火不空掷。
         var hitCount = Math.Max(1, (int)AbilityNumber(ability, "hitCount"));
         for (var hitIndex = 1; hitIndex < hitCount && single.IsAlive; hitIndex++)
-            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, null, id);
+            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, null, id,
+                doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
         // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能
         // 伤害，至多追加 chainOnKillCount 次；连锁未致死即终止。被击杀目标已离存活池，
         // 连锁命中未死者时循环结束，故天然不重复命中、总目标数 ≤ 1 + chainOnKillCount。
@@ -289,24 +307,35 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         {
             single = SelectTarget(opponents, encounter.Seed, side, count, 20 + (ulong)chainIndex);
             if (single is null) break;
-            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id);
+            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id,
+                doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
         }
+        // 移形按伤害型技能施放次数固定消耗 1 层（不论命中几次或几个目标）。
+        if (hasYixing)
+            caster.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId);
     }
 
     /// <summary>按破招化解、闪避、暴击顺序判定后，沿「大类抗性穿甲 → 攻方分类增伤 → 守方分类减伤 → 暴击 → 总免伤收口」结算链结算；
     /// 抽样仅依赖已持久化的种子与出手序号。判定前、伤害落账前、落账后三个点位依次驱动钩子管线；钩子衍生伤害直接落账不再回流。</summary>
     private static void ResolveAttack(CombatEncounterState encounter, CombatantState attacker, CombatantState target,
         ulong side, double at, ref List<CombatEvent>? events,
-        CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null)
+        CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null,
+        bool doubleAccuracy = false, string? abilityNameOverride = null, double extraRanhunStacks = 0)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
+        var rawAttackStats = statsOverride ?? attacker.Stats;
+        var resolvedElement = CombatTraitRules.ResolveDamageElement(attacker.Stats.Traits, rawAttackStats.Element);
+        var attackStats = resolvedElement == rawAttackStats.Element
+            ? rawAttackStats
+            : rawAttackStats with { Element = resolvedElement };
         var context = new CombatHitContext
         {
             Encounter = encounter,
             Attacker = attacker,
             Target = target,
-            AttackStats = statsOverride ?? attacker.Stats,
+            AttackStats = attackStats,
             AbilityId = abilityId,
+            DoubleAccuracy = doubleAccuracy,
             Side = side,
             Count = countOverride ?? attacker.AttackCount,
             AtSeconds = at
@@ -325,8 +354,10 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         // 衍生事件追加在主事件之后，保持战斗日志时序不变。
         var mainEventIndex = events.Count;
         events.Add(new CombatEvent(at, attacker.Id, target.Id, context.Damage, context.Hit, context.AttackStats.DamageKind, target.Hitpoints)
-        { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId });
+        { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId, AbilityNameOverride = abilityNameOverride });
         EmitHitTriggers(encounter, context, events, mainEventIndex);
+        if (context.Hit && extraRanhunStacks > 0)
+            CombatTraitReactions.AddRanhunStacks(attacker, target, extraRanhunStacks, at);
     }
 
     /// <summary>
@@ -384,6 +415,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 _ => Math.Min(stackCap, existing.Stacks + initialStacks)
             };
         target.SetBuff(grant with { Stacks = nextStacks });
+        // 跨单位授 Buff 时同步唤醒施法者同相位后续决策的侧级 Buff 订阅，防止依赖队友状态的技能命中缓存。
+        if (!ReferenceEquals(caster, target) && caster.SkillWakePending is { } casterPending)
+        {
+            var sideBuffWake = new SlotWakeMask { AllySide = UnitChannel.Buff, EnemySide = UnitChannel.Buff };
+            for (var i = 0; i < casterPending.Length; i++)
+                casterPending[i] = casterPending[i].Union(sideBuffWake);
+        }
         // 层数由已损气血派生者，授予瞬间即按当前血线对齐（满血为 0 层）。
         target.SyncDerivedStacks();
     }

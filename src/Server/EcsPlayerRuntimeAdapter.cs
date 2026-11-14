@@ -1152,6 +1152,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (requested.Count == 0)
                             return new PlayerCommandResult(false, "INVALID_MATERIALS", "提交材料为空。", before);
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        wallet = WalletOf(playerId);
+                        foreach (var (matId, matQuantity) in requested)
+                        {
+                            if (gameData.RawEquipments.ContainsKey(matId)
+                                && CheckEquipmentAvailableForConsumption(before, wallet, matId, 0, string.Empty, matQuantity, "建造捐献") is { } blocked)
+                                return blocked;
+                        }
                         var contributeContext = new NodeBuildingContributionTransaction(
                             playerId, requestId, $"building-contribute:{playerId:D}:{requestId:D}", command,
                             DateTimeOffset.UtcNow,
@@ -1189,6 +1196,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (marketRuntime is null)
                             return new PlayerCommandResult(false, "MARKET_UNAVAILABLE", "市场运行时未装配。", before);
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        wallet = WalletOf(playerId);
                         if (!TryReadGuid(payload, "orderId", out var orderId))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单标识无效。", before);
                         var assetId = payload.TryGetProperty("itemId", out var itemElement) ? itemElement.GetString() : null;
@@ -1214,17 +1222,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (price < minPrice)
                             return new PlayerCommandResult(false, "PRICE_BELOW_VENDOR_FLOOR", $"挂单单价不得低于系统回收底价（最低 {minPrice} 灵石）。", before);
                         // 与 item.discard/item.sell 同一防线但收窄到同级匹配：钱包按变体行冻结，
-                        // 扣除同 itemId 且同强化等级的已装备件后为可用余额，仅在可支配量不足时拦截，多余备件放行。
-                        if (side == MarketSide.Sell)
-                        {
-                            var equippedCount = before.State.Loadout.Equipment.Count(slot => slot.ItemId == assetId && (int)Math.Floor(slot.EnhancementLevel) == variantLevel);
-                            if (equippedCount > 0)
-                            {
-                                var totalHeld = wallet.Get(new AssetKey(new ItemId(assetId), variant));
-                                if (totalHeld - equippedCount < quantity)
-                                    return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
-                            }
-                        }
+                        // 扣除同 itemId 且同强化等级的已穿戴（含工具）与强化锁定件后为可用余额，仅在可支配量不足时拦截，多余备件放行。
+                        if (side == MarketSide.Sell && gameData.RawEquipments.ContainsKey(assetId)
+                            && CheckEquipmentAvailableForConsumption(before, wallet, assetId, variantLevel, variant, quantity, "挂单出售") is { } marketBlocked)
+                            return marketBlocked;
                         // 绑定物品（isTradable=false，如功德·绑定）不得进入坊市挂单。
                         if (gameData.Items.TryGetValue(new ItemId(assetId), out var instrumentItem) && !instrumentItem.IsTradable)
                             return new PlayerCommandResult(false, "ITEM_NOT_TRADABLE", "绑定物品无法交易。", before);
@@ -1257,153 +1258,6 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "MARKET_CLAIM_UNAVAILABLE", "多市场分片尚未提供跨分片结算领取路由。", before);
                         await marketRuntime.ClaimSettlementAsync(new PlayerId(playerId), requestId, cancellationToken).ConfigureAwait(false);
                         await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
-                        break;
-                    }
-                    case "item.liquefy":
-                    case "item.disassemble":
-                    case "item.convert":
-                    {
-                        var secretItemId = payload.TryGetProperty("itemId", out var secretItemElement)
-                            && secretItemElement.ValueKind == JsonValueKind.String
-                            ? secretItemElement.GetString() : null;
-                        var secretQuantity = payload.TryGetProperty("quantity", out var secretQuantityElement)
-                            && secretQuantityElement.TryGetDouble(out var parsedSecretQuantity)
-                            ? parsedSecretQuantity : 1d;
-                        var secretVariant = payload.TryGetProperty("variant", out var secretVariantElement)
-                            && secretVariantElement.ValueKind == JsonValueKind.String
-                            ? secretVariantElement.GetString() ?? string.Empty : string.Empty;
-                        if (string.IsNullOrWhiteSpace(secretItemId) || !double.IsFinite(secretQuantity)
-                            || secretQuantity <= 0 || secretQuantity != Math.Floor(secretQuantity))
-                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "物品或数量无效。", before);
-
-                        var isSecretEquipment = gameData.RawEquipments.ContainsKey(secretItemId);
-                        var hasSecretItem = gameData.Items.TryGetValue(new ItemId(secretItemId), out var secretDefinition);
-                        if (!isSecretEquipment && !hasSecretItem)
-                            return new PlayerCommandResult(false, "ITEM_NOT_FOUND", "物品不存在。", before);
-
-                        var secretLevel = 0;
-                        if (isSecretEquipment)
-                        {
-                            if (EnhancementRules.ParseLevel(secretVariant) is not { } parsedLevel
-                                || parsedLevel > EnhancementRules.MaxLevel)
-                                return new PlayerCommandResult(false, "INVALID_VARIANT", "装备变体无效。", before);
-                            secretLevel = parsedLevel;
-                            secretVariant = EnhancementRules.KeyFor(new ItemId(secretItemId), secretLevel).Variant;
-                        }
-                        else if (!string.IsNullOrEmpty(secretVariant))
-                        {
-                            return new PlayerCommandResult(false, "INVALID_VARIANT", "该物品不支持变体操作。", before);
-                        }
-
-                        var secretAssetKey = new AssetKey(new ItemId(secretItemId), secretVariant);
-                        if (wallet.Get(secretAssetKey) + 1e-9 < secretQuantity)
-                            return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "物品数量不足。", before);
-                        if (command == "item.liquefy" && isSecretEquipment)
-                        {
-                            var equippedCount = before.State.Loadout.Equipment.Count(slot =>
-                                string.Equals(slot.ItemId, secretItemId, StringComparison.Ordinal)
-                                && (int)Math.Floor(slot.EnhancementLevel) == secretLevel);
-                            if (wallet.Get(secretAssetKey) - equippedCount + 1e-9 < secretQuantity)
-                                return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法化灵，请先卸下。", before);
-                        }
-
-                        var secretDeltas = new List<Server.Clean.AssetDelta>();
-                        string secretResult;
-                        if (command == "item.liquefy")
-                        {
-                            if (secretItemId.StartsWith("currency.", StringComparison.Ordinal)
-                                || secretDefinition?.Category == "currency")
-                                return new PlayerCommandResult(false, "ITEM_NOT_LIQUEFYABLE", "货币不支持化灵。", before);
-                            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, secretItemId, secretLevel);
-                            if (unitPrice <= 0)
-                                return new PlayerCommandResult(false, "ITEM_NOT_LIQUEFYABLE", "该物品没有系统回收价。", before);
-                            var spiritStones = unitPrice * SecretArtRules.LiquefactionMultiplier * secretQuantity;
-                            secretDeltas.Add(new(playerId, secretItemId, secretVariant, -secretQuantity));
-                            secretDeltas.Add(new(playerId, "currency.spirit-stone", string.Empty, spiritStones));
-                            customData = new { itemId = secretItemId, quantity = secretQuantity, spiritStones };
-                            customNotice = $"化灵成功，获得 {spiritStones:0.##} 灵石。";
-                            secretResult = "liquefy";
-                        }
-                        else if (command == "item.disassemble")
-                        {
-                            if (!isSecretEquipment || secretQuantity <= 0)
-                                return new PlayerCommandResult(false, "INVALID_DISASSEMBLY", "分解仅支持装备且数量须大于零。", before);
-                            var equippedCount = before.State.Loadout.Equipment.Count(slot =>
-                                string.Equals(slot.ItemId, secretItemId, StringComparison.Ordinal)
-                                && (int)Math.Floor(slot.EnhancementLevel) == secretLevel);
-                            if (wallet.Get(secretAssetKey) - equippedCount + 1e-9 < secretQuantity)
-                                return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法分解，请先卸下。", before);
-                            var returns = SecretArtRules.ComputeDisassemblyReturns(gameData, secretItemId);
-                            if (returns is null || returns.Count == 0)
-                                return new PlayerCommandResult(false, "ITEM_NOT_DISASSEMBLABLE", "该装备没有可用的制造配方。", before);
-                            secretDeltas.Add(new(playerId, secretItemId, secretVariant, -secretQuantity));
-                            foreach (var (materialId, amount) in returns)
-                                secretDeltas.Add(new(playerId, materialId.Value, string.Empty, amount * secretQuantity));
-                            customData = new
-                            {
-                                itemId = secretItemId,
-                                quantity = secretQuantity,
-                                returns = returns.Select(pair => new { itemId = pair.Key.Value, quantity = pair.Value * secretQuantity }).ToArray()
-                            };
-                            customNotice = secretQuantity > 1 ? $"装备分解成功（{secretQuantity}件），材料已返还。" : "装备分解成功，材料已返还。";
-                            secretResult = "disassemble";
-                        }
-                        else
-                        {
-                            if (!secretItemId.StartsWith("item.fragment.", StringComparison.Ordinal) || secretQuantity <= 0)
-                                return new PlayerCommandResult(false, "INVALID_CONVERSION", "该物品不是功法残卷或数量无效。", before);
-                            var tomeId = "item.tome." + secretItemId["item.fragment.".Length..];
-                            if (!gameData.Items.ContainsKey(new ItemId(tomeId)))
-                                return new PlayerCommandResult(false, "INVALID_CONVERSION", "该残卷没有对应的完整功法秘籍。", before);
-
-                            var totalRolls = (int)Math.Floor(secretQuantity);
-                            var producedTomes = 0;
-                            for (var i = 0; i < totalRolls; i++)
-                            {
-                                var roll = RandomNumberGenerator.GetInt32(0, 10_000) / 10_000d;
-                                if (SecretArtRules.FragmentProducesTome(roll))
-                                    producedTomes++;
-                            }
-                            var failedRolls = totalRolls - producedTomes;
-                            var totalSpiritStones = failedRolls * SecretArtRules.FragmentSpiritStoneReward;
-
-                            secretDeltas.Add(new(playerId, secretItemId, string.Empty, -secretQuantity));
-                            if (producedTomes > 0)
-                                secretDeltas.Add(new(playerId, tomeId, string.Empty, producedTomes));
-                            if (totalSpiritStones > 0)
-                                secretDeltas.Add(new(playerId, "currency.spirit-stone", string.Empty, totalSpiritStones));
-
-                            customData = new
-                            {
-                                itemId = secretItemId,
-                                resultItemId = producedTomes > 0 ? tomeId : "currency.spirit-stone",
-                                quantity = secretQuantity,
-                                tomesGained = producedTomes,
-                                spiritStones = totalSpiritStones,
-                                success = producedTomes > 0
-                            };
-                            customNotice = (producedTomes, totalSpiritStones) switch
-                            {
-                                (> 0, > 0) => $"残卷转化完成（{totalRolls}次）：获得 {producedTomes} 本完整功法秘籍与 {totalSpiritStones:0.##} 灵石。",
-                                (> 0, 0) => $"残卷转化大获成功（{totalRolls}次）：获得 {producedTomes} 本完整功法秘籍！",
-                                _ => $"残卷转化完成（{totalRolls}次）：未成整本秘籍，获得 {totalSpiritStones:0.##} 灵石。"
-                            };
-                            secretResult = "convert";
-                        }
-
-                        var secretCommit = await economy.CommitAsync(new EconomyTransactionRequest(
-                            requestId,
-                            $"{command}:{playerId:D}:{requestId:D}",
-                            command,
-                            playerId,
-                            secretDeltas,
-                            DateTimeOffset.UtcNow,
-                            JsonSerializer.SerializeToUtf8Bytes(new { itemId = secretItemId, variant = secretVariant, quantity = secretQuantity, result = secretResult }),
-                            Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)]),
-                            cancellationToken).ConfigureAwait(false);
-                        if (!secretCommit.Applied)
-                            return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "秘法操作事务未提交。", before);
-                        await SyncWalletAfterCommitAsync(playerId, secretCommit, cancellationToken).ConfigureAwait(false);
                         break;
                     }
                     case "item.discard":
@@ -1444,18 +1298,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
 
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        wallet = WalletOf(playerId);
                         var assetKey = new AssetKey(new ItemId(disposeItemId), variant);
                         var totalHeld = wallet.Get(assetKey);
 
-                        // 已穿戴件数防护：收窄至同级已穿戴占用，放行多余未穿戴备件
-                        if (isEquipment)
-                        {
-                            var equippedCount = before.State.Loadout.Equipment.Count(slot =>
-                                string.Equals(slot.ItemId, disposeItemId, StringComparison.Ordinal)
-                                && (int)Math.Floor(slot.EnhancementLevel) == variantLevel);
-                            if (equippedCount > 0 && totalHeld - equippedCount < disposeQuantity)
-                                return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法处置，请先卸下。", before);
-                        }
+                        // 已穿戴与强化锁定件数防护：收窄至同级已占用件，放行多余未占用备件
+                        if (isEquipment
+                            && CheckEquipmentAvailableForConsumption(before, wallet, disposeItemId, variantLevel, variant, disposeQuantity, "处置") is { } disposeBlocked)
+                            return disposeBlocked;
 
                         if (totalHeld + 1e-9 < disposeQuantity)
                             return new PlayerCommandResult(false, "INSUFFICIENT_ITEM", "物品数量不足。", before);
@@ -1490,7 +1340,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         };
                         if (spiritCredit > 0)
                             disposeDeltas.Add(new(playerId, "currency.spirit-stone", string.Empty, spiritCredit));
-                        var disposeResult = await economy.CommitAsync(new EconomyTransactionRequest(
+                        var disposeResult = await CommitWithConfirmationAsync(playerId, new EconomyTransactionRequest(
                             requestId,
                             $"{command}:{playerId:D}:{requestId:D}",
                             command,
@@ -1503,6 +1353,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!disposeResult.Applied)
                             return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "物品处置事务未提交。", before);
                         await SyncWalletAfterCommitAsync(playerId, disposeResult, cancellationToken).ConfigureAwait(false);
+                        receiptAlreadyCommitted = true;
                         break;
                     }
                     case "shop.buy":
@@ -1548,7 +1399,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         EconomyTransactionResult shopResult;
                         try
                         {
-                            shopResult = await economy.CommitAsync(new EconomyTransactionRequest(
+                            shopResult = await CommitWithConfirmationAsync(playerId, new EconomyTransactionRequest(
                                 requestId,
                                 $"shop.buy:{playerId:D}:{requestId:D}",
                                 command,
@@ -1620,6 +1471,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetRespawnPolicy(policy, targetPlayerId));
                         break;
                     }
+                    case "player.set_privacy":
+                    {
+                        if (!payload.TryGetProperty("publicLoadoutVisible", out var visibleElement)
+                            || visibleElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "隐私设置参数无效。", before);
+                        var visible = visibleElement.GetBoolean();
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetPublicLoadoutVisible(visible));
+                        break;
+                    }
                     case "player.unlock_avatar":
                     {
                         var avatar = payload.TryGetProperty("avatar", out var avatarElement) ? avatarElement.GetString() : null;
@@ -1637,6 +1497,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         const string normalMeritItemId = "item.gongde";
 
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        wallet = WalletOf(playerId);
                         var boundBalance = wallet.Get(new AssetKey(new ItemId(boundMeritItemId)));
                         var normalBalance = wallet.Get(new AssetKey(new ItemId(normalMeritItemId)));
                         var totalMerit = boundBalance + normalBalance;
@@ -2506,11 +2367,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "market.claim" => "结算领取已提交。",
         "item.discard" => "物品已丢弃。",
         "item.sell" => "物品已售出。",
-        "item.liquefy" => "化灵成功。",
-        "item.disassemble" => "装备分解成功。",
-        "item.convert" => "物品转化完成。",
         "player.rename" => "道号已更新。",
         "player.set_avatar" => "本命形象已更新。",
+        "player.set_privacy" => "隐私设置已更新。",
         "player.unlock_avatar" => "本命形象已解锁并更新。",
         "trait.set" => "特质装配已保存。",
         "item.use" => "觉醒石使用成功，特质已觉醒或提升！",
@@ -2860,8 +2719,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "progression.heaven_gate" or "world.travel" or
-        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.unlock_avatar" or "market.claim" or
-        "item.discard" or "item.sell" or "item.liquefy" or "item.disassemble" or "item.convert" or "trait.set" or "item.use" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
+        "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.set_privacy" or "player.unlock_avatar" or "market.claim" or
+        "item.discard" or "item.sell" or "trait.set" or "item.use" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 
     private void RestoreUncommittedPlayer(Guid playerId, PlayerRuntimeSnapshot before,
         IEnumerable<PlayerSectionKind> dirtySectionsBefore)
@@ -2975,6 +2834,24 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         playerId.TryWriteBytes(buffer);
         BitConverter.TryWriteBytes(buffer[16..], sequence);
         return BitConverter.ToInt64(SHA256.HashData(buffer));
+    }
+
+    /// <summary>
+    /// 统一拦截已穿戴（含战斗装备与技艺工具）与强化队列锁定中的装备资产消耗（挂单/回收/丢弃/化灵/分解/捐献）。
+    /// </summary>
+    private static PlayerCommandResult? CheckEquipmentAvailableForConsumption(
+        PlayerRuntimeSnapshot before, AssetWallet wallet, string itemId, int variantLevel, string variant, double quantity, string operationVerb)
+    {
+        var equippedCount = EnhancementRules.CountEquipped(before.State.Loadout, itemId, variantLevel);
+        var enhanceLockedCount = EnhancementRules.CountEnhanceLocked(before.State.Actions, itemId, variantLevel);
+        if (equippedCount == 0 && enhanceLockedCount == 0) return null;
+
+        var totalHeld = wallet.Get(new AssetKey(new ItemId(itemId), variant));
+        if (equippedCount > 0 && totalHeld - equippedCount + 1e-9 < quantity)
+            return new PlayerCommandResult(false, "ITEM_EQUIPPED", $"已装备的物品或工具无法{operationVerb}，请先卸下。", before);
+        if (enhanceLockedCount > 0 && totalHeld - equippedCount - enhanceLockedCount + 1e-9 < quantity)
+            return new PlayerCommandResult(false, "ITEM_ENHANCE_LOCKED", $"正处于强化锁定中的装备无法{operationVerb}，请先取消强化。", before);
+        return null;
     }
 
     private PlayerRuntimeSnapshot ToSnapshot(EcsPlayerSnapshot snapshot)

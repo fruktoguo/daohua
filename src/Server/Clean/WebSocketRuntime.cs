@@ -799,12 +799,25 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), cancellationToken);
                             continue;
                         }
-                        var actionResponse = new ActionIntentResponse(
-                            action.RequestId,
-                            actionResult.Snapshot.State.Actions.LastOrDefault()?.Id.ToString("D") ?? string.Empty,
-                            action.ActionId,
-                            DateTimeOffset.UtcNow,
-                            actionResult.Snapshot.State.Actions.FirstOrDefault()?.RemainingRepeats ?? action.RepeatCount);
+                        var actionResponse = actionResult.Success
+                            ? new ActionIntentResponse(
+                                action.RequestId,
+                                actionResult.Snapshot.State.Actions.LastOrDefault()?.Id.ToString("D") ?? string.Empty,
+                                action.ActionId,
+                                DateTimeOffset.UtcNow,
+                                actionResult.Snapshot.State.Actions.FirstOrDefault()?.RemainingRepeats ?? action.RepeatCount,
+                                Accepted: true,
+                                Status: "queued",
+                                Message: null)
+                            : new ActionIntentResponse(
+                                action.RequestId,
+                                string.Empty,
+                                action.ActionId,
+                                DateTimeOffset.UtcNow,
+                                0,
+                                Accepted: false,
+                                Status: "rejected",
+                                Message: actionResult.Message);
                         await QueueJsonAsync(session, WireMessageType.ActionResult, envelope.RequestId, actionResponse, cancellationToken);
                         break;
                     case WireMessageType.Command:

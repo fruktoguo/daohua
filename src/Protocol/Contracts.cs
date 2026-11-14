@@ -490,12 +490,18 @@ public sealed record ActionIntentRequest(
 /// <param name="ActionId">行动配置 ID</param>
 /// <param name="EnqueuedAt">入队时间</param>
 /// <param name="RemainingRepeats">剩余重复次数；-1 表示该行动处于无限循环，结算后不会自动出队</param>
+/// <param name="Accepted">服务端是否已接受并执行入队</param>
+/// <param name="Status">处置状态（queued/rejected）</param>
+/// <param name="Message">状态说明或拒绝原因</param>
 public sealed record ActionIntentResponse(
     string RequestId,
     string ActionInstanceId,
     string ActionId,
     DateTimeOffset EnqueuedAt,
-    double RemainingRepeats);
+    double RemainingRepeats,
+    bool Accepted = true,
+    string Status = "queued",
+    string? Message = null);
 
 /// <summary>
 /// WebSocket/HTTP 共用的玩家命令载荷。信封已经提供 RequestId 时，载荷中的 RequestId 仍需一致，
@@ -1179,6 +1185,7 @@ public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bo
 /// <param name="MinValuation">身家门槛</param>
 /// <param name="CreatedAtUnixMilliseconds">创建时刻（Unix 毫秒）</param>
 /// <param name="Members">成员预览（含队长）</param>
+/// <param name="OpenSlots">剩余空位</param>
 public sealed record PartyLobbyEntryDto(
     string PartyId,
     string Name,
@@ -1188,7 +1195,8 @@ public sealed record PartyLobbyEntryDto(
     string LeaderName,
     double MinValuation,
     long CreatedAtUnixMilliseconds,
-    IReadOnlyList<PartyLobbyMemberDto> Members);
+    IReadOnlyList<PartyLobbyMemberDto> Members,
+    int OpenSlots = 3);
 
 /// <summary>大厅「匹配中」散人条目。</summary>
 /// <param name="PlayerId">散人玩家 ID</param>
@@ -1280,8 +1288,11 @@ public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, dou
 /// <param name="AbilityExperiences">功法经验表（abilityId → 累计经验）</param>
 /// <param name="Equipment">已穿戴装备（战斗装备与技艺工具合并清单）</param>
 /// <param name="AutoUseSlots">战斗栏域消耗品配置（丹药栏 + 通用栏）</param>
-/// <param name="Attributes">战斗六维基础属性</param>
+/// <param name="Attributes">战斗属性投影（含基础/特殊/流派属性；隐私受限时裁撤 traits）</param>
 /// <param name="TechniqueLevels">生活技艺等级表</param>
+/// <param name="ValuationBreakdown">身家构成明细</param>
+/// <param name="CurrentReport">队友协同收益战报</param>
+/// <param name="LoadoutHidden">当目标关闭非同队配装可见且查询方非本人/非同队时为 true，配装字段已置空</param>
 public sealed record PlayerCardDto(
     string RequestId,
     string PlayerId,
@@ -1304,4 +1315,75 @@ public sealed record PlayerCardDto(
     object? Attributes = null,
     IReadOnlyDictionary<string, int>? TechniqueLevels = null,
     ValuationBreakdownDto? ValuationBreakdown = null,
-    object? CurrentReport = null);
+    object? CurrentReport = null,
+    bool LoadoutHidden = false);
+
+/// <summary>全服排行榜固定榜别标识与动态技艺榜前缀。</summary>
+public static class LeaderboardBoardIds
+{
+    public const string Realm = "realm";
+    public const string Valuation = "valuation";
+    public const string SpiritStone = "spirit-stone";
+    public const string Zongmen = "zongmen";
+    public const string Duel = "duel";
+
+    public static string Technique(string techniqueId) => $"technique.{techniqueId}";
+}
+
+/// <summary>单个全服榜单的摘要元数据（GET /api/v1/leaderboards）。</summary>
+/// <param name="BoardId">榜单唯一标识（如 realm、technique.alchemy、valuation、spirit-stone、zongmen、duel）</param>
+/// <param name="Kind">榜别大类（realm / technique / valuation / spirit-stone / zongmen / duel）</param>
+/// <param name="TechniqueId">当 Kind 为 technique 时对应技艺 ID，否则为 null</param>
+/// <param name="ParticipantCount">全服上榜总人数（或宗门总数）</param>
+/// <param name="TopScore">榜首主分数；空榜为 null</param>
+public sealed record LeaderboardBoardSummaryDto(
+    string BoardId,
+    string Kind,
+    string? TechniqueId,
+    int ParticipantCount,
+    double? TopScore = null);
+
+/// <summary>全服排行榜总览元数据响应（GET /api/v1/leaderboards）。</summary>
+public sealed record LeaderboardIndexDto(
+    DateTimeOffset ComputedAt,
+    DateTimeOffset NextComputeAt,
+    IReadOnlyList<LeaderboardBoardSummaryDto> Boards);
+
+/// <summary>全服排行榜单条名次行（Top 50 条目）。</summary>
+public sealed record LeaderboardEntryDto(
+    int Rank,
+    double Score,
+    string DisplayName,
+    string Avatar = "player",
+    string? PlayerId = null,
+    int? RealmLevel = null,
+    double? Experience = null,
+    double? ExperienceToNext = null,
+    double? Valuation = null,
+    ValuationBreakdownDto? ValuationBreakdown = null,
+    int? TechniqueLevel = null,
+    double? TechniqueExp = null,
+    double? DuelWins = null,
+    double? DuelLosses = null,
+    string? ZongmenId = null,
+    string? ZongmenName = null,
+    string? ZongmenPrefix = null,
+    int? MemberCount = null,
+    int? HallLevel = null,
+    long PlayerSeq = 0);
+
+/// <summary>当前认证玩家在当前榜的本人名次（未上榜时接口下发 null）。</summary>
+public sealed record LeaderboardMyRankDto(
+    int Rank,
+    double Score,
+    double? DuelLosses = null,
+    int? TechniqueLevel = null);
+
+/// <summary>全服排行榜单榜完整快照响应（GET /api/v1/leaderboards/{boardId}）。</summary>
+public sealed record LeaderboardSnapshotDto(
+    string BoardId,
+    DateTimeOffset ComputedAt,
+    DateTimeOffset NextComputeAt,
+    int ParticipantCount,
+    IReadOnlyList<LeaderboardEntryDto> Entries,
+    LeaderboardMyRankDto? MyRank = null);

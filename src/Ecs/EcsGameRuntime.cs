@@ -19,7 +19,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
 {
     private readonly IReadOnlyList<EcsWorldShard> _shards;
     private readonly ConcurrentDictionary<Guid, int> _playerShards = new();
-    private readonly bool _previousCloseSystemTry;
+    private readonly bool _ownsCloseSystemTryLease;
     private bool _disposed;
 
     /// <summary>构造分片路由运行时：创建 shardCount 个独立 World/Fiber 分片并接管进程级 System 异常开关。</summary>
@@ -34,10 +34,17 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         InlineCombatTriggerRegistry.EnsureInitialized();
         GameData = gameData ?? GameDataCatalog.BuiltIn;
         StartAt = startAt ?? DateTimeOffset.UnixEpoch;
-        _previousCloseSystemTry = YuoWorld.CloseSystemTry;
-        // 业务运行时不允许 YuoCore 把 System 异常隔离成成功请求；所有分片共用这个
-        // 进程级开关，不能让某个分片的 Dispose 提前恢复它。
-        YuoWorld.CloseSystemTry = Environment.GetEnvironmentVariable("DAOHUA_ECS_CLOSE_SYS_TRY") != "0";
+        // 业务运行时不允许 YuoCore 把 System 异常隔离成成功请求；所有分片及并行运行时共用进程级
+        // 租约计数，只有在最后一个运行时销毁后才恢复初值（总纲 §15）。
+        if (Environment.GetEnvironmentVariable("DAOHUA_ECS_CLOSE_SYS_TRY") != "0")
+        {
+            EcsWorldShard.EnterCloseSystemTry();
+            _ownsCloseSystemTryLease = true;
+        }
+        else
+        {
+            YuoWorld.CloseSystemTry = false;
+        }
         var shards = new List<EcsWorldShard>(shardCount);
         try
         {
@@ -48,7 +55,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         catch
         {
             foreach (var shard in shards) shard.Dispose();
-            YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+            if (_ownsCloseSystemTryLease) EcsWorldShard.ExitCloseSystemTry();
             throw;
         }
     }
@@ -259,14 +266,14 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         }
     }
 
-    /// <summary>释放全部分片并恢复进程级 System 异常开关。</summary>
+    /// <summary>释放全部分片并释放进程级 System 异常开关租约。</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         foreach (var shard in _shards) shard.Dispose();
         _playerShards.Clear();
-        YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+        if (_ownsCloseSystemTryLease) EcsWorldShard.ExitCloseSystemTry();
     }
 
     /// <summary>异步释放入口；与 <see cref="Dispose"/> 等价。</summary>

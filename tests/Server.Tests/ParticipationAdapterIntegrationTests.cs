@@ -747,25 +747,125 @@ public sealed class ParticipationAdapterIntegrationTests
         Assert.Null(fixture.Adapter.TryGetLoaded(rejoiner)!.State.Settings.RespawnTargetPlayerId);
     }
 
+    /// <summary>名片配装隐私：默认全员可查，关闭后仅对本人与同队队友保留配装，其余访客仍可打开非配装基础名片信息。</summary>
     [Fact]
-    public async Task BuildPlayerCardAsync_AllowsViewingPublicCardOfAnyExistingPlayer()
+    public async Task BuildPlayerCardAsync_DefaultAllowsPublicLoadout_PrivacyHidesOnlyLoadoutFromNonTeammates()
     {
         await using var fixture = await Fixture.CreateAsync(startSession: false);
         var social = await fixture.CreateSocialRuntimeAsync();
         var viewer = fixture.Players[0];
         var target = fixture.Players[1];
 
-        // 离队使目标与 viewer 不在同队
+        // 先为目标装配装备、功法、丹药自动槽与特质，便于核验脱敏与复原边界。
+        await fixture.Adapter.MutateOwnedAsync(target, aggregate =>
+        {
+            aggregate.LearnAbility(new AbilityId("ability.palm-lightning"));
+            aggregate.Loadout.AbilitySlots[0] = new Domain.Player.PlayerAbilitySlot("ability.palm-lightning", 2);
+            aggregate.Loadout.EquippedInstances.Add(InstanceId.New());
+            aggregate.Loadout.EquippedItemIds.Add(new ItemId("equipment.xuantie-sword"));
+            aggregate.Loadout.Equipment.Add(new Domain.Player.PlayerEquipmentSlot("equipment.xuantie-sword", 0));
+            aggregate.ConfigureAutoUse("combat", 0, "item.zhixue-powder", 1, true);
+            aggregate.Progression.SetTraits(["trait.tianshengmanli"]);
+            aggregate.Touch(Domain.Player.PlayerSectionKind.Loadout);
+            aggregate.Touch(Domain.Player.PlayerSectionKind.Progression);
+        });
+
+        // 1. 默认公开状态：同队与离队后（非同队）都应直接返回完整名片与配装。
+        var samePartyDefault = await social.BuildPlayerCardAsync(
+            viewer,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(samePartyDefault.Error);
+        Assert.False(samePartyDefault.LoadoutHidden);
+        Assert.NotEmpty(samePartyDefault.Equipment ?? []);
+
+        // 离队切为非同队关系；默认 PublicLoadoutVisible=true 仍可查询全部配装。
         Assert.True((await social.ApplyAsync(target,
             new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
 
-        // 验证即使跨队且不在同地，也能成功获取角色卡且无 forbidden 错误
-        var req = new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D"));
-        var card = await social.BuildPlayerCardAsync(viewer, req);
+        var publicNonTeammateCard = await social.BuildPlayerCardAsync(
+            viewer,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(publicNonTeammateCard.Error);
+        Assert.False(publicNonTeammateCard.LoadoutHidden);
+        Assert.NotNull(publicNonTeammateCard.DisplayName);
+        Assert.NotEmpty(publicNonTeammateCard.Equipment ?? []);
+        Assert.NotEmpty(publicNonTeammateCard.LearnedAbilityIds ?? []);
+        Assert.Contains(publicNonTeammateCard.AbilitySlots ?? [], s => s.AbilityId == "ability.palm-lightning");
+        Assert.NotEmpty(publicNonTeammateCard.AutoUseSlots ?? []);
+        var publicAttrs = System.Text.Json.JsonSerializer.SerializeToElement(publicNonTeammateCard.Attributes);
+        Assert.True(publicAttrs.TryGetProperty("traits", out var publicTraits) && publicTraits.GetArrayLength() > 0);
 
-        Assert.Null(card.Error);
-        Assert.Equal(target.ToString("D"), card.PlayerId);
-        Assert.NotNull(card.DisplayName);
+        // 2. 通过 player.set_privacy 指令关闭公开配装（仅队友可见）。
+        var loadedTarget = fixture.Adapter.TryGetLoaded(target)!;
+        using (var doc = System.Text.Json.JsonDocument.Parse("{\"publicLoadoutVisible\":false}"))
+        {
+            var receipt = await fixture.Adapter.ExecuteAsync(
+                target, "player.set_privacy", doc.RootElement, loadedTarget.StateVersion, Guid.NewGuid());
+            Assert.True(receipt.Success);
+            Assert.False(receipt.Snapshot.State.Settings.PublicLoadoutVisible);
+        }
+
+        // 非同队访客仍可打开名片看属性/境界/身家，但 LoadoutHidden=true 且可抄配装字段全脱敏清空。
+        var redactedCard = await social.BuildPlayerCardAsync(
+            viewer,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(redactedCard.Error);
+        Assert.True(redactedCard.LoadoutHidden);
+        Assert.Equal(target.ToString("D"), redactedCard.PlayerId);
+        Assert.NotNull(redactedCard.DisplayName);
+        Assert.True(redactedCard.RealmLevel > 0);
+        Assert.NotNull(redactedCard.Attributes);
+        Assert.Null(redactedCard.Equipment);
+        Assert.Null(redactedCard.LearnedAbilityIds);
+        Assert.Null(redactedCard.AbilitySlots);
+        Assert.Null(redactedCard.AbilityExperiences);
+        Assert.Null(redactedCard.AutoUseSlots);
+        Assert.Null(redactedCard.CurrentReport);
+        var redactedAttrs = System.Text.Json.JsonSerializer.SerializeToElement(redactedCard.Attributes);
+        Assert.True(!redactedAttrs.TryGetProperty("traits", out var rt) || rt.ValueKind == System.Text.Json.JsonValueKind.Null);
+        Assert.True(!redactedAttrs.TryGetProperty("traitLevels", out var rtl) || rtl.ValueKind == System.Text.Json.JsonValueKind.Null);
+
+        // 本人无论是否在队始终保留完整名片与配装。
+        var selfCard = await social.BuildPlayerCardAsync(
+            target,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(selfCard.Error);
+        Assert.False(selfCard.LoadoutHidden);
+        Assert.NotEmpty(selfCard.Equipment ?? []);
+        var selfAttrs = System.Text.Json.JsonSerializer.SerializeToElement(selfCard.Attributes);
+        Assert.True(selfAttrs.TryGetProperty("traits", out var selfTraits) && selfTraits.GetArrayLength() > 0);
+
+        // 重新加入同一队伍：对同队队友固定保持开放。
+        Assert.Equal(PartyJoinResult.Joined,
+            await fixture.Social.TryJoinPartyAsync(fixture.PartyId, target, fixture.Clock.UtcNow));
+        var teammateAfterPrivacy = await social.BuildPlayerCardAsync(
+            viewer,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(teammateAfterPrivacy.Error);
+        Assert.False(teammateAfterPrivacy.LoadoutHidden);
+        Assert.NotEmpty(teammateAfterPrivacy.Equipment ?? []);
+        Assert.NotEmpty(teammateAfterPrivacy.LearnedAbilityIds ?? []);
+        var mateAttrs = System.Text.Json.JsonSerializer.SerializeToElement(teammateAfterPrivacy.Attributes);
+        Assert.True(mateAttrs.TryGetProperty("traits", out var mateTraits) && mateTraits.GetArrayLength() > 0);
+
+        // 再次退队并重新开启公开可见：非同队恢复正常展示。
+        Assert.True((await social.ApplyAsync(target,
+            new Protocol.SocialActionDto(Guid.NewGuid().ToString("D"), Protocol.SocialActions.PartyLeave))).Success);
+        loadedTarget = fixture.Adapter.TryGetLoaded(target)!;
+        using (var doc = System.Text.Json.JsonDocument.Parse("{\"publicLoadoutVisible\":true}"))
+        {
+            var receipt = await fixture.Adapter.ExecuteAsync(
+                target, "player.set_privacy", doc.RootElement, loadedTarget.StateVersion, Guid.NewGuid());
+            Assert.True(receipt.Success);
+            Assert.True(receipt.Snapshot.State.Settings.PublicLoadoutVisible);
+        }
+
+        var restoredPublicCard = await social.BuildPlayerCardAsync(
+            viewer,
+            new Protocol.PlayerCardRequestDto(Guid.NewGuid().ToString("D"), target.ToString("D")));
+        Assert.Null(restoredPublicCard.Error);
+        Assert.False(restoredPublicCard.LoadoutHidden);
+        Assert.NotEmpty(restoredPublicCard.Equipment ?? []);
     }
 
     private sealed class Fixture : IAsyncDisposable

@@ -416,11 +416,17 @@ public sealed class CombatantState
     private bool _buffTick1sPending;
     private CombatantStats? _effectiveStatsCache;
 
-    /// <summary>Buff 列表（含层数）变更后的统一失效入口：聚合数组与折叠面板缓存一并作废，下次读取惰性重建。</summary>
+    /// <summary>Buff 列表（含层数）变更后的统一失效入口：聚合数组、折叠面板缓存一并作废，并立即唤醒同单位已缓存的 Buff 条件槽位，避免同相位内紧接决策命中过期判定。</summary>
     internal void InvalidateBuffAggregates()
     {
         _buffTotals = null;
         _effectiveStatsCache = null;
+        if (SkillWakePending is { } pending)
+        {
+            var buffWake = new SlotWakeMask { Self = UnitChannel.Buff, AllySide = UnitChannel.Buff, EnemySide = UnitChannel.Buff };
+            for (var i = 0; i < pending.Length; i++)
+                pending[i] = pending[i].Union(buffWake);
+        }
     }
 
     /// <summary>按 BuffId 原子替换（无则追加）：同 ID 重复授予的统一覆盖入口。</summary>
@@ -607,6 +613,23 @@ public sealed class CombatantState
                 total += _buffs[i].Stacks;
         }
         return total + (ExternalBuffStacks?.Invoke(buffId) ?? 0);
+    }
+
+    /// <summary>按技能施放次数消耗 1 层指定战内 Buff（保留既有到期时间与来源，降至 0 则移除）。</summary>
+    internal bool ConsumeOneBuffStack(string buffId)
+    {
+        for (var i = 0; i < _buffs.Count; i++)
+        {
+            var current = _buffs[i];
+            if (current.BuffId != buffId) continue;
+            if (current.Stacks <= 1 + 1e-12)
+                _buffs.RemoveAt(i);
+            else
+                _buffs[i] = current with { Stacks = current.Stacks - 1 };
+            InvalidateBuffAggregates();
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -1092,6 +1115,8 @@ public sealed record CombatEvent(
     public bool Parried { get; init; }
     /// <summary>施放事件的技能 ID；普通攻击为空。</summary>
     public string? AbilityId { get; init; }
+    /// <summary>施放事件切态显示名覆写（如斩玉切态为踏云）；为空时按 AbilityId 查真源名称。</summary>
+    public string? AbilityNameOverride { get; init; }
     /// <summary>施放事件的治疗量（伤害事件为 0）。</summary>
     public double Healing { get; init; }
     /// <summary>事件结算完成时刻出手方的剩余灵力；衍生事件（反伤等）不携带则为 null。</summary>
@@ -1298,7 +1323,7 @@ public sealed record CombatExpeditionState(
         && double.IsFinite(PlayerThreat) && PlayerThreat >= 0
         && Enum.IsDefined(Outcome)
         && WaveNumber >= 1
-        && (Enemies is null || (Enemies.Count <= 8 && Enemies.All(enemy => enemy is not null
+        && (Enemies is null || (Enemies.Count <= EncounterWaveSelector.MaxAlliedWaveSize && Enemies.All(enemy => enemy is not null
             && !string.IsNullOrWhiteSpace(enemy.EnemyId) && enemy.EnemyId.Length <= 128
             && enemy.State is not null && enemy.State.IsValid
             && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0)))

@@ -154,6 +154,46 @@ public sealed class MarketVariantTests
                 PlacePayload("item.awakening-stone", "buy", null, price: 100d), 0, Guid.NewGuid()));
     }
 
+    /// <summary>已穿戴工具（tool-*）与处于强化锁定队列中的装备在 market.place 挂单卖出时分别返回 ITEM_EQUIPPED 与 ITEM_ENHANCE_LOCKED。</summary>
+    [Fact]
+    public async Task MarketPlace_Sell_RejectsEquippedToolAndEnhanceLockedEquipment()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new VariantAssets(playerId,
+            ("equipment.tool-herb-hoe", string.Empty, 1d),
+            ("equipment.qingfeng-sword", "+2", 1d));
+        var catalog = LoadCatalogFiles("actions/enhancement.json", "equipment/weapons.json", "equipment/tools.json");
+        await using var runtime = Create(catalog, playerId, assets);
+        await runtime.LoadAsync(playerId);
+
+        var equipTool = await runtime.ExecuteAsync(playerId, "loadout.replace",
+            JsonSerializer.SerializeToElement(new
+            {
+                equipment = new[] { new { itemId = "equipment.tool-herb-hoe", enhancementLevel = 0d } },
+                abilitySlots = Array.Empty<object>()
+            }, ProtocolJson.Options), 0, Guid.NewGuid());
+        Assert.True(equipTool.Success, $"{equipTool.Code}: {equipTool.Message}");
+
+        var sellTool = await runtime.ExecuteAsync(playerId, "market.place",
+            PlacePayload("equipment.tool-herb-hoe", "sell", string.Empty, price: 1000d), 0, Guid.NewGuid());
+        Assert.False(sellTool.Success);
+        Assert.Equal("ITEM_EQUIPPED", sellTool.Code);
+
+        var enqueueId = Guid.NewGuid();
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                enqueueId.ToString("D"), "enhance.equipment", 1,
+                Parameters: new Dictionary<string, double> { [Domain.Player.EnhancementRules.InitialLevelParameter] = 2 },
+                TargetItemId: "equipment.qingfeng-sword"), ProtocolJson.Options),
+            0, enqueueId);
+        Assert.True(enqueued.Success, $"{enqueued.Code}: {enqueued.Message}");
+
+        var sellLockedSword = await runtime.ExecuteAsync(playerId, "market.place",
+            PlacePayload("equipment.qingfeng-sword", "sell", "+2", price: 1000d), 0, Guid.NewGuid());
+        Assert.False(sellLockedSword.Success);
+        Assert.Equal("ITEM_ENHANCE_LOCKED", sellLockedSword.Code);
+    }
+
     /// <summary>装配带未启动市场运行时的适配器：未就绪状态由 PlaceAsync 的 EnsureReady 暴露，不触库。</summary>
     private static EcsPlayerRuntimeAdapter Create(GameDataCatalog catalog, Guid playerId, IAssetBalanceRepository? assets = null)
     {

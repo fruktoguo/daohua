@@ -108,13 +108,27 @@ public sealed class PostgresRetentionRepository(
             """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
             now - TimeSpan.FromDays(14), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
 
+        // 3. 瞬时经济幂等防重键（保存 24 小时）：只承载 PersistLedger=false 重放防重窗口，过期后按 created_at 批量回收。
+        var deletedTransientIdempotency = await DeleteBatchAsync(connection, transaction, """
+            SELECT player_id, idempotency_key
+            FROM economy.transient_idempotency
+            WHERE created_at < $1
+            ORDER BY created_at
+            LIMIT $2
+            """, """
+            DELETE FROM economy.transient_idempotency t
+            USING ({0}) doomed
+            WHERE t.player_id = doomed.player_id AND t.idempotency_key = doomed.idempotency_key
+            """,
+            now - TimeSpan.FromHours(24), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
+
         var deletedEmptyTransactions = deletedShortTerm + deletedLongTerm;
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions, deletedTransientIdempotency);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions} transientIdempotency={TransientIdempotency}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions, result.TransientIdempotency);
         return result;
     }
 
@@ -146,6 +160,8 @@ public sealed class PostgresRetentionRepository(
 /// <param name="SettlementClaims">已删除的过期结算确认游标行数。</param>
 /// <param name="AccountRiskEvents">已删除的过期账号风险事件行数。</param>
 /// <param name="ParticipationInboxes">已删除的终态会话已消费结算载荷行数。</param>
+/// <param name="EmptyTransactions">已删除的过期经济流水事务行数。</param>
+/// <param name="TransientIdempotency">已删除的过期瞬时经济幂等防重行数。</param>
 public sealed record RetentionResult(
     int Outbox,
     int Sessions,
@@ -155,10 +171,11 @@ public sealed record RetentionResult(
     int SettlementClaims,
     int AccountRiskEvents,
     int ParticipationInboxes = 0,
-    int EmptyTransactions = 0)
+    int EmptyTransactions = 0,
+    int TransientIdempotency = 0)
 {
     /// <summary>本轮删除总行数。</summary>
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions + TransientIdempotency;
 }
 
 /// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后按配置周期分批清理。</summary>

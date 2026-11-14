@@ -107,7 +107,7 @@ public sealed class BackupArchiveWorker : BackgroundService
         PruneOldHourlyArchives();
 
         _state.LastSyncCompletedAt = DateTimeOffset.UtcNow;
-        _state.LastError = failed > 0 ? $"存在 {failed} 个文件哈希校验失败" : null;
+        _state.LastError = failed > 0 ? $"存在 {failed} 个文件缺失或哈希校验失败" : null;
 
         _logger.LogInformation("备份归档同步与对账完成: verified={Verified} failed={Failed}", verified, failed);
     }
@@ -196,7 +196,12 @@ public sealed class BackupArchiveWorker : BackgroundService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var targetFile = shaFile[..^7]; // 截掉 ".sha256"
-            if (!File.Exists(targetFile)) continue;
+            if (!File.Exists(targetFile))
+            {
+                failed++;
+                _logger.LogError("备份文件缺失（校验目标不存在）: {File}", targetFile);
+                continue;
+            }
 
             if (CheckHash(targetFile, shaFile))
             {
@@ -240,14 +245,23 @@ public sealed class BackupArchiveWorker : BackgroundService
         var cutoff = DateTime.UtcNow.AddDays(-_options.RetentionDays);
         foreach (var file in Directory.EnumerateFiles(hourlyDir, "daohua-postgres-hourly-*"))
         {
+            if (file.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase)) continue;
             try
             {
                 if (File.GetLastWriteTimeUtc(file) < cutoff)
                 {
                     File.Delete(file);
+                    var shaFile = file + ".sha256";
+                    if (File.Exists(shaFile))
+                    {
+                        File.Delete(shaFile);
+                    }
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "清理过期小时归档失败: {File}", file);
+            }
         }
     }
 

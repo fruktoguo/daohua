@@ -436,7 +436,8 @@ internal static class CombatActionRules
                 var frame = combatResult.Events[i];
                 AppendCastClause(clauses, FormatCombatantLabel(frame.TargetId, waveEnemies, spec, gameData), frame.Hit, frame.Damage, frame.Healing, frame.Critical, frame.Break, frame.Parried);
             }
-            var builder = BeginCastMessage(FormatCombatantLabel(combatEvent.AttackerId, waveEnemies, spec, gameData), abilityId, gameData);
+            var builder = BeginCastMessage(FormatCombatantLabel(combatEvent.AttackerId, waveEnemies, spec, gameData),
+                abilityId, gameData, combatEvent.AbilityNameOverride);
             AppendCastClauses(builder, clauses);
             AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
             emittedIndex = events?.Count ?? 0;
@@ -1133,7 +1134,8 @@ internal static class CombatActionRules
                 var member = playback.Events[j];
                 AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
             }
-            var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData);
+            var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData,
+                duelEvent.AbilityNameOverride);
             AppendCastClauses(builder, clauses);
             AddCombatEventAt(ref events, from.AddSecondsExact(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
                 "combat.skill", builder.Append('。').ToString(), definition.Id);
@@ -1171,6 +1173,8 @@ internal static class CombatActionRules
                     DuelWins = 1,
                     DuelItemGains = playback.OpponentStagedSnapshot
                 });
+                player.Progression.DuelWins += 1;
+                player.MarkDirty(PlayerSectionKind.Progression);
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.won",
                     playback.Forfeited
                         ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
@@ -1187,6 +1191,8 @@ internal static class CombatActionRules
                     player.RecordStats(action.Id, nowUnix,
                         new PlayerStatsDelta { DuelLosses = 1, Deaths = 1 });
                     player.Progression.TotalDefeats += 1;
+                    player.Progression.DuelLosses += 1;
+                    player.MarkDirty(PlayerSectionKind.Progression);
                 }
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.lost",
                     playback.Forfeited
@@ -1283,14 +1289,8 @@ internal static class CombatActionRules
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
             enemy.DefinitionId ?? enemy.Id,
             CombatEncounterState.Snapshot(enemy),
-            enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
-                ? DeterministicCombatEngine.AbilityText(enemy.Skills[enemy.PendingSkillIndex].Ability, "id") : null,
-            enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
-                ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d
-                    * PercentValue.Multiplier(enemy.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear)
-                : enemy.Stats.AttackIntervalSeconds
-                    * PercentValue.Multiplier(enemy.Stats.AttackSpeedPoints, PercentCurveMode.NonLinear)
-                    * PercentValue.Multiplier(enemy.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear))).ToArray()
+            PendingActionText(enemy),
+            PendingActionDurationOf(enemy))).ToArray()
     };
 
     /// <summary>
@@ -1549,12 +1549,14 @@ internal static class CombatActionRules
             ? DeterministicCombatEngine.AbilityText(ability, "name") ?? abilityId
             : CombatTraitRules.AllTraits.TryGetValue(abilityId, out var trait) ? trait.Name : abilityId;
 
-    /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」，功法名走引用标记供前端悬浮卡解析。</summary>
-    private static StringBuilder BeginCastMessage(string attackerLabel, string abilityId, GameDataCatalog gameData)
+    /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」，功法名走引用标记供前端悬浮卡解析（切态时显示覆写名但仍锚定原功法 ID）。</summary>
+    private static StringBuilder BeginCastMessage(string attackerLabel, string abilityId, GameDataCatalog gameData,
+        string? abilityNameOverride = null)
         => CombatTraitRules.AllTraits.ContainsKey(abilityId)
             ? new StringBuilder(attackerLabel).Append("触发 ").Append(AbilityName(gameData, abilityId))
             : new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
-                .Append(AbilityName(gameData, abilityId)).Append("}}");
+                .Append(string.IsNullOrWhiteSpace(abilityNameOverride) ? AbilityName(gameData, abilityId) : abilityNameOverride)
+                .Append("}}");
 
     /// <summary>施放合并行的单帧子句收集：未命中 / 伤害 / 治疗按帧序入列；零效果帧（纯增益起手）不产生子句。</summary>
     private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing,
@@ -1851,12 +1853,12 @@ internal static class CombatActionRules
             ? DeterministicCombatEngine.AbilityText(unit.Skills[unit.PendingSkillIndex].Ability, "id")
             : null;
 
-    /// <summary>当前动作展示时长：吟唱取技能读条，普攻取攻速结算间隔（与敌人快照导出同一公式）。</summary>
+    /// <summary>当前动作展示时长：吟唱取技能读条（含战内行动速度 Buff），普攻取攻速与行速叠加 Buff 后的结算间隔。</summary>
     private static double PendingActionDurationOf(CombatantState unit)
         => unit.PendingSkillIndex >= 0 && unit.PendingSkillIndex < unit.Skills.Count
             ? DeterministicCombatEngine.AbilityNumber(unit.Skills[unit.PendingSkillIndex].Ability, "castMilliseconds") / 1000d
-                * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear)
+                * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear)
             : unit.Stats.AttackIntervalSeconds
-                * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints, PercentCurveMode.NonLinear)
-                * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
+                * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints + unit.BuffTotal(BuffEffectChannel.AttackSpeedPoints), PercentCurveMode.NonLinear)
+                * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
 }

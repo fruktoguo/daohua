@@ -366,7 +366,8 @@ public static class ProtocolSnapshotMapper
     /// 全部百分比属性按点数下发（100 点 = 100%，总纲第七篇 §7.7.5），前端只按对应曲线渲染不得二次换算。
     /// </summary>
     /// <param name="extraThreatBonusPoints">折入的威胁增幅点数（战内 Buff 合计），与有效威胁判定同乘区。</param>
-    public static object ToAttributesDto(PlayerAttributes a, double extraThreatBonusPoints = 0) => new
+    /// <param name="includeTraits">是否在面板中暴露已领悟特质与等级（角色名片隐私受限时传 false）。</param>
+    public static object ToAttributesDto(PlayerAttributes a, double extraThreatBonusPoints = 0, bool includeTraits = true) => new
     {
         a.MaxHitpoints, a.MaxManapoints,
         physicalAttack = a.PhysicalAttack, a.SpellAttack,
@@ -397,7 +398,8 @@ public static class ProtocolSnapshotMapper
         hpDrainPoints = a.Effects.HpDrainPoints, mpDrainPoints = a.Effects.MpDrainPoints,
         damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints,
         // 已装配特质与等级随面板下发：详情弹窗/信息卡「装配」Tab 的只读展示数据源（总纲 §7.12）。
-        traits = a.Traits, traitLevels = a.TraitLevels
+        traits = includeTraits ? a.Traits : null,
+        traitLevels = includeTraits ? a.TraitLevels : null
     };
 
     /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载；
@@ -870,6 +872,7 @@ public static class ProtocolSnapshotMapper
             // 镜像功法槽与已穿戴装备与属性同帧一次性交付（撮合时冻结），前端按 duel:{对手名} 缓存。
             opponentSkills = includeOpponentAttributes ? duel.OpponentSkills : null,
             opponentEquipment = includeOpponentAttributes ? duel.OpponentEquipment : null,
+            viewerIsInitiator = duel.ViewerIsInitiator,
             duel.Resolved,
             duel.Forfeited,
             events = duel.Events.Select(duelEvent => new

@@ -26,11 +26,35 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     private readonly List<YuoEntity> _activeEntities = new(4);
     private readonly EcsClockComponent _clock;
     private readonly YuoFiber _fiber;
-    private readonly bool _previousCloseSystemTry;
     private readonly bool _ownsCloseSystemTry;
     private readonly DuelAdvanceOptions? _duelAdvance;
     private EcsCombatTriggerSink? _triggerSink;
     private bool _disposed;
+
+    private static readonly object CloseSystemTryGate = new();
+    private static int _closeSystemTryUsers;
+    private static bool _initialCloseSystemTry;
+
+    /// <summary>进入进程级 System 异常直抛租约：仅当全进程首个持有方进入时记录初值并启用 CloseSystemTry。</summary>
+    internal static void EnterCloseSystemTry()
+    {
+        lock (CloseSystemTryGate)
+        {
+            if (_closeSystemTryUsers++ == 0)
+                _initialCloseSystemTry = YuoWorld.CloseSystemTry;
+            YuoWorld.CloseSystemTry = true;
+        }
+    }
+
+    /// <summary>释放进程级 System 异常直抛租约：仅当全进程最后一个存活运行时退出时恢复初值。</summary>
+    internal static void ExitCloseSystemTry()
+    {
+        lock (CloseSystemTryGate)
+        {
+            if (_closeSystemTryUsers > 0 && --_closeSystemTryUsers == 0)
+                YuoWorld.CloseSystemTry = _initialCloseSystemTry;
+        }
+    }
 
     public EcsWorldShard(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, string? fiberName = null, bool setWorldAsDefault = true, bool ownCloseSystemTry = true,
         DuelAdvanceOptions? duelAdvance = null)
@@ -39,11 +63,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         // 业务运行时不允许 YuoCore 把 System 异常隔离成成功请求；宿主通过异常
         // 感知本次命令失败并执行数据库回滚。
         _ownsCloseSystemTry = ownCloseSystemTry;
-        _previousCloseSystemTry = YuoWorld.CloseSystemTry;
         EcsCoreTraceBridge.Install();
         try
         {
-            if (ownCloseSystemTry) YuoWorld.CloseSystemTry = true;
+            if (ownCloseSystemTry) EnterCloseSystemTry();
             GameData = gameData ?? GameDataCatalog.BuiltIn;
             StartAt = startAt ?? DateTimeOffset.UnixEpoch;
             _fiber = _fiberManager.CreateFiber(fiberName ?? "daohua-ecs", setWorldAsDefault: setWorldAsDefault);
@@ -68,7 +91,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             {
                 _ownerGate.Dispose();
                 EcsCoreTraceBridge.Uninstall();
-                if (_ownsCloseSystemTry) YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+                if (_ownsCloseSystemTry) ExitCloseSystemTry();
             }
             throw;
         }
@@ -556,7 +579,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             await _ownerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         var ownerHoldMeasurement = RuntimeInstrumentation.Measure("ecs.owner_hold");
         var clockBefore = _clock.Current;
-        var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty)>();
+        var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty, KeyValuePair<PlayerSectionKind, long>[] DirtyMarks)>();
         var executions = new Dictionary<Guid, EcsActionExecutionComponent>();
         try
         {
@@ -575,7 +598,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 var state = ExportSnapshotCore(id).State;
                 var assets = entity.GetComponent<PlayerInventoryComponent>()!.Items
                     .Select(pair => new AssetBalance(new PlayerId(id), pair.Key, pair.Value, 0)).ToArray();
-                backups[id] = (state, assets, entity.GetComponent<PlayerIdentityComponent>()!.DirtySections.ToArray());
+                var identity = entity.GetComponent<PlayerIdentityComponent>()!;
+                backups[id] = (state, assets, identity.DirtySections.ToArray(), identity.DirtyMarks.ToArray());
                 executions[id] = EcsActionExecutionComponent.Attach(entity, GameData, target, _duelAdvance);
             }
             var cursor = executions.Count > 0 ? executions.Values.Min(EcsActionSession.Current) : target;
@@ -706,9 +730,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 var entity = GetPlayer(id);
                 DestroyPlayerEncounters(entity.ID);
                 ApplyAggregateState(entity, backup.State, backup.Assets);
-                var dirty = entity.GetComponent<PlayerIdentityComponent>()!.DirtySections;
-                dirty.Clear();
-                dirty.UnionWith(backup.Dirty);
+                var identity = entity.GetComponent<PlayerIdentityComponent>()!;
+                identity.DirtySections.Clear();
+                identity.DirtySections.UnionWith(backup.Dirty);
+                identity.DirtyMarks.Clear();
+                foreach (var (section, mark) in backup.DirtyMarks)
+                    identity.DirtyMarks[section] = mark;
                 _simulationEvents.Remove(id);
                 _simulationResults.Remove(id);
             }
@@ -873,7 +900,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var weaken = player.GetComponent<PlayerWorldComponent>()?.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio ?? 0;
         var enemyTemplates = enemyDefinitions.Select(m =>
             new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(m.Stats, weaken), m.Skills, m.Id, m.Rank)).ToArray();
-        var state = Systems.CombatEventAdvanceSystem.Start(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
+        var state = CombatEncounterState.Create(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
         var battleStartUnix = player.GetComponent<PlayerActionQueueComponent>()?.LastAdvancedAt.ToUnixTimeSeconds() ?? StartAt.ToUnixTimeSeconds();
         foreach (var active in player.GetComponent<PlayerBuffComponent>()?.Active ?? [])
         {
@@ -882,11 +909,11 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             var expiresAt = double.IsFinite(active.ExpiresAtUnixSeconds)
                 ? Math.Max(0, active.ExpiresAtUnixSeconds - battleStartUnix)
                 : double.MaxValue;
-            // 效果载荷引用直传（战外与战内共享通道形态）；受控入口自动失效聚合
-            //（Start 内开局决策已读过聚合，注入必须重建）。
+            // 必须在首次出手决策前注入战外 ActiveBuff，确保首拍吟唱/技能条件与攻速增益即时生效。
             state.Player.AddBuff(new CombatBuffState(active.BuffId, expiresAt, active.Stacks, active.Name,
                 ResetOnWave: true, Effects: active.Effects, StatRatios: active.StatRatios));
         }
+        Systems.CombatActSystem.DecideInitialActions(state);
         var encounterEntity = new YuoEntity(World); encounterEntity.EntityName = $"encounter:{encounterId}:{seed}";
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");
         var encounter = encounterEntity.AddComponent<CombatEncounterComponent>(); encounter.EncounterId = encounterId; encounter.PlayerEntityId = player.ID; encounter.State = state; encounter.Seed = seed;
@@ -1106,10 +1133,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
         var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel, a.Participation, a.EnhancementCurrentLevel)).ToArray();
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.OfflineSinceAt, identity.StateVersion, identity.GameDataFingerprint,
-            new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience, progression.Progression.TraitIds.Count > 0 ? progression.Progression.TraitIds.ToArray() : null, progression.Progression.DefeatedMonsterIds.Count > 0 ? progression.Progression.DefeatedMonsterIds.ToArray() : null, progression.Progression.UnlockedTraits.Count > 0 ? progression.Progression.UnlockedTraits.Values.ToArray() : null, progression.Progression.HeavenGate.RolledValues, progression.Progression.HeavenGate.ConfirmedValues, progression.Progression.HeavenGate.Entered, progression.Progression.HeavenGate.RerollCount, progression.Progression.StagedEnhancements.Count > 0 ? progression.Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null),
+            new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience, progression.Progression.TraitIds.Count > 0 ? progression.Progression.TraitIds.ToArray() : null, progression.Progression.DefeatedMonsterIds.Count > 0 ? progression.Progression.DefeatedMonsterIds.ToArray() : null, progression.Progression.UnlockedTraits.Count > 0 ? progression.Progression.UnlockedTraits.Values.ToArray() : null, progression.Progression.HeavenGate.RolledValues, progression.Progression.HeavenGate.ConfirmedValues, progression.Progression.HeavenGate.Entered, progression.Progression.HeavenGate.RerollCount, progression.Progression.StagedEnhancements.Count > 0 ? progression.Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null, progression.Progression.DuelWins, progression.Progression.DuelLosses),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId, world.World.NodeBuildingUsages),
             new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills, Buffs = combat.Combat.Buffs },
-            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused, settings.Settings.TutorialStep, settings.Settings.TutorialRewardsStep, settings.Settings.Avatar, settings.Settings.UnlockedAvatars.ToArray(), settings.Settings.RespawnPolicy, settings.Settings.RespawnTargetPlayerId), actions, loadout.Loadout.Export(), duel.Document,
+            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused, settings.Settings.TutorialStep, settings.Settings.TutorialRewardsStep, settings.Settings.Avatar, settings.Settings.UnlockedAvatars.ToArray(), settings.Settings.RespawnPolicy, settings.Settings.RespawnTargetPlayerId, settings.Settings.PublicLoadoutVisible), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();
         return new EcsPlayerSnapshot(identity.PlayerId, entity.ID, state, inventory);
@@ -1124,7 +1151,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         {
             _ownerGate.Dispose();
             EcsCoreTraceBridge.Uninstall();
-            if (_ownsCloseSystemTry) YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+            if (_ownsCloseSystemTry) ExitCloseSystemTry();
         }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }

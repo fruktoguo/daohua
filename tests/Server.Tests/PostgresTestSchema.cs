@@ -54,6 +54,11 @@ internal static class PostgresTestSchema
                     await ddl.ExecuteNonQueryAsync();
                     await using var patch = new NpgsqlCommand("""
                         ALTER TABLE IF EXISTS market.item_stats ADD COLUMN IF NOT EXISTS reference_price double precision;
+                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS experience double precision NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS lifetime_experience double precision NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS duel_wins double precision NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS duel_losses double precision NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS avatar varchar(64) NOT NULL DEFAULT 'player';
                         ALTER TABLE IF EXISTS social.chat_messages ADD COLUMN IF NOT EXISTS sender_realm integer NOT NULL DEFAULT 1;
                         ALTER TABLE IF EXISTS social.parties ALTER COLUMN open_slots SET DEFAULT 3;
                         ALTER TABLE IF EXISTS social.parties ADD COLUMN IF NOT EXISTS doudizhu_stake double precision NOT NULL DEFAULT 10
@@ -79,7 +84,7 @@ internal static class PostgresTestSchema
                             identity.account_risk_events, identity.account_risk_signals,
                             identity.data_protection_keys,
                             game.player_state_heads, game.player_state_sections, game.player_action_queue,
-                            game.player_projection, game.player_runtime_leases, game.node_buildings,
+                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings,
                             platform.compute_jobs, platform.section_flush_queue, platform.command_receipts,
                             platform.integration_outbox, platform.account_risk_policy, platform.account_risk_key,
                             social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
@@ -87,7 +92,7 @@ internal static class PostgresTestSchema
                             social.chat_messages, social.player_invitations,
                             social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures,
                             economy.transactions, economy.transaction_lines, economy.player_asset_balances,
-                            economy.player_asset_instances, economy.reservations, economy.shop_daily_purchases,
+                            economy.player_asset_instances, economy.reservations, economy.shop_daily_purchases, economy.transient_idempotency,
                             market.orders, market.trades, market.item_stats, market.partition_leases,
                             market.settlement_claims, market.settlement_cursors
                         RESTART IDENTITY CASCADE;

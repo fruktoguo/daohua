@@ -94,11 +94,12 @@ public static class CombatTriggerMath
                     ally.LastTianleiTriggerAtSeconds = context.AtSeconds;
 
                     var rawDamage = ally.EffectiveStats.SpellAttack * 0.5 + 10;
+                    var strikeElement = CombatTraitRules.ResolveDamageElement(ally.Stats.Traits, CombatElement.Wood);
                     var strikeStats = ally.EffectiveStats with
                     {
                         AttackPower = rawDamage,
                         DamageKind = CombatDamageKind.Spell,
-                        Element = CombatElement.Wood
+                        Element = strikeElement
                     };
                     strikeStats = strikeStats with { TotalDamageBonusPoints = ally.Stats.TotalDamageBonusPoints + ally.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
@@ -107,6 +108,7 @@ public static class CombatTriggerMath
                         var targetHpBefore = context.Target.Hitpoints;
                         damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
+                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds);
                         ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Spell, actualDamage, 0);
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
@@ -130,11 +132,12 @@ public static class CombatTriggerMath
                     ally.LastXueshaTriggerAtSeconds = context.AtSeconds;
 
                     var rawDamage = ally.Stats.MaxHitpoints * 0.10;
+                    var strikeElement = CombatTraitRules.ResolveDamageElement(ally.Stats.Traits, CombatElement.None);
                     var strikeStats = ally.EffectiveStats with
                     {
                         AttackPower = rawDamage,
                         DamageKind = CombatDamageKind.Physical,
-                        Element = CombatElement.None
+                        Element = strikeElement
                     };
                     strikeStats = strikeStats with { TotalDamageBonusPoints = ally.Stats.TotalDamageBonusPoints + ally.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
@@ -143,6 +146,7 @@ public static class CombatTriggerMath
                         var targetHpBefore = context.Target.Hitpoints;
                         damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
+                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds);
 
                         var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage * PercentValue.Multiplier(ally.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
                         if (heal > 0)

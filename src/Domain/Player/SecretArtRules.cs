@@ -16,8 +16,14 @@ public static class SecretArtRules
     public const double LiquefactionMultiplier = 3;
     public const double DisassemblyReturnRatio = 0.70;
     public const double FragmentTomeChance = 0.05;
-    public const double FragmentSpiritStoneReward = 100;
     private const int MaxRecipeDepth = 4;
+
+    /// <summary>残卷推演失败时的保底灵石奖励：按残卷自身系统回收价的 2 倍动态计算。</summary>
+    public static double ResolveFragmentFailureReward(GameDataCatalog gameData, string fragmentItemId)
+    {
+        ArgumentNullException.ThrowIfNull(gameData);
+        return ResolveRecycleUnitPrice(gameData, fragmentItemId, 0) * 2.0;
+    }
 
     /// <summary>解析普通物品或装备当前变体的系统商店回收单价；不可回收时返回 0。</summary>
     public static double ResolveRecycleUnitPrice(GameDataCatalog gameData, string itemId, int enhancementLevel)
@@ -98,13 +104,13 @@ public static class SecretArtRules
         return materials;
     }
 
-    /// <summary>计算秘法单轮行动产出的技艺经验与神识经验。</summary>
+    /// <summary>计算秘法单轮行动产出的技艺经验与神识经验（神识经验维持原基准倍率，不随技艺经验全局翻倍）。</summary>
     public static (double TechExp, double ConsciousnessExp) ComputeYieldExperience(GameDataCatalog? gameData, string itemId, double durationSeconds)
     {
         var itemLevel = gameData is null ? 1 : CraftingRecipeRules.ResolveItemLevel(itemId, gameData);
+        var techExp = TechniqueCatalog.ComputeTechniqueExperience(gameData, itemLevel, durationSeconds);
         var baseExp = itemLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(itemLevel) ?? 10.0);
-        var techExp = Math.Max(1.0, Math.Round(baseExp * (durationSeconds / 10.0)));
-        var consciousnessExp = Math.Max(1.0, Math.Round(techExp * 2.0));
+        var consciousnessExp = Math.Max(1.0, Math.Round(baseExp * (durationSeconds / 10.0))) * 2.0;
         return (techExp, consciousnessExp);
     }
 }

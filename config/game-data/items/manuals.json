@@ -6,7 +6,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.heavy-slash",
@@ -15,7 +16,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.chain-strike",
@@ -24,7 +26,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.chain-strike",
@@ -33,7 +36,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.palm-lightning",
@@ -42,7 +46,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.palm-lightning",
@@ -51,7 +56,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.ganlu",
@@ -60,7 +66,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.ganlu",
@@ -69,7 +76,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.blazing-blast",
@@ -78,7 +86,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.blazing-blast",
@@ -87,7 +96,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.taunt",
@@ -96,7 +106,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.taunt",
@@ -105,7 +116,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.heavy-clouds",
@@ -115,7 +127,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.heavy-clouds",
@@ -125,7 +138,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.qingping-melody",
@@ -135,7 +149,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.qingping-melody",
@@ -145,7 +160,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.lightning-attraction",
@@ -155,7 +171,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.lightning-attraction",
@@ -165,7 +182,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.pozhen-melody",
@@ -175,7 +193,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.pozhen-melody",
@@ -185,7 +204,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.star-piercer",
@@ -195,7 +215,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.star-piercer",
@@ -205,7 +226,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.tuna-gong",
@@ -214,7 +236,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.tuna-gong",
@@ -223,7 +246,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.manniu-jin",
@@ -232,7 +256,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.manniu-jin",
@@ -241,7 +266,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.tiebu-shan",
@@ -250,7 +276,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.tiebu-shan",
@@ -259,7 +286,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.feiyan-gong",
@@ -268,7 +296,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.feiyan-gong",
@@ -277,7 +306,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.qingxin-jue",
@@ -286,7 +316,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.qingxin-jue",
@@ -295,7 +326,8 @@
     "kind": "consumable",
     "category": "manual",
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.fenxue-gong",
@@ -305,7 +337,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.fenxue-gong",
@@ -315,7 +348,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.xiaozhoutian-gong",
@@ -325,7 +359,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.xiaozhoutian-gong",
@@ -335,7 +370,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.cunshen-jue",
@@ -345,7 +381,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.cunshen-jue",
@@ -355,7 +392,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.lianjing-huaqi-jue",
@@ -365,7 +403,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 18
   },
   {
     "id": "item.fragment.lianjing-huaqi-jue",
@@ -375,7 +414,8 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 18
   },
   {
     "id": "item.tome.xuanyuan-yiqi-gong",
@@ -385,7 +425,8 @@
     "category": "manual",
     "tier": 3,
     "sellPrice": 500,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 30
   },
   {
     "id": "item.fragment.xuanyuan-yiqi-gong",
@@ -395,7 +436,8 @@
     "category": "manual",
     "tier": 3,
     "sellPrice": 50,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 30
   }
   ,
   {
@@ -406,7 +448,8 @@
     "category": "manual",
     "tier": 1,
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.tide",
@@ -416,7 +459,8 @@
     "category": "manual",
     "tier": 1,
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
   },
   {
     "id": "item.tome.sui-gang",
@@ -426,7 +470,8 @@
     "category": "manual",
     "tier": 1,
     "sellPrice": 100,
-    "subCategory": "manualTome"
+    "subCategory": "manualTome",
+    "level": 1
   },
   {
     "id": "item.fragment.sui-gang",
@@ -436,6 +481,73 @@
     "category": "manual",
     "tier": 1,
     "sellPrice": 10,
-    "subCategory": "manualFragment"
+    "subCategory": "manualFragment",
+    "level": 1
+  },
+  {
+    "id": "item.tome.zhanyu",
+    "name": "《斩玉秘籍》",
+    "description": "剑出寒玉碎，身随流云移。\n剑修一脉轻身斩玉秘传剑谱，更载御风踏云、一剑横扫群敌之法。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome",
+    "level": 1
+  },
+  {
+    "id": "item.fragment.zhanyu",
+    "name": "《斩玉·残卷》",
+    "description": "剑出寒玉碎，身随流云移。\n剑修一脉轻身斩玉秘传残页，墨痕如剑气斩玉而生。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment",
+    "level": 1
+  },
+  {
+    "id": "item.tome.yueqian",
+    "name": "《跃迁秘籍》",
+    "description": "一步一重天，移形幻万千。\n符箓玄门缩地移形秘典，可引符光笼罩众修同气腾挪，避敌锋芒。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 18
+  },
+  {
+    "id": "item.fragment.yueqian",
+    "name": "《跃迁·残卷》",
+    "description": "一步一重天，移形幻万千。\n符箓玄门缩地移形秘典残卷，字迹虚实相生如幻影。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 18
+  },
+  {
+    "id": "item.tome.huoyan-fengbao",
+    "name": "《火焰风暴秘籍》",
+    "description": "烈风卷赤焰，炽火燃三魂。\n五行火法上乘真解，教人汇狂飙与真火为一，焚尽群魔之躯壳与魂魄。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 18
+  },
+  {
+    "id": "item.fragment.huoyan-fengbao",
+    "name": "《火焰风暴·残卷》",
+    "description": "烈风卷赤焰，炽火燃三魂。\n五行火法上乘真解残卷，纸角焦灼犹存炽热火灵。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 18
   }
 ]

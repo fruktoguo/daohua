@@ -129,6 +129,10 @@ public sealed class PlayerProgression
     public double BossKills { get; set; }
     /// <summary>生平败走：战斗落败累计次数</summary>
     public double TotalDefeats { get; set; }
+    /// <summary>生涯斗法胜场（只增不减，用于全服斗法榜口径）</summary>
+    public double DuelWins { get; set; }
+    /// <summary>生涯斗法负场（含弃战判负，用于全服斗法榜口径）</summary>
+    public double DuelLosses { get; set; }
     /// <summary>生平修炼时长累计（秒）</summary>
     public double CultivationSeconds { get; set; }
     /// <summary>道龄（已流逝寿元，秒）；随模拟时间自然累积，寿元上限由等阶配表决定。</summary>
@@ -258,6 +262,8 @@ public sealed class PlayerProgression
         EliteKills = state.EliteKills;
         BossKills = state.BossKills;
         TotalDefeats = state.TotalDefeats;
+        DuelWins = state.DuelWins;
+        DuelLosses = state.DuelLosses;
         CultivationSeconds = state.CultivationSeconds;
         AgeSeconds = state.AgeSeconds;
         HeavenGate.Apply(state.HeavenGateRolled, state.HeavenGateConfirmed, state.HeavenGateEntered, state.HeavenGateRerollCount);
@@ -490,6 +496,10 @@ public sealed class PlayerSettingsState
     /// 目标不在队伍中时同样按直接复活处理，不改写玩家设置。
     /// </summary>
     public Guid? RespawnTargetPlayerId { get; set; }
+    /// <summary>
+    /// 角色名片配装对非同队修士是否可见（默认开放）；对本人与当前同队成员恒定可见。
+    /// </summary>
+    public bool PublicLoadoutVisible { get; set; } = true;
 
     /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
     public bool IsAvatarUnlocked(string? avatar)
@@ -1103,6 +1113,14 @@ public sealed partial class PlayerAggregate
         if (Settings.RespawnPolicy != CombatRespawnPolicy.TargetAllyAlive) return;
         if (Settings.RespawnTargetPlayerId != departedPlayerId) return;
         ResetRespawnPolicy();
+    }
+
+    /// <summary>调整非同队修士是否可见本人的配装详情（对本人与同队成员恒定可见）。</summary>
+    public void SetPublicLoadoutVisible(bool visible)
+    {
+        if (Settings.PublicLoadoutVisible == visible) return;
+        Settings.PublicLoadoutVisible = visible;
+        Touch(PlayerSectionKind.Settings);
     }
 
     /// <summary>

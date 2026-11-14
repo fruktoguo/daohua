@@ -71,6 +71,7 @@ public sealed record DuelAdvanceOptions(bool MatchingEnabled);
 /// <param name="Healing">本次结算的治疗量（伤害事件为 0）。</param>
 /// <param name="AttackerManapointsAfter">出手方在事件结算后的剩余灵力（manaCost 起手预扣、汲取与回复均已入账）。</param>
 /// <param name="TargetManapointsAfter">受击方在事件结算后的剩余灵力。</param>
+/// <param name="AbilityNameOverride">施放切态显示名覆写；为空时按 AbilityId 查真源名称。</param>
 public sealed record DuelScriptEvent(
     double AtSeconds,
     bool AttackerIsInitiator,
@@ -84,7 +85,8 @@ public sealed record DuelScriptEvent(
     double AttackerManapointsAfter = 0,
     double TargetManapointsAfter = 0,
     bool Break = false,
-    bool Parried = false);
+    bool Parried = false,
+    string? AbilityNameOverride = null);
 
 /// <summary>
 /// 斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。

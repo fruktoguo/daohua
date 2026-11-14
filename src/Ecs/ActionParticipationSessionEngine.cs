@@ -708,20 +708,21 @@ public sealed class ActionParticipationSessionEngine
             if (caster is null) return false;
             var manaCost = s.ManaCostRatio * caster.Stats.MaxManapoints;
             if (target is null || caster.Manapoints < manaCost - 1e-9) return false;
+            var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, s.Element);
             var strikeStats = caster.Stats with
             {
                 AttackPower = (s.ManaDamageRatio * caster.Stats.MaxManapoints
                     + s.SpellAttackRatio * caster.Stats.SpellAttack)
                     * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
                 DamageKind = CombatDamageKind.Spell,
-                Element = s.Element
+                Element = strikeElement
             };
             strikeStats = strikeStats with { TotalDamageBonusPoints = caster.Stats.TotalDamageBonusPoints + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
             var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, target);
             caster.Manapoints = Math.Max(0, caster.Manapoints - manaCost);
             var settled = CombatDamageSettlement.Apply(_battle, caster, target, damage);
             damage = settled.Damage;
-            CombatTraitReactions.ApplyRanhun(caster, target, s.Element, settled.Actual, _battle!.ElapsedSeconds);
+            CombatTraitReactions.ApplyRanhun(caster, target, strikeElement, settled.Actual, _battle!.ElapsedSeconds);
             if (_battle is { } liveBattle && !liveBattle.Enemies.Any(static e => e.IsAlive))
                 liveBattle.Outcome = CombatOutcome.PlayerWon;
             if (target.DefinitionId is { } monsterId
@@ -857,31 +858,90 @@ public sealed class ActionParticipationSessionEngine
 
     /// <summary>
     /// 波次入场后的台账覆盖：spec 定格只注入开打时已充能的持续 Buff，
-    /// 台账是权威——未充能/已耗竭槽对应 Buff 清除，存续/新充能槽按墙钟剩余重注入。
+    /// 台账是权威——仅对“当前没有任何有效槽位覆盖”的目标单位清理过期/未充能持续 Buff，
+    /// 再把存续/新充能槽按墙钟剩余重注入（避免后序队友空槽反手抹除前序队友已激活的全队阵盘）。
     /// </summary>
     private void OverlaySessionSustained(double nowUnix)
     {
         if (_consumables is null || _battle is null) return;
+        var activeTargets = new HashSet<(int UnitIndex, string BuffId)>();
         for (var s = 0; s < _consumables.Length; s++)
         {
             var row = _consumables[s];
-            var itemId = new ItemId(row.ItemId);
-            if (!_catalog.Items.TryGetValue(itemId, out var item)
+            var remaining = row.SustainedExpiresAtUnixSeconds - nowUnix;
+            if (remaining <= 0 || !TryGetSustainedBuffs(row.ItemId, out var baseTeamWide, out var buffs)) continue;
+            foreach (var buff in buffs.EnumerateArray())
+            {
+                var buffId = buff.GetProperty("buffId").GetString()!;
+                if (IsBuffTeamWide(baseTeamWide, buff))
+                {
+                    for (var u = 0; u < _battle.PlayerAllies.Count; u++)
+                        activeTargets.Add((u, buffId));
+                }
+                else if (row.MemberIndex >= 0 && row.MemberIndex < _battle.PlayerAllies.Count)
+                {
+                    activeTargets.Add((row.MemberIndex, buffId));
+                }
+            }
+        }
+
+        for (var s = 0; s < _consumables.Length; s++)
+        {
+            var row = _consumables[s];
+            var remaining = row.SustainedExpiresAtUnixSeconds - nowUnix;
+            if (remaining > 0 || !TryGetSustainedBuffs(row.ItemId, out var baseTeamWide, out var buffs)) continue;
+            foreach (var buff in buffs.EnumerateArray())
+            {
+                var buffId = buff.GetProperty("buffId").GetString()!;
+                var teamWide = IsBuffTeamWide(baseTeamWide, buff);
+                for (var u = 0; u < _battle.PlayerAllies.Count; u++)
+                {
+                    if (!teamWide && u != row.MemberIndex) continue;
+                    if (activeTargets.Contains((u, buffId))) continue;
+                    _battle.PlayerAllies[u].RemoveBuffsWhere(current => current.BuffId == buffId);
+                }
+            }
+        }
+
+        for (var s = 0; s < _consumables.Length; s++)
+        {
+            var row = _consumables[s];
+            var remaining = row.SustainedExpiresAtUnixSeconds - nowUnix;
+            if (remaining <= 0) continue;
+            if (!_catalog.Items.TryGetValue(new ItemId(row.ItemId), out var item)
                 || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false }) continue;
-            InjectSustained(row.MemberIndex, item, row.SustainedExpiresAtUnixSeconds - nowUnix);
+            InjectSustained(row.MemberIndex, item, remaining);
         }
     }
 
-    /// <summary>持续 Buff 就地注入/清除：阵法类全队生效；remainingSeconds &gt; 0 时按剩余重注入，否则仅清除。</summary>
+    private bool TryGetSustainedBuffs(string itemIdText, out bool baseTeamWide, out JsonElement buffs)
+    {
+        baseTeamWide = false;
+        buffs = default;
+        if (!_catalog.Items.TryGetValue(new ItemId(itemIdText), out var item)
+            || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false }
+            || !_catalog.RawItems.TryGetValue(item.Id.Value, out var rawItem)
+            || !rawItem.TryGetProperty("consumable", out var raw)
+            || !raw.TryGetProperty("buffs", out buffs) || buffs.ValueKind != JsonValueKind.Array)
+            return false;
+        baseTeamWide = string.Equals(item.SubCategory, AutoUseBar.Formation, StringComparison.Ordinal);
+        return true;
+    }
+
+    private static bool IsBuffTeamWide(bool baseTeamWide, JsonElement buff)
+        => baseTeamWide && (!buff.TryGetProperty("teamWide", out var tw) || tw.GetBoolean());
+
+    /// <summary>持续 Buff 就地注入/清除：按各 Buff 的 teamWide 判定全队或仅施放者自身生效；remainingSeconds &gt; 0 时按剩余重注入，否则仅清除受影响范围。</summary>
     private void InjectSustained(int memberIndex, ItemDefinition item, double remainingSeconds)
     {
         if (_battle is null || !_catalog.RawItems.TryGetValue(item.Id.Value, out var rawItem)
             || !rawItem.TryGetProperty("consumable", out var raw)
             || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array) return;
-        var teamWide = string.Equals(item.SubCategory, AutoUseBar.Formation, StringComparison.Ordinal);
+        var baseTeamWide = string.Equals(item.SubCategory, AutoUseBar.Formation, StringComparison.Ordinal);
         var expiresAt = _battle.ElapsedSeconds + remainingSeconds;
         foreach (var buff in buffs.EnumerateArray())
         {
+            var teamWide = IsBuffTeamWide(baseTeamWide, buff);
             var buffId = buff.GetProperty("buffId").GetString()!;
             var effects = remainingSeconds > 0 ? BuffEffectParser.Parse(buff, 1.0) : null;
             for (var u = 0; u < _battle.PlayerAllies.Count; u++)
@@ -1198,8 +1258,11 @@ public sealed class ActionParticipationSessionEngine
         var previousSelf = canonical.PlayerState ?? new CombatantSnapshot(canonical.PlayerHitpoints,
             canonical.PlayerManapoints, canonical.PlayerNextAttackAtSeconds, canonical.PlayerAttackCount,
             canonical.PlayerThreat);
-        var others = canonical.Allies!.Where(ally => ally.MemberIndex != memberIndex).ToList();
-        others.Add(new(0, previousSelf, CombatSkills: canonicalSkills, CombatBuffs: canonicalBuffs));
+        var others = canonical.Allies!
+            .Where(ally => ally.MemberIndex != memberIndex)
+            .Select(ally => ally with { State = ProjectSnapshot(ally.State, memberIndex) })
+            .ToList();
+        others.Add(new(0, ProjectSnapshot(previousSelf, memberIndex), CombatSkills: canonicalSkills, CombatBuffs: canonicalBuffs));
         others.Sort((left, right) => left.MemberIndex.CompareTo(right.MemberIndex));
         return canonical with
         {
@@ -1209,9 +1272,10 @@ public sealed class ActionParticipationSessionEngine
             PlayerNextAttackAtSeconds = self.State.NextAttackAtSeconds,
             PlayerAttackCount = self.State.AttackCount,
             PlayerThreat = self.State.Threat,
-            PlayerState = canonical.Phase == CombatExpeditionPhase.Combat ? self.State : null,
+            PlayerState = canonical.Phase == CombatExpeditionPhase.Combat ? ProjectSnapshot(self.State, memberIndex) : null,
             PlayerRespawnAtSeconds = canonical.Phase == CombatExpeditionPhase.Combat ? self.State.RespawnAtSeconds : null,
-            Allies = others
+            Allies = others,
+            Enemies = canonical.Enemies?.Select(enemy => enemy with { State = ProjectSnapshot(enemy.State, memberIndex) }).ToArray()
         };
     }
 
@@ -1219,13 +1283,37 @@ public sealed class ActionParticipationSessionEngine
     {
         var encounter = CombatEncounterState.RestoreAllied(canonical.EncounterId, canonical.Seed,
             _spec.Members.Select(member => new CombatantTemplate(member.Stats, member.Skills)).ToArray(),
-            canonical.PlayerAllies.Select(CombatEncounterState.Snapshot).ToArray(), memberIndex,
+            canonical.PlayerAllies.Select(unit => ProjectSnapshot(CombatEncounterState.Snapshot(unit), memberIndex)).ToArray(), memberIndex,
             canonical.Enemies.Select(enemy => new CombatantTemplate(enemy.Stats, enemy.Skills)).ToArray(),
-            canonical.Enemies.Select(CombatEncounterState.Snapshot).ToArray(), canonical.ElapsedSeconds,
+            canonical.Enemies.Select(enemy => ProjectSnapshot(CombatEncounterState.Snapshot(enemy), memberIndex)).ToArray(), canonical.ElapsedSeconds,
             canonical.Outcome, canonical.Sequence, canonical.PlayerRespawnSeconds);
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].DefinitionId = canonical.Enemies[i].DefinitionId;
         return encounter;
+    }
+
+    /// <summary>按成员视角重映射单位快照中 Buff 的周期伤害来源标识（SourceUnitId），保证跨成员离线/重放恢复时能定位到对应战斗单位。</summary>
+    private static CombatantSnapshot ProjectSnapshot(CombatantSnapshot snapshot, int memberIndex)
+    {
+        if (memberIndex == 0 || snapshot.Buffs is not { Count: > 0 } buffs) return snapshot;
+        CombatBuffState[]? remapped = null;
+        for (var i = 0; i < buffs.Count; i++)
+        {
+            var buff = buffs[i];
+            if (buff.SourceUnitId is null) continue;
+            var projectedSource = ProjectUnitKey(buff.SourceUnitId, memberIndex);
+            if (projectedSource == buff.SourceUnitId) continue;
+            if (remapped is null)
+            {
+                remapped = new CombatBuffState[buffs.Count];
+                for (var j = 0; j < i; j++) remapped[j] = buffs[j];
+            }
+            remapped[i] = buff with { SourceUnitId = projectedSource };
+        }
+        if (remapped is null) return snapshot;
+        for (var i = 0; i < remapped.Length; i++)
+            remapped[i] ??= buffs[i];
+        return snapshot with { Buffs = remapped };
     }
 
     private static CombatAdvanceResult ProjectResult(CombatAdvanceResult canonical, int memberIndex)

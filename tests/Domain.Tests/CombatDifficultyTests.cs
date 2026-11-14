@@ -96,4 +96,83 @@ public sealed class CombatDifficultyTests
             Assert.Equal(Math.Ceiling(monster.Stats.CriticalResistance), monster.Stats.CriticalResistance);
         }
     }
+
+    /// <summary>
+    /// 怪物难度缩放刻意边界：基础攻防血等属性随难度乘算并 Ceiling 向上取整，
+    /// 但 10 项五行增减伤点数、普攻周期与反应参数（Effects）保持原值不放大。
+    /// </summary>
+    [Fact]
+    public void ScaleMonsterStats_PreservesElementalPointsAndReactionEffects()
+    {
+        var effects = new CombatEffectProfile(HpDrainPoints: 12, MpDrainPoints: 8, DamageReflectPoints: 15, HealingBonusPoints: 20, ThreatOnTakenPoints: 30);
+        var baseStats = CombatantStats.Create(100, 20, 10, 1.8) with
+        {
+            MetalDamageBonusPoints = 11,
+            WoodDamageBonusPoints = 12,
+            WaterDamageBonusPoints = 13,
+            FireDamageBonusPoints = 14,
+            EarthDamageBonusPoints = 15,
+            MetalDamageReductionPoints = 21,
+            WoodDamageReductionPoints = 22,
+            WaterDamageReductionPoints = 23,
+            FireDamageReductionPoints = 24,
+            EarthDamageReductionPoints = 25,
+            Effects = effects
+        };
+
+        var scaled = CombatDifficultyRules.ScaleMonsterStats(baseStats, difficulty: 3);
+
+        Assert.True(scaled.MaxHitpoints > baseStats.MaxHitpoints);
+        Assert.True(scaled.AttackPower > baseStats.AttackPower);
+        Assert.Equal(baseStats.AttackIntervalSeconds, scaled.AttackIntervalSeconds);
+        Assert.Equal(11, scaled.MetalDamageBonusPoints);
+        Assert.Equal(12, scaled.WoodDamageBonusPoints);
+        Assert.Equal(13, scaled.WaterDamageBonusPoints);
+        Assert.Equal(14, scaled.FireDamageBonusPoints);
+        Assert.Equal(15, scaled.EarthDamageBonusPoints);
+        Assert.Equal(21, scaled.MetalDamageReductionPoints);
+        Assert.Equal(22, scaled.WoodDamageReductionPoints);
+        Assert.Equal(23, scaled.WaterDamageReductionPoints);
+        Assert.Equal(24, scaled.FireDamageReductionPoints);
+        Assert.Equal(25, scaled.EarthDamageReductionPoints);
+        Assert.Equal(effects, scaled.Effects);
+    }
+
+    /// <summary>怪物 JSON 解析应与 DataTool 对齐，从 modifiers 对象读取 5 项反应效果参数（而非顶层）。</summary>
+    [Fact]
+    public void GameDataCatalog_ParsesMonsterEffectsFromModifiers()
+    {
+        var header = System.Text.Encoding.UTF8.GetBytes("""
+        {
+          "contentVersion": "test",
+          "baseAttributeAnchors": [
+            { "level": 1, "hp": 100, "mp": 50, "ad": 10, "ap": 5, "armor": 10, "mr": 0, "acc": 1, "eva": 1, "crit": 1, "cavoid": 1, "breakPt": 1, "parry": 1, "hpRegen": 2, "mpRegen": 1 }
+          ],
+          "levelExpected": [
+            { "level": 1, "finalExpected": { "maxHitpoints": 100, "maxManapoints": 50, "physicalAttack": 10, "magicAttack": 5, "armor": 10, "magicResistance": 0, "accuracyRating": 1, "evasionRating": 1, "criticalRating": 1, "criticalAvoidance": 1, "breakRating": 1, "parryRating": 1 } }
+          ]
+        }
+        """);
+        var monsters = System.Text.Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "enemy.mod-effects",
+            "name": "吸血妖兽",
+            "level": 1,
+            "hpDrainPoints": 999,
+            "modifiers": {
+              "hpDrainPoints": 12,
+              "mpDrainPoints": 7,
+              "damageReflectPoints": 15,
+              "healingBonusPoints": 22,
+              "threatOnTakenPoints": 35
+            }
+          }
+        ]
+        """);
+
+        var catalog = GameDataCatalog.Parse([header, monsters]);
+        var monster = catalog.CombatMonsters["enemy.mod-effects"];
+        Assert.Equal(new CombatEffectProfile(12, 7, 15, 22, 35), monster.Stats.Effects);
+    }
 }

@@ -2,6 +2,7 @@ using Domain.Combat;
 using Domain.Common;
 using Domain.Economy;
 using Domain.GameData;
+using Domain.Simulation;
 
 namespace Domain.Player;
 
@@ -77,9 +78,13 @@ public static class EnhancementRules
             System.Globalization.CultureInfo.InvariantCulture, out var level) && level >= 0 ? level : null;
     }
 
+    /// <summary>强化等级对应的资产变体名：0 级返回空串（基础键），N 级映射 "+N"。</summary>
+    public static string VariantForLevel(int level)
+        => level <= 0 ? string.Empty : "+" + level.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>强化等级对应的资产键：0 级回到基础键，N 级映射 "+N" 变体。</summary>
     public static AssetKey KeyFor(ItemId itemId, int level)
-        => level <= 0 ? new AssetKey(itemId) : new AssetKey(itemId, "+" + level.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        => new(itemId, VariantForLevel(level));
 
     /// <summary>
     /// 目标装备当前强化等级（兼容无上限入参重载）：默认 targetCap=MaxLevel 且无首选等级。
@@ -88,17 +93,103 @@ public static class EnhancementRules
         IReadOnlyDictionary<AssetKey, double> holdings)
         => CurrentLevel(loadout, itemId, holdings, MaxLevel, null);
 
+    /// <summary>统计已穿戴装备槽（含战斗装备与 tool-* 技艺工具）中指定物品与强化等级的件数。</summary>
+    public static int CountEquipped(PlayerLoadoutState loadout, string itemId, int enhancementLevel)
+        => CountEquipped(loadout.Equipment, itemId, enhancementLevel);
+
+    /// <summary>统计装配快照中已穿戴装备槽（含战斗装备与 tool-* 技艺工具）的指定物品与强化等级件数。</summary>
+    public static int CountEquipped(PlayerLoadoutDocument loadout, string itemId, int enhancementLevel)
+        => CountEquipped(loadout.Equipment, itemId, enhancementLevel);
+
+    private static int CountEquipped(IReadOnlyList<PlayerEquipmentSlot> equipment, string itemId, int enhancementLevel)
+    {
+        var count = 0;
+        for (var i = 0; i < equipment.Count; i++)
+        {
+            var slot = equipment[i];
+            if (string.Equals(slot.ItemId, itemId, StringComparison.Ordinal)
+                && (int)Math.Floor(slot.EnhancementLevel) == enhancementLevel)
+                count++;
+        }
+        return count;
+    }
+
+    /// <summary>解析一条强化队列行动当前锁定的装备强化等级（已追踪变体优先，否则回退意图 initialLevel，缺省 0）。</summary>
+    public static int ResolveActionEnhancementLevel(IPlayerActionState action)
+        => ResolveEnhancementLevel(action.Intent, action.EnhancementCurrentLevel);
+
+    private static int ResolveEnhancementLevel(ActionIntent intent, int? currentLevel)
+    {
+        var level = currentLevel
+            ?? (intent.Parameters is not null
+                && intent.Parameters.TryGetValue(InitialLevelParameter, out var initialParam)
+                && double.IsFinite(initialParam)
+                ? (int)Math.Floor(initialParam)
+                : 0);
+        return Math.Clamp(level, 0, MaxLevel);
+    }
+
+    /// <summary>统计行动队列中正被强化行动锁定的指定物品与强化等级件数（可排除当前正在结算的行动自身）。</summary>
+    public static int CountEnhanceLocked(IEnumerable<IPlayerActionState>? actions, string itemId, int enhancementLevel,
+        Guid? excludeActionId = null)
+    {
+        if (actions is null) return 0;
+        var count = 0;
+        foreach (var action in actions)
+        {
+            if (excludeActionId is { } excluded && action.Id == excluded)
+            {
+                if (action.Intent.ActionId.Value == ActionId) break;
+                continue;
+            }
+            if (MatchesEnhanceLock(action.Intent, action.EnhancementCurrentLevel, itemId, enhancementLevel))
+                count++;
+        }
+        return count;
+    }
+
+    /// <summary>统计行动快照列表中正被强化行动锁定的指定物品与强化等级件数（可排除指定行动）。</summary>
+    public static int CountEnhanceLocked(IEnumerable<QueuedActionState>? actions, string itemId, int enhancementLevel,
+        Guid? excludeActionId = null)
+    {
+        if (actions is null) return 0;
+        var count = 0;
+        foreach (var action in actions)
+        {
+            if (excludeActionId is { } excluded && action.Id == excluded)
+            {
+                if (action.Intent.ActionId.Value == ActionId) break;
+                continue;
+            }
+            if (MatchesEnhanceLock(action.Intent, action.EnhancementCurrentLevel, itemId, enhancementLevel))
+                count++;
+        }
+        return count;
+    }
+
+    private static bool MatchesEnhanceLock(ActionIntent intent, int? currentLevel, string itemId, int enhancementLevel)
+        => intent.ActionId.Value == ActionId
+            && string.Equals(intent.TargetItemId, itemId, StringComparison.Ordinal)
+            && ResolveEnhancementLevel(intent, currentLevel) == enhancementLevel;
+
+    /// <summary>统计指定物品与强化等级的不可动用总件数（已穿戴件数 + 其他强化队列锁定件数）。</summary>
+    public static int CountOccupied(PlayerLoadoutState loadout, IEnumerable<IPlayerActionState>? actions,
+        string itemId, int enhancementLevel, Guid? excludeActionId = null)
+        => CountEquipped(loadout, itemId, enhancementLevel)
+            + CountEnhanceLocked(actions, itemId, enhancementLevel, excludeActionId);
+
     /// <summary>
-    /// 目标装备当前强化等级：仅取背包内未穿戴且尚未达到目标等级 targetCap 的可用件；
+    /// 目标装备当前强化等级：仅取背包内未穿戴且未被其他强化队列锁定的可用件；
     /// 若指定了 preferredLevel 且持存可用，优先使用 preferredLevel；
-    /// 装备中、挂售中均不可作为强化目标；背包内无可用件时返回 -1。
+    /// 装备中、挂售中、其他强化队列锁定中均不可作为强化目标；背包内无可用件时返回 -1。
     /// </summary>
     public static int CurrentLevel(PlayerLoadoutState loadout, ItemId itemId,
-        IReadOnlyDictionary<AssetKey, double> holdings, int targetCap, int? preferredLevel = null)
+        IReadOnlyDictionary<AssetKey, double> holdings, int targetCap, int? preferredLevel = null,
+        IReadOnlyList<IPlayerActionState>? actions = null, Guid? excludeActionId = null)
     {
         var level = -1;
-        Span<int> wornCounts = stackalloc int[MaxLevel + 1];
-        wornCounts.Clear();
+        Span<int> occupiedCounts = stackalloc int[MaxLevel + 1];
+        occupiedCounts.Clear();
         for (var i = 0; i < loadout.Equipment.Count; i++)
         {
             var slot = loadout.Equipment[i];
@@ -106,14 +197,32 @@ public static class EnhancementRules
             {
                 var lvl = (int)Math.Floor(slot.EnhancementLevel);
                 if (lvl >= 0 && lvl <= MaxLevel)
-                    wornCounts[lvl]++;
+                    occupiedCounts[lvl]++;
+            }
+        }
+        if (actions is not null)
+        {
+            for (var i = 0; i < actions.Count; i++)
+            {
+                var action = actions[i];
+                if (excludeActionId is { } excluded && action.Id == excluded)
+                {
+                    if (action.Intent.ActionId.Value == ActionId) break;
+                    continue;
+                }
+                if (action.Intent.ActionId.Value == ActionId
+                    && string.Equals(action.Intent.TargetItemId, itemId.Value, StringComparison.Ordinal))
+                {
+                    var lvl = ResolveActionEnhancementLevel(action);
+                    occupiedCounts[lvl]++;
+                }
             }
         }
 
         if (preferredLevel is { } pref && pref >= 0 && pref < targetCap && pref <= MaxLevel)
         {
             var prefKey = KeyFor(itemId, pref);
-            var prefAvailable = holdings.GetValueOrDefault(prefKey) - wornCounts[pref];
+            var prefAvailable = holdings.GetValueOrDefault(prefKey) - occupiedCounts[pref];
             if (prefAvailable >= 1)
                 return pref;
         }
@@ -122,7 +231,7 @@ public static class EnhancementRules
         {
             if (asset.ItemId != itemId || quantity < 1 || ParseLevel(asset.Variant) is not { } parsed) continue;
             if (parsed < 0 || parsed >= targetCap || parsed > MaxLevel) continue;
-            var available = quantity - wornCounts[parsed];
+            var available = quantity - occupiedCounts[parsed];
             if (available < 1) continue;
             if (parsed > level) level = parsed;
         }
@@ -169,7 +278,7 @@ public static class EnhancementRules
     public static Preparation? Resolve(PlayerLoadoutState loadout, ActionIntent intent,
         IReadOnlyDictionary<AssetKey, double> holdings, GameDataCatalog? gameData,
         double techniqueLevel, out Check check, out string reason, int? currentTrackedLevel = null,
-        double consumableBonus = 0)
+        double consumableBonus = 0, IReadOnlyList<IPlayerActionState>? actions = null, Guid? excludeActionId = null)
     {
         check = Check.Blocked;
         reason = "强化材料不足，行动受阻。";
@@ -228,15 +337,8 @@ public static class EnhancementRules
                 return null;
             }
             var heldKey = KeyFor(itemId, tracked);
-            var wornCount = 0;
-            for (var i = 0; i < loadout.Equipment.Count; i++)
-            {
-                var slot = loadout.Equipment[i];
-                if (string.Equals(slot.ItemId, itemId.Value, StringComparison.Ordinal)
-                    && (int)Math.Floor(slot.EnhancementLevel) == tracked)
-                    wornCount++;
-            }
-            if (holdings.GetValueOrDefault(heldKey) - wornCount < 1)
+            var occupiedCount = CountOccupied(loadout, actions, itemId.Value, tracked, excludeActionId);
+            if (holdings.GetValueOrDefault(heldKey) - occupiedCount < 1)
             {
                 reason = "未持有可用目标装备，强化受阻。";
                 return null;
@@ -251,10 +353,10 @@ public static class EnhancementRules
                 && double.IsFinite(initialParameter) && initialParameter >= 0)
                 preferredLevel = (int)Math.Floor(initialParameter);
 
-            current = CurrentLevel(loadout, itemId, holdings, targetCap, preferredLevel);
+            current = CurrentLevel(loadout, itemId, holdings, targetCap, preferredLevel, actions, excludeActionId);
             if (current < 0)
             {
-                var maxHeld = CurrentLevel(loadout, itemId, holdings, MaxLevel + 1, null);
+                var maxHeld = CurrentLevel(loadout, itemId, holdings, MaxLevel + 1, null, actions, excludeActionId);
                 if (maxHeld >= targetCap)
                 {
                     check = Check.TargetReached;
@@ -284,16 +386,9 @@ public static class EnhancementRules
         if (protectionItemId is { } protectionId && current >= protectLevel)
         {
             var protectionKey = new AssetKey(protectionId);
-            // 保护材料仅限背包内未装备件（扣除身上穿戴的 0 级件）
-            var wornProtection = 0;
-            for (var i = 0; i < loadout.Equipment.Count; i++)
-            {
-                var slot = loadout.Equipment[i];
-                if (string.Equals(slot.ItemId, protectionId.Value, StringComparison.Ordinal)
-                    && (int)Math.Floor(slot.EnhancementLevel) == 0)
-                    wornProtection++;
-            }
-            var availableProtection = holdings.GetValueOrDefault(protectionKey) - wornProtection;
+            // 保护材料仅限背包内未穿戴且未被其他强化队列锁定的 0 级件
+            var occupiedProtection = CountOccupied(loadout, actions, protectionId.Value, 0, excludeActionId);
+            var availableProtection = holdings.GetValueOrDefault(protectionKey) - occupiedProtection;
             // 保护材料恒为无强化基础件；当保护材料即目标装备且当前等级为 0 时，
             // 本体与代护件共用同一资产键，需 ≥2（1 本体 + 1 代护）。
             var required = protectionKey == new AssetKey(itemId) && current == 0 ? 2 : 1;

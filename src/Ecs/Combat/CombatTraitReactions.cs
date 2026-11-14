@@ -26,7 +26,9 @@ internal static class CombatTraitReactions
         void Burst(CombatantState target, bool primary)
         {
             var damage = primary ? buff.Stacks : DeterministicCombatEngine.ResolveStrikeDamage(
-                CombatDamageSettlement.StrikeStats(attacker, buff.Stacks, CombatDamageKind.Physical, CombatElement.None), target);
+                CombatDamageSettlement.StrikeStats(attacker, buff.Stacks, CombatDamageKind.Physical,
+                    CombatTraitRules.ResolveDamageElement(attacker.Stats.Traits, CombatElement.None)),
+                target);
             var settled = CombatDamageSettlement.Apply(context.Encounter, attacker, target, damage, accumulateXuyi: false);
             attacker.Threat += settled.Damage;
             context.Encounter.StatsBook?.RecordHit(attacker, target, primary ? CombatDamageKind.True : CombatDamageKind.Physical, settled.Damage, primary ? 0 : Math.Max(0, buff.Stacks - settled.Damage));
@@ -35,15 +37,22 @@ internal static class CombatTraitReactions
         }
     }
 
-    /// <summary>按实际扣血叠层，最后施加者取得同一燃魂状态的伤害归属。</summary>
+    /// <summary>向目标直接追加指定层数的燃烧状态，并刷新到期时间与伤害归属。</summary>
+    internal static void AddRanhunStacks(CombatantState attacker, CombatantState target, double stacks, double at)
+    {
+        if (stacks <= 0 || !target.IsAlive) return;
+        var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
+        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
+            "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
+    }
+
+    /// <summary>按实际扣血叠层，最后施加者取得同一燃烧状态的伤害归属。</summary>
     internal static void ApplyRanhun(CombatantState attacker, CombatantState target, CombatElement element, double actual, double at)
     {
         if (actual <= 0 || !target.IsAlive || element != CombatElement.Fire
             || !CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.RanhunTraitId)) return;
         var stacks = Math.Max(1, Math.Floor(actual * 0.02 * CombatTraitRules.LevelScale(attacker, CombatTraitRules.RanhunTraitId)));
-        var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
-        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
-            "燃魂", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
+        AddRanhunStacks(attacker, target, stacks, at);
     }
 
     /// <summary>整秒自然边界结算火属性术法持续伤害，不回流命中触发器。</summary>

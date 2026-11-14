@@ -31,10 +31,54 @@ public static class TechniqueCatalog
     /// <summary>全部已知技艺标识列表。</summary>
     public static readonly string[] All = [Alchemy, Forging, Talisman, Enhancement, Formation, Gathering, Mining];
 
+    /// <summary>全技艺经验全局乘数：基于行动等级与基础耗时公式整体翻倍。</summary>
+    public const double GlobalExperienceMultiplier = 2.0;
+
+    /// <summary>消耗上级装备锻造时的炼器额外乘数（与全局乘数叠算为 4× 原基准）。</summary>
+    public const double EquipmentUpgradeForgingMultiplier = 2.0;
+
     private static readonly HashSet<string> KnownSet = new(All, StringComparer.Ordinal);
 
     /// <summary>校验标识是否为七种技艺之一。</summary>
     public static bool IsKnown(string? techniqueId) => techniqueId is not null && KnownSet.Contains(techniqueId);
+
+    /// <summary>
+    /// 判定行动是否属于「消耗上级装备进行锻造」的炼器配方：
+    /// 行动归属 <see cref="Forging"/> 技艺且配方输入中至少存在 1 件数量 &gt; 0 的 <c>equipment.*</c> 装备
+    /// （覆盖 Lv.12/16/18/20/22/24 升阶锻造，排除不耗上级装备的 Lv.1 装备/工具、Lv.9 散件与精炼材料）。
+    /// </summary>
+    public static bool IsEquipmentUpgradeForgingAction(ActionDefinition? action, GameDataCatalog? catalog = null)
+    {
+        if (action is null || !string.Equals(action.Technique, Forging, StringComparison.Ordinal))
+            return false;
+        foreach (var pair in action.Inputs)
+        {
+            if (pair.Value <= 0) continue;
+            if (pair.Key.Value.StartsWith("equipment.", StringComparison.Ordinal)
+                || (catalog is not null && catalog.RawEquipments.ContainsKey(pair.Key.Value)))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 计算单轮生活行动、装备强化或秘法操作的技艺经验（同时作为等额底蕴授予基数）：
+    /// 公式 = round(BaseExperienceForLevel(level) × (durationSeconds / 10) × GlobalExperienceMultiplier(2.0) × 炼器升阶倍率)，最低保底 1 点。
+    /// </summary>
+    public static double ComputeTechniqueExperience(
+        GameDataCatalog? gameData,
+        int level,
+        double durationSeconds,
+        ActionDefinition? action = null)
+    {
+        var normalizedLevel = Math.Max(1, level);
+        var baseExp = normalizedLevel <= 1
+            ? 10.0
+            : (gameData?.RealmProgression?.BaseExperienceForLevel(normalizedLevel) ?? 10.0);
+        var multiplier = GlobalExperienceMultiplier
+            * (IsEquipmentUpgradeForgingAction(action, gameData) ? EquipmentUpgradeForgingMultiplier : 1.0);
+        return Math.Max(1.0, Math.Round(baseExp * (durationSeconds / 10.0) * multiplier));
+    }
 
     /// <summary>等级对应的行动耗时折减：duration /= 1 + 0.05×L。</summary>
     public static double SpeedBonusRatio(double level) => 0.05d * Math.Max(0, level);

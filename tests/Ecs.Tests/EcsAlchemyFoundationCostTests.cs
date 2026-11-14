@@ -98,7 +98,8 @@ public sealed class EcsAlchemyFoundationCostTests
 
     /// <summary>
     /// 底蕴充足：单轮结算按「当前升级所需修为 × 25%」扣除底蕴并产出 1 颗逆命丹，
-    /// 扣除量与领域解析逐位一致。
+    /// 随后按炼丹技艺完成授予等同技艺经验的伴生底蕴（CreateCatalog 1 级 1 秒行动 = 2 点），
+    /// 两者共同构成本轮底蕴池净变动（Foundation - cost + techExp）。
     /// </summary>
     [Fact]
     public async Task SufficientFoundationDeductsTwentyFivePercentExactly()
@@ -106,6 +107,7 @@ public sealed class EcsAlchemyFoundationCostTests
         var catalog = CreateCatalog(HeavenGateRules.ReverseFatePillFoundationRatio);
         // 削减后首段升级需求 50（配表 1000 × 5%），25% 底蕴成本 = round(50 × 0.25) = 13。
         const double cost = 13;
+        var expectedTechFoundation = TechniqueCatalog.ComputeTechniqueExperience(catalog, 1, 1);
         var player = CreatePlayer(catalog);
         player.Progression.Foundation = cost * 4;
         player.Enqueue(new(new ActionId(ActionIdValue), 1), From, catalog.Actions);
@@ -117,12 +119,14 @@ public sealed class EcsAlchemyFoundationCostTests
         var snapshot = runtime.ExportSnapshot(id);
         Assert.Empty(snapshot.State.Actions);
         Assert.Equal(1, snapshot.State.Progression.CompletedActions);
-        Assert.Equal(cost * 4 - cost, snapshot.State.Progression.Foundation, 6);
+        Assert.Equal(cost * 4 - cost + expectedTechFoundation, snapshot.State.Progression.Foundation, 6);
+        Assert.NotNull(snapshot.State.Loadout.TechniqueExperiences);
+        Assert.Equal(expectedTechFoundation, snapshot.State.Loadout.TechniqueExperiences!["alchemy"], 6);
         Assert.Equal(1, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
     }
 
     /// <summary>
-    /// 比例 0：行为完全不变——底蕴为 0 也照常炼制并产出，不产生任何底蕴扣减。
+    /// 比例 0：底蕴为 0 也照常炼制并产出，不产生底蕴扣减，并正常获得炼丹技艺经验与等额伴生底蕴。
     /// 与同一配表的启用通道配方对照，只有比例差异决定是否阻断。
     /// </summary>
     [Fact]
@@ -130,6 +134,7 @@ public sealed class EcsAlchemyFoundationCostTests
     {
         var freeCatalog = CreateCatalog(0);
         Assert.Equal(0, freeCatalog.Actions.Get(new ActionId(ActionIdValue)).FoundationCostRatio);
+        var expectedTechFoundation = TechniqueCatalog.ComputeTechniqueExperience(freeCatalog, 1, 1);
         var player = CreatePlayer(freeCatalog);
         player.Progression.Foundation = 0;
         player.Enqueue(new(new ActionId(ActionIdValue), 1), From, freeCatalog.Actions);
@@ -143,7 +148,7 @@ public sealed class EcsAlchemyFoundationCostTests
         var snapshot = runtime.ExportSnapshot(id);
         Assert.Empty(snapshot.State.Actions);
         Assert.Equal(1, snapshot.State.Progression.CompletedActions);
-        Assert.Equal(0, snapshot.State.Progression.Foundation);
+        Assert.Equal(expectedTechFoundation, snapshot.State.Progression.Foundation, 6);
         Assert.Equal(1, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
 
         // 对照：同一配方只把比例改为 25%，同样底蕴为 0 时被阻断。
@@ -159,12 +164,13 @@ public sealed class EcsAlchemyFoundationCostTests
 
     /// <summary>
     /// 零底蕴成本行动（如引气入体、普通炼丹）即便遇到历史快照下溢带负底蕴（如 -3.55e-15），
-    /// 准入与单轮完成结算也恒放行，绝对不报「底蕴不足」阻断，且结算后底蕴自动自愈归零。
+    /// 准入与单轮完成结算也恒放行，绝对不报「底蕴不足」阻断，下溢自愈归零后正常累加本轮伴生底蕴。
     /// </summary>
     [Fact]
     public async Task ZeroRatioActionWithUnderflowFoundationStartsAndCompletesSuccessfully()
     {
         var freeCatalog = CreateCatalog(0);
+        var expectedTechFoundation = TechniqueCatalog.ComputeTechniqueExperience(freeCatalog, 1, 1);
         var player = CreatePlayer(freeCatalog);
         player.Enqueue(new(new ActionId(ActionIdValue), 1), From, freeCatalog.Actions);
         var seed = player.ExportState();
@@ -181,7 +187,7 @@ public sealed class EcsAlchemyFoundationCostTests
         var snapshot = runtime.ExportSnapshot(id);
         Assert.Empty(snapshot.State.Actions);
         Assert.Equal(1, snapshot.State.Progression.CompletedActions);
-        Assert.Equal(0, snapshot.State.Progression.Foundation);
+        Assert.Equal(expectedTechFoundation, snapshot.State.Progression.Foundation, 6);
         Assert.Equal(1, snapshot.Assets.GetValueOrDefault(new AssetKey(new ItemId(PillItemId))));
         Assert.DoesNotContain(runtime.DrainSimulationEvents(id), entry => entry.Code == "action.blocked");
     }

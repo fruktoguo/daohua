@@ -37,11 +37,17 @@ public sealed class TechniqueAndEnhancementTests
 
         Assert.True(SecretArtRules.FragmentProducesTome(0));
         Assert.False(SecretArtRules.FragmentProducesTome(SecretArtRules.FragmentTomeChance));
-        Assert.Equal(100, SecretArtRules.FragmentSpiritStoneReward);
+        // 残卷推演失败按残卷自身 sellPrice × 2 返还灵石保底。
+        var expectedReward = SecretArtRules.ResolveRecycleUnitPrice(catalog, "item.fragment.heavy-slash", 0) * 2.0;
+        Assert.Equal(20d, expectedReward);
+        Assert.Equal(expectedReward, SecretArtRules.ResolveFragmentFailureReward(catalog, "item.fragment.heavy-slash"));
+        Assert.Equal(0d, SecretArtRules.ResolveFragmentFailureReward(catalog, "item.nonexistent-fragment"));
+        Assert.Equal(string.Empty, EnhancementRules.VariantForLevel(0));
+        Assert.Equal("+3", EnhancementRules.VariantForLevel(3));
     }
 
     /// <summary>
-    /// 秘法感悟经验按目标物品代表等级结算（ResolveItemLevel：显式 level 优先于等阶换算）。
+    /// 秘法感悟经验按目标物品自身显式等级结算（ResolveItemLevel：直读显式 level，缺省按 1 级）。
     /// beast-hide/beast-bone 同为 T1 但显式等级 1/3：若只按等阶换算，两者经验完全相同，
     /// 高等级物品失去升级价值（玩家反馈「1级和3级经验一样」的回归门禁）。
     /// </summary>
@@ -53,11 +59,11 @@ public sealed class TechniqueAndEnhancementTests
         var (techLv1, senseLv1) = SecretArtRules.ComputeYieldExperience(catalog, "item.beast-hide", 5);
         var (techLv3, senseLv3) = SecretArtRules.ComputeYieldExperience(catalog, "item.beast-bone", 5);
 
-        // 1 级基准经验 10：技艺 = round(10 × 5/10) = 5，神识 = round(5 × 2) = 10。
-        Assert.Equal(5d, techLv1);
+        // 1 级基准经验 10：技艺与伴生底蕴 = round(10 × 5/10 × 2) = 10；神识维持原 2× 基准 = round(10 × 5/10) × 2 = 10。
+        Assert.Equal(10d, techLv1);
         Assert.Equal(10d, senseLv1);
-        // 3 级基准经验 12.15：技艺 = round(12.15 × 0.5) = 6，神识 = 12——必须严格高于 1 级。
-        Assert.Equal(6d, techLv3);
+        // 3 级基准经验 12.15：技艺 = round(12.15 × 0.5 × 2) = 12；神识维持原倍率 = round(12.15 × 0.5) × 2 = 12。
+        Assert.Equal(12d, techLv3);
         Assert.Equal(12d, senseLv3);
     }
 
@@ -156,23 +162,24 @@ public sealed class TechniqueAndEnhancementTests
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(5, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
+        // 1 级 5 秒采集：技艺经验 = round(10 × 0.5 × 2) = 10，同时伴生等额底蕴 10。
+        Assert.Equal(10, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
+        Assert.Equal(10, player.Progression.Foundation);
         Assert.Contains(player.Duel.CurrentReport?.TechniqueExp ?? [],
-            entry => entry.TechniqueId == TechniqueCatalog.Gathering && entry.Experience == 5);
+            entry => entry.TechniqueId == TechniqueCatalog.Gathering && entry.Experience == 10);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(10, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
-        // 技艺经验累计 10：新曲线下 0→1 级仅需 5，10 经验已到 1 级；不足 5 时停在 0 级。
+        Assert.Equal(20, player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering]);
+        Assert.Equal(20, player.Progression.Foundation);
+        // 新曲线下 0→1 级仅需 5，10 经验已到 1 级（不足 5 时停在 0 级）。
         Assert.Equal(0, TechniqueCatalog.LevelFor(4.999, curve));
-        player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering] = 10;
-        Assert.Equal(1, TechniqueCatalog.LevelFor(
-            player.Loadout.TechniqueExperiences[TechniqueCatalog.Gathering], curve));
+        Assert.Equal(1, TechniqueCatalog.LevelFor(10, curve));
     }
 
     /// <summary>
-    /// 高等阶非战斗行动（如 18 级 T2 挖矿赤铜矿）按等级基准经验获得技艺经验（107 点而非 1 级 8 点），
-    /// 1 级行动（如乌铁矿 6 秒）保持 6 点。
+    /// 高等阶非战斗行动（如 18 级 T2 挖矿赤铜矿）按等级基准经验 × 2 全局倍率获得技艺经验（round(133.417 × 0.8 × 2) = 213 点），
+    /// 1 级行动（如乌铁矿 6 秒）获得 round(10 × 0.6 × 2) = 12 点；两者均同步发放等额底蕴。
     /// </summary>
     [Fact]
     public void HighLevelActionGrantsScaledTechniqueExperience()
@@ -189,13 +196,15 @@ public sealed class TechniqueAndEnhancementTests
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(crimsonCopper.DurationSeconds), catalog, wallet);
         result.AssetDeltas.ToList().ForEach(wallet.Apply);
 
-        // 18 级 8 秒行动单轮基准经验为 round(133.417 × 0.8) = 107
-        Assert.Equal(107, player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        // 18 级 8 秒行动单轮技艺经验 = round(133.417 × 0.8 × 2) = 213
+        Assert.Equal(213, player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        Assert.Equal(213, player.Progression.Foundation);
         var report = player.Duel.CurrentReport ?? player.Duel.Reports.FirstOrDefault();
         Assert.Contains(report?.TechniqueExp ?? [],
-            entry => entry.TechniqueId == TechniqueCatalog.Mining && entry.Experience == 107);
+            entry => entry.TechniqueId == TechniqueCatalog.Mining && entry.Experience == 213);
+        Assert.Equal(213, report?.Foundation);
 
-        // 对比 1 级行动：挖掘乌铁矿（6 秒）获得 6 点技艺经验
+        // 对比 1 级行动：挖掘乌铁矿（6 秒）获得 12 点技艺经验与 12 点底蕴
         var darkIron = catalog.Actions.Get(new ActionId("explore.mine-dark-iron"));
         Assert.Equal(1, darkIron.Level);
         var player1 = CreatePlayer("矿工-乌铁");
@@ -204,7 +213,8 @@ public sealed class TechniqueAndEnhancementTests
         var wallet1 = CreateWallet(player1);
         var result1 = SimulationEngine.AdvanceTo(player1, Baseline.AddSeconds(darkIron.DurationSeconds), catalog, wallet1);
         result1.AssetDeltas.ToList().ForEach(wallet1.Apply);
-        Assert.Equal(6, player1.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        Assert.Equal(12, player1.Loadout.TechniqueExperiences[TechniqueCatalog.Mining]);
+        Assert.Equal(12, player1.Progression.Foundation);
     }
 
     /// <summary>强化公式族：变体解析、成本、成功率查表/指数/clamp 与技艺修正全部对齐规约。</summary>
@@ -349,11 +359,50 @@ public sealed class TechniqueAndEnhancementTests
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6.2), catalog, wallet);
         result.AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(490, wallet.Get(new AssetKey(stone)));
-        // 强化资产守恒：目标装备总持有恒为 1，落在基础键或 +1 变体键上。
+        // 强化资产守恒：目标装备总持有恒为 1，落在基础键或 +1 变体键上；技艺经验全局 2× = 12 并伴生等额底蕴。
         var swordHeld = wallet.Get(new AssetKey(sword)) + wallet.Get(new AssetKey(sword, "+1"));
         Assert.Equal(1, swordHeld);
-        Assert.Equal(6, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Equal(12, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Equal(12, player.Progression.Foundation);
         Assert.Contains(result.Events, entry => entry.Code is "enhance.succeeded" or "enhance.failed");
+    }
+
+    /// <summary>
+    /// 强化经验直读目标装备自身显式 level，不再按 tier 换算等级（总纲 §20.1.4）：
+    /// 一件 tier=2 但显式 level=16 的装备，+0→+1（基础耗时 6s）神识按原 1× 定额结算，
+    /// 技艺经验与等额底蕴按全局 2× 倍率结算。
+    /// </summary>
+    [Fact]
+    public void EnhancementUsesExplicitEquipmentLevelInsteadOfTierConversion()
+    {
+        var embedded = GameDataCatalog.LoadEmbedded();
+        var armor = new ItemId("equipment.lv16-t2-armor");
+        var enhance = new ActionDefinition(new ActionId("enhance.equipment"), "装备强化",
+            ActionKind.Enhancement, 0, new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Enhancement);
+        var rawEquipments = new Dictionary<string, JsonElement>
+        {
+            [armor.Value] = Json("""{"id":"equipment.lv16-t2-armor","name":"玄铜宝甲","tier":2,"level":16,"flatStats":{"physicalDefense":20}}""")
+        };
+        var catalog = CreateMinimalCatalog(
+            actions: new ActionCatalog([enhance]),
+            rawEquipments: rawEquipments,
+            realmProgression: embedded.RealmProgression);
+        var player = CreatePlayer("显式等级强化者");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var wallet = CreateWallet(player,
+            (new AssetKey(armor), 1), (new AssetKey(stone), 5000));
+        player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: armor.Value), Baseline, catalog.Actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6.2), catalog, wallet);
+        Assert.Contains(result.Events, entry => entry.Code is "enhance.succeeded" or "enhance.failed");
+
+        var expectedConsciousness = Math.Round(embedded.RealmProgression!.BaseExperienceForLevel(16) * 0.6);
+        var expectedTechExp = Math.Round(embedded.RealmProgression.BaseExperienceForLevel(16) * 0.6 * TechniqueCatalog.GlobalExperienceMultiplier);
+        var tier18TechExp = Math.Round(embedded.RealmProgression.BaseExperienceForLevel(18) * 0.6 * TechniqueCatalog.GlobalExperienceMultiplier);
+        Assert.NotEqual(tier18TechExp, expectedTechExp);
+        Assert.Equal(expectedTechExp, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Equal(expectedTechExp, player.Progression.Foundation);
+        Assert.Equal(expectedConsciousness, player.Loadout.CoreAttributes.ConsciousnessExp);
     }
 
     /// <summary>目标装备或材料不足时强化行动走阻塞语义，不产出、不扣件。</summary>
@@ -1114,6 +1163,297 @@ public sealed class TechniqueAndEnhancementTests
         Assert.True(restored.Progression.StagedEnhancements.ContainsKey(actionB));
         Assert.Equal(robeId, restored.Progression.StagedEnhancements[actionB].ItemId);
         Assert.Equal(1, restored.Progression.StagedEnhancements[actionB].Levels[1].Successes);
+    }
+
+    /// <summary>
+    /// 排队版秘法行动即使携带 initialLevel（如 +20 装备化灵/分解），也不得套用强化 5+t 时长分支（否则 +20 会坍缩为 0 秒）。
+    /// </summary>
+    [Fact]
+    public void TimedActionDurationRules_SecretArtWithInitialLevelDoesNotUseEnhancementFormula()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var def = catalog.Actions.Get(new ActionId(SecretArtRules.LiquefyActionId));
+        var player = CreatePlayer("秘法耗时");
+        var action = player.Enqueue(
+            new ActionIntent(def.Id, 1, TargetItemId: "equipment.qingfeng-sword",
+                Parameters: new Dictionary<string, double> { [EnhancementRules.InitialLevelParameter] = EnhancementRules.MaxLevel }),
+            Baseline,
+            catalog.Actions);
+
+        var expected = TimedActionDurationRules.CalculateCore(
+            def.DurationSeconds,
+            def.Kind,
+            def.Technique,
+            player.World.EffectiveNodeBuildingEffects,
+            player.Loadout.TechniqueExperiences,
+            player.Loadout.Equipment,
+            catalog);
+        var runtimeDuration = TimedActionDurationRules.Calculate(player, action, def, catalog, assets: null);
+        var snapshotDuration = TimedActionDurationRules.Calculate(player.ExportState(), player.ExportState().Actions[0], def, catalog);
+
+        Assert.True(expected > 0);
+        Assert.Equal(expected, runtimeDuration, 9);
+        Assert.Equal(expected, snapshotDuration, 9);
+    }
+
+    /// <summary>
+    /// NodeBuildings.SpeedRatioFor 传入明确技艺标识时不得因专项值为 0 而穿透回退到其他同大类技艺分支。
+    /// </summary>
+    [Fact]
+    public void BuildingEffectSet_SpeedRatioFor_IsolatesExplicitTechniquesAndPreservesFallback()
+    {
+        var effects = new BuildingEffectSet(
+            ExplorationSpeedRatio: 0.50,
+            AlchemySpeedRatio: 0.40,
+            GatheringSpeedRatio: 0,
+            MiningSpeedRatio: 0,
+            ForgingSpeedRatio: 0,
+            TalismanSpeedRatio: 0,
+            FormationSpeedRatio: 0.15,
+            EnhancementSpeedRatio: 0.20);
+
+        Assert.Equal(0d, effects.SpeedRatioFor(ActionKind.Exploration, TechniqueCatalog.Mining));
+        Assert.Equal(0d, effects.SpeedRatioFor(ActionKind.Alchemy, TechniqueCatalog.Forging));
+        Assert.Equal(0d, effects.SpeedRatioFor(ActionKind.Alchemy, TechniqueCatalog.Talisman));
+        Assert.Equal(0.50, effects.SpeedRatioFor(ActionKind.Exploration, TechniqueCatalog.Gathering));
+        Assert.Equal(0.15, effects.SpeedRatioFor(ActionKind.Alchemy, TechniqueCatalog.Formation));
+        Assert.Equal(0.20, effects.SpeedRatioFor(ActionKind.Enhancement, TechniqueCatalog.Enhancement));
+        Assert.Equal(0.50, effects.SpeedRatioFor(ActionKind.Exploration));
+        Assert.Equal(0.40, effects.SpeedRatioFor(ActionKind.Alchemy));
+    }
+
+    /// <summary>
+    /// 锻造/制造行动不得消耗已穿戴或处于强化锁定队列中的装备与采集工具：
+    /// 1. 入队/开轮时材料仅被穿戴或强化锁定，必须阻塞并保留钱包余额；
+    /// 2. 轮次进行中将未穿戴工具装配上身时，完成结算前复核也必须阻塞而非扣成 0 余额幽灵穿戴件。
+    /// </summary>
+    [Fact]
+    public void Crafting_BlocksEquippedAndEnhanceLockedInputs_IncludingMidRoundEquip()
+    {
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var upgradedHoe = new ItemId("equipment.tool-iron-hoe");
+        var craftAction = new ActionDefinition(
+            new ActionId("forge.upgrade-herb-hoe"), "升级药锄", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double> { [hoe] = 1 },
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, Item: upgradedHoe)],
+            Technique: TechniqueCatalog.Forging);
+        var enhanceAction = new ActionDefinition(
+            new ActionId(EnhancementRules.ActionId), "强化装备", ActionKind.Enhancement, 6,
+            new Dictionary<ItemId, double>(), [],
+            Technique: TechniqueCatalog.Enhancement);
+        var catalog = CreateMinimalCatalog(
+            actions: new ActionCatalog([craftAction, enhanceAction]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"青铜药锄","slot":"tool-gathering"}"""),
+                [upgradedHoe.Value] = Json("""{"id":"equipment.tool-iron-hoe","name":"玄铁药锄","slot":"tool-gathering"}""")
+            });
+
+        // 1. 已穿戴工具时制造被阻塞且不扣余额
+        var equippedPlayer = CreatePlayer("已穿戴工具修士");
+        equippedPlayer.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
+        var equippedWallet = CreateWallet(equippedPlayer, (new AssetKey(hoe), 1));
+        equippedPlayer.Enqueue(new ActionIntent(craftAction.Id, 1), Baseline, catalog.Actions);
+
+        var equippedResult = SimulationEngine.AdvanceTo(equippedPlayer, Baseline.AddSeconds(10), catalog, equippedWallet);
+        foreach (var d in equippedResult.AssetDeltas) equippedWallet.Apply(d);
+        Assert.Equal(0, equippedResult.CompletedRepeats);
+        Assert.Equal(ActionQueueStatus.Blocked, equippedPlayer.Actions[0].Status);
+        Assert.Equal(1.0, equippedWallet.Get(new AssetKey(hoe)));
+        Assert.Equal(0.0, equippedWallet.Get(new AssetKey(upgradedHoe)));
+
+        // 2. 材料虽未穿戴但被同队列后续 enhance.equipment 锁定：制造仍必须阻塞
+        var lockedPlayer = CreatePlayer("强化锁定期修士");
+        var lockedWallet = CreateWallet(lockedPlayer, (new AssetKey(hoe), 1));
+        lockedPlayer.Enqueue(new ActionIntent(craftAction.Id, 1), Baseline, catalog.Actions);
+        lockedPlayer.Enqueue(new ActionIntent(enhanceAction.Id, 1, TargetItemId: hoe.Value), Baseline, catalog.Actions);
+
+        var lockedResult = SimulationEngine.AdvanceTo(lockedPlayer, Baseline.AddSeconds(10), catalog, lockedWallet);
+        foreach (var d in lockedResult.AssetDeltas) lockedWallet.Apply(d);
+        Assert.Equal(0, lockedResult.CompletedRepeats);
+        Assert.Equal(ActionQueueStatus.Blocked, lockedPlayer.Actions[0].Status);
+        Assert.Equal(1.0, lockedWallet.Get(new AssetKey(hoe)));
+
+        // 3. 轮次进行中将工具穿戴上身：完成结算复核必须阻塞，不得把已穿戴件扣减成 0
+        var midRoundPlayer = CreatePlayer("轮中穿戴修士");
+        var midRoundWallet = CreateWallet(midRoundPlayer, (new AssetKey(hoe), 1));
+        midRoundPlayer.Enqueue(new ActionIntent(craftAction.Id, 1), Baseline, catalog.Actions);
+
+        var halfResult = SimulationEngine.AdvanceTo(midRoundPlayer, Baseline.AddSeconds(5), catalog, midRoundWallet);
+        foreach (var d in halfResult.AssetDeltas) midRoundWallet.Apply(d);
+        Assert.Equal(ActionQueueStatus.Running, midRoundPlayer.Actions[0].Status);
+
+        midRoundPlayer.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
+        var finishResult = SimulationEngine.AdvanceTo(midRoundPlayer, Baseline.AddSeconds(11), catalog, midRoundWallet);
+        foreach (var d in finishResult.AssetDeltas) midRoundWallet.Apply(d);
+        Assert.Equal(0, finishResult.CompletedRepeats);
+        Assert.Equal(ActionQueueStatus.Blocked, midRoundPlayer.Actions[0].Status);
+        Assert.Equal(1.0, midRoundWallet.Get(new AssetKey(hoe)));
+        Assert.Equal(0.0, midRoundWallet.Get(new AssetKey(upgradedHoe)));
+    }
+
+    /// <summary>
+    /// 装备强化队列互斥与保护材料防挤占校验：
+    /// 另一条排队中的 enhance.equipment 已锁定目标件或同件保护材料时，新强化必须被阻塞；
+    /// 仅当前行动自身（excludeActionId）不与自己冲突。
+    /// </summary>
+    [Fact]
+    public void EnhancementRules_Resolve_ExcludesQueuedEnhanceLocksAndEquippedItems()
+    {
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var enhanceAction = new ActionDefinition(
+            new ActionId(EnhancementRules.ActionId), "强化装备", ActionKind.Enhancement, 6,
+            new Dictionary<ItemId, double>(), [],
+            Technique: TechniqueCatalog.Enhancement);
+        var catalog = CreateMinimalCatalog(
+            actions: new ActionCatalog([enhanceAction]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"青铜药锄","slot":"tool-gathering"}""")
+            });
+
+        var player = CreatePlayer("排队强化修士");
+        var intent = new ActionIntent(enhanceAction.Id, -1, TargetItemId: hoe.Value);
+        var actionA = player.Enqueue(intent, Baseline, catalog.Actions);
+        var actionB = player.Enqueue(intent, Baseline, catalog.Actions);
+
+        // 1. 仅持 1 件未穿戴工具，actionA 与 actionB 同时瞄准同一件 +0 工具
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(hoe)] = 1,
+            [new AssetKey(stone)] = 1000
+        };
+        var selfCheck = EnhancementRules.Resolve(player.Loadout, actionA.Intent, holdings, catalog, 0,
+            out var checkA, out _, actions: player.Actions, excludeActionId: actionA.Id);
+        Assert.NotNull(selfCheck);
+        Assert.Equal(EnhancementRules.Check.Ready, checkA);
+
+        var conflictCheck = EnhancementRules.Resolve(player.Loadout, actionB.Intent, holdings, catalog, 0,
+            out var checkB, out _, actions: player.Actions, excludeActionId: actionB.Id);
+        Assert.Null(conflictCheck);
+        Assert.Equal(EnhancementRules.Check.Blocked, checkB);
+
+        // 2. 持 2 件白板工具时，actionA 锁定 1 件，actionB 仍要求同件本体代护（需再占 2 件）应阻塞
+        holdings[new AssetKey(hoe)] = 2;
+        var protectIntent = new ActionIntent(enhanceAction.Id, -1, TargetItemId: hoe.Value, AuxItemId: hoe.Value);
+        var protectConflict = EnhancementRules.Resolve(player.Loadout, protectIntent, holdings, catalog, 0,
+            out var checkProtect, out _, actions: player.Actions, excludeActionId: actionB.Id);
+        Assert.Null(protectConflict);
+        Assert.Equal(EnhancementRules.Check.Blocked, checkProtect);
+
+        // 3. 工具已穿戴且无队列锁时同样阻塞
+        var equippedOnly = CreatePlayer("穿戴工具待强修士");
+        equippedOnly.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
+        holdings[new AssetKey(hoe)] = 1;
+        Assert.Null(EnhancementRules.Resolve(equippedOnly.Loadout, intent, holdings, catalog, 0,
+            out var checkEquipped, out _));
+        Assert.Equal(EnhancementRules.Check.Blocked, checkEquipped);
+    }
+
+    /// <summary>
+    /// 炼器倍率与边界校验：
+    /// 只有 forging 技艺且配方输入中实际消耗了上级 equipment.* 的装备锻造行动享 4×（全局 2× × 升阶 2×）；
+    /// Lv.1 装备/工具、无上级装备消耗的 Lv.9 散件与 Lv.18 材料精炼仅享全局 2×。
+    /// </summary>
+    [Fact]
+    public void EquipmentUpgradeForgingGrantsFourTimesTechniqueExpAndEqualFoundationWhileStandaloneRecipesStayTwoTimes()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        var lv1Sword = catalog.Actions.Get(new ActionId("forge.qingfeng-sword"));
+        var lv9Sword = catalog.Actions.Get(new ActionId("forge.xuantie-sword"));
+        var copperRefine = catalog.Actions.Get(new ActionId("craft.refine-copper"));
+        var lv18Sword = catalog.Actions.Get(new ActionId("forge.pogang-sword"));
+        var lv20Blade = catalog.Actions.Get(new ActionId("forge.duanchen-blade"));
+
+        Assert.False(TechniqueCatalog.IsEquipmentUpgradeForgingAction(lv1Sword, catalog));
+        Assert.False(TechniqueCatalog.IsEquipmentUpgradeForgingAction(lv9Sword, catalog));
+        Assert.False(TechniqueCatalog.IsEquipmentUpgradeForgingAction(copperRefine, catalog));
+        Assert.True(TechniqueCatalog.IsEquipmentUpgradeForgingAction(lv18Sword, catalog));
+        Assert.True(TechniqueCatalog.IsEquipmentUpgradeForgingAction(lv20Blade, catalog));
+
+        // 1) Lv.1 装备锻造（15s）：全局 2× → 30 经验 + 30 底蕴
+        var lv1Expected = TechniqueCatalog.ComputeTechniqueExperience(catalog, lv1Sword.Level ?? 1, lv1Sword.DurationSeconds, lv1Sword);
+        Assert.Equal(30d, lv1Expected);
+
+        // 2) Lv.9 玄铁剑（无上级装备输入，20s）：只享全局 2×
+        var lv9Base = catalog.RealmProgression!.BaseExperienceForLevel(9);
+        Assert.Equal(Math.Round(lv9Base * (lv9Sword.DurationSeconds / 10.0) * 2.0),
+            TechniqueCatalog.ComputeTechniqueExperience(catalog, lv9Sword.Level ?? 1, lv9Sword.DurationSeconds, lv9Sword));
+
+        // 3) Lv.18 精炼玄铜（输入只有矿石，20s）：只享全局 2×
+        var lv18Base = catalog.RealmProgression.BaseExperienceForLevel(18);
+        Assert.Equal(Math.Round(lv18Base * (copperRefine.DurationSeconds / 10.0) * 2.0),
+            TechniqueCatalog.ComputeTechniqueExperience(catalog, copperRefine.Level ?? 1, copperRefine.DurationSeconds, copperRefine));
+
+        // 4) Lv.18 破罡剑（消耗清风剑 × 2）：全局 2× × 升阶 2× = 4×
+        var lv18UpgradeExpected = TechniqueCatalog.ComputeTechniqueExperience(catalog, lv18Sword.Level ?? 1, lv18Sword.DurationSeconds, lv18Sword);
+        Assert.Equal(Math.Round(lv18Base * (lv18Sword.DurationSeconds / 10.0) * 4.0), lv18UpgradeExpected);
+
+        // 实跑模拟端到端核对技艺经验、伴生底蕴与三账本
+        var blacksmith = CreatePlayer("升阶锻造师");
+        blacksmith.Progression.RealmLevel = 18;
+        blacksmith.Progression.Experience = 50; // 修为明确未满，照常发底蕴
+        var wallet = CreateWallet(blacksmith, lv18Sword.Inputs.Select(p => (new AssetKey(p.Key), p.Value * 2)).ToArray());
+        blacksmith.Enqueue(new ActionIntent(lv18Sword.Id, 1), Baseline, catalog.Actions);
+
+        var result = SimulationEngine.AdvanceTo(blacksmith, Baseline.AddSeconds(lv18Sword.DurationSeconds), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(lv18UpgradeExpected, blacksmith.Loadout.TechniqueExperiences[TechniqueCatalog.Forging]);
+        Assert.Equal(lv18UpgradeExpected, blacksmith.Progression.Foundation);
+        Assert.Equal(50, blacksmith.Progression.Experience);
+        Assert.Equal(0, blacksmith.Progression.LifetimeExperience);
+        var archivedReport = blacksmith.Duel.Reports.FirstOrDefault();
+        Assert.NotNull(archivedReport);
+        Assert.Equal(lv18UpgradeExpected, archivedReport.Foundation);
+        Assert.Contains(archivedReport.TechniqueExp, entry => entry.TechniqueId == TechniqueCatalog.Forging && entry.Experience == lv18UpgradeExpected);
+    }
+
+    /// <summary>
+    /// 全部技艺获取经验时，无论当前修为是否圆满，均等额直接向底蕴池发放底蕴（不增加当前修为或 LifetimeExperience），
+    /// 且发放后的底蕴可用于后续打坐修炼 1:1 放大获取修为；同步覆盖 PlayerAggregate.GrantTechniqueExperience 与秘法转化路径。
+    /// </summary>
+    [Fact]
+    public void AllTechniqueExpGrantsEqualFoundationEvenWhenExperienceNotFullAndFeedsMeditation()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("生活打坐双修");
+        player.Progression.Experience = 100; // 明确未满（1 级 100 < 500 削减上限），初始底蕴 0
+        player.Progression.Foundation = 0;
+
+        // 1) 直接领域接口 GrantTechniqueExperience
+        player.GrantTechniqueExperience(TechniqueCatalog.Alchemy, 40, catalog);
+        Assert.Equal(40, player.Loadout.TechniqueExperiences[TechniqueCatalog.Alchemy]);
+        Assert.Equal(40, player.Progression.Foundation);
+        Assert.Equal(100, player.Progression.Experience);
+        Assert.Equal(0, player.Progression.LifetimeExperience);
+        Assert.Contains(PlayerSectionKind.Loadout, player.DirtySections);
+        Assert.Contains(PlayerSectionKind.Progression, player.DirtySections);
+
+        // 2) 秘法转化排队行动（消耗残卷，1 级 8 秒 → 技艺经验 16、神识 16、底蕴 +16）
+        var fragment = new ItemId("item.fragment.heavy-slash");
+        var convert = catalog.Actions.Get(new ActionId(SecretArtRules.ConvertActionId));
+        var wallet = CreateWallet(player, (new AssetKey(fragment), 2));
+        player.Enqueue(new ActionIntent(convert.Id, 1, TargetItemId: fragment.Value), Baseline, catalog.Actions);
+        var convertRes = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(convert.DurationSeconds), catalog, wallet);
+        convertRes.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(16, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Equal(56, player.Progression.Foundation);
+        Assert.Equal(16, player.Loadout.CoreAttributes.ConsciousnessExp);
+        Assert.Equal(100, player.Progression.Experience);
+
+        // 3) 用积攒的 56 点底蕴去打坐修炼（引气入体 10s：基础 10 点修为，底蕴按 1:1 兑换放大）
+        var drawQi = catalog.Actions.Get(new ActionId("cultivation.draw-qi"));
+        player.Enqueue(new ActionIntent(drawQi.Id, 1), Baseline.AddSeconds(convert.DurationSeconds), catalog.Actions);
+        var cultRes = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(convert.DurationSeconds + drawQi.DurationSeconds), catalog, wallet);
+        cultRes.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        // 打坐消耗底蕴 1:1 放大修为，剩余底蕴严格减少（至少比打坐前 56 减少）
+        Assert.True(player.Progression.Experience > 110, $"预期底蕴放大打坐修为，实际 Experience={player.Progression.Experience}");
+        Assert.True(player.Progression.Foundation < 56, $"预期底蕴被打坐消耗，实际 Foundation={player.Progression.Foundation}");
     }
 
     private static GameDataCatalog CreateMinimalCatalog(

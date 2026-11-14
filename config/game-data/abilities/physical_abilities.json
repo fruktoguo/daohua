@@ -188,5 +188,32 @@
     "manaCost": 0.0,
     "rootAttribute": "stamina",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.zhanyu",
+    "name": "斩玉",
+    "description": "剑光凝霜斩碎玉。若身负「移形」，则借势化态为「踏云」，凌空掠影横扫全体敌阵。",
+    "style": "sword",
+    "tier": 1,
+    "category": "physical",
+    "element": "metal",
+    "cooldownMilliseconds": 8000,
+    "castMilliseconds": 500,
+    "damageRatio": 1.0,
+    "flatDamage": 10,
+    "yixingMorphName": "踏云",
+    "yixingMorphTargetType": "allEnemies",
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 10.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
   }
 ]

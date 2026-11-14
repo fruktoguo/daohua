@@ -143,7 +143,7 @@ public static class BuffEffectRegistry
         new(BuffEffectChannel.Evasion, "evasion",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.EvasionPostRatio, "evasionPostRatio",
-            BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+            BuffEffectStackMode.Instance, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.ActionSpeedPoints, "actionSpeedPoints",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.CriticalDamagePoints, "criticalDamagePoints",

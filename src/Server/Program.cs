@@ -76,6 +76,15 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    rateLimiterOptions.AddPolicy("upload", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("player_id") ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
 });
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -149,6 +158,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.PartyValuationService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Leaderboards.LeaderboardRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatImageUploadRegistry>();
     // 会话准入默认开放语义；构建期注入的私有准入模块（IHostModuleStartup 实现）随后发现并覆盖注册。
@@ -177,6 +187,7 @@ builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptReposi
 builder.Services.AddSingleton<PostgresRetentionRepository>();
 builder.Services.Configure<DaoHua.Server.Clean.TapTap.TapTapOptions>(
     builder.Configuration.GetSection(DaoHua.Server.Clean.TapTap.TapTapOptions.SectionName));
+builder.Services.AddSingleton<DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector>();
 builder.Services.AddHttpClient<DaoHua.Server.Clean.TapTap.TapTapAuthService>();
 builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEventDispatcher>();
 // 冷挂机派发链仅 Api 角色装配：/internal/compute-link 只在 Api map，PersistenceWorker
@@ -219,6 +230,7 @@ if (processRole == ServerProcessRole.Api)
         // 组队讨伐看门狗（总纲 §21.13）：周期逐出 48h 离线成员并对账参与绑定；重启保留检查点。
         builder.Services.AddHostedService<Server.Clean.Social.PartySessionWatchdog>();
         builder.Services.AddHostedService<Server.Clean.Social.DouDiZhuTurnWatchdog>();
+        builder.Services.AddHostedService<Server.Clean.Leaderboards.LeaderboardSnapshotWorker>();
     }
     // 同一宽限注册表单例兼任 hosted service：停机时立即收尾全部在途宽限条目。
     builder.Services.AddHostedService(sp => sp.GetRequiredService<Server.Clean.DisconnectGraceRegistry>());
@@ -551,37 +563,71 @@ if (processRole == ServerProcessRole.Api)
     }).RequireAuthorization();
 
     // TapTap 授权与一人一号登录
-    auth.MapGet("/taptap/url", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? redirectUri) =>
+    auth.MapGet("/taptap/url", (
+        DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
+        DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector stateProtector,
+        HttpContext context,
+        string? redirectUri) =>
     {
         if (!tapAuth.IsConfigured)
             return Results.Json(Problem(503, "TAPTAP_NOT_CONFIGURED", "当前环境未配置 TapTap 网页授权凭据。"), statusCode: 503);
-        var state = Guid.NewGuid().ToString("N")[..16];
+        var state = stateProtector.IssueStateCookie(context);
         var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
         return Results.Ok(new { url, state });
-    });
-    auth.MapGet("/taptap/authorize", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? state, string? redirectUri) =>
+    }).RequireRateLimiting("auth");
+    auth.MapGet("/taptap/authorize", (
+        DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
+        DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector stateProtector,
+        HttpContext context,
+        string? redirectUri) =>
     {
         if (!tapAuth.IsConfigured)
             return Results.Redirect("/?login_error=taptap_not_configured");
-        var safeState = !string.IsNullOrWhiteSpace(state) ? state : Guid.NewGuid().ToString("N")[..16];
-        var url = tapAuth.BuildAuthorizeUrl(safeState, redirectUri);
+        // 严禁直接回显客户端传入的 state，始终由服务端生成高熵 state 并绑定 HttpOnly Cookie。
+        var state = stateProtector.IssueStateCookie(context);
+        var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
         return Results.Redirect(url);
-    });
+    }).RequireRateLimiting("auth");
     auth.MapGet("/taptap/callback", async (
         string? code,
         string? state,
         string? error,
         DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
+        DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector stateProtector,
         IAccountRepository accounts,
+        PostgresAccountRiskRepository risk,
+        AccountRiskRequestContext riskContext,
         IPlayerRuntime runtime,
         ServerOptions serverOptions,
         HttpContext context,
         CancellationToken ct) =>
     {
+        context.Request.Cookies.TryGetValue(DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector.CookieName, out var stateCookie);
+        DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector.ClearStateCookie(context);
+
         if (!string.IsNullOrWhiteSpace(error) || string.IsNullOrWhiteSpace(code))
         {
             return Results.Redirect("/?login_error=taptap_canceled");
         }
+
+        if (!stateProtector.ValidateState(state, stateCookie))
+        {
+            return Results.Redirect("/?login_error=taptap_invalid_state");
+        }
+
+        if (!tapAuth.IsConfigured)
+        {
+            return Results.Redirect("/?login_error=taptap_not_configured");
+        }
+
+        AccountRiskSignals signals;
+        try { signals = riskContext.Collect(context, null); }
+        catch (ArgumentException)
+        {
+            await risk.RecordInvalidSignalsAsync("login", null, ct);
+            return Results.Redirect("/?login_error=INVALID_RISK_SIGNALS");
+        }
+        var policy = await risk.LoadPolicyAsync(ct);
 
         var token = await tapAuth.ExchangeCodeForTokenAsync(code, null, ct);
         if (token is null)
@@ -595,7 +641,7 @@ if (processRole == ServerProcessRole.Api)
             return Results.Redirect("/?login_error=profile_fetch_failed");
         }
 
-        var result = await accounts.LoginOrRegisterTapTapAsync(profile.OpenId, profile.Name, ct);
+        var result = await accounts.LoginOrRegisterTapTapAsync(profile.OpenId, profile.Name, signals, ct, policy);
         if (!result.Success)
         {
             return Results.Redirect($"/?login_error={Uri.EscapeDataString(result.ErrorCode ?? "LOGIN_FAILED")}");
@@ -606,24 +652,52 @@ if (processRole == ServerProcessRole.Api)
 
         StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
         return Results.Redirect("/?login_success=taptap");
-    });
+    }).RequireRateLimiting("auth");
     auth.MapPost("/taptap/native-login", async (
         NativeTapTapLoginRequest request,
+        DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth,
         IAccountRepository accounts,
+        PostgresAccountRiskRepository risk,
+        AccountRiskRequestContext riskContext,
         IPlayerRuntime runtime,
         ServerOptions serverOptions,
         HttpContext context,
         CancellationToken ct) =>
     {
-        if (string.IsNullOrWhiteSpace(request.OpenId))
+        if (string.IsNullOrWhiteSpace(request.Kid) || string.IsNullOrWhiteSpace(request.MacKey))
         {
-            return Results.BadRequest(Problem(400, "MISSING_OPENID", "缺少 TapTap OpenID 凭据。"));
+            return Results.Json(Problem(401, "TAPTAP_INVALID_CREDENTIALS", "缺少 TapTap 原生凭据（kid / macKey）。"), statusCode: 401);
         }
 
-        var result = await accounts.LoginOrRegisterTapTapAsync(request.OpenId, request.Name, ct);
+        AccountRiskSignals signals;
+        try { signals = riskContext.Collect(context, request.RiskSignals); }
+        catch (ArgumentException)
+        {
+            await risk.RecordInvalidSignalsAsync("login", null, ct);
+            return Results.BadRequest(Problem(400, "INVALID_RISK_SIGNALS", "设备校验信息无效。"));
+        }
+
+        // 强制向 TapTap 官方服务端验签换取权威 OpenId，绝不信任客户端明文自报 OpenId。
+        var profile = await tapAuth.GetUserProfileAsync(
+            new DaoHua.Server.Clean.TapTap.TapTapAccessToken(request.Kid.Trim(), "mac", request.MacKey.Trim(), "hmac-sha-1"),
+            ct);
+        if (profile is null || string.IsNullOrWhiteSpace(profile.OpenId))
+        {
+            return Results.Json(Problem(401, "TAPTAP_UNAUTHORIZED", "TapTap 凭据验签失败。"), statusCode: 401);
+        }
+        if (!string.IsNullOrWhiteSpace(request.OpenId)
+            && !string.Equals(request.OpenId.Trim(), profile.OpenId, StringComparison.Ordinal))
+        {
+            return Results.Json(Problem(401, "TAPTAP_OPENID_MISMATCH", "TapTap OpenID 与官方凭据不一致。"), statusCode: 401);
+        }
+
+        var policy = await risk.LoadPolicyAsync(ct);
+        var resolvedName = !string.IsNullOrWhiteSpace(profile.Name) ? profile.Name : request.Name;
+        var result = await accounts.LoginOrRegisterTapTapAsync(profile.OpenId, resolvedName, signals, ct, policy);
         if (!result.Success)
         {
-            return Results.BadRequest(Problem(400, result.ErrorCode ?? "LOGIN_FAILED", "TapTap 登录失败。"));
+            var status = result.ErrorCode is "INVALID_OPENID" or "TAPTAP_DUPLICATE" ? 400 : 403;
+            return Results.Json(Problem(status, result.ErrorCode ?? "LOGIN_FAILED", result.Message ?? "TapTap 登录失败。"), statusCode: status);
         }
 
         await runtime.LoadAsync(result.PlayerId!.Value, ct);
@@ -698,6 +772,7 @@ if (processRole == ServerProcessRole.Api)
             overview.InvitedByName,
         });
     }).RequireAuthorization();
+    Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     // 传音图片上传凭据与哈希去重预检：单账号每日限 20 张新图，哈希命中复用已有直链且不扣额度
     app.MapPost("/api/v1/chat/upload-ticket", (
         ChatUploadTicketRequest request,
@@ -713,19 +788,23 @@ if (processRole == ServerProcessRole.Api)
         }
 
         return Results.Ok(result);
-    }).RequireAuthorization();
-    // 传音图片上传成功回调登记（确认文件已落盘 R2 后才写入全服去重索引，防止未实际落盘时提前缓存导致幽灵 404 直链）
+    }).RequireAuthorization().RequireRateLimiting("upload");
+    // 传音图片上传成功回调登记（确认文件已落盘且凭据/白名单核验通过后才写入全服去重索引）
     app.MapPost("/api/v1/chat/upload-confirm", (
         ChatUploadConfirmRequest request,
         ClaimsPrincipal user,
         Server.Clean.Social.ChatImageUploadRegistry uploadRegistry) =>
     {
-        if (user.Identity?.IsAuthenticated != true)
+        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
             return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
 
-        uploadRegistry.RegisterUploadedUrl(request.Sha256, request.Url);
+        if (!uploadRegistry.RegisterUploadedUrl(accountId, request.Sha256, request.Url, request.Ticket, out var errorMessage))
+        {
+            return Results.BadRequest(Problem(400, "INVALID_UPLOAD_CONFIRM", errorMessage ?? "图片上传确认无效。"));
+        }
+
         return Results.Ok();
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("upload");
 
 
 
@@ -1046,16 +1125,20 @@ public sealed record ChangePasswordRequest(string CurrentPassword, string NewPas
 public sealed record BindTapTapRequest(string Code, string? RedirectUri = null);
 /// <summary>TapTap 原生 SDK 授权登录请求体。</summary>
 public sealed record NativeTapTapLoginRequest(
-    string OpenId,
+    string? OpenId = null,
     string? Name = null,
     string? UnionId = null,
     string? Kid = null,
-    string? MacKey = null);
+    string? MacKey = null,
+    AccountRiskClientSignals? RiskSignals = null);
 /// <summary>传音图片上传 Ticket 申请体。</summary>
 /// <param name="Sha256">客户端计算的图片文件 SHA-256 小写十六进制摘要。</param>
 /// <param name="Ext">图片扩展名（png/gif/webp/jpg）。</param>
 public sealed record ChatUploadTicketRequest(string Sha256, string Ext);
 /// <summary>图片上传成功后落盘确认请求。</summary>
-public sealed record ChatUploadConfirmRequest(string Sha256, string Url);
+/// <param name="Sha256">图片文件 SHA-256 小写十六进制摘要。</param>
+/// <param name="Url">上传后返回的 HTTPS 图片直链。</param>
+/// <param name="Ticket">服务端先前签发的一次性上传签名 Ticket。</param>
+public sealed record ChatUploadConfirmRequest(string Sha256, string Url, string Ticket);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

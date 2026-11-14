@@ -1105,4 +1105,44 @@ public sealed class ActionParticipationSessionTests
         var ally1 = Assert.Single(afterState.Expedition!.Allies!, a => a.MemberIndex == 1);
         Assert.True(ally1.State.Hitpoints > 0);
     }
+
+    [Fact]
+    public void HuoshenConvertsLeijiTalismanStrikeElementAndTriggersRanhunInParty()
+    {
+        var (catalog, _, original) = CreateParty();
+        var member0 = original.Members[0];
+        var baseStats = member0.Stats with
+        {
+            AttackPower = 0,
+            MaxManapoints = 100,
+            SpellAttack = 10,
+            AttackIntervalSeconds = 100,
+            FireDamageBonusPoints = 10,
+            Traits = [Domain.Combat.CombatTraitRules.HuoshenTraitId, Domain.Combat.CombatTraitRules.RanhunTraitId]
+        };
+        var spec = original with
+        {
+            Members = original.Members.Select((m, i) => i == 0
+                ? m with
+                {
+                    Stats = baseStats,
+                    InitialHitpoints = baseStats.MaxHitpoints,
+                    InitialManapoints = 100,
+                    ConsumableSlots = [new ActionConsumableSlot("item.leiji-talisman", "combat", AutoUseSlotState.SlotGroupGeneral, 0)]
+                }
+                : m with
+                {
+                    Stats = m.Stats with { AttackPower = 0, SpellAttack = 0, AttackIntervalSeconds = 100 }
+                }).ToArray()
+        };
+
+        var session = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, "item.leiji-talisman", 5));
+        var searchSec = session.Export().Expedition!.PhaseDurationSeconds;
+        session.AdvanceTo(Baseline.AddSeconds(searchSec + 0.5));
+        var doc = session.Export();
+        Assert.Equal(CombatExpeditionPhase.Combat, doc.Expedition!.Phase);
+        var enemyWithRanhun = doc.Expedition.Enemies!.FirstOrDefault(e =>
+            e.State.Buffs?.Any(b => b.BuffId == Domain.Combat.CombatTraitRules.RanhunBuffId && b.Stacks > 0) == true);
+        Assert.NotNull(enemyWithRanhun);
+    }
 }

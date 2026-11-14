@@ -137,4 +137,28 @@ public sealed class SkillTriggerEvaluatorTests
         Assert.False(SkillTriggerEvaluator.MatchesAll([totalHpLe], caster, null, [caster], []));
         Assert.False(SkillTriggerEvaluator.MatchesAll([totalMpLe], caster, null, [caster], []));
     }
+
+    /// <summary>ally-highest-hp 与 enemy-highest-hp 按生命值百分比筛选目标，与 lowest-hp 口径对称。</summary>
+    [Fact]
+    public void HighestHpDependency_SelectsByHpPercentageRatherThanAbsoluteValue()
+    {
+        // A 绝对血量更高（150 vs 90）但百分比更低（15% vs 90%）；B 绝对血量更低但百分比最高（90%）。
+        var allyHighAbsLowPct = new CombatantState("player", CreateStats(1000)) { Hitpoints = 150 };
+        var allyLowAbsHighPct = new CombatantState("ally:1", CreateStats(100)) { Hitpoints = 90 };
+        var enemyHighAbsLowPct = new CombatantState("enemy:0", CreateStats(1000)) { Hitpoints = 200 };
+        var enemyLowAbsHighPct = new CombatantState("enemy:1", CreateStats(100)) { Hitpoints = 85 };
+
+        var allies = new[] { allyHighAbsLowPct, allyLowAbsHighPct };
+        var enemies = new[] { enemyHighAbsLowPct, enemyLowAbsHighPct };
+
+        var allyHighestPctOver50 = Json("""{"dependency":"ally-highest-hp","condition":"current-hp-percentage","comparator":"greater-than","value":50.0}""");
+        var allyHighestAbsOver100 = Json("""{"dependency":"ally-highest-hp","condition":"current-hp","comparator":"greater-than","value":100.0}""");
+        Assert.True(SkillTriggerEvaluator.MatchesAll([allyHighestPctOver50], allyHighAbsLowPct, null, allies, enemies));
+        Assert.False(SkillTriggerEvaluator.MatchesAll([allyHighestAbsOver100], allyHighAbsLowPct, null, allies, enemies));
+
+        var enemyHighestPctOver50 = Json("""{"dependency":"enemy-highest-hp","condition":"current-hp-percentage","comparator":"greater-than","value":50.0}""");
+        var enemyHighestAbsOver100 = Json("""{"dependency":"enemy-highest-hp","condition":"current-hp","comparator":"greater-than","value":100.0}""");
+        Assert.True(SkillTriggerEvaluator.MatchesAll([enemyHighestPctOver50], allyHighAbsLowPct, null, allies, enemies));
+        Assert.False(SkillTriggerEvaluator.MatchesAll([enemyHighestAbsOver100], allyHighAbsLowPct, null, allies, enemies));
+    }
 }

@@ -50,12 +50,14 @@ public static class LoadoutCommand
             var heldKey = enhancement > 0
                 ? new AssetKey(new ItemId(id), FormattableString.Invariant($"+{enhancement:0}"))
                 : new AssetKey(new ItemId(id));
-            var lockedInEnhance = player.Actions.Count(a => a.Intent.ActionId.Value == "enhance.equipment"
-                && string.Equals(a.Intent.TargetItemId, id, StringComparison.Ordinal)
-                && (a.EnhancementCurrentLevel ?? (a.Intent.Parameters is not null && a.Intent.Parameters.TryGetValue("initialLevel", out var initLvl) ? (int)Math.Floor(initLvl) : 0)) == (int)enhancement);
-            if (!catalog.RawEquipments.TryGetValue(id, out var definition)
-                || wallet.Get(heldKey) - lockedInEnhance < 1)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在、未持有或正处于强化锁定中。");
+            if (!catalog.RawEquipments.TryGetValue(id, out var definition))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在。");
+            var heldQuantity = wallet.Get(heldKey);
+            if (heldQuantity < 1)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "未持有该装备。");
+            var lockedInEnhance = EnhancementRules.CountEnhanceLocked(player.Actions, id, (int)enhancement);
+            if (heldQuantity - lockedInEnhance < 1)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "该装备正处于强化锁定中，无法穿戴。");
             var requiredLevel = CraftingRecipeRules.ResolveEquipmentRequiredLevel(id, catalog.RawEquipments);
             if (!currentlyEquipped.Contains(id) && playerRealmLevel < requiredLevel)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"境界不足，无法穿戴该装备（需境界 Lv.{requiredLevel}）。");

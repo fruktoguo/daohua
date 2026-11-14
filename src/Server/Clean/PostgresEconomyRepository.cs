@@ -82,6 +82,9 @@ public sealed class PostgresEconomyRepository(
                 }
                 catch (EconomyCommitOutcomeUnknownException unknown)
                 {
+                    // PersistLedger=false 且未携带幂等键时，禁止盲目重放确认，防止出现双倍入账或扣减。
+                    if (!stableRequest.PersistLedger && string.IsNullOrWhiteSpace(stableRequest.IdempotencyKey))
+                        throw;
                     // 不释放会话门或玩家门就精确重放确认，不能让后续实耗跨入未知资产结局。
                     try
                     {
@@ -235,6 +238,34 @@ public sealed class PostgresEconomyRepository(
                 }
                 // 幂等命中：不写任何行，结果随调用方事务边界一并提交。
                 return new EconomyTransactionResult(transactionId, request.IdempotencyKey, true, true, committedAt, payload);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        {
+            // PersistLedger=false 的高频模拟/冷挂机入账使用短期幂等表防重：
+            // 当 EconomyCommitOutcomeUnknownException 触发重放或同一键重复提交时，冲突即判定已提交并短路，绝不双倍入账/扣减。
+            var inserted = false;
+            await using (var transient = new NpgsqlCommand("""
+                INSERT INTO economy.transient_idempotency (player_id, idempotency_key, created_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (player_id, idempotency_key) DO NOTHING
+                RETURNING 1
+                """, connection, transaction))
+            {
+                transient.Parameters.Add(new NpgsqlParameter { Value = request.ActorId });
+                transient.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
+                transient.Parameters.Add(new NpgsqlParameter { Value = occurredAt });
+                inserted = await transient.ExecuteScalarAsync(cancellationToken) is not null;
+            }
+            if (!inserted)
+            {
+                return new EconomyTransactionResult(
+                    request.TransactionId,
+                    request.IdempotencyKey,
+                    Applied: true,
+                    AlreadyCommitted: true,
+                    CommittedAt: occurredAt,
+                    ResultPayload: request.ResultPayload);
             }
         }
 

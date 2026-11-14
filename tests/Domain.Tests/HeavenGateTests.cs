@@ -306,6 +306,20 @@ public sealed class HeavenGateTests
         Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 25, techniqueLevel: 0, catalog, out _));
     }
 
+    /// <summary>采石（Mining）与采药（Gathering）共用木灵根最高 +25% 技艺加速。</summary>
+    [Fact]
+    public void ResolveTechniqueSpeedRatio_MiningSharesWoodLinggenWithGathering()
+    {
+        var linggen = new LinggenValues(100, 60, 100, 100, 100);
+        Assert.Equal(0.15, HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, TechniqueCatalog.Mining), 12);
+        Assert.Equal(
+            HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, TechniqueCatalog.Gathering),
+            HeavenGateRules.ResolveTechniqueSpeedRatio(linggen, TechniqueCatalog.Mining),
+            12);
+        Assert.Equal(0.25, HeavenGateRules.ResolveTechniqueSpeedRatio(new LinggenValues(0, 100, 0, 0, 0), TechniqueCatalog.Mining), 12);
+        Assert.Equal(0d, HeavenGateRules.ResolveTechniqueSpeedRatio(new LinggenValues(100, 0, 100, 100, 100), TechniqueCatalog.Mining), 12);
+    }
+
     /// <summary>
     /// 7 件稀有材料特殊装备的制造配方、推算等级与穿戴等级严格一致（12/12/16/20/22/24/24）；
     /// 即便省略配方显式 Level，装备产物依然对齐装备穿戴等级，且普通材料（如百炼铁生态 Lv.3）不抬高 Lv.1 解锁门槛。
@@ -332,7 +346,7 @@ public sealed class HeavenGateTests
             Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveEquipmentRequiredLevel(equipmentId, catalog));
             Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveRequiredRealmLevel(action, catalog));
 
-            // 显式 Level 缺省时，仍应按装备自身穿戴等级而非等阶锚点（18/30）推导
+            // 显式 Level 缺省时，直接读取装备自身穿戴等级（不再按等阶换算）
             var withoutExplicitLevel = action with { Level = null };
             Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveRequiredRealmLevel(withoutExplicitLevel, catalog));
 
@@ -342,8 +356,8 @@ public sealed class HeavenGateTests
             Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 1, techniqueLevel: expectedLevel, catalog, out _));
         }
 
-        // 非装备产物（百炼铁 item.refined-iron 含生态 level: 3）省略显式 Level 时仍按 Tier 1 -> 1 级解锁
+        // 非装备产物（百炼铁 item.refined-iron 含自身显式 level: 3）省略显式 Level 时直读产物自身 level: 3，不再从 Tier 换算
         var refineIron = catalog.Actions.Get(new ActionId("craft.refine-iron")) with { Level = null };
-        Assert.Equal(1, CraftingRecipeRules.ResolveRequiredRealmLevel(refineIron, catalog));
+        Assert.Equal(3, CraftingRecipeRules.ResolveRequiredRealmLevel(refineIron, catalog));
     }
 }

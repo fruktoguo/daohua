@@ -75,9 +75,11 @@ public static class SectionCodec
     /// v41：随战面板新增 TraitLevels、Buff 新增 SourceUnitId、战报新增真实伤害输出/承伤，均可缺省解码。
     /// v42：战斗单位快照新增入战定格特质 ID/等级，可缺省解码为 Empty；迁移 0052 同步推进存档标签，
     /// 发布瞬间战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。
+    /// v43：progression 分段新增生涯斗法胜负计数 duelWins/duelLosses，settings 分段新增
+    /// publicLoadoutVisible 配装隐私开关（默认 true），均可缺省解码，不改变最低可读版本地板 v41。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进；本地启动链自动执行迁移，仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 42;
+    public const int CurrentSchemaVersion = 43;
     /// <summary>
     /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。
     /// 客户端按 <c>minReaderSchemaVersion &lt;= 自身版本</c> 判定可读性，替代旧的全等门禁：
@@ -269,7 +271,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId, state.Settings.PublicLoadoutVisible),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -297,7 +299,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Settings.TutorialStep, state.Settings.TutorialRewardsStep, state.Presence, state.OfflineSinceAt, state.Settings.Avatar, state.Settings.UnlockedAvatars?.ToArray() ?? [PlayerSettingsState.DefaultFemaleAvatar, PlayerSettingsState.DefaultMaleAvatar], state.Settings.RespawnPolicy, state.Settings.RespawnTargetPlayerId, state.Settings.PublicLoadoutVisible)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -368,7 +370,8 @@ public static class SectionCodec
                 ResolveAvatar(settings.Avatar, settings.UnlockedAvatars),
                 ResolveUnlockedAvatars(settings.UnlockedAvatars),
                 settings.RespawnPolicy,
-                settings.RespawnTargetPlayerId),
+                settings.RespawnTargetPlayerId,
+                settings.PublicLoadoutVisible),
             actions,
             loadout.State,
             duel,
@@ -467,7 +470,20 @@ public static class SectionCodec
         ArgumentNullException.ThrowIfNull(section);
         if (section.SectionKind != PlayerSectionKinds.Loadout)
             throw new InvalidDataException($"section {section.SectionKind} 不是 loadout 分段。");
-        return Decode<LoadoutDocument>(section).State;
+        return Decode<LoadoutDocument>(section).State
+            ?? throw new InvalidDataException($"section {section.SectionKind} 缺少有效装配状态。");
+    }
+
+    /// <summary>解码 progression 分段的状态文档。
+    /// 供全服排行榜计算 Top 50 修士含灵根乘区的本层修为上限。</summary>
+    /// <param name="section">progression 分段的持久化行。</param>
+    /// <returns>境界与修为状态文档。</returns>
+    public static Domain.Player.PlayerProgressionState DecodeProgression(StoredSection section)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        if (section.SectionKind != PlayerSectionKinds.Progression)
+            throw new InvalidDataException($"section {section.SectionKind} 不是 progression 分段。");
+        return Decode<Domain.Player.PlayerProgressionState>(section);
     }
 
     /// <summary>loadout 分段的落盘文档形状：把装备实例、已学技能与配装状态合并为一个 JSON 载荷。</summary>
@@ -499,5 +515,7 @@ public static class SectionCodec
         /// <summary>组队讨伐复活时机策略；v38 及更早载荷缺省解码为直接复活。</summary>
         CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
         /// <summary>指定队友存活策略的观察对象玩家 ID；缺省解码为 null（未指定）。</summary>
-        Guid? RespawnTargetPlayerId = null);
+        Guid? RespawnTargetPlayerId = null,
+        /// <summary>非同队修士是否可见角色名片配装详情；缺省解码为 true。</summary>
+        bool PublicLoadoutVisible = true);
 }

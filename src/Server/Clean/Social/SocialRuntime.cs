@@ -334,7 +334,8 @@ public sealed class SocialRuntime
                 party.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName ?? string.Empty,
                 party.Profile.MinValuation,
                 party.CreatedAt.ToUnixTimeMilliseconds(),
-                memberDtos));
+                memberDtos,
+                party.OpenSlots));
         }
 
         var seekerDtos = new List<PartyLobbySeekerDto>(seekers.Count);
@@ -370,7 +371,20 @@ public sealed class SocialRuntime
     /// <returns>角色信息卡载荷。</returns>
     public async ValueTask<PlayerCardDto> BuildPlayerCardAsync(Guid playerId, PlayerCardRequestDto request, CancellationToken cancellationToken = default)
     {
-        var targetId = Guid.Parse(request.PlayerId!);
+        if (!Guid.TryParse(request.PlayerId, out var targetId) || targetId == Guid.Empty)
+            return new PlayerCardDto(request.RequestId, request.PlayerId ?? string.Empty, Error: "not-found");
+
+        var isSelf = targetId == playerId;
+        var isTeammate = false;
+        if (!isSelf)
+        {
+            var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+            var party = partyId is { } id ? await _repository.GetPartyAsync(id, cancellationToken) : null;
+            // 同队判定：本人与当前同队成员始终可查看完整配装，非同队遵循目标配装隐私设置。
+            isTeammate = party is not null
+                && party.Members.Any(member => member.PlayerId == playerId)
+                && party.Members.Any(member => member.PlayerId == targetId);
+        }
 
         var identity = await _repository.GetPlayerIdentityAsync(targetId, cancellationToken);
         if (identity is null)
@@ -389,27 +403,32 @@ public sealed class SocialRuntime
                     bundle.Identity.DisplayName, bundle.Identity.CreatedAt, _gameData.Fingerprint).ExportState();
         }
 
+        var canViewLoadout = isSelf || isTeammate || state.Settings.PublicLoadoutVisible;
         var core = state.Loadout.CoreAttributes;
         var levels = core.Levels(_gameData.RealmProgression);
         var valuation = await _valuation.ComputeBreakdownAsync(targetId, cancellationToken);
-        var availableBalances = _assetBalances is null
-            ? [] : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken);
-        var offlineReserves = _participation is null
-            ? [] : await _participation.LoadOfflineReservesAsync(targetId, cancellationToken);
-        var availableByItem = availableBalances.GroupBy(balance => balance.AssetId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Sum(balance => balance.Quantity), StringComparer.Ordinal);
-        var reservesByItem = offlineReserves.GroupBy(reserve => reserve.ItemId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Sum(reserve => reserve.Quantity), StringComparer.Ordinal);
-        var combatSlots = (state.Settings.AutoUseSlots ?? [])
-            .Where(slot => slot.ActionType == AutoUseBar.Combat)
-            .Select(slot => new PlayerCardAutoUseSlotDto(slot.SlotIndex, slot.ItemId,
-                slot.ItemId is { } itemId ? availableByItem.GetValueOrDefault(itemId) : 0,
-                slot.Enabled, slot.Group,
-                slot.ItemId is { } reserveItemId ? reservesByItem.GetValueOrDefault(reserveItemId) : 0))
-            .ToArray();
+        PlayerCardAutoUseSlotDto[]? combatSlots = null;
+        if (canViewLoadout)
+        {
+            var availableBalances = _assetBalances is null
+                ? [] : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken);
+            var offlineReserves = _participation is null
+                ? [] : await _participation.LoadOfflineReservesAsync(targetId, cancellationToken);
+            var availableByItem = availableBalances.GroupBy(balance => balance.AssetId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Sum(balance => balance.Quantity), StringComparer.Ordinal);
+            var reservesByItem = offlineReserves.GroupBy(reserve => reserve.ItemId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Sum(reserve => reserve.Quantity), StringComparer.Ordinal);
+            combatSlots = (state.Settings.AutoUseSlots ?? [])
+                .Where(slot => slot.ActionType == AutoUseBar.Combat)
+                .Select(slot => new PlayerCardAutoUseSlotDto(slot.SlotIndex, slot.ItemId,
+                    slot.ItemId is { } itemId ? availableByItem.GetValueOrDefault(itemId) : 0,
+                    slot.Enabled, slot.Group,
+                    slot.ItemId is { } reserveItemId ? reservesByItem.GetValueOrDefault(reserveItemId) : 0))
+                .ToArray();
+        }
 
         var playerAttributes = PlayerAttributeResolver.Resolve(state, _gameData);
-        var attributes = ProtocolSnapshotMapper.ToAttributesDto(playerAttributes);
+        var attributes = ProtocolSnapshotMapper.ToAttributesDto(playerAttributes, includeTraits: canViewLoadout);
         var techniqueLevels = TechniqueCatalog.All.ToDictionary(
             tech => tech,
             tech => (int)TechniqueCatalog.LevelFor(
@@ -437,15 +456,22 @@ public sealed class SocialRuntime
                 levels.Stamina, levels.Meridians, levels.Attack,
                 levels.Bone, levels.Agility, levels.Consciousness,
                 levels.Total),
-            AbilitySlots: [.. state.Loadout.AbilitySlots.Select(slot => new PlayerCardAbilitySlotDto(slot.AbilityId, slot.Level))],
-            LearnedAbilityIds: [.. state.LearnedAbilities.Select(ability => ability.Value)],
-            AbilityExperiences: state.Loadout.AbilityExperiences,
-            Equipment: [.. state.Loadout.Equipment.Select(item => new PlayerCardEquipmentDto(item.ItemId, item.EnhancementLevel))],
+            AbilitySlots: canViewLoadout
+                ? [.. state.Loadout.AbilitySlots.Select(slot => new PlayerCardAbilitySlotDto(slot.AbilityId, slot.Level))]
+                : null,
+            LearnedAbilityIds: canViewLoadout
+                ? [.. state.LearnedAbilities.Select(ability => ability.Value)]
+                : null,
+            AbilityExperiences: canViewLoadout ? state.Loadout.AbilityExperiences : null,
+            Equipment: canViewLoadout
+                ? [.. state.Loadout.Equipment.Select(item => new PlayerCardEquipmentDto(item.ItemId, item.EnhancementLevel))]
+                : null,
             AutoUseSlots: combatSlots,
             Attributes: attributes,
             TechniqueLevels: techniqueLevels,
             ValuationBreakdown: valuation.ToDto(),
-            CurrentReport: state.Duel.CurrentReport);
+            CurrentReport: canViewLoadout ? state.Duel.CurrentReport : null,
+            LoadoutHidden: !canViewLoadout);
     }
 
     /// <summary>执行一条社交指令。</summary>

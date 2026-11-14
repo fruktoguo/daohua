@@ -63,7 +63,7 @@ public static class TimedActionDurationRules
         IReadOnlyDictionary<AssetKey, double>? deltas = null)
     {
         int? targetLevel = null;
-        if (definition.Kind == ActionKind.Enhancement)
+        if (definition.Kind == ActionKind.Enhancement && !SecretArtRules.IsSecretArtAction(definition.Id.Value))
         {
             var holdings = EnhancementEffectiveBalances(assets, deltas);
             var targetCap = EnhancementRules.MaxLevel;
@@ -106,7 +106,7 @@ public static class TimedActionDurationRules
         GameDataCatalog? gameData)
     {
         int? targetLevel = null;
-        if (definition.Kind == ActionKind.Enhancement)
+        if (definition.Kind == ActionKind.Enhancement && !SecretArtRules.IsSecretArtAction(definition.Id.Value))
         {
             var current = action.EnhancementCurrentLevel
                 ?? (action.Intent.Parameters is not null && action.Intent.Parameters.TryGetValue(EnhancementRules.InitialLevelParameter, out var initialParam) && double.IsFinite(initialParam)

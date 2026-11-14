@@ -100,6 +100,47 @@ public sealed class SectionRepositoryTests
         await Assert.ThrowsAsync<InvalidDataException>(() => repository.LoadAsync(player).AsTask());
     }
 
+    /// <summary>持久化 head.Checksum 篡改不能被后续待刷盘队列掩盖，且待刷盘队列元数据漂移自愈不得覆盖已持久化提交头校验和。</summary>
+    [Fact]
+    public async Task LoadAsync_ValidatesPersistedHeadBeforePendingOverlay_AndDoesNotOverwriteHeadOnPendingRepair()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        var now = DateTimeOffset.UtcNow;
+        await repository.EnqueueSectionsAsync(BuildAllSections(player, 1, now, actionCount: 1));
+        await FlushUntilDrainedAsync(repository, source, player);
+        var validHeadChecksum = (string)(await Scalar(source,
+            "SELECT checksum FROM game.player_state_heads WHERE player_id = $1", player))!;
+
+        // 入队一条待刷盘 v2 分段更新，并篡改该待刷盘队列行的 checksum（载荷完好）
+        var pendingV2 = BuildAllSections(player, 2, now.AddSeconds(10), actionCount: 1)
+            .Single(write => write.SectionKind == PlayerSectionKinds.Buffs);
+        await repository.EnqueueSectionsAsync([pendingV2]);
+        await SqlAsync(source,
+            "UPDATE platform.section_flush_queue SET checksum='pending-drift' WHERE player_id=$1 AND state_version=2 AND section_kind='buffs'",
+            player);
+
+        // 1. 若持久化 head.Checksum 被篡改，即使队列存在新待刷盘数据，也必须校验失败拒绝加载。
+        await SqlAsync(source,
+            "UPDATE game.player_state_heads SET checksum='tampered-head' WHERE player_id=$1",
+            player);
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.LoadAsync(player).AsTask());
+
+        // 2. 恢复持久化 head.Checksum 后，仅自愈待刷盘队列的 checksum 元数据，不得改写持久化提交头 checksum。
+        await SqlAsync(source,
+            "UPDATE game.player_state_heads SET checksum=$2 WHERE player_id=$1",
+            player, validHeadChecksum);
+        var loaded = await repository.LoadAsync(player);
+        Assert.NotNull(loaded);
+        Assert.Equal(2L, loaded.Head.StateVersion);
+        Assert.Equal(pendingV2.Checksum, await Scalar(source,
+            "SELECT checksum FROM platform.section_flush_queue WHERE player_id=$1 AND state_version=2 AND section_kind='buffs'",
+            player));
+        Assert.Equal(validHeadChecksum, await Scalar(source,
+            "SELECT checksum FROM game.player_state_heads WHERE player_id=$1",
+            player));
+    }
+
     /// <summary>
     /// 冷挂机结果合批落库：提交头版本 CAS 通过时整批 upsert + 头更新同事务生效；
     /// 携带未推进版本的 action_queue 段被 upsert 谓词跳过（RETURNING 不含），不得拿旧载荷重建队列。

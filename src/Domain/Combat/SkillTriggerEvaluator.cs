@@ -420,16 +420,19 @@ public static class SkillTriggerEvaluator
     /// 依赖按真实语义解析到具体战斗单位；依赖目标不存在（如 target-enemy 无集火对象）
     /// 或词表外依赖一律返回 null，由调用方判定为条件不满足。
     /// </summary>
+    private static double HpRatio(CombatantState unit) =>
+        unit.Stats.MaxHitpoints > 0 ? unit.Hitpoints / unit.Stats.MaxHitpoints : 0d;
+
     private static CombatantState? ResolveDependency(string dependency, CombatantState caster,
         CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
         => dependency switch
         {
             "self" => caster,
             "target" or "target-enemy" => primaryTarget is { IsAlive: true } ? primaryTarget : null,
-            "ally-lowest-hp" => MinAliveBy(allies, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
-            "ally-highest-hp" => MaxAliveBy(allies, static unit => unit.Hitpoints),
-            "enemy-lowest-hp" => MinAliveBy(opponents, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
-            "enemy-highest-hp" => MaxAliveBy(opponents, static unit => unit.Hitpoints),
+            "ally-lowest-hp" => MinAliveBy(allies, HpRatio),
+            "ally-highest-hp" => MaxAliveBy(allies, HpRatio),
+            "enemy-lowest-hp" => MinAliveBy(opponents, HpRatio),
+            "enemy-highest-hp" => MaxAliveBy(opponents, HpRatio),
             _ => null
         };
 

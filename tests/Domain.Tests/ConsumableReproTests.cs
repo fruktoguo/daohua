@@ -102,4 +102,164 @@ public sealed class ConsumableReproTests
         var slot = player.Settings.AutoUseSlots.Single(s => s.ItemId == cuiling.Value);
         Assert.Equal(0, slot.RemainingDurationSeconds);
     }
+
+    /// <summary>强化加速后淬灵粉按实际耗时扣减持续时长，而非未加速的基础时长（5+t）。</summary>
+    [Fact]
+    public void CuilingPowderConsumesActualElapsedSecondsOnAcceleratedEnhancement()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("速修");
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement] = 10_000;
+        var cuiling = new ItemId("item.cuiling-powder");
+        var sword = new ItemId("equipment.qingfeng-sword");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var wallet = CreateWallet(player,
+            (new AssetKey(cuiling), 3),
+            (new AssetKey(sword), 1),
+            (new AssetKey(stone), 500));
+
+        player.ConfigureAutoUse("enhancement", 0, cuiling.Value, 1, true);
+        var action = player.Enqueue(
+            new ActionIntent(new ActionId(EnhancementRules.ActionId), 1, TargetItemId: sword.Value),
+            Baseline, catalog.Actions);
+
+        var baseDuration = EnhancementRules.DurationSeconds(1);
+        var actualDuration = TimedActionDurationRules.CalculateCore(
+            baseDuration, ActionKind.Enhancement, TechniqueCatalog.Enhancement,
+            player.World.EffectiveNodeBuildingEffects,
+            player.Loadout.TechniqueExperiences, player.Loadout.Equipment, catalog);
+        Assert.True(actualDuration < baseDuration, $"预期技艺加速生效: actual={actualDuration}, base={baseDuration}");
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(actualDuration + 0.05), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(1, result.CompletedRepeats);
+        Assert.Equal(2, wallet.Get(new AssetKey(cuiling)));
+        var slot = player.Settings.AutoUseSlots.Single(s => s.ItemId == cuiling.Value);
+        Assert.Equal(300d - actualDuration, slot.RemainingDurationSeconds, 6);
+
+        // 技艺经验按未加速基础耗时（5+t）与全局 2× 倍率结算，同时伴生等额底蕴，避免加速反降经验。
+        var itemLevel = CraftingRecipeRules.ResolveItemLevel(sword.Value, catalog);
+        var expectedTechExp = TechniqueCatalog.ComputeTechniqueExperience(catalog, itemLevel, baseDuration);
+        Assert.Equal(expectedTechExp, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement] - 10_000, 9);
+        Assert.Equal(expectedTechExp, player.Progression.Foundation, 9);
+    }
+
+    /// <summary>
+    /// 淬灵粉与固灵砂均应可放入秘法（enhancement）槽位：
+    /// 装备强化期间正常充能与扣减，切换执行化灵/分解/转化等其他秘法行动时不充能、不扣物品且冻结残余时长。
+    /// </summary>
+    [Fact]
+    public void EnhancementBonusConsumablesCanBeAssignedToEnhancementBarButStayFrozenOnSecretArts()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("双修");
+        var cuiling = new ItemId("item.cuiling-powder");
+        var guling = new ItemId("item.guling-sand");
+        var sword = new ItemId("equipment.qingfeng-sword");
+        var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
+        var hide = new ItemId("item.beast-hide");
+        var fragment = new ItemId("item.fragment.heavy-slash");
+
+        var wallet = CreateWallet(player,
+            (new AssetKey(cuiling), 3),
+            (new AssetKey(guling), 3),
+            (new AssetKey(sword), 2),
+            (new AssetKey(stone), 500),
+            (new AssetKey(hide), 10),
+            (new AssetKey(fragment), 10));
+
+        player.ConfigureAutoUse("enhancement", 0, cuiling.Value, 1, true);
+        player.ConfigureAutoUse("enhancement", 1, guling.Value, 1, true);
+        Assert.Equal(2, player.Settings.AutoUseSlots.Count(s => s.ActionType == AutoUseBar.Enhancement && s.Enabled));
+
+        // 1. 先执行 1 轮装备强化，两个强化消耗品均应充能并按真实耗时扣减。
+        var cursor = Baseline;
+        player.Enqueue(new ActionIntent(new ActionId(EnhancementRules.ActionId), 1, TargetItemId: sword.Value),
+            cursor, catalog.Actions);
+        cursor = cursor.AddSeconds(7);
+        var enhanceResult = SimulationEngine.AdvanceTo(player, cursor, catalog, wallet);
+        enhanceResult.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(1, enhanceResult.CompletedRepeats);
+        Assert.Equal(2, wallet.Get(new AssetKey(cuiling)));
+        Assert.Equal(2, wallet.Get(new AssetKey(guling)));
+        var cuilingRemaining = player.Settings.AutoUseSlots.Single(s => s.ItemId == cuiling.Value).RemainingDurationSeconds;
+        var gulingRemaining = player.Settings.AutoUseSlots.Single(s => s.ItemId == guling.Value).RemainingDurationSeconds;
+        Assert.InRange(cuilingRemaining, 290, 299.9);
+        Assert.InRange(gulingRemaining, 290, 299.9);
+
+        // 2. 携带残余时长依次执行化灵 / 分解 / 转化：均应正常结算，但槽位时长保持冻结且不扣消耗品。
+        var secretArts = new (string ActionId, ActionIntent Intent, double AdvanceSeconds)[]
+        {
+            ("secret_art.liquefy", new ActionIntent(new ActionId("secret_art.liquefy"), 1, TargetItemId: hide.Value), 7),
+            ("secret_art.disassemble", new ActionIntent(
+                new ActionId("secret_art.disassemble"),
+                1,
+                TargetItemId: sword.Value,
+                Parameters: new Dictionary<string, double> { [EnhancementRules.InitialLevelParameter] = 0 }), 8),
+            ("secret_art.convert", new ActionIntent(new ActionId("secret_art.convert"), 1, TargetItemId: fragment.Value), 10),
+        };
+
+        foreach (var (actionId, intent, advanceSeconds) in secretArts)
+        {
+            player.Enqueue(intent, cursor, catalog.Actions);
+            cursor = cursor.AddSeconds(advanceSeconds);
+            var secretResult = SimulationEngine.AdvanceTo(player, cursor, catalog, wallet);
+            secretResult.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+            Assert.Equal(1, secretResult.CompletedRepeats);
+            Assert.DoesNotContain(secretResult.Events, e => e.Code is "auto-use.activated" or "auto-use.depleted");
+            Assert.Equal(2, wallet.Get(new AssetKey(cuiling)));
+            Assert.Equal(2, wallet.Get(new AssetKey(guling)));
+            Assert.Equal(cuilingRemaining, player.Settings.AutoUseSlots.Single(s => s.ItemId == cuiling.Value).RemainingDurationSeconds, 9);
+            Assert.Equal(gulingRemaining, player.Settings.AutoUseSlots.Single(s => s.ItemId == guling.Value).RemainingDurationSeconds, 9);
+        }
+    }
+
+    /// <summary>带速度加成的秘法持续消耗品按加速后的实际耗时扣减剩余时长。</summary>
+    [Fact]
+    public void SecretArtSpeedConsumableConsumesActualElapsedSeconds()
+    {
+        var embedded = GameDataCatalog.LoadEmbedded();
+        var secretIncense = new ItemDefinition(
+            new ItemId("item.test-secret-incense"),
+            "测试秘香",
+            "",
+            true,
+            100,
+            new ConsumableDefinition(
+                new HashSet<string> { AutoUseBar.Enhancement },
+                DurationSeconds: 300,
+                IsContinuous: true,
+                TechniqueSpeedRatio: 0.25));
+        var items = new Dictionary<ItemId, ItemDefinition>(embedded.Items) { [secretIncense.Id] = secretIncense };
+        var liquefyAction = embedded.Actions.Get(new ActionId("secret_art.liquefy"));
+        var catalog = new GameDataCatalog(
+            embedded.ContentVersion,
+            embedded.Fingerprint,
+            new ActionCatalog([liquefyAction]),
+            items: items,
+            rawItems: embedded.RawItems,
+            rawEquipments: embedded.RawEquipments,
+            realmProgression: embedded.RealmProgression);
+
+        var player = CreatePlayer("加速秘修");
+        var hide = new ItemId("item.beast-hide");
+        var wallet = CreateWallet(player,
+            (new AssetKey(secretIncense.Id), 2),
+            (new AssetKey(hide), 10));
+        player.ConfigureAutoUse(AutoUseBar.Enhancement, 0, secretIncense.Id.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("secret_art.liquefy"), 1, TargetItemId: hide.Value),
+            Baseline, catalog.Actions);
+
+        // 基础 5s；25% 加速后单轮实际 4.0s。
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4.05), catalog, wallet);
+        result.AssetDeltas.ToList().ForEach(wallet.Apply);
+
+        Assert.Equal(1, result.CompletedRepeats);
+        Assert.Equal(1, wallet.Get(new AssetKey(secretIncense.Id)));
+        var slot = player.Settings.AutoUseSlots.Single(s => s.ItemId == secretIncense.Id.Value);
+        Assert.Equal(300d - 4.0, slot.RemainingDurationSeconds, 6);
+    }
 }

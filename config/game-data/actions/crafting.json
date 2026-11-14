@@ -5,6 +5,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
+    "level": 1,
     "durationSeconds": 10,
     "inputs": {
       "item.dark-iron": 3
@@ -30,6 +31,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "forging",
+    "level": 1,
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood": 3
@@ -55,6 +57,7 @@
     "description": "",
     "type": "alchemy",
     "technique": "alchemy",
+    "level": 1,
     "durationSeconds": 10,
     "inputs": {
       "item.ningxue-grass": 2,

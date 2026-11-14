@@ -649,4 +649,24 @@ public sealed class CombatPartyExpeditionTests
         var squad = EncounterWaveSelector.Select(encounter, monsters, 12345, 1, partySize: 5);
         Assert.Equal(9, squad.Count);
     }
+
+    /// <summary>组队 9 怪满编远征快照必须通过 CombatExpeditionState.IsValid，超过九宫格上限（10 只）仍须拒绝。</summary>
+    [Fact]
+    public void CombatExpeditionState_IsValidAllowsNineEnemiesAndRejectsTen()
+    {
+        var snap = new CombatantSnapshot(100, 50, 1.0, 0, 0);
+        ExpeditionEnemyState[] MakeEnemies(int count) => Enumerable.Range(0, count)
+            .Select(i => new ExpeditionEnemyState($"enemy.goblin:{i}", snap))
+            .ToArray();
+
+        var nine = new CombatExpeditionState("encounter.qi-beast", CombatExpeditionPhase.Combat,
+            0, 0, 42, 0, 100, 50, 1.0, 0, 0, CombatOutcome.Running, 1, MakeEnemies(EncounterWaveSelector.MaxAlliedWaveSize))
+        {
+            PlayerState = snap
+        };
+        var ten = nine with { Enemies = MakeEnemies(EncounterWaveSelector.MaxAlliedWaveSize + 1) };
+
+        Assert.True(nine.IsValid);
+        Assert.False(ten.IsValid);
+    }
 }

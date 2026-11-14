@@ -14,7 +14,8 @@
       "isContinuous": true,
       "cultivationMultiplier": 1.3
     },
-    "subCategory": "pill"
+    "subCategory": "pill",
+    "level": 1
   },
   {
     "id": "item.zhixue-powder",
@@ -39,7 +40,8 @@
       ],
       "triggers": []
     },
-    "subCategory": "pill"
+    "subCategory": "pill",
+    "level": 1
   },
   {
     "id": "item.shunqi-pill",
@@ -64,7 +66,8 @@
       ],
       "triggers": []
     },
-    "subCategory": "pill"
+    "subCategory": "pill",
+    "level": 1
   },
   {
     "id": "item.shengji-balm",
@@ -208,7 +211,8 @@
       "isContinuous": true,
       "gatheringMultiplier": 1.5
     },
-    "subCategory": "explorationSupply"
+    "subCategory": "explorationSupply",
+    "level": 1
   },
   {
     "id": "item.alchemy-flame",
@@ -225,7 +229,8 @@
       "isContinuous": true,
       "alchemyMultiplier": 1.25
     },
-    "subCategory": "alchemySupply"
+    "subCategory": "alchemySupply",
+    "level": 1
   },
   {
     "id": "item.reverse-fate-pill",
@@ -235,7 +240,8 @@
     "category": "consumable",
     "tier": 2,
     "sellPrice": 0,
-    "subCategory": "pill"
+    "subCategory": "pill",
+    "level": 18
   },
   {
     "id": "item.dingshen-incense",
@@ -257,7 +263,8 @@
       "stackableSlotCount": 3,
       "techniqueSpeedRatio": 0.3
     },
-    "subCategory": "explorationSupply"
+    "subCategory": "explorationSupply",
+    "level": 1
   },
   {
     "id": "item.qingling-incense",
@@ -280,7 +287,8 @@
       "stackableSlotCount": 3,
       "techniqueSpeedRatio": 0.5
     },
-    "subCategory": "explorationSupply"
+    "subCategory": "explorationSupply",
+    "level": 18
   },
   {
     "id": "item.cuiling-powder",
@@ -288,7 +296,7 @@
     "description": "淬灵生辉，抚平微瑕。\n粗炼灵骨研磨而成的细腻白灰，涂敷于待强法器胎体之上，能稍稍平复材质内应力，使强化成功率提高三厘。",
     "kind": "consumable",
     "category": "consumable",
-    "sellPrice": 150,
+    "sellPrice": 44,
     "consumable": {
       "usableInActionTypes": [
         "enhancement"
@@ -297,7 +305,8 @@
       "isContinuous": true,
       "enhancementSuccessBonus": 0.03
     },
-    "subCategory": "enhancementSupply"
+    "subCategory": "enhancementSupply",
+    "level": 1
   },
   {
     "id": "item.guling-sand",
@@ -315,6 +324,7 @@
       "isContinuous": true,
       "enhancementSuccessBonus": 0.05
     },
-    "subCategory": "enhancementSupply"
+    "subCategory": "enhancementSupply",
+    "level": 18
   }
 ]

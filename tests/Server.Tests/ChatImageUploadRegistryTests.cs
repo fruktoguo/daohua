@@ -49,12 +49,15 @@ public sealed class ChatImageUploadRegistryTests
         var accountB = Guid.NewGuid();
         var sha256 = new string('b', 64);
 
-        // 账号 A 首次上传
+        // 账号 A 首次上传并用服务端签发的 Ticket 完成 Confirm 登记
         var successA = _registry.TryAcquireUploadTicket(accountA, sha256, "gif", out var resultA, out var errA);
         Assert.True(successA);
         Assert.False(resultA.Cached);
         Assert.Equal(19, resultA.RemainingToday);
-        _registry.RegisterUploadedUrl(sha256, resultA.Url);
+        Assert.NotNull(resultA.Ticket);
+        var confirmOk = _registry.RegisterUploadedUrl(accountA, sha256, resultA.Url, resultA.Ticket!, out var confirmErr);
+        Assert.True(confirmOk);
+        Assert.Null(confirmErr);
 
         // 账号 B 上传相同哈希的图片（全服去重复用）
         var successB = _registry.TryAcquireUploadTicket(accountB, sha256, "gif", out var resultB, out var errB);
@@ -155,6 +158,118 @@ public sealed class ChatImageUploadRegistryTests
         Assert.True(ok);
         Assert.Null(err);
         Assert.NotNull(result.Ticket);
+    }
+
+    [Fact]
+    public void RegisterUploadedUrl_EnforcesTicketSignatureOwnershipHashExpiryAndSingleUse()
+    {
+        var now = new DateTimeOffset(2026, 11, 14, 8, 0, 0, TimeSpan.Zero);
+        var registry = CreateControlledRegistry(() => now);
+        var owner = Guid.NewGuid();
+        var attacker = Guid.NewGuid();
+        var hash = new string('1', 64);
+
+        Assert.True(registry.TryAcquireUploadTicket(owner, hash, "webp", out var ticketResult, out _));
+        var ticket = ticketResult.Ticket!;
+
+        // 1. 跨账号冒名提交必须被拒
+        Assert.False(registry.RegisterUploadedUrl(attacker, hash, ticketResult.Url, ticket, out var crossAccErr));
+        Assert.NotNull(crossAccErr);
+
+        // 2. 篡改 Ticket 签名必须被拒（含有效字节篡改、末尾非规范填充位异变与 '=' 延展）
+        var dotIdx = ticket.IndexOf('.');
+        var sigFlippedChar = ticket[dotIdx + 1] == 'A' ? 'B' : 'A';
+        var sigFlippedTicket = ticket[..(dotIdx + 1)] + sigFlippedChar + ticket[(dotIdx + 2)..];
+        Assert.False(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, sigFlippedTicket, out _));
+
+        var tamperedTicket = ticket[..^1] + (ticket[^1] == 'A' ? 'B' : 'A');
+        Assert.False(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, tamperedTicket, out _));
+
+        const string base64UrlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        var tailIdx = base64UrlAlphabet.IndexOf(ticket[^1]);
+        var paddingFlippedTicket = ticket[..^1] + base64UrlAlphabet[tailIdx ^ 1];
+        Assert.False(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, paddingFlippedTicket, out _));
+        Assert.False(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, ticket + "=", out _));
+
+        // 3. 绑定哈希不一致必须被拒
+        Assert.False(registry.RegisterUploadedUrl(owner, new string('2', 64), ticketResult.Url, ticket, out _));
+
+        // 4. 首次合法核销必须成功
+        Assert.True(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, ticket, out var okErr));
+        Assert.Null(okErr);
+
+        // 5. 同一 Ticket 重复确认必须被拒（一次性核销）
+        Assert.False(registry.RegisterUploadedUrl(owner, hash, ticketResult.Url, ticket, out var replayErr));
+        Assert.NotNull(replayErr);
+
+        // 6. 过期 Ticket 必须被拒
+        var hashExpired = new string('3', 64);
+        Assert.True(registry.TryAcquireUploadTicket(owner, hashExpired, "png", out var expiredTicket, out _));
+        now = now.AddMinutes(10);
+        Assert.False(registry.RegisterUploadedUrl(owner, hashExpired, expiredTicket.Url, expiredTicket.Ticket!, out var expiredErr));
+        Assert.NotNull(expiredErr);
+    }
+
+    [Theory]
+    [InlineData("http://img.yuohira.com/{h16}.png")]
+    [InlineData("https://1.2.3.4/test.png")]
+    [InlineData("https://user:pass@beeimg.cn/test.png")]
+    [InlineData("https://evil.example.com/test.png")]
+    [InlineData("https://img.yuohira.com/otherpath.png")]
+    [InlineData("https://img.yuohira.com/{h16}.png?probe=1")]
+    [InlineData("https://beeimg.cn/not-an-image.html")]
+    public void RegisterUploadedUrl_RejectsUntrustedSchemesHostsAndSpoofedPaths(string rawPattern)
+    {
+        var registry = CreateControlledRegistry(() => new DateTimeOffset(2026, 11, 14, 8, 0, 0, TimeSpan.Zero));
+        var accountId = Guid.NewGuid();
+        var hash = new string('4', 64);
+        Assert.True(registry.TryAcquireUploadTicket(accountId, hash, "png", out var ticket, out _));
+
+        var candidateUrl = rawPattern.Replace("{h16}", hash[..16], StringComparison.Ordinal);
+        Assert.False(registry.RegisterUploadedUrl(accountId, hash, candidateUrl, ticket.Ticket!, out var err));
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public void RegisterUploadedUrl_AllowsWhitelistedHostAndEnforcesBoundedCacheAndDailyCleanup()
+    {
+        var now = new DateTimeOffset(2026, 11, 14, 23, 55, 0, TimeSpan.Zero);
+        var registry = CreateControlledRegistry(() => now, maxCachedHashes: 3);
+
+        var accounts = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        for (var i = 0; i < 4; i++)
+        {
+            var hash = $"{i:D4}".PadLeft(64, '5');
+            Assert.True(registry.TryAcquireUploadTicket(accounts[i], hash, "png", out var res, out _));
+            var url = i == 0 ? $"https://i.beeimg.cn/{hash[..16]}.png" : res.Url;
+            Assert.True(registry.RegisterUploadedUrl(accounts[i], hash, url, res.Ticket!, out var err));
+            Assert.Null(err);
+        }
+
+        // 缓存上限 3 条：最老的第 0 条被逐出，第 1~3 条保留
+        Assert.Equal(3, registry.CachedHashCount);
+        Assert.True(registry.TryAcquireUploadTicket(Guid.NewGuid(), $"{0:D4}".PadLeft(64, '5'), "png", out var evictedRes, out _));
+        Assert.False(evictedRes.Cached);
+        Assert.True(registry.TryAcquireUploadTicket(Guid.NewGuid(), $"{3:D4}".PadLeft(64, '5'), "png", out var retainedRes, out _));
+        Assert.True(retainedRes.Cached);
+
+        // 跨 UTC 零点后再次请求应清理前一日过期计数
+        now = now.AddMinutes(10);
+        Assert.True(registry.TryAcquireUploadTicket(Guid.NewGuid(), new string('7', 64), "webp", out _, out _));
+        Assert.Equal(1, registry.DailyCountEntryCount);
+    }
+
+    private ChatImageUploadRegistry CreateControlledRegistry(Func<DateTimeOffset> utcNow, int maxCachedHashes = ChatImageUploadRegistry.MaxCachedHashes)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Chat:ImageSecret"] = _secret,
+                ["Chat:ImageUploadEndpoint"] = "https://img.yuohira.com/upload",
+                ["Chat:ImageBaseUrl"] = "https://img.yuohira.com"
+            })
+            .Build();
+        return new ChatImageUploadRegistry(config, new FakeHostEnvironment(), utcNow, maxCachedHashes);
     }
 
     private sealed class FakeHostEnvironment : IHostEnvironment

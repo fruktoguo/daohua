@@ -103,12 +103,14 @@ public static class CombatDifficultyRules
     }
 
     /// <summary>
-    /// 根据难度缩放怪物属性，且所有属性底层执行 Math.Ceiling 向上取整。
+    /// 根据难度缩放怪物属性，且所有缩放字段底层执行 Math.Ceiling 向上取整。
+    /// 刻意不缩放普攻周期（AttackIntervalSeconds）、10 项五行增减伤点数及反应参数（Effects），
+    /// 以保持战斗节奏、元素克制倍率与比例型被动反应（吸血/吸蓝/反伤/治疗加成/受击威胁）在高难度下不产生失控的二次放大。
     /// </summary>
     public static CombatantStats ScaleMonsterStats(CombatantStats baseStats, int difficulty)
     {
         var mult = AttributeMultiplier(difficulty);
-        // 普攻周期 AttackIntervalSeconds 不随属性放大而增加（保持怪物攻击节奏）
+        // 刻意边界：不缩放 AttackIntervalSeconds（保持怪物出手节奏）、10 项五行增减伤点数与 Effects（防止百分比反应与克制系数随难度二次膨胀）
         return baseStats with
         {
             MaxHitpoints = Math.Ceiling(baseStats.MaxHitpoints * mult),

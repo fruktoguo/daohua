@@ -531,6 +531,43 @@ public sealed class ComputeJobRepositoryTests
             "SELECT last_error FROM platform.compute_jobs WHERE player_id = $1", player));
     }
 
+    /// <summary>pending 任务因失败退回并带重试退避后，再次触发入队刷新应清零 attempts/next_attempt_at/last_error 并允许立即领取。</summary>
+    [Fact]
+    public async Task EnqueueAsync_PendingRefresh_ResetsAttemptsAndBackoff()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-2), new byte[] { 1 });
+
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+            entry => entry.PlayerId == player);
+        Assert.Equal(1, claim.Attempts);
+
+        // 可重试失败：状态退回 pending，attempts=1，next_attempt_at 推后 10 分钟。
+        Assert.True(await jobs.FailAsync(claim.JobId, claim.LeaseToken, "瞬时网络抖动",
+            retryable: true, TimeSpan.FromMinutes(10), MaxAttempts));
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+            entry => entry.JobId == claim.JobId);
+
+        // 刷新 pending 任务：重置退避与重试计数，立刻可再次领取。
+        var refreshedPayload = new byte[] { 9, 9 };
+        var enqueueResult = await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), refreshedPayload);
+        Assert.Equal(ComputeEnqueueResult.Refreshed, enqueueResult);
+
+        Assert.Equal(0, (int)(await ScalarAsync(source,
+            "SELECT attempts FROM platform.compute_jobs WHERE player_id = $1", player))!);
+        Assert.Equal(DBNull.Value, await ScalarAsync(source,
+            "SELECT next_attempt_at FROM platform.compute_jobs WHERE player_id = $1", player));
+        Assert.Equal(DBNull.Value, await ScalarAsync(source,
+            "SELECT last_error FROM platform.compute_jobs WHERE player_id = $1", player));
+
+        var reClaimed = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1), TimeSpan.Zero),
+            entry => entry.PlayerId == player);
+        Assert.NotEqual(claim.JobId, reClaimed.JobId);
+        Assert.Equal(1, reClaimed.Attempts);
+        Assert.Equal(refreshedPayload, reClaimed.InputPayload.ToArray());
+    }
+
     private static async Task<(NpgsqlDataSource Source, PostgresComputeJobRepository Repository)> OpenRepositoryAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("冷挂机仓库集成测试");

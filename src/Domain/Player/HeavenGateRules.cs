@@ -330,7 +330,8 @@ public static class HeavenGateRules
         GameData.TechniqueCatalog.Alchemy => 0.25 * (Math.Clamp(linggen.Fire, 0, LinggenValues.MaxPointsPerElement) / 100.0),
         GameData.TechniqueCatalog.Forging => 0.25 * (Math.Clamp(linggen.Fire, 0, LinggenValues.MaxPointsPerElement) / 100.0),
         GameData.TechniqueCatalog.Talisman => 0.25 * (Math.Clamp(linggen.Water, 0, LinggenValues.MaxPointsPerElement) / 100.0),
-        GameData.TechniqueCatalog.Gathering => 0.25 * (Math.Clamp(linggen.Wood, 0, LinggenValues.MaxPointsPerElement) / 100.0),
+        GameData.TechniqueCatalog.Gathering or GameData.TechniqueCatalog.Mining
+            => 0.25 * (Math.Clamp(linggen.Wood, 0, LinggenValues.MaxPointsPerElement) / 100.0),
         GameData.TechniqueCatalog.Enhancement => 0.25 * (Math.Clamp(linggen.Metal, 0, LinggenValues.MaxPointsPerElement) / 100.0),
         GameData.TechniqueCatalog.Formation => 0.25 * (Math.Clamp(linggen.Earth, 0, LinggenValues.MaxPointsPerElement) / 100.0),
         _ => 0

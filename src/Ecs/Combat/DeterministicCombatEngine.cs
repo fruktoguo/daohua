@@ -75,7 +75,7 @@ public static class DeterministicCombatEngine
     /// 轮盘推进顺序、全零威胁均匀索引的候选序与原 Where().ToArray() 快照位级一致。
     /// </remarks>
     internal static CombatantState? SelectTarget(IReadOnlyList<CombatantState> opponents, long seed,
-        ulong side, double count, ulong channel)
+        ulong side, double count, ulong channel, bool ignoreThreat = false)
     {
         var aliveCount = 0;
         var total = 0d;
@@ -91,7 +91,7 @@ public static class DeterministicCombatEngine
         if (aliveCount == 0) return null;
         if (aliveCount == 1) return first;
         var roll = Roll(seed, side, count, channel);
-        if (total <= 1e-12)
+        if (ignoreThreat || total <= 1e-12)
             return PickAliveAt(opponents, (int)Math.Min(aliveCount - 1, (long)(roll * aliveCount)));
         var ticket = roll * total;
         CombatantState? last = null;
@@ -113,7 +113,7 @@ public static class DeterministicCombatEngine
     /// 每轮 Roll 的 channel + result.Count 递增、轮盘顺序、全零威胁均匀索引与原版逐位一致。
     /// </remarks>
     internal static IReadOnlyList<CombatantState> SelectTargets(IReadOnlyList<CombatantState> opponents, int maxTargets,
-        long seed, ulong side, double count, ulong channel)
+        long seed, ulong side, double count, ulong channel, bool ignoreThreatOnPrimary = false)
     {
         var result = new List<CombatantState>(Math.Min(maxTargets, opponents.Count));
         while (result.Count < maxTargets)
@@ -130,7 +130,7 @@ public static class DeterministicCombatEngine
             }
             if (aliveRemaining == 0) break;
             CombatantState? chosen;
-            if (total <= 1e-12)
+            if ((ignoreThreatOnPrimary && result.Count == 0) || total <= 1e-12)
             {
                 chosen = PickAliveAt(opponents, result,
                     (int)Math.Min(aliveRemaining - 1, (long)(roll * aliveRemaining)));
@@ -226,7 +226,7 @@ public static class DeterministicCombatEngine
             && contestRoll < attackEffective.BreakPower / (attackEffective.BreakPower + defenseEffective.ParryResolve + 100);
         var parried = defenseEffective.ParryResolve > attackEffective.BreakPower
             && contestRoll < defenseEffective.ParryResolve / (defenseEffective.ParryResolve + attackEffective.BreakPower + 100);
-        var accuracy = attackEffective.Accuracy * (broken ? 2 : 1);
+        var accuracy = attackEffective.Accuracy * (broken ? 2 : 1) * (context.DoubleAccuracy ? 2 : 1);
         var evasion = defenseEffective.Evasion * (parried ? 2 : 1);
         // 战斗经验对抗修正（总纲 §7.7.6）：作用于两侧等效输入，不占随机通道，不改暴击/破招判定与伤害链。
         (accuracy, evasion) = ApplyCombatExperienceContest(accuracy, evasion, attack.CombatExperience, defense.CombatExperience);

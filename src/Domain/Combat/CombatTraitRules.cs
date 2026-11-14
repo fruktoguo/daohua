@@ -39,6 +39,14 @@ public static class CombatTraitRules
     public const string XuyiTraitId = "trait.xuyi", XuyiBuffId = "buff.xuyi";
     /// <summary>燃魂特质与状态标识。</summary>
     public const string RanhunTraitId = "trait.ranhun", RanhunBuffId = "buff.ranhun";
+    /// <summary>移形统一位移状态与剑与心特质标识。</summary>
+    public const string YixingBuffId = "buff.yixing", JianyuxinTraitId = "trait.jianyuxin";
+    /// <summary>火神特质标识。</summary>
+    public const string HuoshenTraitId = "trait.huoshen";
+
+    /// <summary>解析携带「火神」特质后的实际伤害五行属性（仅覆写/附加元素，不改变伤害大类）。</summary>
+    public static CombatElement ResolveDamageElement(IReadOnlyList<string>? traits, CombatElement baseElement)
+        => ContainsTrait(traits, HuoshenTraitId) ? CombatElement.Fire : baseElement;
     /// <summary>常驻战内状态使用有限最大到期值，每波清理。</summary>
     public const double BattleLifetimeSeconds = double.MaxValue;
     /// <summary>隐身 buff：看不到我特质的开战授予效果（威胁增幅点数 -100）。</summary>
@@ -345,7 +353,13 @@ public static class CombatTraitRules
         Add(new(OutnumberedTraitId, "我要打十个", 4, 12, Description: "敌方每多一名存活单位，增伤与免伤各提升 10 点。"));
         Add(new(DuelKingTraitId, "单挑王", 5, 16, Description: "双方各剩一名存活单位时，增伤、免伤、暴击伤害与行动速度各提升 20 点。"));
         Add(new(XuyiTraitId, "蓄意", 6, 25, Description: "受到的实际伤害积为蓄意层数；命中攻击时，若层数超过最大生命值，消耗全部层数对所有敌人造成等量威力伤害，主目标为真实伤害，其余为物理伤害。"));
-        Add(new(RanhunTraitId, "燃魂", 5, 16, Description: "直接火伤按实际伤害的 2% 施加燃魂，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间。"));
+        Add(new(RanhunTraitId, "燃魂", 5, 16, Description: "直接火伤按实际伤害的 2% 施加燃烧，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间。"));
+        Add(new(JianyuxinTraitId, "剑与心", 5, 12,
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.10, ["spellAttack"] = 0.10 },
+            Description: "剑随意动，心御其锋。物理与术法攻击各提升 10%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取。"));
+        Add(new(HuoshenTraitId, "火神", 5, 12,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["fireDamageBonusPoints"] = 10 },
+            Description: "火焰尊主，万法归炎。自身所有伤害转为火属性（保留物理、术法与真实伤害类别），火属性增伤提升 10%。"));
         return dict;
     }
 }

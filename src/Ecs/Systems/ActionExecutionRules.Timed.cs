@@ -66,14 +66,7 @@ internal static partial class ActionExecutionRules
             && (definition.ExcludedNodeIds is not { Count: > 0 } excludedNodes
                 || player.World.EdgeId is not null
                 || !excludedNodes.Contains(player.World.NodeId));
-        var hasInputs = true;
-        foreach (var input in definition.Inputs)
-            if ((assets?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
-                + (deltas?.GetValueOrDefault(new AssetKey(input.Key)) ?? 0) < input.Value)
-            {
-                hasInputs = false;
-                break;
-            }
+        var hasInputs = HasAvailableRecipeInputs(player, definition, gameData, assets, deltas, out var inputsBlockedReason);
         // 底蕴成本（逆命丹等特殊配方）：与材料同为准入前置，不足时按「底蕴不足」阻断而非扣成负数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
         var hasFoundation = foundationCost <= 0 || player.Progression.Foundation + 1e-9 >= foundationCost;
@@ -85,7 +78,7 @@ internal static partial class ActionExecutionRules
         // 境界门槛优先于材料与底蕴报文案：未达境界时先阻断境界。
         var blockedReason = availableHere
             ? !levelUnlocked ? "尚未达到该行动所需境界等级，行动受阻。"
-                : !hasInputs ? "材料不足，行动受阻。"
+                : !hasInputs ? inputsBlockedReason
                 : "底蕴不足，行动受阻。"
             : definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 ? "条件不足，行动受阻。"
@@ -101,7 +94,8 @@ internal static partial class ActionExecutionRules
                     gameData?.RealmProgression);
                 var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
                 var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-                        out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
+                        out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus,
+                        player.Actions, action.Id);
                 if (prep is null)
                 {
                     if (check == EnhancementRules.Check.TargetReached)
@@ -448,6 +442,15 @@ internal static partial class ActionExecutionRules
         // 本层修为上限（已含灵根乘区）：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
         var expCap = HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel, player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered, gameData?.RealmProgression);
         if (expCap <= 0) expCap = double.PositiveInfinity;
+        // 轮内材料二次复核（与底蕴成本同边界）：防止开跑后途中将材料装备穿戴或锁定强化导致扣穿已穿戴件。
+        if (definition.Inputs.Count > 0
+            && !HasAvailableRecipeInputs(player, definition, gameData, assets, deltas, out var inputBlockedReason))
+        {
+            action.Status = ActionQueueStatus.Blocked;
+            events ??= new SimulationEventTail();
+            events.Add(new SimulationEvent(target, "action.blocked", inputBlockedReason, definition.Id));
+            return;
+        }
         // 底蕴成本：与准入同一解析口径（当前升级所需修为 × 配表比例）。轮间底蕴被其他结算消耗时
         // 按强化同语义回退为 Blocked，本轮不产生任何收益、扣减或轮次计数。
         var foundationCost = ResolveActionFoundationCost(player, definition, gameData);
@@ -531,12 +534,11 @@ internal static partial class ActionExecutionRules
             ItemGains = itemRewards,
             ItemLosses = finalItemLosses
         });
-        // 技艺经验按当轮基准经验入账（总纲 §20.1.2 / §20.1.4）：等级跃迁写入同一份 LevelUp 账本。
+        // 技艺经验按当轮公式（全局 2×；消耗上级装备的炼器再 2×）入账并授予等额底蕴（总纲 §20.1.2）：等级跃迁写入同一份 LevelUp 账本。
         if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
         {
             var actionLevel = definition.Level ?? 1;
-            var baseExp = actionLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(actionLevel) ?? 10.0);
-            var techExp = Math.Max(1.0, Math.Round(baseExp * (definition.DurationSeconds / 10.0)));
+            var techExp = TechniqueCatalog.ComputeTechniqueExperience(gameData, actionLevel, definition.DurationSeconds, definition);
             GrantTechniqueExperience(player, action.Id, technique, techExp, gameData,
                 target.ToUnixTimeMilliseconds() / 1000d);
         }
@@ -783,7 +785,7 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>
-    /// 授予技艺累计经验并按技艺曲线（修为曲线前 30 级线性削减）折算等级跃迁（kind "technique"）；
+    /// 授予技艺累计经验并同步向底蕴池发放等额底蕴（无论当前修为是否满层），同时按技艺曲线（修为曲线前 30 级线性削减）折算等级跃迁（kind "technique"）；
     /// 与 <see cref="PlayerAggregate.GrantTechniqueExperience"/> 同一入账口径，面向行动逐轮结算。
     /// </summary>
     internal static void GrantTechniqueExperience(IPlayerResourceContext player, Guid actionId,
@@ -792,16 +794,20 @@ internal static partial class ActionExecutionRules
         var previousExp = player.Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var stored) ? stored : 0;
         var nextExp = previousExp + experience;
         player.Loadout.TechniqueExperiences[techniqueId] = nextExp;
+        // 技艺经验等额直接沉淀为底蕴（不走 CreditExperience 修为转换通道，修为未满亦全额发放），用于生活玩家打坐放大升级。
+        player.Progression.Foundation += experience;
         var levelBefore = TechniqueCatalog.LevelFor(previousExp, gameData?.RealmProgression);
         var levelAfter = TechniqueCatalog.LevelFor(nextExp, gameData?.RealmProgression);
         player.RecordStats(actionId, atUnixSeconds, new PlayerStatsDelta
         {
+            Foundation = experience,
             TechniqueId = techniqueId,
             TechniqueExperience = experience,
             LevelUp = levelAfter > levelBefore
                 ? new PlayerReportLevelUp("technique", techniqueId, levelBefore, levelAfter) : null
         });
         player.MarkDirty(PlayerSectionKind.Loadout);
+        player.MarkDirty(PlayerSectionKind.Progression);
     }
 
     /// <summary>
@@ -845,7 +851,8 @@ internal static partial class ActionExecutionRules
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
         var enhancementBonus = EnhancementRules.EffectiveEnhancementSuccessBonus(player.Settings.AutoUseSlots, gameData);
         var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
-            out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus);
+            out var check, out var reason, action.EnhancementCurrentLevel, enhancementBonus,
+            player.Actions, action.Id);
         if (prep is null)
         {
             // 轮间状态漂移（材料被消耗/装备被移除/目标已达成）：按开轮准入同语义回退为阻塞或提前完成，
@@ -870,6 +877,8 @@ internal static partial class ActionExecutionRules
         action.EnhancementCurrentLevel = resultLevel;
         var fromKey = EnhancementRules.KeyFor(prep.ItemId, prep.CurrentLevel);
         var toKey = EnhancementRules.KeyFor(prep.ItemId, resultLevel);
+        // 持续消耗品按本轮实际经过时间扣减（与普通行动一致），经验仍按基础耗时 5+t 结算。
+        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : EnhancementRules.DurationSeconds(prep.TargetLevel);
         action.ProgressSeconds = 0;
         PlayerActionQueueRules.RecordCompletedRound(action);
         completedActions += 1;
@@ -889,19 +898,16 @@ internal static partial class ActionExecutionRules
         }
         AddDelta(deltas, fromKey, -1d);
         AddDelta(deltas, toKey, 1d);
-        // 强化技艺经验按目标装备等级基准与当次实际基础耗时（5+t）入账（总纲 §20.1.2 / §20.1.4）。
+        // 强化技艺经验与六维·神识按目标装备自身显式 level 基准与当次实际基础耗时（5+t）入账（总纲 §20.1.2 / §20.1.4）；
+        // 技艺经验吃全局 2× 并伴生等额底蕴，神识经验维持原 1× 定额不变。
         var itemLevel = gameData is null ? 1 : CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData);
         var duration = EnhancementRules.DurationSeconds(prep.TargetLevel);
-        var enhancementBaseExp = itemLevel <= 1 ? 10.0 : (gameData?.RealmProgression?.BaseExperienceForLevel(itemLevel) ?? 10.0);
-        var enhancementTechExp = Math.Max(1.0, Math.Round(enhancementBaseExp * (duration / 10.0)));
+        var enhancementExp = TechniqueCatalog.ComputeTechniqueExperience(gameData, itemLevel, duration);
         GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement,
-            enhancementTechExp, gameData, atUnix);
-        // 强化六维·神识按目标装备等阶换算等级与当次基础耗时动态折算（总纲 §20.1.4）：定额不吃倍率。
+            enhancementExp, gameData, atUnix);
         if (gameData?.RealmProgression is { } progression)
             GrantRootExperience(player, CoreAspectKind.Consciousness,
-                Math.Round(progression.BaseExperienceForLevel(
-                    CraftingRecipeRules.ResolveItemLevel(prep.ItemId.Value, gameData))
-                    * EnhancementRules.DurationSeconds(prep.TargetLevel) / 10d),
+                Math.Round(progression.BaseExperienceForLevel(itemLevel) * (duration / 10.0)),
                 gameData, action.Id, atUnix);
         player.RecordStats(action.Id, atUnix, new PlayerStatsDelta
         {
@@ -911,7 +917,7 @@ internal static partial class ActionExecutionRules
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
-        CompleteSustainedAutoUse(player, definition, duration, gameData, target, ref events);
+        CompleteSustainedAutoUse(player, definition, consumedSeconds, gameData, target, ref events);
         events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(target,
             outcome == EnhancementRules.Outcome.Success ? "enhance.succeeded" : "enhance.failed",
@@ -943,28 +949,27 @@ internal static partial class ActionExecutionRules
         IReadOnlyDictionary<AssetKey, double>? deltas,
         out string reason)
     {
-        reason = string.Empty;
-        if (action.Intent.TargetItemId is not { } targetItemId || string.IsNullOrWhiteSpace(targetItemId))
-        {
-            reason = "秘法行动目标物品无效。";
+        if (!TryResolveSecretArtTarget(action, definition, gameData,
+                out var targetItemId, out var initialLevel, out var targetKey, out reason))
             return false;
-        }
 
         var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
         if (definition.Id.Value == SecretArtRules.LiquefyActionId)
         {
             if (gameData is null) return true;
-            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, 0);
+            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, initialLevel);
             if (unitPrice <= 0)
             {
                 reason = "该物品无法化灵。";
                 return false;
             }
-            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
-            var equippedCount = player.Loadout.EquippedItemIds.Count(e => e.Value == targetItemId);
-            if (held - equippedCount < 1)
+            var held = holdings.GetValueOrDefault(targetKey);
+            var occupiedCount = EnhancementRules.CountOccupied(player.Loadout, player.Actions, targetItemId, initialLevel, action.Id);
+            if (held - occupiedCount < 1)
             {
-                reason = "化灵材料不足，行动受阻。";
+                reason = held >= 1 && occupiedCount > 0
+                    ? "目标装备已穿戴或正处于强化锁定中，行动受阻。"
+                    : "化灵材料不足，行动受阻。";
                 return false;
             }
             return true;
@@ -984,11 +989,13 @@ internal static partial class ActionExecutionRules
                 reason = "该装备无可分解原料。";
                 return false;
             }
-            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
-            var equippedCount = player.Loadout.EquippedItemIds.Count(e => e.Value == targetItemId);
-            if (held - equippedCount < 1)
+            var held = holdings.GetValueOrDefault(targetKey);
+            var occupiedCount = EnhancementRules.CountOccupied(player.Loadout, player.Actions, targetItemId, initialLevel, action.Id);
+            if (held - occupiedCount < 1)
             {
-                reason = "可分解装备不足，行动受阻。";
+                reason = held >= 1 && occupiedCount > 0
+                    ? "目标装备已穿戴或正处于强化锁定中，行动受阻。"
+                    : "可分解装备不足，行动受阻。";
                 return false;
             }
             return true;
@@ -996,7 +1003,7 @@ internal static partial class ActionExecutionRules
 
         if (definition.Id.Value == SecretArtRules.ConvertActionId)
         {
-            var held = holdings.GetValueOrDefault(new AssetKey(new ItemId(targetItemId)));
+            var held = holdings.GetValueOrDefault(targetKey);
             if (held < 1)
             {
                 reason = "功法残卷不足，行动受阻。";
@@ -1006,6 +1013,121 @@ internal static partial class ActionExecutionRules
         }
 
         return true;
+    }
+
+    private static bool TryResolveSecretArtTarget(
+        IPlayerActionState action,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        out string targetItemId,
+        out int initialLevel,
+        out AssetKey targetKey,
+        out string reason)
+    {
+        reason = string.Empty;
+        targetItemId = action.Intent.TargetItemId ?? string.Empty;
+        initialLevel = 0;
+        targetKey = default;
+        if (string.IsNullOrWhiteSpace(targetItemId))
+        {
+            reason = "秘法行动目标物品无效。";
+            return false;
+        }
+
+        if (action.Intent.Parameters is { } parameters
+            && parameters.TryGetValue(EnhancementRules.InitialLevelParameter, out var initialParam))
+        {
+            if (!double.IsFinite(initialParam) || initialParam != Math.Floor(initialParam)
+                || initialParam < 0 || initialParam > EnhancementRules.MaxLevel)
+            {
+                reason = "秘法目标强化等级无效。";
+                return false;
+            }
+            initialLevel = (int)initialParam;
+        }
+
+        // 仅装备资产允许携带 +N 强化等级变体，普通材料/残卷传 initialLevel > 0 一律拒绝。
+        var isEquipment = gameData is not null && gameData.RawEquipments.ContainsKey(targetItemId);
+        if (initialLevel > 0 && ((gameData is not null && !isEquipment) || definition.Id.Value == SecretArtRules.ConvertActionId))
+        {
+            reason = "只有装备可指定强化等级。";
+            return false;
+        }
+
+        targetKey = new AssetKey(new ItemId(targetItemId), EnhancementRules.VariantForLevel(initialLevel));
+        return true;
+    }
+
+    /// <summary>
+    /// 校验配方静态 inputs 是否满足（对装备/工具自动扣除已穿戴与强化队列锁定件数，防止穿在身上的装备或工具被当材料烧掉）。
+    /// </summary>
+    private static bool HasAvailableRecipeInputs(
+        IPlayerResourceContext player,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        AssetWallet? assets,
+        IReadOnlyDictionary<AssetKey, double>? deltas,
+        out string blockedReason)
+    {
+        blockedReason = "材料不足，行动受阻。";
+        foreach (var input in definition.Inputs)
+        {
+            var effectiveHeld = (assets?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
+                + (deltas?.GetValueOrDefault(new AssetKey(input.Key)) ?? 0);
+            var occupied = EnhancementRules.CountOccupied(player.Loadout, player.Actions, input.Key.Value, 0);
+            if (effectiveHeld - occupied < input.Value)
+            {
+                if (effectiveHeld >= input.Value && occupied > 0)
+                    blockedReason = "所需装备已穿戴或正处于强化锁定中，行动受阻。";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static string ResolveItemDisplayName(GameDataCatalog? gameData, string itemId)
+    {
+        if (gameData is not null)
+        {
+            if (gameData.Items.TryGetValue(new ItemId(itemId), out var itemDef))
+                return itemDef.Name;
+            if (gameData.RawEquipments.TryGetValue(itemId, out var equip)
+                && equip.TryGetProperty("name", out var nameProp)
+                && nameProp.ValueKind == JsonValueKind.String
+                && nameProp.GetString() is { Length: > 0 } equipName)
+                return equipName;
+        }
+        return itemId;
+    }
+
+    private static string FormatItemMarkup(string itemId, string displayName, double? amount = null)
+    {
+        // 使用 StringBuilder 拼接日志富文本标记，避免在 C# 内插字符串中遗漏四重花括号触发转义门禁告警。
+        var sb = new System.Text.StringBuilder("{{item:")
+            .Append(itemId)
+            .Append('|')
+            .Append(displayName);
+        if (amount.HasValue)
+            sb.Append('|').AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0:0.######}", amount.Value);
+        return sb.Append("}}").ToString();
+    }
+
+    private static string FormatItemListMarkup(IReadOnlyDictionary<ItemId, double> items, GameDataCatalog? gameData)
+    {
+        var entries = new KeyValuePair<ItemId, double>[items.Count];
+        var idx = 0;
+        foreach (var pair in items) entries[idx++] = pair;
+        if (entries.Length > 1)
+            Array.Sort(entries, static (a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
+
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < entries.Length; i++)
+        {
+            if (i > 0) sb.Append('、');
+            var (itemId, count) = entries[i];
+            sb.Append(FormatItemMarkup(itemId.Value, ResolveItemDisplayName(gameData, itemId.Value), count));
+        }
+        return sb.ToString();
     }
 
     private static void CompleteSecretArtRepeat(
@@ -1028,8 +1150,11 @@ internal static partial class ActionExecutionRules
             return;
         }
 
-        var targetItemId = action.Intent.TargetItemId!;
+        TryResolveSecretArtTarget(action, definition, gameData,
+            out var targetItemId, out var initialLevel, out var targetKey, out _);
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        // 持续消耗品按本轮实际经过时间扣减（与普通/强化行动一致），经验仍按基础耗时结算。
+        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
         action.ProgressSeconds = 0;
         PlayerActionQueueRules.RecordCompletedRound(action);
         completedActions += 1;
@@ -1039,30 +1164,43 @@ internal static partial class ActionExecutionRules
         var itemLosses = new Dictionary<ItemId, double>();
         var targetItemObjId = new ItemId(targetItemId);
 
-        AddDelta(deltas, new AssetKey(targetItemObjId), -1d);
+        AddDelta(deltas, targetKey, -1d);
         itemLosses[targetItemObjId] = 1d;
+
+        var targetName = ResolveItemDisplayName(gameData, targetItemId);
+        var targetMarkup = FormatItemMarkup(targetItemId, targetName);
+        var targetDisplay = initialLevel > 0 ? $"{targetMarkup} +{initialLevel}" : targetMarkup;
+        var spiritName = ResolveItemDisplayName(gameData, EnhancementRules.SpiritStoneItemId);
 
         var eventDesc = string.Empty;
         if (definition.Id.Value == SecretArtRules.LiquefyActionId && gameData is not null)
         {
-            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, 0);
+            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, initialLevel);
             var spiritGain = unitPrice * SecretArtRules.LiquefactionMultiplier;
             AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), spiritGain);
-            eventDesc = $"化灵成功：消耗 1 个 {targetItemId}，获得 {spiritGain:0} 灵石。";
+            var spiritMarkup = FormatItemMarkup(EnhancementRules.SpiritStoneItemId, spiritName, spiritGain);
+            eventDesc = $"化灵成功：消耗 1 件 {targetDisplay}，获得 {spiritMarkup}。";
         }
         else if (definition.Id.Value == SecretArtRules.DisassembleActionId && gameData is not null)
         {
             var returns = SecretArtRules.ComputeDisassemblyReturns(gameData, targetItemId);
-            if (returns is not null)
+            if (returns is { Count: > 0 })
             {
                 foreach (var (matId, matCount) in returns)
                     AddDelta(deltas, new AssetKey(matId), matCount);
+                eventDesc = $"分解成功：分解 1 件 {targetDisplay}，返还 {FormatItemListMarkup(returns, gameData)}。";
             }
-            eventDesc = $"分解成功：分解 1 件 {targetItemId}，返还原生材料。";
+            else
+            {
+                eventDesc = $"分解成功：分解 1 件 {targetDisplay}。";
+            }
         }
         else if (definition.Id.Value == SecretArtRules.ConvertActionId)
         {
-            var seedBytes = System.Text.Encoding.UTF8.GetBytes($"{action.Id:D}:{action.CompletedRepeats}:{atUnix}");
+            // 种子固定使用 InvariantCulture 与毫秒整数时间戳，确保主服与冷补算节点跨区域逐位一致。
+            var seedText = FormattableString.Invariant(
+                $"{action.Id:D}:{action.CompletedRepeats}:{target.ToUnixTimeMilliseconds()}");
+            var seedBytes = System.Text.Encoding.UTF8.GetBytes(seedText);
             var hash = System.Security.Cryptography.SHA256.HashData(seedBytes);
             var roll = (BitConverter.ToUInt32(hash, 0) % 10000) / 10000.0;
             var producesTome = SecretArtRules.FragmentProducesTome(roll);
@@ -1070,12 +1208,24 @@ internal static partial class ActionExecutionRules
             if (producesTome && gameData is not null && gameData.Items.ContainsKey(new ItemId(tomeId)))
             {
                 AddDelta(deltas, new AssetKey(new ItemId(tomeId)), 1d);
-                eventDesc = $"残卷推演机缘顿悟！获得完整功法秘籍：{tomeId}。";
+                var tomeMarkup = FormatItemMarkup(tomeId, ResolveItemDisplayName(gameData, tomeId), 1d);
+                eventDesc = $"残卷推演机缘顿悟！消耗 1 份 {targetMarkup}，获得完整功法秘籍 {tomeMarkup}。";
             }
             else
             {
-                AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), SecretArtRules.FragmentSpiritStoneReward);
-                eventDesc = $"残卷推演未能参透，化为 {SecretArtRules.FragmentSpiritStoneReward} 灵石感悟。";
+                var reward = gameData is not null
+                    ? SecretArtRules.ResolveFragmentFailureReward(gameData, targetItemId)
+                    : 0d;
+                if (reward > 0)
+                {
+                    AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), reward);
+                    var spiritMarkup = FormatItemMarkup(EnhancementRules.SpiritStoneItemId, spiritName, reward);
+                    eventDesc = $"残卷推演未能参透，{targetMarkup} 化为 {spiritMarkup} 感悟。";
+                }
+                else
+                {
+                    eventDesc = $"残卷推演未能参透，{targetMarkup} 耗散殆尽。";
+                }
             }
         }
 
@@ -1092,7 +1242,7 @@ internal static partial class ActionExecutionRules
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
-        CompleteSustainedAutoUse(player, definition, definition.DurationSeconds, gameData, target, ref events);
+        CompleteSustainedAutoUse(player, definition, consumedSeconds, gameData, target, ref events);
 
         events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(target, "secret_art.completed", eventDesc, definition.Id));

@@ -3,6 +3,7 @@ using Domain.GameData;
 using Domain.Persistence;
 using Domain.Player;
 using Domain.Simulation;
+using YuoCore.Ecs;
 
 namespace DaoHua.Ecs;
 
@@ -12,13 +13,24 @@ namespace DaoHua.Ecs;
 /// </summary>
 public sealed class DeterministicCatchUpEngine(GameDataCatalog gameData) : IDisposable
 {
-    // 不接管在线宿主默认世界与进程级异常开关；节点与 verifier 都只在自己的世界执行。
+    // 不接管在线宿主默认世界指针，而是持有一份进程级 CloseSystemTry 租约，确保并行释放的
+    // 其他运行时不会过早把它复位回 false 导致 System 异常被 YuoCore 内核吞并。
     private readonly EcsWorldShard _runtime = CreateRuntime(gameData);
+    private bool _disposed;
 
     private static EcsWorldShard CreateRuntime(GameDataCatalog catalog)
     {
         InlineCombatTriggerRegistry.EnsureInitialized();
-        return new EcsWorldShard(catalog, fiberName: "daohua-catch-up", setWorldAsDefault: false, ownCloseSystemTry: false);
+        EcsWorldShard.EnterCloseSystemTry();
+        try
+        {
+            return new EcsWorldShard(catalog, fiberName: "daohua-catch-up", setWorldAsDefault: false, ownCloseSystemTry: false);
+        }
+        catch
+        {
+            EcsWorldShard.ExitCloseSystemTry();
+            throw;
+        }
     }
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -43,6 +55,8 @@ public sealed class DeterministicCatchUpEngine(GameDataCatalog gameData) : IDisp
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // 防御其他独立 World/测试在同进程改回 false：每次补算执行前确保异常直接向外抛出。
+            YuoWorld.CloseSystemTry = true;
             var state = SectionCodec.DecodeAggregate(bundle);
             var sourceVersion = state.StateVersion;
             _runtime.CreatePlayer(state, balances);
@@ -76,8 +90,17 @@ public sealed class DeterministicCatchUpEngine(GameDataCatalog gameData) : IDisp
 
     public void Dispose()
     {
-        _runtime.Dispose();
-        _gate.Dispose();
+        if (_disposed) return;
+        _disposed = true;
+        try
+        {
+            _runtime.Dispose();
+            _gate.Dispose();
+        }
+        finally
+        {
+            EcsWorldShard.ExitCloseSystemTry();
+        }
     }
 }
 
