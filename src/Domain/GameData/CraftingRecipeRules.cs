@@ -26,7 +26,7 @@ public static class CraftingRecipeRules
 
     /// <summary>
     /// 解析制造行动所需解锁境界等级。
-    /// 依据产出物（Yields）与消耗材料（Inputs）中包含物品/装备的最大 Tier 裁决。
+    /// 缺省显式 <c>level</c> 时：产出物为装备则读取装备穿戴等级，其余物品按产出物与输入材料的最大 Tier 裁决。
     /// </summary>
     public static int ResolveRequiredRealmLevel(ActionDefinition action, GameDataCatalog catalog)
     {
@@ -38,7 +38,8 @@ public static class CraftingRecipeRules
     /// <summary>
     /// 解析行动所需解锁境界等级。
     /// 配表显式声明的 <c>level</c> 优先级最高（行动本身即承载关卡，如 T1 采集点可配置 18 级门槛）；
-    /// 缺省时依据产出物（Yields）与消耗材料（Inputs）中包含物品/装备的最大 Tier 裁决。
+    /// 缺省时若产出物为装备则读取装备自身穿戴等级（显式 <c>level</c> 优先于 <c>tier</c> 换算），
+    /// 其余非装备产物按产出物（Yields）与输入材料（Inputs）的最大 Tier 换算，保证普通材料生态等级不破坏低阶配方解锁。
     /// 该优先级与装配期经验结算（<c>GameDataCatalog.ResolveActionCatalog</c>）及前端
     /// <c>resolveActionLevel</c> 完全一致，禁止两处口径分叉。
     /// </summary>
@@ -51,13 +52,19 @@ public static class CraftingRecipeRules
         // 0. 配表显式等级优先（行动自身即关卡定义）
         if (action.Level is { } explicitLevel) return explicitLevel;
 
-        // 1. 优先按产出物（Yields）的 Tier 裁决（与前端 resolveActionLevel 一致）
+        // 1. 优先按产出物（Yields）裁决：装备产物对齐装备穿戴等级，非装备产物按 Tier 换算
         if (action.Yields is { Count: > 0 })
         {
             foreach (var yield in action.Yields)
             {
                 if (yield.Kind != ActionYieldKind.Item || yield.Item is null) continue;
-                var tier = ResolveItemOrEquipmentTier(yield.Item.Value.Value, rawItems, rawEquipments);
+                var yieldId = yield.Item.Value.Value;
+                if (rawEquipments is not null && rawEquipments.ContainsKey(yieldId))
+                {
+                    return ResolveEquipmentRequiredLevel(yieldId, rawEquipments);
+                }
+
+                var tier = ResolveItemOrEquipmentTier(yieldId, rawItems, rawEquipments);
                 if (tier > 0) return ConvertTierToLevel(tier);
             }
         }

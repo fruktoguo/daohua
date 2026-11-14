@@ -600,6 +600,68 @@ export function resolveItemGrade(tier = 1): ItemGrade {
 }
 
 
+const raiseActionTierById = (
+  id: string,
+  currentMax: number,
+  eqMap: ReadonlyMap<string, { tier?: number | null }> | null,
+  itMap: ReadonlyMap<string, { tier?: number | null }> | null
+): number => {
+  let maxTier = currentMax
+  const eq = eqMap?.get(id)
+  if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
+  const it = itMap?.get(id)
+  if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+  const meta = ITEM_META_CORES[id]
+  if (meta?.rarity) {
+    const idx = ITEM_GRADE_ORDER.indexOf(meta.rarity)
+    if (idx >= 0 && idx + 1 > maxTier) maxTier = idx + 1
+  }
+  return maxTier
+}
+
+/**
+ * 解析行动的综合等阶（1~8）。
+ * 综合考虑行动等级换算阶、产出物与输入物显式品阶及遭遇品阶，取其中最高者；
+ * 用于制造图鉴按品阶筛选，避免显式较低等级的特殊配方（如 Lv.12 黄品/Lv.20 玄品装备）被错误降阶。
+ */
+export function resolveActionTier(
+  action: ActionDefinition,
+  items?: ReadonlyArray<{ itemId: string; tier?: number | null; level?: number | null }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number | null; level?: number | null }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number | null; level?: number | null }>
+): number {
+  const eqMap = equipment ? getEquipmentMap(equipment) : null
+  const itMap = items ? getItemMap(items) : null
+  const encMap = encounters ? getEncounterMap(encounters) : null
+
+  // 1. 先由行动等级（无论自身配置还是推导出的）计算出基础等阶（18级 -> Tier 2 黄阶）
+  const actionLevel = resolveActionLevel(action, items, equipment, encounters)
+  let maxTier = convertLevelToTier(actionLevel)
+
+  // 2. 检查产出物品/装备是否有显式更高的品阶
+  if (action.yields) {
+    for (const yieldEntry of action.yields) {
+      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+      maxTier = raiseActionTierById(yieldEntry.id, maxTier, eqMap, itMap)
+    }
+  }
+
+  // 3. 遭遇战按遭遇配置的显式 tier 是否更高
+  if (action.combatEncounterId) {
+    const enc = encMap?.get(action.combatEncounterId)
+    if (enc && typeof enc.tier === 'number' && enc.tier > maxTier) maxTier = enc.tier
+  }
+
+  // 4. 输入消耗材料如果具有更高的显式品阶也可作为参考
+  if (action.inputs) {
+    for (const inId of Object.keys(action.inputs)) {
+      maxTier = raiseActionTierById(inId, maxTier, eqMap, itMap)
+    }
+  }
+
+  return maxTier
+}
+
 /**
  * 根据行动配置与其关联的产出/消耗/遭遇及行动等级，解析行动的品质 (Rarity)
  * 规则（总纲与用户规范）：
@@ -615,53 +677,7 @@ export function resolveActionRarity(
   equipment?: ReadonlyArray<{ equipmentId: string; tier?: number | null; level?: number | null }>,
   encounters?: ReadonlyArray<{ encounterId: string; tier?: number | null; level?: number | null }>
 ): ItemRarity {
-  const eqMap = equipment ? getEquipmentMap(equipment) : null
-  const itMap = items ? getItemMap(items) : null
-  const encMap = encounters ? getEncounterMap(encounters) : null
-
-  // 1. 先由行动等级（无论自身配置还是推导出的）计算出基础等阶（18级 -> Tier 2 黄阶）
-  const actionLevel = resolveActionLevel(action, items, equipment, encounters)
-  let maxTier = convertLevelToTier(actionLevel)
-
-  // 2. 检查产出物品/装备是否有显式更高的品阶
-  if (action.yields) {
-    for (const yieldEntry of action.yields) {
-      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
-      const outId = yieldEntry.id
-      const eq = eqMap?.get(outId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
-      const it = itMap?.get(outId)
-      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
-      const meta = ITEM_META_CORES[outId]
-      if (meta?.rarity) {
-        const idx = ITEM_GRADE_ORDER.indexOf(meta.rarity)
-        if (idx >= 0 && idx + 1 > maxTier) maxTier = idx + 1
-      }
-    }
-  }
-
-  // 3. 遭遇战按遭遇配置的显式 tier 是否更高
-  if (action.combatEncounterId) {
-    const enc = encMap?.get(action.combatEncounterId)
-    if (enc && typeof enc.tier === 'number' && enc.tier > maxTier) maxTier = enc.tier
-  }
-
-  // 4. 输入消耗材料如果具有更高的显式品阶也可作为参考
-  if (action.inputs) {
-    for (const inId of Object.keys(action.inputs)) {
-      const eq = eqMap?.get(inId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
-      const it = itMap?.get(inId)
-      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
-      const meta = ITEM_META_CORES[inId]
-      if (meta?.rarity) {
-        const idx = ITEM_GRADE_ORDER.indexOf(meta.rarity)
-        if (idx >= 0 && idx + 1 > maxTier) maxTier = idx + 1
-      }
-    }
-  }
-
-  return resolveItemGrade(maxTier).rarity
+  return resolveItemGrade(resolveActionTier(action, items, equipment, encounters)).rarity
 }
 // 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
 /**

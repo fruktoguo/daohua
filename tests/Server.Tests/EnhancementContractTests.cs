@@ -284,6 +284,68 @@ public sealed class EnhancementContractTests
             0, acceptedRequestId);
         Assert.True(acceptedResult.Success, $"{acceptedResult.Code}: {acceptedResult.Message}");
     }
+
+    /// <summary>
+    /// 7 件稀有材料特殊装备制造门槛回归：
+    /// 配方解锁、目录下发等级与装备穿戴等级完全对齐（12/12/16/20/22/24/24），
+    /// 未达对应等级拒绝入队（RECIPE_LOCKED），达到对应等级无需等阶锚点（18/30）即可入队。
+    /// </summary>
+    [Fact]
+    public async Task ActionEnqueue_SpecialEquipment_UnlocksAtEquipmentRealmLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        async Task<PlayerCommandResult> TryEnqueueAtLevelAsync(int realmLevel, string actionId)
+        {
+            var playerId = Guid.NewGuid();
+            var repo = new FakeRepository(playerId, p =>
+            {
+                p.Progression.RealmLevel = realmLevel;
+            });
+            await using var runtime = EcsRuntimeFactory.Create(
+                repo, new EmptyAssets(), new NoopEconomy(), catalog);
+            await runtime.LoadAsync(playerId);
+
+            var reqId = Guid.NewGuid();
+            return await runtime.ExecuteAsync(playerId, "action.enqueue",
+                JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                    reqId.ToString("D"), actionId, 1), ProtocolJson.Options),
+                0, reqId);
+        }
+
+        var locked11 = await TryEnqueueAtLevelAsync(11, "forge.baihu-dagger");
+        Assert.False(locked11.Success);
+        Assert.Equal("RECIPE_LOCKED", locked11.Code);
+
+        var baihu12 = await TryEnqueueAtLevelAsync(12, "forge.baihu-dagger");
+        Assert.True(baihu12.Success, $"{baihu12.Code}: {baihu12.Message}");
+
+        var rongling12 = await TryEnqueueAtLevelAsync(12, "forge.rongling-pendant");
+        Assert.True(rongling12.Success, $"{rongling12.Code}: {rongling12.Message}");
+
+        var lockedHandi12 = await TryEnqueueAtLevelAsync(12, "forge.handi-armor");
+        Assert.False(lockedHandi12.Success);
+        Assert.Equal("RECIPE_LOCKED", lockedHandi12.Code);
+
+        var handi16 = await TryEnqueueAtLevelAsync(16, "forge.handi-armor");
+        Assert.True(handi16.Success, $"{handi16.Code}: {handi16.Message}");
+
+        var duanchen20 = await TryEnqueueAtLevelAsync(20, "forge.duanchen-blade");
+        Assert.True(duanchen20.Success, $"{duanchen20.Code}: {duanchen20.Message}");
+
+        var lockedCrown20 = await TryEnqueueAtLevelAsync(20, "forge.mingsha-crown");
+        Assert.False(lockedCrown20.Success);
+        Assert.Equal("RECIPE_LOCKED", lockedCrown20.Code);
+
+        var crown22 = await TryEnqueueAtLevelAsync(22, "forge.mingsha-crown");
+        Assert.True(crown22.Success, $"{crown22.Code}: {crown22.Message}");
+
+        var greaves24 = await TryEnqueueAtLevelAsync(24, "forge.fentian-greaves");
+        Assert.True(greaves24.Success, $"{greaves24.Code}: {greaves24.Message}");
+
+        var staff24 = await TryEnqueueAtLevelAsync(24, "forge.demon-core-staff");
+        Assert.True(staff24.Success, $"{staff24.Code}: {staff24.Message}");
+    }
     /// <summary>
     /// 装备持有校验按资产变体键结算：钱包只持 +2 变体时，装配基础形态与 +3 均拒绝，
     /// 装配 +2 成功并写入槽位等级；小数等级同样拒绝。

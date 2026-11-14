@@ -305,4 +305,45 @@ public sealed class HeavenGateTests
         Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 18, techniqueLevel: 0, catalog, out _));
         Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 25, techniqueLevel: 0, catalog, out _));
     }
+
+    /// <summary>
+    /// 7 件稀有材料特殊装备的制造配方、推算等级与穿戴等级严格一致（12/12/16/20/22/24/24）；
+    /// 即便省略配方显式 Level，装备产物依然对齐装备穿戴等级，且普通材料（如百炼铁生态 Lv.3）不抬高 Lv.1 解锁门槛。
+    /// </summary>
+    [Fact]
+    public void SpecialEquipmentForgingMatchesEquipmentLevelWithoutBreakingBasicMaterialRecipes()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var cases = new (string ActionId, string EquipmentId, int ExpectedLevel)[]
+        {
+            ("forge.baihu-dagger", "equipment.baihu-dagger", 12),
+            ("forge.rongling-pendant", "equipment.rongling-pendant", 12),
+            ("forge.handi-armor", "equipment.handi-armor", 16),
+            ("forge.duanchen-blade", "equipment.duanchen-blade", 20),
+            ("forge.mingsha-crown", "equipment.mingsha-crown", 22),
+            ("forge.fentian-greaves", "equipment.fentian-greaves", 24),
+            ("forge.demon-core-staff", "equipment.demon-core-staff", 24),
+        };
+
+        foreach (var (actionId, equipmentId, expectedLevel) in cases)
+        {
+            var action = catalog.Actions.Get(new ActionId(actionId));
+            Assert.Equal(expectedLevel, action.Level);
+            Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveEquipmentRequiredLevel(equipmentId, catalog));
+            Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveRequiredRealmLevel(action, catalog));
+
+            // 显式 Level 缺省时，仍应按装备自身穿戴等级而非等阶锚点（18/30）推导
+            var withoutExplicitLevel = action with { Level = null };
+            Assert.Equal(expectedLevel, CraftingRecipeRules.ResolveRequiredRealmLevel(withoutExplicitLevel, catalog));
+
+            // 境界或锻造技艺达到装备等级即可解锁；二者皆差 1 级则锁定
+            Assert.False(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: expectedLevel - 1, techniqueLevel: expectedLevel - 1, catalog, out _));
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: expectedLevel, techniqueLevel: 0, catalog, out _));
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 1, techniqueLevel: expectedLevel, catalog, out _));
+        }
+
+        // 非装备产物（百炼铁 item.refined-iron 含生态 level: 3）省略显式 Level 时仍按 Tier 1 -> 1 级解锁
+        var refineIron = catalog.Actions.Get(new ActionId("craft.refine-iron")) with { Level = null };
+        Assert.Equal(1, CraftingRecipeRules.ResolveRequiredRealmLevel(refineIron, catalog));
+    }
 }

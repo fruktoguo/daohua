@@ -27,7 +27,7 @@ await build({
     },
   ],
 })
-const { resolveActionRarity, resolveActionLevel, convertLevelToTier } = await import(pathToFileURL(tempOut).href)
+const { resolveActionRarity, resolveActionTier, resolveActionLevel, convertLevelToTier } = await import(pathToFileURL(tempOut).href)
 
 test.after(() => {
   try {
@@ -353,5 +353,43 @@ test('resolveActionRarity: 技艺、历练行动与品阶等级严格对齐，18
     const act = actions.find(a => a.id === id)
     assert.ok(act, `凡阶行动 ${id} 必须存在`)
     assert.equal(resolveActionRarity(act, items, equipment, encounters), 'mundane', `${id} 品阶必须为凡阶（mundane）`)
+  }
+})
+
+test('codexFilters: 7 件稀有材料特殊装备对齐装备等级且保持图鉴真实品阶', () => {
+  // 模拟服务端目录 DTO 形状（itemId/equipmentId/encounterId），确保 resolveActionLevel 与 resolveActionTier 全链覆盖
+  const items = readRows('items').map(r => ({ ...r, itemId: r.id }))
+  const equipment = readRows('equipment').map(r => ({ ...r, equipmentId: r.id }))
+  const encounters = readRows('encounters').map(r => ({ ...r, encounterId: r.id }))
+
+  const specialCases = [
+    { actionId: 'forge.baihu-dagger', equipmentId: 'equipment.baihu-dagger', expectedLevel: 12, expectedTier: 2, expectedRarity: 'yellow' },
+    { actionId: 'forge.rongling-pendant', equipmentId: 'equipment.rongling-pendant', expectedLevel: 12, expectedTier: 2, expectedRarity: 'yellow' },
+    { actionId: 'forge.handi-armor', equipmentId: 'equipment.handi-armor', expectedLevel: 16, expectedTier: 2, expectedRarity: 'yellow' },
+    { actionId: 'forge.duanchen-blade', equipmentId: 'equipment.duanchen-blade', expectedLevel: 20, expectedTier: 3, expectedRarity: 'mystic' },
+    { actionId: 'forge.mingsha-crown', equipmentId: 'equipment.mingsha-crown', expectedLevel: 22, expectedTier: 3, expectedRarity: 'mystic' },
+    { actionId: 'forge.fentian-greaves', equipmentId: 'equipment.fentian-greaves', expectedLevel: 24, expectedTier: 3, expectedRarity: 'mystic' },
+    { actionId: 'forge.demon-core-staff', equipmentId: 'equipment.demon-core-staff', expectedLevel: 24, expectedTier: 3, expectedRarity: 'mystic' },
+  ]
+
+  for (const { actionId, equipmentId, expectedLevel, expectedTier, expectedRarity } of specialCases) {
+    const act = actions.find(a => a.id === actionId)
+    const eq = equipment.find(e => e.equipmentId === equipmentId)
+    assert.ok(act, `锻造配方 ${actionId} 必须存在`)
+    assert.ok(eq, `装备定义 ${equipmentId} 必须存在`)
+    assert.equal(act.level, expectedLevel, `${actionId} 配表显式 level 必须等于装备自身等级 ${expectedLevel}`)
+    assert.equal(eq.level, expectedLevel, `${equipmentId} 装备自身等级应为 ${expectedLevel}`)
+    assert.equal(resolveActionLevel(act, items, equipment, encounters), expectedLevel)
+
+    // 即使省略 action.level，前端也能依据装备穿戴等级推导出相同解锁等级
+    const withoutExplicitLevel = { ...act, level: undefined }
+    assert.equal(resolveActionLevel(withoutExplicitLevel, items, equipment, encounters), expectedLevel)
+
+    // 图鉴等阶筛选必须采用 resolveActionTier（保持 T2 黄阶 / T3 玄阶），不得因等级低于 18/30 被 convertLevelToTier 降阶
+    const tier = resolveActionTier(act, items, equipment, encounters)
+    assert.equal(tier, expectedTier, `${actionId} 综合等阶必须为 T${expectedTier}`)
+    assert.equal(resolveActionRarity(act, items, equipment, encounters), expectedRarity)
+    assert.equal(matchesCodexGrade(tier, expectedTier), true)
+    assert.equal(matchesCodexGrade(tier, expectedTier - 1), false)
   }
 })

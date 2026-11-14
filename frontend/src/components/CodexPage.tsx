@@ -28,10 +28,10 @@ import { calculateTechniqueProgress, TECHNIQUE_IDS, TRAIT_DEFINITIONS } from '..
 import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
-  convertLevelToTier,
   convertTierToLevel,
   findItemInCatalog,
   resolveActionLevel,
+  resolveActionTier,
   resolveAssetLabel,
   resolveCatalogItemMetadata,
   resolveItemGrade,
@@ -303,7 +303,7 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
 
   const visibleCraftingActions = useMemo(() => {
     return allCraftingActions
-      .filter(a => matchesCodexGrade(convertLevelToTier(resolveActionLevel(a, items, equipment, encounters)), filters.grade))
+      .filter(a => matchesCodexGrade(resolveActionTier(a, items, equipment, encounters), filters.grade))
       .filter(a => filters.craftingSubTab === 'all' || resolveCodexCraftingSubTab(a) === filters.craftingSubTab)
       .filter(a => matchesCodexCollect(filters.collect, isActionUnlocked(a)))
       .sort((a, b) => {
