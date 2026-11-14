@@ -209,28 +209,32 @@ test('等比世界坐标投影：真实配表在不同系统 DPI/缩放比例下
   for (const region of maps) {
     const regionId = region.id ?? region.mapId
     const bounds = getBounds(region.nodes)
-    const refFit = computeAnchorFitViewport(bounds, dpiStages[0].width, dpiStages[0].height)
+    const focusCandidates = [null, { x: region.nodes[0].x, y: region.nodes[0].y }]
 
-    // 1. 等比 DPI 缩放（100% vs 150% vs 200%）：归一化屏幕坐标完全一致
-    for (const stage of dpiStages.slice(1)) {
-      const fit = computeAnchorFitViewport(bounds, stage.width, stage.height)
-      for (const node of region.nodes) {
-        const nodeId = node.id ?? node.nodeId
-        const px = toWorldPixel(node.x, node.y)
-        const refNormX = (refFit.viewport.panX + px.x * refFit.viewport.scale) / dpiStages[0].width
-        const refNormY = (refFit.viewport.panY + px.y * refFit.viewport.scale) / dpiStages[0].height
-        const curNormX = (fit.viewport.panX + px.x * fit.viewport.scale) / stage.width
-        const curNormY = (fit.viewport.panY + px.y * fit.viewport.scale) / stage.height
-        assert.ok(
-          Math.abs(refNormX - curNormX) < 1e-9 && Math.abs(refNormY - curNormY) < 1e-9,
-          `${regionId}/${nodeId} 在 ${stage.label} 下相对构图发生漂移`,
-        )
+    // 1. 等比 DPI 缩放（100% vs 150% vs 200%）：默认居中与焦点夹紧两种模式下，归一化屏幕坐标均严格一致
+    for (const focusPoint of focusCandidates) {
+      const refFit = computeAnchorFitViewport(bounds, dpiStages[0].width, dpiStages[0].height, focusPoint)
+      for (const stage of dpiStages.slice(1)) {
+        const fit = computeAnchorFitViewport(bounds, stage.width, stage.height, focusPoint)
+        for (const node of region.nodes) {
+          const nodeId = node.id ?? node.nodeId
+          const px = toWorldPixel(node.x, node.y)
+          const refNormX = (refFit.viewport.panX + px.x * refFit.viewport.scale) / dpiStages[0].width
+          const refNormY = (refFit.viewport.panY + px.y * refFit.viewport.scale) / dpiStages[0].height
+          const curNormX = (fit.viewport.panX + px.x * fit.viewport.scale) / stage.width
+          const curNormY = (fit.viewport.panY + px.y * fit.viewport.scale) / stage.height
+          assert.ok(
+            Math.abs(refNormX - curNormX) < 1e-9 && Math.abs(refNormY - curNormY) < 1e-9,
+            `${regionId}/${nodeId} 在 ${stage.label} 下相对构图发生漂移`,
+          )
+        }
       }
     }
 
     // 2. 任意宽高比视口下所有节点相对向量保持严格等比（零 X/Y 拉伸变形）
     for (const stage of aspectStages) {
       const fit = computeAnchorFitViewport(bounds, stage.width, stage.height)
+      assert.ok(Math.abs(fit.viewport.scale - fit.fitScale * fit.relativeZoom) < 1e-12)
       const first = region.nodes[0]
       const firstBase = toWorldPixel(first.x, first.y)
       const firstScreen = {
@@ -244,16 +248,22 @@ test('等比世界坐标投影：真实配表在不同系统 DPI/缩放比例下
           y: fit.viewport.panY + otherBase.y * fit.viewport.scale,
         }
         assert.ok(
-          Math.abs((otherScreen.x - firstScreen.x) - (otherBase.x - firstBase.x) * fit.fitScale) < 1e-9,
+          Math.abs((otherScreen.x - firstScreen.x) - (otherBase.x - firstBase.x) * fit.viewport.scale) < 1e-9,
           `${regionId} X 比例异常`,
         )
         assert.ok(
-          Math.abs((otherScreen.y - firstScreen.y) - (otherBase.y - firstBase.y) * fit.fitScale) < 1e-9,
+          Math.abs((otherScreen.y - firstScreen.y) - (otherBase.y - firstBase.y) * fit.viewport.scale) < 1e-9,
           `${regionId} Y 比例异常`,
         )
       }
     }
   }
+
+  // 3. 验证节点实显尺寸翻倍（相对上一版 ~50×17px，一图青云仙山在 760×520 舞台下四字牌匾 >= 95×34px）
+  const firstRegion = maps[0]
+  const firstFit = computeAnchorFitViewport(getBounds(firstRegion.nodes), 760, 520, firstRegion.nodes[0])
+  assert.ok(112 * firstFit.viewport.scale >= 95, `牌匾屏幕实显宽度偏小: ${112 * firstFit.viewport.scale}`)
+  assert.ok(40 * firstFit.viewport.scale >= 34, `牌匾屏幕实显高度偏小: ${40 * firstFit.viewport.scale}`)
 })
 
 test('真实全量配表节点在基准像素空间（纯牌匾与全带图双模式）零碰撞重叠', () => {
@@ -261,11 +271,11 @@ test('真实全量配表节点在基准像素空间（纯牌匾与全带图双�
   const allNodes = maps.flatMap(m => m.nodes.map(n => ({ ...n, mapId: m.id ?? m.mapId })))
   assert.ok(allNodes.length >= 18)
 
-  // 模式 A：无图纯紧凑牌匾（5字名宽约 78px，高约 24px）
-  // 模式 B：全部节点配置地标图像（58×42 图像框 + 24px 牌匾 + 3px 间距 -> 宽取 max(60, plaqueW)，总高 68px）
+  // 模式 A：翻倍古风纯牌匾（--text-xl 楷体+双层金线+角标余量，4~5字名宽约 114~133px，高 50px）
+  // 模式 B：全节点带图+翻倍牌匾（96×68 图像框 + 40px 牌匾 + 间距 + 顶部角标，宽取 max(98, plaqueW)，总高 120px）
   const modes = [
-    { name: '纯紧凑牌匾', minImgW: 0, height: 24 },
-    { name: '全节点带图+牌匾', minImgW: 60, height: 68 },
+    { name: '纯翻倍牌匾', minW: 84, height: 50 },
+    { name: '全节点带图+翻倍牌匾', minW: 98, height: 120 },
   ]
 
   for (const mode of modes) {
@@ -275,8 +285,8 @@ test('真实全量配表节点在基准像素空间（纯牌匾与全带图双�
         const b = allNodes[j]
         const aPx = toWorldPixel(a.x, a.y)
         const bPx = toWorldPixel(b.x, b.y)
-        const wA = Math.max(mode.minImgW, a.name.length * 12 + 18)
-        const wB = Math.max(mode.minImgW, b.name.length * 12 + 18)
+        const wA = Math.max(mode.minW, a.name.length * 19.5 + 36)
+        const wB = Math.max(mode.minW, b.name.length * 19.5 + 36)
         const overlapX = Math.abs(aPx.x - bPx.x) < (wA + wB) / 2
         const overlapY = Math.abs(aPx.y - bPx.y) < mode.height
         assert.equal(
@@ -288,8 +298,8 @@ test('真实全量配表节点在基准像素空间（纯牌匾与全带图双�
     }
   }
 
-  assert.equal(WORLD_UNIT_X, 9.6)
-  assert.equal(WORLD_UNIT_Y, 6.4)
+  assert.equal(WORLD_UNIT_X, 14)
+  assert.equal(WORLD_UNIT_Y, 10)
 })
 
 test('reprojectViewportOnResize：缩放/切窗重投影严格保持视口中心世界点与相对缩放比', () => {
@@ -338,7 +348,7 @@ test('buildNodeIconLookup & lookupNodeIconFromMap：格式优先级与宗门回�
   assert.equal(lookupNodeIconFromMap(iconMap, 'node.missing'), null)
 })
 
-test('静态代码契约：WorldMapPanel 与 expedition.css 强制保持等比画布、强 nodeId 透传与容器查询规则', () => {
+test('静态代码契约：WorldMapPanel 与 expedition.css 强制保持等比画布、强 nodeId 透传、妖王/精英角标与 Design Token 字号规范', () => {
   const panelSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/components/WorldMapPanel.tsx'), 'utf-8')
   const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/expedition.css'), 'utf-8')
 
@@ -349,8 +359,16 @@ test('静态代码契约：WorldMapPanel 与 expedition.css 强制保持等比�
   assert.match(panelSource, /const MapNodeButton = memo\(function MapNodeButton\(\{[\s\S]*?\bnodeId\b/)
   assert.match(panelSource, /resolveNodeIconUrl\(nodeId\)/)
   assert.match(panelSource, /data-node-id=\{nodeId\}/)
+  // 妖王与精英显式角标与修饰类契约
+  assert.match(panelSource, /has-elite/)
+  assert.match(panelSource, /has-boss/)
+  assert.match(panelSource, /combat\.nearby\.rankElite/)
+  assert.match(panelSource, /combat\.nearby\.rankBoss/)
   // canvas JSX style 不拥有 transform 属性，防高刷路径被 React 重渲染拉回
   assert.doesNotMatch(panelSource, /className="world-map-canvas"[\s\S]{0,160}transform:/)
+  // 节点与角标字号使用标准 Design Token（禁止裸像素）
+  assert.match(cssSource, /\.world-map-node-name\s*\{[\s\S]*?font-size:\s*var\(--text-xl\)/)
+  assert.match(cssSource, /\.world-map-node-badge\s*\{[\s\S]*?font-size:\s*var\(--text-2xs\)/)
   // 容器查询窄区自动退栈
   assert.match(cssSource, /container:\s*map-shell\s*\/\s*inline-size/)
   assert.match(cssSource, /@container map-shell \(max-width:\s*660px\)/)

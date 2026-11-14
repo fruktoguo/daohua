@@ -53,7 +53,7 @@ function getEdgeCurve(
   const dx = to.x - from.x
   const dy = to.y - from.y
   const length = Math.hypot(dx, dy) || 1
-  const bend = Math.min(26, 6 + length * 0.06)
+  const bend = Math.min(38, 9 + length * 0.06)
   const direction = stableEdgeHash(edgeId) % 2 === 0 ? 1 : -1
   const offset = bend * direction
   const normalX = -dy / length
@@ -77,7 +77,7 @@ interface WorldGraphView {
   edges: readonly WorldEdgeDefinition[]
 }
 
-/** 全图画布的基准像素包围盒（100×100 世界单位 = 960×640 基准像素） */
+/** 全图画布的基准像素包围盒（100×100 世界单位 = 1400×1000 基准像素） */
 type WorldBounds = WorldCanvasSize
 
 /** 路径规划计算结果 */
@@ -445,7 +445,7 @@ interface MapNodeButtonProps {
   onSelect: (nodeId: string) => void
 }
 
-/** 大世界地图节点实体：支持「可选灵境地标图像 + 紧凑修仙名称牌匾」双形态渲染。 */
+/** 大世界地图节点实体：支持「可选灵境地标图像 + 翻倍古风牌匾 + 妖王/精英生态角标」渲染。 */
 const MapNodeButton = memo(function MapNodeButton({
   nodeId,
   node,
@@ -460,6 +460,7 @@ const MapNodeButton = memo(function MapNodeButton({
   const t = useT()
   const imageUrl = resolveNodeIconUrl(nodeId)
   const hasBoss = (node.bossEnemies?.length ?? 0) > 0
+  const hasElite = (node.eliteEnemies?.length ?? 0) > 0
   const isSecret = Boolean(node.hidden)
   const isSect = nodeId.startsWith('node.zongmen.')
 
@@ -469,6 +470,7 @@ const MapNodeButton = memo(function MapNodeButton({
     isCurrent ? 'is-current' : '',
     isSelected ? 'is-selected' : '',
     isGateway ? 'is-gateway' : '',
+    hasElite ? 'has-elite' : '',
     hasBoss ? 'has-boss' : '',
     isSecret ? 'is-secret' : '',
     isSect ? 'is-sect' : '',
@@ -490,6 +492,16 @@ const MapNodeButton = memo(function MapNodeButton({
       style={{ left: `${xPx}px`, top: `${yPx}px` }}
       type="button"
     >
+      {(hasElite || hasBoss) && (
+        <span aria-hidden="true" className="world-map-node-badges">
+          {hasElite && (
+            <span className="world-map-node-badge is-elite">{t('combat.nearby.rankElite')}</span>
+          )}
+          {hasBoss && (
+            <span className="world-map-node-badge is-boss">{t('combat.nearby.rankBoss')}</span>
+          )}
+        </span>
+      )}
       {imageUrl && (
         <span className="world-map-node-media">
           <img
@@ -513,11 +525,11 @@ const MapNodeButton = memo(function MapNodeButton({
  * 修仙大千世界大地图与游历导航面板 (WorldMapPanel)
  *
  * 核心功能与交互流程：
- * 1. 统一度量等比世界坐标系：基于 9.6×6.4 固定基准像素空间绘制全要素并通过画布整体缩放，各显示比例构图严格一致；
+ * 1. 统一度量等比世界坐标系：基于 14×10 固定基准像素空间绘制全要素并通过画布整体缩放，各显示比例构图严格一致；
  * 2. 交互式漫游视口：支持鼠标拖拽 (Pan)、滚轮锚点缩放、触屏双指捏合与 Resize 重投影；
- * 3. 玩家位置居中：打开地图或点击定位时自动将玩家所在位置（驻留地点或行进路径）居中展示；
- * 4. 可靠节点交互：区分平移漫游与地点点击，支持纯牌匾及「地标图像+牌匾」双形态；
- * 5. 宽域连线交互：宽达 28px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)。
+ * 3. 玩家位置居中与舒适视野聚焦：自动适配当前锚框并按舒适跨度拉近聚焦，打开或定位时清晰展示周边地标；
+ * 4. 可靠节点交互与生态标示：区分平移漫游与地点点击，支持纯牌匾及「地标图像+牌匾」双形态，并显式标示妖王/精英节点；
+ * 5. 宽域连线交互：宽达 34px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)。
  */
 export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { hidden?: boolean } = {}): React.JSX.Element {
   const t = useT()
@@ -816,6 +828,16 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const getAnchorBoundsRef = useRef(getAnchorBounds)
   getAnchorBoundsRef.current = getAnchorBounds
 
+  const getFitFocusPoint = useCallback(() => {
+    if (selectedNodeId && selectedNodeId !== world.nodeId && gatewayNodeIds.has(selectedNodeId)) {
+      const gateway = worldIndex.nodes.find(n => n.nodeId === selectedNodeId)
+      if (gateway) return { x: gateway.x, y: gateway.y }
+    }
+    return playerPosRef.current
+  }, [selectedNodeId, world.nodeId, gatewayNodeIds, worldIndex.nodes, playerPosRef])
+  const getFitFocusPointRef = useRef(getFitFocusPoint)
+  getFitFocusPointRef.current = getFitFocusPoint
+
   const fitToAnchorRegion = useCallback(() => {
     cancelPanAnim()
     const stage = stageRef.current
@@ -827,7 +849,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const bounds = getAnchorBoundsRef.current()
     if (!bounds) return
 
-    const fit = computeAnchorFitViewport(bounds, stageW, stageH)
+    const fit = computeAnchorFitViewport(bounds, stageW, stageH, getFitFocusPointRef.current())
     fitScaleRef.current = fit.fitScale
     stageSizeRef.current = { width: stageW, height: stageH }
     writeViewport({ x: fit.viewport.panX, y: fit.viewport.panY }, fit.viewport.scale)
@@ -926,7 +948,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       if (stageSizeRef.current.width === 0 || stageSizeRef.current.height === 0) {
         const bounds = getAnchorBoundsRef.current()
         if (bounds) {
-          const initFit = computeAnchorFitViewport(bounds, stageW, stageH)
+          const initFit = computeAnchorFitViewport(bounds, stageW, stageH, getFitFocusPointRef.current())
           fitScaleRef.current = initFit.fitScale
           stageSizeRef.current = { width: stageW, height: stageH }
           writeViewport({ x: initFit.viewport.panX, y: initFit.viewport.panY }, initFit.viewport.scale)
@@ -1252,7 +1274,11 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   }
 
   const initialPlayerPx = toWorldPixel(playerPosRef.current.x, playerPosRef.current.y)
+  const currentNodeObj = world.nodeId ? worldIndex.nodes.find(n => n.nodeId === world.nodeId) : undefined
   const onImageNode = Boolean(world.nodeId && resolveNodeIconUrl(world.nodeId))
+  const onBadgedNode = Boolean(
+    currentNodeObj && ((currentNodeObj.bossEnemies?.length ?? 0) > 0 || (currentNodeObj.eliteEnemies?.length ?? 0) > 0),
+  )
 
   return (
     <div className="world-map-layout">
@@ -1324,19 +1350,19 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             </defs>
             {/* 可见区域虚线界框与区域名牌 */}
             {visibleRegions.map(({ map: region, bounds }) => {
-              const framePad = 8
+              const framePad = 9
               const minPx = toWorldPixel(bounds.minX - framePad, bounds.minY - framePad)
               const maxPx = toWorldPixel(bounds.maxX + framePad, bounds.maxY + framePad)
               const fw = maxPx.x - minPx.x
               const fh = maxPx.y - minPx.y
               const cx = (minPx.x + maxPx.x) / 2
-              const labelY = Math.max(20, minPx.y + 20)
+              const labelY = Math.max(28, minPx.y + 28)
               return (
                 <g className="world-map-region" key={region.mapId}>
                   <rect
                     className="world-map-region-frame"
                     height={fh}
-                    rx={14}
+                    rx={18}
                     width={fw}
                     x={minPx.x}
                     y={minPx.y}
@@ -1414,7 +1440,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           {/* 玩家当前位置向下箭头指示器 */}
           <div
             aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
-            className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}${onImageNode ? ' is-on-image-node' : ''}`}
+            className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}${onImageNode ? ' is-on-image-node' : ''}${onBadgedNode ? ' is-on-badged-node' : ''}`}
             ref={markerRef}
             style={{
               left: `${initialPlayerPx.x}px`,
@@ -1426,9 +1452,9 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               <div className="world-player-marker-arrow">
                 <svg
                   className="world-player-arrow-svg"
-                  height={32}
+                  height={40}
                   viewBox="0 0 24 32"
-                  width={24}
+                  width={30}
                 >
                   {/* 外轮廓护甲底框 */}
                   <path

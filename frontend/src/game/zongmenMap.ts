@@ -3,17 +3,17 @@ import { WORLD_UNIT_X, WORLD_UNIT_Y } from '../components/worldMapVisibility.ts'
 
 /** 宗门投影相对于挂靠节点的候选偏移（世界单位），按默认优先序排列 */
 const ZONGMEN_CANDIDATE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [9, 9],
-  [9, -9],
-  [-9, 9],
-  [-9, -9],
-  [12, 0],
-  [-12, 0],
-  [0, 12],
-  [0, -12],
+  [11, 10],
+  [11, -10],
+  [-11, 10],
+  [-11, -10],
+  [14, 0],
+  [-14, 0],
+  [0, 13],
+  [0, -13],
 ]
 
-const MIN_CLEARANCE_PX = 96
+const MIN_CLEARANCE_PX = 148
 
 function resolveSafeZongmenPosition(
   anchor: { x: number; y: number },

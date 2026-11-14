@@ -165,13 +165,17 @@ export function resolveAnchorBounds(params: ResolveAnchorBoundsParams): WorldAnc
   return { minX, minY, maxX, maxY }
 }
 
-/** 世界单位到固定基准像素的换算倍率（100×100 世界单位 = 960×640 基准像素，固定 3:2 比例） */
-export const WORLD_UNIT_X = 9.6
-export const WORLD_UNIT_Y = 6.4
+/** 世界单位到固定基准像素的换算倍率（100×100 世界单位 = 1400×1000 基准像素，固定 7:5 比例） */
+export const WORLD_UNIT_X = 14
+export const WORLD_UNIT_Y = 10
 
 /** 相对适配倍率（relativeZoom）允许的最小/最大用户缩放倍数 */
 export const MIN_RELATIVE_ZOOM = 0.45
-export const MAX_RELATIVE_ZOOM = 2.6
+export const MAX_RELATIVE_ZOOM = 3.2
+
+/** 默认舒适视野在基准像素空间中的参考跨度：大跨度区域自动适度拉近，保证节点在各区域下均清晰舒展 */
+export const COMFORT_VIEW_WIDTH_PX = 820
+export const COMFORT_VIEW_HEIGHT_PX = 560
 
 export interface WorldPixelPoint {
   x: number
@@ -203,7 +207,7 @@ export function toWorldPixel(x: number, y: number): WorldPixelPoint {
 
 /** 计算全图画布的固定基准像素尺寸。 */
 export function computeWorldCanvasSize(maxWorldX: number, maxWorldY: number): WorldCanvasSize {
-  const px = toWorldPixel(Math.max(100, maxWorldX) + 12, Math.max(100, maxWorldY) + 8)
+  const px = toWorldPixel(Math.max(100, maxWorldX) + 14, Math.max(100, maxWorldY) + 12)
   return { width: px.x, height: px.y }
 }
 
@@ -214,35 +218,56 @@ export function clampRelativeZoom(relativeZoom: number): number {
 
 /**
  * 依据当前锚点包围盒与舞台像素尺寸计算初始/复位等比视口。
- * 同一组锚点在不同显示比例下会产出相同的相对屏幕构图。
+ * 采用「全锚框 fitScale 基准 + 舒适视野自动拉近聚焦」双层机制：
+ * 同一组锚点与焦点在不同显示比例（DPI）下会产出完全相同的归一化屏幕构图。
  */
 export function computeAnchorFitViewport(
   anchorBounds: { minX: number; minY: number; maxX: number; maxY: number },
   stageWidth: number,
   stageHeight: number,
+  focusPoint?: { x: number; y: number } | null,
 ): FitViewportResult {
   const safeW = Math.max(1, stageWidth)
   const safeH = Math.max(1, stageHeight)
-  const padX = 11
-  const padY = 11
+  const padX = 8
+  const padY = 8
   const minPx = toWorldPixel(anchorBounds.minX - padX, anchorBounds.minY - padY)
   const maxPx = toWorldPixel(anchorBounds.maxX + padX, anchorBounds.maxY + padY)
   const contentW = Math.max(1, maxPx.x - minPx.x)
   const contentH = Math.max(1, maxPx.y - minPx.y)
   const rawFitScale = Math.min((safeW * 0.96) / contentW, (safeH * 0.96) / contentH)
   const fitScale = Math.max(0.05, Math.min(8, rawFitScale))
-  const focusWorld = {
+  const comfortScale = Math.min((safeW * 0.96) / COMFORT_VIEW_WIDTH_PX, (safeH * 0.96) / COMFORT_VIEW_HEIGHT_PX)
+  const relativeZoom = clampRelativeZoom(Math.max(1, comfortScale / rawFitScale))
+  const scale = fitScale * relativeZoom
+
+  const centerWorld = {
     x: (minPx.x + maxPx.x) / 2,
     y: (minPx.y + maxPx.y) / 2,
   }
+
+  let focusWorld = centerWorld
+  if (focusPoint && Number.isFinite(focusPoint.x) && Number.isFinite(focusPoint.y)) {
+    const rawFocus = toWorldPixel(focusPoint.x, focusPoint.y)
+    const halfViewW = (safeW * 0.96) / (2 * scale)
+    const halfViewH = (safeH * 0.96) / (2 * scale)
+    const clampedX = contentW <= 2 * halfViewW
+      ? centerWorld.x
+      : Math.min(maxPx.x - halfViewW, Math.max(minPx.x + halfViewW, rawFocus.x))
+    const clampedY = contentH <= 2 * halfViewH
+      ? centerWorld.y
+      : Math.min(maxPx.y - halfViewH, Math.max(minPx.y + halfViewH, rawFocus.y))
+    focusWorld = { x: clampedX, y: clampedY }
+  }
+
   return {
     fitScale,
-    relativeZoom: 1,
+    relativeZoom,
     focusWorld,
     viewport: {
-      scale: fitScale,
-      panX: safeW / 2 - focusWorld.x * fitScale,
-      panY: safeH / 2 - focusWorld.y * fitScale,
+      scale,
+      panX: safeW / 2 - focusWorld.x * scale,
+      panY: safeH / 2 - focusWorld.y * scale,
     },
   }
 }

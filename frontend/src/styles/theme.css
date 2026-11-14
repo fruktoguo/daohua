@@ -580,7 +580,52 @@
 
 :root[data-theme="light"] .world-map-node-plaque,
 :root[data-theme="light"] .world-map-node-media {
-  background: linear-gradient(135deg, rgba(201, 180, 109, 0.14), transparent 52%), rgba(var(--surface-rgb), 0.96);
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(168, 128, 56, 0.16) 0%, transparent 64%),
+    linear-gradient(180deg, rgba(252, 249, 240, 0.98) 0%, rgba(240, 232, 212, 0.96) 100%);
+}
+
+:root[data-theme="light"] .world-map-node.has-boss .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node.has-boss .world-map-node-media {
+  border-color: rgba(178, 51, 39, 0.84);
+}
+
+:root[data-theme="light"] .world-map-node.has-boss .world-map-node-plaque {
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(178, 51, 39, 0.12) 0%, transparent 64%),
+    linear-gradient(180deg, rgba(252, 246, 240, 0.98) 0%, rgba(242, 228, 218, 0.96) 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--surface-rgb), 0.94),
+    inset 0 0 0 3px rgba(178, 51, 39, 0.28),
+    0 0 0 2px rgba(71, 49, 18, 0.16),
+    0 6px 18px rgba(71, 49, 18, 0.16);
+}
+
+:root[data-theme="light"] .world-map-node.has-elite:not(.has-boss) .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node.has-elite:not(.has-boss) .world-map-node-media {
+  border-color: rgba(105, 64, 140, 0.78);
+}
+
+:root[data-theme="light"] .world-map-node.has-elite:not(.has-boss) .world-map-node-plaque {
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--surface-rgb), 0.94),
+    inset 0 0 0 3px rgba(105, 64, 140, 0.24),
+    0 0 0 2px rgba(71, 49, 18, 0.16),
+    0 6px 18px rgba(71, 49, 18, 0.16);
+}
+
+:root[data-theme="light"] .world-map-node-badge.is-boss {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+  color: var(--on-accent);
+  box-shadow: 0 2px 6px rgba(140, 36, 24, 0.28);
+}
+
+:root[data-theme="light"] .world-map-node-badge.is-elite {
+  border-color: #522d73;
+  background: var(--purple);
+  color: var(--on-accent);
+  box-shadow: 0 2px 6px rgba(105, 64, 140, 0.26);
 }
 
 :root[data-theme="light"] .world-location-panel {
@@ -765,12 +810,32 @@
 :root[data-theme="light"] .world-map-stage::after { box-shadow: inset 0 0 90px rgba(71, 49, 18, 0.175); }
 :root[data-theme="light"] .world-map-tool-btn { box-shadow: 0 2px 8px rgba(71, 49, 18, 0.15); }
 :root[data-theme="light"] .world-map-node-plaque,
-:root[data-theme="light"] .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 6px 16px rgba(71, 49, 18, 0.14); }
-:root[data-theme="light"] .world-map-node-name { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.2); }
+:root[data-theme="light"] .world-map-node-media {
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--surface-rgb), 0.94),
+    inset 0 0 0 3px rgba(125, 82, 26, 0.22),
+    0 0 0 2px rgba(71, 49, 18, 0.16),
+    0 6px 18px rgba(71, 49, 18, 0.15);
+}
+:root[data-theme="light"] .world-map-node-name { text-shadow: 0 1px 2px rgba(255, 250, 240, 0.8); }
 :root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-plaque,
-:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 0 16px rgba(232, 214, 154, 0.4); }
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-media {
+  border-color: var(--gold);
+  box-shadow:
+    inset 0 0 0 2px rgba(var(--surface-rgb), 0.94),
+    inset 0 0 0 3px rgba(125, 82, 26, 0.34),
+    0 0 0 2px rgba(71, 49, 18, 0.18),
+    0 0 16px rgba(180, 140, 62, 0.35);
+}
 :root[data-theme="light"] .world-map-node.is-selected .world-map-node-plaque,
-:root[data-theme="light"] .world-map-node.is-selected .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 0 22px rgba(232, 214, 154, 0.45); }
+:root[data-theme="light"] .world-map-node.is-selected .world-map-node-media {
+  border-color: var(--gold-bright);
+  box-shadow:
+    inset 0 0 0 2px rgba(249, 245, 234, 0.86),
+    inset 0 0 0 3px rgba(125, 82, 26, 0.42),
+    0 0 0 2px rgba(71, 49, 18, 0.18),
+    0 0 20px rgba(180, 140, 62, 0.42);
+}
 :root[data-theme="light"] .combat-arena-shell { box-shadow: inset 0 0 54px rgba(71, 49, 18, 0.12); }
 :root[data-theme="light"] .arena-overhead>strong { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.237); }
 :root[data-theme="light"] .arena-buff-square { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.15); }

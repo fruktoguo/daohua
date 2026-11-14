@@ -630,8 +630,8 @@
 ## 39. 大世界地图等比画布与节点图像牌匾 (WorldMapPanel & Node Icons)
 
 - **适用场景**：
-  - **大世界等比基准像素画布与无畸变重投影**：统一采用 `WORLD_UNIT_X = 9.6`、`WORLD_UNIT_Y = 6.4`（`100 × 100` 世界单位恒定等于 `960 × 640` 基准像素，固定 3:2 比例），通过外层画布单一 `translate(panX, panY) scale(fitScale * relativeZoom)` 变换保证全 DPI/浏览器缩放下的相对构图与节点净空一致，容器尺寸变化时通过 `reprojectViewportOnResize` 保持焦点与相对缩放比 -> `WorldMapPanel`, `worldMapVisibility.ts`
-  - **节点地标图像与紧凑修仙牌匾**：支持无图纯紧凑牌匾与有图「上方折角灵境图像 + 下方名称牌匾」双形态自动切换（基于 `frontend/src/assets/nodes/<nodeId>.{webp,png,svg}` 自动发现，`node.zongmen.*` 可回退 `node.zongmen`），显式透传 `nodeId` 并保留关口/首领/秘境/宗门/赶路终点/当前驻留语义样式 -> `MapNodeButton`, `resolveNodeIconUrl`
+  - **大世界等比基准像素画布与无畸变重投影**：统一采用 `WORLD_UNIT_X = 14`、`WORLD_UNIT_Y = 10`（`100 × 100` 世界单位恒定等于 `1400 × 1000` 基准像素，固定 7:5 比例）与舒适视野（`820 × 560`）自动拉近聚焦，通过外层画布单一 `translate(panX, panY) scale(fitScale * relativeZoom)` 变换保证全 DPI/浏览器缩放下的相对构图与节点净空一致，容器尺寸变化时通过 `reprojectViewportOnResize` 保持焦点与相对缩放比 -> `WorldMapPanel`, `worldMapVisibility.ts`
+  - **节点地标图像与翻倍修仙古匾**：采用翻倍尺寸（`--text-xl` 楷体字号、双层金线内衬）古风牌匾，支持无图纯牌匾与有图「上方折角灵境图像（`96 × 68`）+ 下方名称牌匾」双形态自动切换（基于 `frontend/src/assets/nodes/<nodeId>.{webp,png,svg}` 自动发现，`node.zongmen.*` 可回退 `node.zongmen`）；显式透传 `nodeId`，保留含妖王地点的朱红警示边框并在顶部 `.world-map-node-badges` 显式展示「精英 / 妖王」生态角标（`rankElite` / `rankBoss`） -> `MapNodeButton`, `resolveNodeIconUrl`
 - **组件源码**：
   - [`frontend/src/components/WorldMapPanel.tsx`](../../frontend/src/components/WorldMapPanel.tsx)
   - [`frontend/src/components/worldMapVisibility.ts`](../../frontend/src/components/worldMapVisibility.ts)

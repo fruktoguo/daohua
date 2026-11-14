@@ -7,7 +7,7 @@ test('宗门地图只保留本宗节点，迁宗重建连线，离宗清除私�
   const own = { nodeId: 'node.zongmen.one', anchorNodeId: 'a', name: '青云宗' }
   const first = withZongmenResidence(maps, own)
   assert.equal(first[0].nodes.length, 3)
-  assert.deepEqual([first[0].nodes[2].x, first[0].nodes[2].y], [29, 69])
+  assert.deepEqual([first[0].nodes[2].x, first[0].nodes[2].y], [31, 70])
   assert.equal(maps[0].nodes.length, 2)
   const moved = withZongmenResidence(first, { ...own, anchorNodeId: 'b' })
   assert.equal(moved[0].nodes.length, 3)
@@ -23,8 +23,8 @@ test('宗门地图支持高坐标区域不钳位，并在默认方位拥挤时�
     mapId: 'map.high',
     nodes: [
       { nodeId: 'anchor', x: 180, y: 88 },
-      // 占住默认 [9, 9] 方向 (189, 97) 邻近位置，触发自动避让
-      { nodeId: 'blocker', x: 188, y: 95 },
+      // 占住默认 [11, 10] 方向 (191, 98) 邻近位置，触发自动避让
+      { nodeId: 'blocker', x: 190, y: 97 },
     ],
     edges: [],
   }]
@@ -34,6 +34,6 @@ test('宗门地图支持高坐标区域不钳位，并在默认方位拥挤时�
   assert.ok(sect)
   // 高坐标不再被旧逻辑钳位到 <= 95
   assert.ok(sect.x > 100)
-  // 已自动避开默认右下方向 [9, 9]，切换至 [9, -9]
-  assert.deepEqual([sect.x, sect.y], [189, 79])
+  // 已自动避开默认右下方向 [11, 10]，切换至 [11, -10]
+  assert.deepEqual([sect.x, sect.y], [191, 78])
 })

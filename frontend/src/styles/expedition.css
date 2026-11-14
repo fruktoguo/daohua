@@ -195,23 +195,23 @@
 .world-map-edge-hitbox {
   fill: none;
   stroke: rgba(0, 0, 0, 0.001);
-  stroke-width: 28px;
+  stroke-width: 34px;
   stroke-linecap: round;
   pointer-events: stroke;
 }
 
 .world-map-edge-bg {
   fill: none;
-  stroke: rgba(0, 0, 0, 0.75);
-  stroke-width: 4px;
+  stroke: rgba(0, 0, 0, 0.78);
+  stroke-width: 6px;
   stroke-linecap: round;
   pointer-events: none;
 }
 
 .world-map-edge-line {
   fill: none;
-  stroke: rgba(201, 180, 109, 0.35);
-  stroke-width: 1.5px;
+  stroke: rgba(201, 180, 109, 0.4);
+  stroke-width: 2.2px;
   stroke-linecap: round;
   pointer-events: none;
   transition: stroke 0.2s ease, stroke-width 0.2s ease;
@@ -219,26 +219,26 @@
 
 .world-map-edge-group.is-planned .world-map-edge-line {
   stroke: #e8d69a;
-  stroke-width: 2.2px;
-  stroke-dasharray: 6 4;
-  filter: drop-shadow(0 0 4px rgba(232, 214, 154, 0.8));
+  stroke-width: 3.2px;
+  stroke-dasharray: 8 5;
+  filter: drop-shadow(0 0 5px rgba(232, 214, 154, 0.85));
   animation: world-route-flow 0.8s linear infinite;
 }
 
 .world-map-edge-group:hover .world-map-edge-line {
   stroke: var(--gold-bright);
-  stroke-width: 2.5px;
+  stroke-width: 3.4px;
   filter: drop-shadow(0 0 8px rgba(201, 180, 109, 0.9));
 }
 
 .world-map-edge-label-text {
   fill: #e8d69a;
   font-family: Arial, var(--font-kaiti), sans-serif;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--font-weight-medium);
   paint-order: stroke;
   stroke: rgba(6, 8, 6, 0.95);
-  stroke-width: 3px;
+  stroke-width: 4px;
   stroke-linejoin: round;
   pointer-events: none;
   opacity: 0;
@@ -249,7 +249,7 @@
   opacity: 1;
   fill: #ffffff;
   stroke: rgba(0, 0, 0, 0.95);
-  stroke-width: 4px;
+  stroke-width: 5px;
 }
 
 /* 区域界框与名牌：大世界共用坐标系下按区域分组的显示边界 */
@@ -259,26 +259,26 @@
 
 .world-map-region-frame {
   fill: rgba(114, 169, 140, 0.028);
-  stroke: rgba(114, 169, 140, 0.3);
-  stroke-width: 1px;
-  stroke-dasharray: 7 6;
+  stroke: rgba(114, 169, 140, 0.34);
+  stroke-width: 1.4px;
+  stroke-dasharray: 9 7;
 }
 
 .world-map-region-name {
-  fill: rgba(114, 169, 140, 0.72);
+  fill: rgba(114, 169, 140, 0.78);
   font-family: var(--font-kaiti);
-  font-size: var(--text-base);
-  letter-spacing: 4px;
+  font-size: var(--text-xl);
+  letter-spacing: 6px;
   paint-order: stroke;
-  stroke: rgba(6, 8, 6, 0.9);
-  stroke-width: 3px;
+  stroke: rgba(6, 8, 6, 0.92);
+  stroke-width: 4px;
   stroke-linejoin: round;
 }
 
 /* 跨域长路：两端节点分属不同区域的边以虚线区别于图内道路 */
 .world-map-edge-group.is-crossing .world-map-edge-line {
-  stroke: rgba(114, 169, 140, 0.55);
-  stroke-dasharray: 5 5;
+  stroke: rgba(114, 169, 140, 0.62);
+  stroke-dasharray: 7 6;
 }
 
 .world-map-edge-group.is-crossing:hover .world-map-edge-line {
@@ -287,7 +287,7 @@
 
 @keyframes world-route-flow {
   to {
-    stroke-dashoffset: -10;
+    stroke-dashoffset: -13;
   }
 }
 
@@ -297,7 +297,7 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   width: auto;
   min-width: 0;
   padding: 0;
@@ -335,17 +335,59 @@
   z-index: 4;
 }
 
-/* 可选地标图像框：有图节点呈现「折角灵境图像 + 下方紧凑名称牌匾」双形态 */
+/* 节点顶部生态角标条：显式区分「精英」「妖王」栖息地点 */
+.world-map-node-badges {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.world-map-node-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-family: var(--font-kaiti);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.78);
+}
+
+.world-map-node-badge.is-elite {
+  border: 1px solid rgba(196, 148, 246, 0.85);
+  background: linear-gradient(180deg, rgba(94, 48, 146, 0.96), rgba(56, 26, 92, 0.98));
+  color: #f3e8ff;
+}
+
+.world-map-node-badge.is-boss {
+  border: 1px solid rgba(242, 139, 124, 0.9);
+  background: linear-gradient(180deg, rgba(176, 46, 36, 0.96), rgba(116, 24, 18, 0.98));
+  color: #ffebd9;
+}
+
+/* 可选地标图像框：有图节点呈现「折角灵境图像 + 下方翻倍古风牌匾」双形态 */
 .world-map-node-media {
   position: relative;
   display: block;
-  width: 58px;
-  height: 42px;
-  padding: 2px;
-  border: 1px solid rgba(201, 180, 109, 0.58);
-  background: rgba(10, 12, 9, 0.94);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.62);
-  clip-path: polygon(0 6px, 6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+  width: 96px;
+  height: 68px;
+  padding: 3px;
+  border: 1px solid rgba(212, 190, 120, 0.68);
+  background: rgba(10, 12, 9, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 180, 109, 0.2),
+    0 6px 18px rgba(0, 0, 0, 0.68);
+  clip-path: polygon(0 8px, 8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
   overflow: hidden;
   pointer-events: none;
   transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
@@ -359,20 +401,24 @@
   pointer-events: none;
 }
 
-/* 紧凑修仙名称牌匾：按地名字数自然包裹 */
+/* 翻倍修仙名称古匾：双层内衬金线 + 温润玄漆底纹，按地名字数自然包裹 */
 .world-map-node-plaque {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 23px;
-  padding: 3px 9px;
-  border: 1px solid rgba(201, 180, 109, 0.62);
-  border-radius: 2px;
+  min-height: 40px;
+  padding: 7px 18px;
+  border: 1px solid rgba(212, 190, 120, 0.72);
+  border-radius: 3px;
   background:
-    linear-gradient(135deg, rgba(201, 180, 109, 0.14), transparent 52%),
-    rgba(10, 12, 9, 0.96);
-  box-shadow: 0 0 0 2px rgba(7, 6, 4, 0.68), 0 6px 14px rgba(0, 0, 0, 0.56);
+    radial-gradient(120% 140% at 50% 0%, rgba(214, 191, 118, 0.18) 0%, rgba(201, 180, 109, 0.04) 56%, transparent 100%),
+    linear-gradient(180deg, rgba(22, 24, 19, 0.96) 0%, rgba(10, 12, 9, 0.98) 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(8, 10, 8, 0.9),
+    inset 0 0 0 3px rgba(201, 180, 109, 0.24),
+    0 0 0 2px rgba(6, 7, 5, 0.78),
+    0 8px 20px rgba(0, 0, 0, 0.68);
   pointer-events: none;
   transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
@@ -380,32 +426,13 @@
 .world-map-node-name {
   color: var(--gold-bright);
   font-family: var(--font-kaiti);
-  font-size: var(--text-sm);
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-medium);
+  letter-spacing: 1.5px;
   line-height: 1.25;
-  text-shadow: 0 1px 3px #000;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
   white-space: nowrap;
   pointer-events: none;
-}
-
-.world-map-node:hover:not(:disabled) .world-map-node-plaque,
-.world-map-node:hover:not(:disabled) .world-map-node-media {
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 0 2px rgba(7, 6, 4, 0.68), 0 0 16px rgba(232, 214, 154, 0.42);
-}
-
-.world-map-node:hover:not(:disabled) .world-map-node-plaque {
-  background: rgba(38, 32, 16, 0.95);
-}
-
-.world-map-node.is-selected .world-map-node-plaque,
-.world-map-node.is-selected .world-map-node-media {
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 0 2px rgba(7, 6, 4, 0.68), 0 0 22px rgba(232, 214, 154, 0.45);
-}
-
-.world-map-node.is-selected .world-map-node-plaque {
-  background: rgba(86, 70, 27, 0.92);
 }
 
 /* 关口节点：持有通往其他区域跨域边的节点，牌匾右上角界门菱标 */
@@ -416,59 +443,111 @@
 
 .world-map-node.is-gateway .world-map-node-plaque::before {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 7px;
-  height: 7px;
+  top: -5px;
+  right: -5px;
+  width: 9px;
+  height: 9px;
   background: #72a98c;
-  box-shadow: 0 0 6px rgba(114, 169, 140, 0.9);
+  box-shadow: 0 0 8px rgba(114, 169, 140, 0.92);
   content: "";
   pointer-events: none;
   transform: rotate(45deg);
 }
 
-/* 镇守首领地点：牌匾朱砂左侧金赤纹警示 */
+/* 含精英怪地点（无妖王时）：灵紫警示边框与紫霄微光 */
+.world-map-node.has-elite:not(.has-boss) .world-map-node-plaque,
+.world-map-node.has-elite:not(.has-boss) .world-map-node-media {
+  border-color: rgba(176, 128, 232, 0.82);
+}
+
+.world-map-node.has-elite:not(.has-boss) .world-map-node-plaque {
+  box-shadow:
+    inset 0 0 0 2px rgba(12, 8, 16, 0.9),
+    inset 0 0 0 3px rgba(176, 128, 232, 0.3),
+    0 0 0 2px rgba(6, 7, 5, 0.78),
+    0 8px 20px rgba(0, 0, 0, 0.68);
+}
+
+/* 镇守妖王地点：保留朱红警示边框，配合顶部「妖王」角标 */
 .world-map-node.has-boss .world-map-node-plaque,
 .world-map-node.has-boss .world-map-node-media {
-  border-color: rgba(206, 102, 86, 0.78);
+  border-color: rgba(226, 98, 82, 0.9);
 }
 
 .world-map-node.has-boss .world-map-node-plaque {
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(214, 78, 64, 0.18) 0%, rgba(201, 180, 109, 0.05) 58%, transparent 100%),
+    linear-gradient(180deg, rgba(28, 16, 15, 0.96) 0%, rgba(14, 9, 9, 0.98) 100%);
   box-shadow:
-    inset 2px 0 0 rgba(214, 96, 82, 0.85),
-    0 0 0 2px rgba(7, 6, 4, 0.68),
-    0 6px 14px rgba(0, 0, 0, 0.56);
+    inset 0 0 0 2px rgba(14, 8, 8, 0.92),
+    inset 0 0 0 3px rgba(226, 98, 82, 0.36),
+    0 0 0 2px rgba(8, 6, 5, 0.8),
+    0 8px 20px rgba(0, 0, 0, 0.7);
 }
 
 /* 神识隐藏秘境：紫霄虚线外框 */
 .world-map-node.is-secret .world-map-node-plaque,
 .world-map-node.is-secret .world-map-node-media {
   border-style: dashed;
-  border-color: rgba(164, 134, 214, 0.82);
+  border-color: rgba(164, 134, 214, 0.86);
 }
 
 /* 宗门专属驻地：青玉碧瓦色调外框 */
 .world-map-node.is-sect .world-map-node-plaque,
 .world-map-node.is-sect .world-map-node-media {
-  border-color: rgba(102, 182, 198, 0.84);
+  border-color: rgba(102, 182, 198, 0.86);
+}
+
+/* 节点交互态：置后叠加，保证带状态边框节点在悬停/选中/赶路目标下仍清晰反馈 */
+.world-map-node:hover:not(:disabled) .world-map-node-plaque,
+.world-map-node:hover:not(:disabled) .world-map-node-media {
+  border-color: var(--gold-bright);
+  box-shadow:
+    inset 0 0 0 2px rgba(12, 12, 8, 0.85),
+    inset 0 0 0 3px rgba(232, 214, 154, 0.38),
+    0 0 0 2px rgba(7, 6, 4, 0.72),
+    0 0 20px rgba(232, 214, 154, 0.46);
+}
+
+.world-map-node:hover:not(:disabled) .world-map-node-plaque {
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(232, 214, 154, 0.24) 0%, transparent 72%),
+    rgba(40, 34, 18, 0.96);
+}
+
+.world-map-node.is-selected .world-map-node-plaque,
+.world-map-node.is-selected .world-map-node-media {
+  border-color: var(--gold-bright);
+  box-shadow:
+    inset 0 0 0 2px rgba(14, 12, 6, 0.84),
+    inset 0 0 0 3px rgba(232, 214, 154, 0.46),
+    0 0 0 2px rgba(7, 6, 4, 0.72),
+    0 0 26px rgba(232, 214, 154, 0.52);
+}
+
+.world-map-node.is-selected .world-map-node-plaque {
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(232, 214, 154, 0.28) 0%, transparent 72%),
+    rgba(82, 66, 25, 0.94);
 }
 
 /* 赶路终点高亮 */
 .world-map-node.is-destination .world-map-node-plaque {
   border-color: #7fd0a8;
   box-shadow:
-    0 0 0 2px rgba(7, 6, 4, 0.68),
-    0 0 14px rgba(127, 208, 168, 0.52);
+    inset 0 0 0 2px rgba(8, 12, 10, 0.85),
+    0 0 0 2px rgba(7, 6, 4, 0.72),
+    0 0 18px rgba(127, 208, 168, 0.56);
 }
 
 .world-map-node.is-current::after {
   position: absolute;
-  top: -6px;
-  left: -6px;
-  width: calc(100% + 12px);
-  height: calc(100% + 12px);
-  border: 1px solid rgba(114, 169, 140, 0.85);
-  clip-path: polygon(0 11px, 11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+  top: -8px;
+  left: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  border: 1.5px solid rgba(114, 169, 140, 0.88);
+  clip-path: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
   content: "";
   pointer-events: none;
   animation: world-current-pulse 1.8s ease-out infinite;
@@ -502,11 +581,19 @@
 }
 
 .world-player-marker.is-at-node .world-player-marker-anchor {
-  transform: translate(0, -20px);
+  transform: translate(0, -34px);
+}
+
+.world-player-marker.is-at-node.is-on-badged-node .world-player-marker-anchor {
+  transform: translate(0, -42px);
 }
 
 .world-player-marker.is-at-node.is-on-image-node .world-player-marker-anchor {
-  transform: translate(0, -44px);
+  transform: translate(0, -72px);
+}
+
+.world-player-marker.is-at-node.is-on-image-node.is-on-badged-node .world-player-marker-anchor {
+  transform: translate(0, -80px);
 }
 
 .world-player-marker.is-travelling .world-player-marker-anchor {
@@ -543,8 +630,8 @@
   position: absolute;
   bottom: 0;
   left: 50%;
-  width: 16px;
-  height: 6px;
+  width: 22px;
+  height: 8px;
   border-radius: 50%;
   background: rgba(114, 169, 140, 0.4);
   box-shadow: 0 0 10px #72a98c;
