@@ -38,7 +38,7 @@ export interface TraitBarItemProps {
   style?: React.CSSProperties
 }
 
-const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
+export const TRAIT_QUALITY_TONE_MAP: Record<number, FloatingTone> = {
   1: 'muted',
   2: 'jade',
   3: 'qi',
@@ -46,6 +46,66 @@ const QUALITY_TONE_MAP: Record<number, FloatingTone> = {
   5: 'gold',
   6: 'crimson',
 }
+
+/**
+ * 统一构造特质图鉴级主悬浮信息卡 (TraitInfoCard)
+ * 供觉醒/内视/图鉴长条 TraitBarItem 与富文本引用 TraitReference 共用，保证口径零漂移。
+ */
+export const TraitInfoCard = memo(function TraitInfoCard({
+  def,
+  level = 1,
+  actionLabel,
+  isEquipped = false,
+  disabled = false,
+  onAction,
+}: {
+  def: TraitMeta
+  level?: number
+  actionLabel?: string
+  isEquipped?: boolean
+  disabled?: boolean
+  onAction?: () => void
+}): React.JSX.Element {
+  const t = useT()
+  const quality = def.quality ?? 1
+  const tone = TRAIT_QUALITY_TONE_MAP[quality] ?? 'muted'
+  const qualityName = t(`insight.traits.qualityQ${quality}`)
+  const desc = formatTraitDescription(def.id, level)
+
+  return (
+    <FloatingInfoCard
+      badge={qualityName}
+      badgeTone={tone}
+      description={desc}
+      footer={
+        (level > 1 || actionLabel) ? (
+          <div className="trait-popover-footer">
+            {level > 1 && (
+              <div className="trait-popover-scale-hint">
+                {t('insight.traits.levelGrowHint', { scale: ((getTraitLevelScale(level) - 1) * 100).toFixed(0) })}
+              </div>
+            )}
+            {actionLabel && (
+              <button
+                className={`trait-popover-action-btn ${isEquipped ? 'is-unequip' : 'is-equip'}`}
+                disabled={disabled}
+                onClick={e => {
+                  e.stopPropagation()
+                  onAction?.()
+                }}
+                type="button"
+              >
+                {actionLabel}
+              </button>
+            )}
+          </div>
+        ) : undefined
+      }
+      subtitle={`${t('insight.traits.capacityLabel')}：${def.cost} ${t('insight.traits.pointUnit')}`}
+      title={def.name}
+    />
+  )
+})
 /**
  * 构造特质关联的独立 Buff / 状态附属悬浮卡片 (Aside Card)
  * 只要特质带有 Buff（如看不到我关联隐身 Buff），Hover 时统一通过独立副窗口呈现，杜绝仅在自身描述中单薄交代的割裂表现。
@@ -125,43 +185,20 @@ export const TraitBarItem = memo(function TraitBarItem({
 }: TraitBarItemProps): React.JSX.Element {
   const t = useT()
   const quality = def.quality ?? 1
-  const tone = QUALITY_TONE_MAP[quality] ?? 'muted'
   const qualityName = t(`insight.traits.qualityQ${quality}`)
   const reqExp = getExpForNextTraitLevel(level)
   const expProgress = Math.min(100, Math.max(0, (exp / reqExp) * 100))
-  const desc = formatTraitDescription(def.id, level)
   const asideCards = useMemo(() => resolveTraitAsideCards(def, level), [def, level])
 
   // 浮层内容构建
   const popoverContent = (
-    <FloatingInfoCard
-      badge={qualityName}
-      badgeTone={tone}
-      description={desc}
-      footer={
-        <div className="trait-popover-footer">
-          {level > 1 && (
-            <div className="trait-popover-scale-hint">
-              {t('insight.traits.levelGrowHint', { scale: ((getTraitLevelScale(level) - 1) * 100).toFixed(0) })}
-            </div>
-          )}
-          {actionLabel && (
-            <button
-              className={`trait-popover-action-btn ${isEquipped ? 'is-unequip' : 'is-equip'}`}
-              disabled={disabled}
-              onClick={e => {
-                e.stopPropagation()
-                onAction?.()
-              }}
-              type="button"
-            >
-              {actionLabel}
-            </button>
-          )}
-        </div>
-      }
-      subtitle={`${t('insight.traits.capacityLabel')}：${def.cost} ${t('insight.traits.pointUnit')}`}
-      title={def.name}
+    <TraitInfoCard
+      actionLabel={actionLabel}
+      def={def}
+      disabled={disabled}
+      isEquipped={isEquipped}
+      level={level}
+      onAction={onAction}
     />
   )
 

@@ -25,7 +25,7 @@ import {
   type CodexTraitGrade,
 } from '../game/codexFilters'
 import { calculateTechniqueProgress, TECHNIQUE_IDS, TRAIT_DEFINITIONS } from '../game/combatConstants'
-import { describeAbility, formatNumber } from '../game/format'
+import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
   findItemInCatalog,
@@ -45,16 +45,13 @@ import type {
   CombatEquipmentDefinition,
   ItemDefinition,
 } from '../game/types'
-import { getBuildingBonusFormulas } from '../game/buildingCalculations'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
 import { useT } from '../i18n'
 import type { CodexCategory } from '../uiStore'
 import { useUiStore } from '../uiStore'
 import { OptionToggle, type OptionToggleOption } from './OptionToggle'
-import { PillBonusLabel, type PillTone } from './PillLabel'
-import { StatGlyph } from './StatGlyph'
 import { TraitBarItem } from './TraitBarItem'
-import { RootAspectRadarChart } from './RootAspectRadarChart'
+import { AbilityInfoCard, BuildingInfoCard } from './EntityReference'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingAsideCard, type FloatingTone } from './FloatingPopover'
 import { Icon } from './Icon'
@@ -67,7 +64,6 @@ import {
   rarityToTone,
   resolveItemTooltipAsideCards,
 } from './ItemDisplay'
-import { ValueText } from './ValueText'
 
 /** 顶部主分类定义（材料居首，与总纲收录顺序一致） */
 const CODEX_CATEGORIES: ReadonlyArray<{ id: CodexCategory; labelKey: string }> = [
@@ -1061,91 +1057,21 @@ const CodexBuildingEntry = memo(function CodexBuildingEntry({
   const t = useT()
   const isUnlocked = realmLevel >= building.requiredRealmLevel
 
-  const groupLabel =
-    building.group === 'production'
-      ? t('combat.nearby.groupProduction')
-      : building.group === 'combat'
-        ? t('combat.nearby.groupCombat')
-        : t('combat.nearby.groupOther')
-
-  // 建筑效果按配表成长模型拆解为「1 级基准 + 每级增幅」，
-  // 只读 modifiers 会让所有建筑看起来是恒定加成，与真实结算脱节。
-  const bonusFormulas = getBuildingBonusFormulas(building, (key, def) => t(key) || def)
-
   const hoverContent = (
-    <FloatingInfoCard
+    <BuildingInfoCard
       badge={isUnlocked ? t('app.codex.unlocked') : t('app.codex.locked')}
       badgeTone={isUnlocked ? 'jade' : 'muted'}
-      description={
-        <div>
-          {building.description && (
-            <div style={{ marginBottom: 6, color: 'var(--text-dim)', fontSize: 'var(--text-sm)', lineHeight: 1.5 }}>
-              {building.description}
-            </div>
-          )}
-
-          {/* 建筑效果：加成条目胶囊化，基准值与每级增幅分列，避免误读为恒定数值 */}
-          {bonusFormulas.length > 0 ? (
-            <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
-              <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
-              <div className="codex-building-bonus-list">
-                {bonusFormulas.map(formula => (
-                  <span className="codex-building-bonus-row" key={formula.key}>
-                    <PillBonusLabel
-                      icon={<StatGlyph glyph={formula.glyph} size={14} />}
-                      label={formula.label}
-                      tone={formula.tone}
-                      value={formula.baseText}
-                    />
-                    {formula.growthText && (
-                      <span className="codex-building-bonus-growth">
-                        {t('app.codex.buildingBonusGrowth', { value: formula.growthText })}
-                      </span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : building.effect ? (
-            <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
-              <span className="codex-hover-title">{t('app.codex.buildingEffect')}：</span>
-              <span className="codex-stat-line">{building.effect}</span>
-            </div>
-          ) : null}
-
-          {/* 建造材料（中文物品名） */}
-          <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 4, borderTop: 'none', marginBottom: 6 }}>
-            <span className="codex-hover-title">{t('app.codex.buildingMaterials')}：</span>
-            <div className="codex-chips-wrap">
-              {(building.materials ?? []).map(m => {
-                const def = findItemInCatalog(items, m.itemId)
-                return (
-                  <span className="codex-chip" key={m.itemId}>
-                    <ItemIcon itemId={m.itemId} />
-                    {def?.name ?? m.itemId} ×{m.quantity}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 解锁条件 */}
-          <div
-            className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
-              isUnlocked ? 'unlocked' : 'locked'
-            }`}
-          >
-            {formatRealmUnlockCondition(building.requiredRealmLevel)}
-          </div>
+      building={building}
+      items={items}
+      unlockCondition={
+        <div
+          className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
+            isUnlocked ? 'unlocked' : 'locked'
+          }`}
+        >
+          {formatRealmUnlockCondition(building.requiredRealmLevel)}
         </div>
       }
-      stats={[
-        { label: t('app.codex.buildingType'), value: groupLabel, tone: 'muted' },
-        { label: t('app.codex.buildingTier'), value: `Lv. ${building.requiredRealmLevel}`, tone: 'gold' },
-      ]}
-      subtitle={t('app.codex.buildingSubtitle', { group: groupLabel })}
-      title={building.name}
-      titleIcon={resolveBuildingIconUrl(building.buildingId)}
     />
   )
 
@@ -1197,55 +1123,20 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
   isLearned: boolean
 }): React.JSX.Element {
   const t = useT()
-
-  // 1 级招式具体加成与伤害数值
-  const abilityInfo = describeAbility(ability, 1)
-
   const hoverContent = (
-    <FloatingInfoCard
-      badge={abilityInfo.badge}
+    <AbilityInfoCard
+      ability={ability}
       badgeTone="qi"
-      description={
-        <div>
-          {/* 功法风味 + 伤害构成叙述（describeAbility 已包含配表风味，避免重复渲染） */}
-          {abilityInfo.description && (
-            <div className="codex-effect-text" style={{ marginBottom: 6 }}>
-              <ValueText className="effect-value-capsule" text={abilityInfo.description} />
-            </div>
-          )}
-
-          {/* 六维经验获取雷达图（内功心法） */}
-          {abilityInfo.radarMultipliers && (
-            <RootAspectRadarChart
-              efficiency={abilityInfo.radarEfficiency}
-              multipliers={abilityInfo.radarMultipliers}
-            />
-          )}
-
-          {/* 解锁条件：学习后解锁 */}
-          <div
-            className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
-              isLearned ? 'unlocked' : 'locked'
-            }`}
-          >
-            学习后解锁
-          </div>
+      extraDescription={
+        <div
+          className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
+            isLearned ? 'unlocked' : 'locked'
+          }`}
+        >
+          学习后解锁
         </div>
       }
-      lines={[
-        ...abilityInfo.lines.map(line => (
-          <ValueText className="effect-value-capsule" key={line} text={line} />
-        )),
-        ...(abilityInfo.bonuses?.map((bonus) => (
-          <PillBonusLabel
-            key={bonus.key}
-            label={bonus.label}
-            tone={bonus.tone as PillTone}
-            value={bonus.value}
-          />
-        )) ?? []),
-      ]}
-      title={ability.name}
+      level={1}
     />
   )
 

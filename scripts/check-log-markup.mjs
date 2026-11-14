@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '')
-const KINDS = 'item|character|mechanic|action|location|ability|encounter|enemy'
+const KINDS = 'item|character|mechanic|action|location|ability|encounter|enemy|trait|building|buff'
 /** 只匹配「恰好两个左花括号」：{{kind:（排除已正确转义的 {{{{kind:） */
 const BAD_MARKER = new RegExp(`(?<!\\{)\\{\\{(?!\\{)(${KINDS}):`, 'g')
 const SCAN_DIRS = ['src', 'tests', 'tools']

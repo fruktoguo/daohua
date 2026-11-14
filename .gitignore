@@ -21,7 +21,7 @@ frontend/src/private-impl
 frontend/src/private-impl/
 
 # 本地运行数据和持久化状态
-data/
+/data/
 **/data/snapshots/
 **/data/outbox/
 

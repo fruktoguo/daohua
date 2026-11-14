@@ -75,7 +75,7 @@
 
 ## 4.1 主导航结构（桌面侧边栏 & 竖屏底部两级导航）
 
-- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
+- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜/更新日志]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
 - **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。
 - **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
 - **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 与 `SocialSubTabs` 分别承载技艺与同道通用二级子行；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
@@ -249,7 +249,7 @@
 ## 14. 日志实体引用、复合物品胶囊与重复项乘数胶囊 (Log Entity Reference & Repeat Capsule)
 
 - **适用场景**：
-  - **事件日志与战报中的实体胶囊引用**（包含功法技能 `ability`、妖兽敌人 `enemy` / `encounter`、角色 `character`、机制 `mechanic`、地点 `location`、行动 `action`，自带专属修仙微光色彩与悬浮信息浮层；机制胶囊支持 `break` 破招橙、`crit` 暴击金、`dodge` 闪避水绿、`parry` 化解冰蓝等修仙专属色调；行内全部胶囊统一垂直居中对齐）。
+  - **事件日志、更新日志与战报中的实体胶囊引用**（覆盖物品/装备 `item`、功法技能 `ability`、特质 `trait`、建筑 `building`、状态 `buff`、妖兽敌人 `enemy` / `encounter`、行动 `action`、地点 `location`、角色 `character`、机制 `mechanic`；统一由 `RichTemplateText` / `EntityReference` 复用万象图鉴同款 `FloatingPopover` + `FloatingInfoCard`、`MonsterTooltipTarget`、`resolveTraitAsideCards`、`BuildingInfoCard` 与 `extractBuffBonusItems` 渲染，并在 `LogTemplateText` 中复用；机制胶囊支持 `break` 破招橙、`crit` 暴击金、`dodge` 闪避水绿、`parry` 化解冰蓝等修仙专属色调；行内全部胶囊统一垂直居中对齐）。
   - **复合物品胶囊**（将物品名称与数量如 `灵石 × 41` 组合为一整个不可分割的紧凑修仙药丸胶囊，包含物品品质色调、微光背景与下划线数量，支持悬浮弹出物品属性卡片） -> `ItemReference`, `.item-reference-compound`。
   - **完全相同日志连续折叠与乘数胶囊**（挂机采集、连续战斗等产生的完全相同模板日志在尾部自动合并显示微光乘数胶囊形如 `× 3`，更新为最新触发时刻并保留历史缓冲容量） -> `.log-repeat-capsule`, `collapseLogEntries`。
   - **底部传音与日志未读数字角标**（世界、附近、系统、好友、队伍、宗门与综合频道新消息未读提醒红点角标，上限 99+，点击切换后自动清零；战斗频道高频推进严格排除；**角标脱离常规文档流绝对定位**于 Tab 右上角 `position: absolute; top: -3px; right: -2px`，配合 `.log-tabs .log-tab-btn` 基准宽度 `min-width: 54px` 与文字居中，角标进出零撑宽、零推挤、零抖动） -> `useLogUnreadStore`, `.log-tab-badge`, `.log-tab-btn`。
@@ -653,3 +653,18 @@
   - 复用 `OptionToggle` / 二级榜签栏 + 技艺子切换条 + 榜行列表（前三名次徽标 + `CharacterAvatar` + 道号/宗门前缀 + `RealmBadge` + `UnitNumber` 紧凑数值 + `ValuationHoverTarget` 身家分项悬停）+ 「我的名次」常驻卡片 + 顶部快照时间/整点倒计时与手动刷新钮；点击玩家行通过 `useSocialStore.getState().requestPlayerCard(playerId)` 唤起 `PlayerCardModal`。
 - **组件源码**：[`frontend/src/components/LeaderboardPage.tsx`](../../frontend/src/components/LeaderboardPage.tsx)
 - **样式文件**：[`frontend/src/styles/leaderboard.css`](../../frontend/src/styles/leaderboard.css)，浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 41. 更新日志视图与独立更新提示首次弹窗 (ChangelogPage & ChangelogNoticeModal)
+
+- **适用场景**：
+  - 浏览历次版本更新日志（收拢于桌面侧边栏「其他」分组与移动端「更多」分组，页签 `changelog`），以及新发布更新日志时面向玩家自动弹出单期公告窗口（`ChangelogNoticeModal`）。
+  - 正文复用 `RichTemplateText`（[`EntityReference.tsx`](../../frontend/src/components/EntityReference.tsx)）与 `ValueText` 解析 `{{kind:id|label}}` 词条，直接悬浮查看万象图鉴同款详情。
+  - **独立更新提示机制**：基于 [`changelog.ts`](../../frontend/src/data/changelog.ts) 中日志条目的可选 `noticeId` 字段判定是否需要首次弹窗，与游戏版本检查 `CLIENT_VERSION` 完全解耦；客户端把已关闭的 `noticeId` 持久化至 `localStorage`（`daohua.changelog.dismissedNoticeIds`），确保仅发布代码热修复而未新增更新提示记录时不会重复打扰玩家；弹窗等待 `catalogReady && hasReceivedSnapshot && tutorialStep >= TUTORIAL_DONE` 后挂载，避免与新手引导遮罩互抢。
+- **组件源码**：
+  - [`frontend/src/data/changelog.ts`](../../frontend/src/data/changelog.ts)
+  - [`frontend/src/components/EntityReference.tsx`](../../frontend/src/components/EntityReference.tsx)
+  - [`frontend/src/components/ChangelogPage.tsx`](../../frontend/src/components/ChangelogPage.tsx)
+  - [`frontend/src/components/ChangelogNoticeModal.tsx`](../../frontend/src/components/ChangelogNoticeModal.tsx)
+- **样式文件**：[`frontend/src/styles/changelog.css`](../../frontend/src/styles/changelog.css)，行内引用样式见 [`frontend/src/styles.css`](../../frontend/src/styles.css)（搜索 `.log-reference`），浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)

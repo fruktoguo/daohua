@@ -1,0 +1,368 @@
+/* ====== 更新日志页与首次更新公告弹窗 ====== */
+
+.changelog-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+  padding: 18px 20px;
+}
+
+.changelog-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.changelog-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changelog-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--gold-bright, var(--gold));
+  letter-spacing: 0.03em;
+}
+
+.changelog-subtitle {
+  margin: 0;
+  font-size: var(--text-sm, 0.84rem);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.changelog-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  color: var(--gold);
+  font-size: var(--text-xs, 0.78rem);
+  font-weight: 600;
+}
+
+.changelog-hover-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--qi) 35%, transparent);
+  background: color-mix(in srgb, var(--qi) 9%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs, 0.8rem);
+  line-height: 1.45;
+}
+
+.changelog-hover-banner svg {
+  flex-shrink: 0;
+  color: var(--qi);
+}
+
+.changelog-hover-banner--compact {
+  padding: 7px 10px;
+}
+
+.changelog-empty {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--text-sm, 0.9rem);
+}
+
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.changelog-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised, var(--panel)) 72%, transparent);
+  transition: border-color 0.16s ease;
+}
+
+.changelog-card:hover {
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+.changelog-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--gold-faint) 75%, transparent);
+}
+
+.changelog-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.changelog-date-pill,
+.changelog-version-pill,
+.changelog-notice-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.changelog-date-pill {
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--gold-bright, var(--gold));
+  font-variant-numeric: tabular-nums;
+}
+
+.changelog-version-pill {
+  border: 1px solid color-mix(in srgb, var(--qi) 40%, transparent);
+  background: color-mix(in srgb, var(--qi) 10%, transparent);
+  color: var(--qi);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.changelog-notice-pill {
+  border: 1px solid color-mix(in srgb, var(--jade) 48%, transparent);
+  background: color-mix(in srgb, var(--jade) 14%, transparent);
+  color: var(--jade);
+}
+
+.changelog-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+  line-height: 1.4;
+}
+
+.changelog-card-summary {
+  margin: 0;
+  font-size: var(--text-sm, 0.85rem);
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+.changelog-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.changelog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.changelog-section-header {
+  display: flex;
+  align-items: center;
+}
+
+.changelog-cat-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.changelog-cat-badge--feature {
+  border: 1px solid color-mix(in srgb, var(--jade) 45%, transparent);
+  background: color-mix(in srgb, var(--jade) 14%, transparent);
+  color: var(--jade);
+}
+
+.changelog-cat-badge--balance {
+  border: 1px solid color-mix(in srgb, var(--amber, var(--gold)) 48%, transparent);
+  background: color-mix(in srgb, var(--amber, var(--gold)) 13%, transparent);
+  color: var(--amber, var(--gold));
+}
+
+.changelog-cat-badge--fix {
+  border: 1px solid color-mix(in srgb, var(--qi) 45%, transparent);
+  background: color-mix(in srgb, var(--qi) 13%, transparent);
+  color: var(--qi);
+}
+
+.changelog-cat-badge--optimize {
+  border: 1px solid color-mix(in srgb, var(--purple) 45%, transparent);
+  background: color-mix(in srgb, var(--purple) 13%, transparent);
+  color: var(--purple);
+}
+
+.changelog-bullet-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.changelog-bullet-item {
+  font-size: 0.875rem;
+  line-height: 1.72;
+  color: var(--text);
+}
+
+/* ====== 首次更新公告弹窗 ====== */
+
+.changelog-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(78vh, 660px);
+}
+
+.changelog-notice-header {
+  padding-right: 28px;
+}
+
+.changelog-notice-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.changelog-notice-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--gold-bright, var(--gold));
+  flex-shrink: 0;
+}
+
+.changelog-notice-heading {
+  margin: 0 0 4px;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--gold-bright, var(--gold));
+}
+
+.changelog-notice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.changelog-notice-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg) 52%, transparent);
+}
+
+.changelog-notice-entry-title h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+}
+
+.changelog-notice-entry-title p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.changelog-notice-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.changelog-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+}
+
+.changelog-btn--secondary {
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--text);
+}
+
+.changelog-btn--secondary:hover {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.changelog-btn--primary {
+  border: 1px solid color-mix(in srgb, var(--gold) 65%, transparent);
+  background: color-mix(in srgb, var(--gold) 22%, transparent);
+  color: var(--gold-bright, var(--gold));
+}
+
+.changelog-btn--primary:hover {
+  border-color: var(--gold-bright, var(--gold));
+  background: color-mix(in srgb, var(--gold) 32%, transparent);
+}
+
+@media (max-width: 720px) {
+  .changelog-page {
+    padding: 14px 12px;
+  }
+
+  .changelog-card {
+    padding: 12px;
+  }
+
+  .changelog-notice-footer {
+    justify-content: stretch;
+  }
+
+  .changelog-btn {
+    flex: 1 1 0;
+  }
+}

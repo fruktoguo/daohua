@@ -20,7 +20,7 @@ import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'inventory' | 'log' | 'records' | 'settings'
+export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'changelog' | 'inventory' | 'log' | 'records' | 'settings'
 
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'

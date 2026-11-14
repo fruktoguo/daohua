@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { collapseLogEntries, filterLogEntries, gameLogService } from './gameLogService.ts'
+import { collapseLogEntries, filterLogEntries, gameLogService, parseLogTemplate } from './gameLogService.ts'
 
 test('collapseLogEntries 纯函数：连续完全相同模板的日志正确合并折叠', () => {
   const entries = [
@@ -168,4 +168,20 @@ test('gameLogService: 自动使用与持续时间耗尽等高频消耗品日志�
   assert.equal(snapshot.latest.length, 1)
   assert.equal(snapshot.latest[0].template, '完成行动 {{action:cultivation.draw-qi|引气入体}}')
 })
+
+test('parseLogTemplate：正确解析特质、建筑、状态、行动、地点与数量引用', () => {
+  const segments = parseLogTemplate(
+    '激活 {{trait:trait.jianyuxin|剑与心}} 付与 {{buff:buff.yixing|移形}}，建造 {{building:building.mana-regen-array|回元阵}} 于 {{location:node.rock-beach|清石水滩}} 并执行 {{action:cultivation.ningqi-guiyuan|凝气归元}} 获得 {{item:item.zhixue-powder|止血散|3}}',
+  )
+  const refs = segments.filter(segment => segment.type === 'reference')
+  assert.deepEqual(refs, [
+    { type: 'reference', kind: 'trait', id: 'trait.jianyuxin', label: '剑与心' },
+    { type: 'reference', kind: 'buff', id: 'buff.yixing', label: '移形' },
+    { type: 'reference', kind: 'building', id: 'building.mana-regen-array', label: '回元阵' },
+    { type: 'reference', kind: 'location', id: 'node.rock-beach', label: '清石水滩' },
+    { type: 'reference', kind: 'action', id: 'cultivation.ningqi-guiyuan', label: '凝气归元' },
+    { type: 'reference', kind: 'item', id: 'item.zhixue-powder', label: '止血散', amount: 3, extra: '3' },
+  ])
+})
+
 

@@ -1,25 +1,18 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
-import { describeAbility, formatNumber } from '../game/format'
+import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog } from '../game/ids'
 import { useSocialStore } from '../game/socialStore'
 import { chatStickerService } from '../game/chatStickerService'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
 import type { PartyLinkDto } from '../network/protocol'
-import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
-import { parseLogTemplate, splitLogSegmentsByLines } from '../logging/gameLogService'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
+import type { GameLogEntry } from '../logging/gameLogService'
+import { splitLogSegmentsByLines } from '../logging/gameLogService'
+import { FloatingTooltip } from './FloatingPopover'
 import { ChatMessageBody } from './ChatMessageContent'
-import { resolveAbilityAsideCards } from './EffectTooltip'
-import { ItemIcon, ItemReference } from './ItemDisplay'
-import { resolveItemIconUrl } from '../game/itemIcons'
-import { MonsterTooltipTarget } from './MonsterDisplay'
-import { ValueText } from './ValueText'
-import { PillBonusLabel, type PillTone } from './PillLabel'
-import { RootAspectRadarChart } from './RootAspectRadarChart'
+import { RichContentSegmentView, RichTemplateText } from './EntityReference'
 import { RealmBadge } from './RealmBadge'
 
 /** 格式化日志时间戳为月-日 时:分:秒 */
@@ -30,159 +23,14 @@ export function formatLogTime(timestampMs: number): string {
 }
 
 /**
- * 战报中的功法/神通引用组件 (AbilityReference)
- *
- * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
- */
-const AbilityReference = memo(function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
-  const t = useT()
-  const ability = useGameStore((state) => findAbilityInCatalog(state.abilities, abilityId))
-
-  if (!ability) {
-    return (
-      <FloatingTooltip placement="top" title={t('combat.log.abilityTooltip', { label })} tone="qi">
-        <span className="log-reference log-reference--ability">{label}</span>
-      </FloatingTooltip>
-    )
-  }
-
-  const tooltip = describeAbility(ability, 1)
-  const asideCards = resolveAbilityAsideCards(ability, undefined, 'qi', 1)
-
-  return (
-    <FloatingPopover
-      asideCards={asideCards.length > 0 ? asideCards : undefined}
-      closeDelay={120}
-      content={
-        <FloatingInfoCard
-          badge={tooltip.badge}
-          badgeTone="qi"
-          description={
-            <div>
-              {tooltip.description && (
-                <ValueText className="effect-value-capsule" text={tooltip.description} />
-              )}
-              {tooltip.radarMultipliers && (
-                <RootAspectRadarChart
-                  efficiency={tooltip.radarEfficiency}
-                  multipliers={tooltip.radarMultipliers}
-                />
-              )}
-            </div>
-          }
-          lines={[
-            ...(tooltip.lines?.map((line) => (
-              <ValueText className="effect-value-capsule" key={line} text={line} />
-            )) ?? []),
-            ...(tooltip.bonuses?.map((bonus) => (
-              <PillBonusLabel
-                key={bonus.key}
-                label={bonus.label}
-                tone={bonus.tone as PillTone}
-                value={bonus.value}
-              />
-            )) ?? []),
-          ]}
-          title={tooltip.title}
-          titleIcon={resolveItemIconUrl(abilityId)}
-        />
-      }
-      gap={8}
-      interactive={false}
-      openDelay={60}
-      placement="bottom"
-      trigger="hover"
-      triggerClassName="log-reference log-reference--ability"
-    >
-      <ItemIcon itemId={abilityId} />
-      {label}
-    </FloatingPopover>
-  )
-})
-
-/**
- * 战报中的妖兽/敌方遭遇引用组件 (EnemyReference)
- *
- * 悬停展示敌怪流派、属性、气血真元等面板数据。
- */
-const EnemyReference = memo(function EnemyReference({
-  enemyId,
-  kind,
-  label,
-}: {
-  enemyId: string
-  kind: 'enemy' | 'encounter'
-  label: string
-}): React.JSX.Element {
-  const t = useT()
-  const encounters = useGameStore(state => state.encounters)
-  const maps = useGameStore(state => state.maps)
-
-  const encounter = findEncounterInCatalog(encounters, enemyId)
-  const combatant = encounter?.enemy ?? findCombatantInCatalog(encounters, maps, enemyId)
-
-  if (combatant) {
-    return (
-      <MonsterTooltipTarget
-        monster={combatant}
-        placement="bottom"
-        triggerClassName={`log-reference log-reference--${kind}`}
-      >
-        {label}
-      </MonsterTooltipTarget>
-    )
-  }
-
-  return (
-    <FloatingTooltip placement="top" title={t('combat.log.enemyTooltip', { label })} tone="gold">
-      <span className={`log-reference log-reference--${kind}`}>{label}</span>
-    </FloatingTooltip>
-  )
-})
-
-/**
  * 日志单条分段内容解析分发组件 (LogContent)
  *
- * 识别文本、物品掉落、功法施放、妖兽击败等分段类型并附加富文本高亮与交互气泡。
+ * 复用全局统一的 RichContentSegmentView，识别文本、物品、特质、功法、建筑、状态、妖兽、行动、地点与机制引用。
  */
-const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
-  if (segment.type === 'text') return <ValueText className="log-value-capsule" text={segment.value} />
-  if (segment.kind === 'item') {
-    return (
-      <ItemReference
-        amount={segment.amount}
-        className="log-reference log-reference--item"
-        itemId={segment.id}
-        label={segment.label}
-      />
-    )
-  }
-  if (segment.kind === 'ability') {
-    return <AbilityReference abilityId={segment.id} label={segment.label} />
-  }
-  if (segment.kind === 'enemy' || segment.kind === 'encounter') {
-    return <EnemyReference enemyId={segment.id} kind={segment.kind} label={segment.label} />
-  }
-  if (segment.kind === 'mechanic') {
-    return (
-      <span
-        className={`log-reference log-reference--mechanic log-reference--mechanic-${segment.id}`}
-        data-mechanic={segment.id}
-      >
-        {segment.label}
-      </span>
-    )
-  }
-  return (
-    <span className={`log-reference log-reference--${segment.kind}`} title={`${segment.kind}: ${segment.id}`}>
-      {segment.label}
-    </span>
-  )
-})
+const LogContent = RichContentSegmentView
 
 export function LogTemplateText({ template }: { template: string }): React.JSX.Element {
-  const segments = useMemo(() => parseLogTemplate(template), [template])
-  return <>{segments.map((segment, index) => <LogContent key={index} segment={segment} />)}</>
+  return <RichTemplateText template={template} />
 }
 
 /**

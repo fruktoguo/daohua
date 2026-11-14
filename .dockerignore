@@ -7,9 +7,12 @@
 **/node_modules
 **/dist
 artifacts
-data
-**/data
-**/data/**
+/data
+/data/**
+**/data/snapshots
+**/data/outbox
+!frontend/src/data
+!frontend/src/data/**
 docs
 art
 tests

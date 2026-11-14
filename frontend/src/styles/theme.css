@@ -344,6 +344,8 @@
 
 :root[data-theme="light"] .log-reference--item,
 :root[data-theme="light"] .log-reference--location,
+:root[data-theme="light"] .log-reference--building,
+:root[data-theme="light"] .log-reference--trait-q2,
 :root[data-theme="light"] .combat-encounter-heading span,
 :root[data-theme="light"] .action-bonus-pill--pill,
 :root[data-theme="light"] .market-action-btn--buy,
@@ -1948,4 +1950,41 @@
     background: var(--panel);
     box-shadow: none;
   }
+}
+
+:root[data-theme="light"] .log-reference--buff,
+:root[data-theme="light"] .log-reference--trait-q4 {
+  border-color: rgba(105, 64, 140, 0.48);
+  color: var(--purple);
+  background: rgba(105, 64, 140, 0.09);
+}
+
+:root[data-theme="light"] .log-reference--trait {
+  border-color: rgba(125, 82, 26, 0.45);
+  color: var(--gold);
+  background: rgba(125, 82, 26, 0.08);
+}
+
+:root[data-theme="light"] .log-reference--trait-q1 {
+  border-color: rgba(88, 77, 58, 0.36);
+  color: var(--text-dim);
+  background: rgba(88, 77, 58, 0.08);
+}
+
+:root[data-theme="light"] .log-reference--trait-q3 {
+  border-color: rgba(22, 92, 118, 0.48);
+  color: var(--qi);
+  background: rgba(22, 92, 118, 0.09);
+}
+
+:root[data-theme="light"] .log-reference--trait-q5 {
+  border-color: rgba(138, 69, 20, 0.52);
+  color: var(--amber);
+  background: rgba(138, 69, 20, 0.1);
+}
+
+:root[data-theme="light"] .log-reference--trait-q6 {
+  border-color: rgba(178, 51, 39, 0.52);
+  color: var(--seal);
+  background: rgba(178, 51, 39, 0.09);
 }

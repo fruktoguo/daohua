@@ -3,6 +3,7 @@ import { hasActionParticipation } from './game/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PlayerCardModal } from './components/PlayerCardModal'
 import { AwakenResultModal } from './components/AwakenResultModal'
+import { ChangelogNoticeModal } from './components/ChangelogNoticeModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
@@ -31,6 +32,8 @@ import { RightSidebar } from './components/RightSidebar'
 import { TaijiToggle } from './components/TaijiToggle'
 import { TopbarCommunityLinks } from './components/TopbarCommunityLinks'
 import { TutorialOverlay } from './tutorial/TutorialOverlay'
+import { TUTORIAL_DONE } from './tutorial/steps'
+import { dismissChangelogNotice, readDismissedNoticeIds, resolveLatestNoticeEntry, shouldShowChangelogNotice } from './data/changelog'
 import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
@@ -69,6 +72,7 @@ const SocialPage = lazy(() => import('./components/SocialPage').then(module => (
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })))
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
+const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
@@ -871,7 +875,7 @@ const CRAFTING_FLOATING_TONE_MAP: Record<string, FloatingTone> = {
 const SIDEBAR_MARKET_TABS: readonly TabId[] = ['market', 'shop']
 
 /** 桌面端侧边栏「其他」分组子页签 */
-const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard']
+const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard', 'changelog']
 
 interface SidebarTabGroupProps {
   activeTab: TabId
@@ -2977,7 +2981,44 @@ export default function App(): React.JSX.Element {
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const simulatorOpen = useUiStore(state => state.simulatorOpen)
   const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
+  const awakenResults = useUiStore(state => state.awakenResults)
+  const tutorialStep = useGameStore(state => state.tutorialStep)
   const [catalogReady, setCatalogReady] = useState(false)
+  const latestNoticeEntry = useMemo(() => resolveLatestNoticeEntry(), [])
+  const dismissedSessionNoticeIdsRef = useRef<Set<string>>(new Set())
+  const [changelogNoticeOpen, setChangelogNoticeOpen] = useState(false)
+
+  useEffect(() => {
+    const noticeId = latestNoticeEntry?.noticeId
+    if (!noticeId) return
+    if (!catalogReady || !hasReceivedSnapshot || connection === 'offline' || tabBlocked || !currentAccount) {
+      setChangelogNoticeOpen(false)
+      return
+    }
+    if (tutorialStep < TUTORIAL_DONE || awakenResults) return
+    if (dismissedSessionNoticeIdsRef.current.has(noticeId)) return
+    if (shouldShowChangelogNotice(latestNoticeEntry, readDismissedNoticeIds())) {
+      setChangelogNoticeOpen(true)
+    }
+  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, awakenResults])
+
+  const handleDismissChangelogNotice = useCallback(() => {
+    if (latestNoticeEntry?.noticeId) {
+      dismissedSessionNoticeIdsRef.current.add(latestNoticeEntry.noticeId)
+      dismissChangelogNotice(latestNoticeEntry.noticeId)
+    }
+    setChangelogNoticeOpen(false)
+  }, [latestNoticeEntry])
+
+  const handleViewAllChangelog = useCallback(() => {
+    if (latestNoticeEntry?.noticeId) {
+      dismissedSessionNoticeIdsRef.current.add(latestNoticeEntry.noticeId)
+      dismissChangelogNotice(latestNoticeEntry.noticeId)
+    }
+    setChangelogNoticeOpen(false)
+    useUiStore.getState().setOtherNavExpanded(true)
+    useUiStore.getState().setActiveTab('changelog')
+  }, [latestNoticeEntry])
 
   useEffect(() => {
     installAntiMultiOpen()
@@ -3086,6 +3127,9 @@ export default function App(): React.JSX.Element {
                 {activeTab === 'leaderboard' && <LeaderboardPage />}
               </Suspense>
               <Suspense fallback={null}>
+                {activeTab === 'changelog' && <ChangelogPage />}
+              </Suspense>
+              <Suspense fallback={null}>
                 {activeTab === 'shop' && <ShopPage />}
               </Suspense>
               <Suspense fallback={null}>
@@ -3103,6 +3147,12 @@ export default function App(): React.JSX.Element {
         <TutorialOverlay />
         <PlayerCardModal />
         <AwakenResultModal />
+        <ChangelogNoticeModal
+          entry={latestNoticeEntry}
+          onDismiss={handleDismissChangelogNotice}
+          onViewAll={handleViewAllChangelog}
+          open={changelogNoticeOpen}
+        />
         {simulatorOpen && (
           <Suspense fallback={null}>
             <CombatSimulatorModal open={simulatorOpen} onClose={() => setSimulatorOpen(false)} />
