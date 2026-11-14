@@ -156,4 +156,29 @@ public sealed class PlayerAttributeMultiplierTests
         Assert.Equal(baseAttrs.SearchSpeedPoints + 10.0, resolved.SearchSpeedPoints, precision: 6);
         Assert.Equal(baseAttrs.CooldownReductionPoints + 15.0, resolved.CooldownReductionPoints, precision: 6);
     }
+
+    [Theory]
+    [InlineData("equipment.qingfeng-sword", "equipment.jiujie-staff")]
+    [InlineData("equipment.xuantie-sword", "equipment.kuteng-staff")]
+    [InlineData("equipment.pogang-sword", "equipment.chaoyuan-staff")]
+    [InlineData("equipment.duanchen-blade", "equipment.demon-core-staff")]
+    public void PhysicalDpsWeapons_PhysicalDamageBonusMatchesSpellStaves(string swordId, string staffId)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var swordBonus = catalog.RawEquipments[swordId].GetProperty("flatStats")
+            .GetProperty("physicalDamageBonusPoints").GetDouble();
+        var staffBonus = catalog.RawEquipments[staffId].GetProperty("flatStats")
+            .GetProperty("spellDamageBonusPoints").GetDouble();
+        Assert.Equal(staffBonus, swordBonus, precision: 9);
+
+        var baseline = CreatePlayer(catalog);
+        var baseAttrs = PlayerAttributeResolver.Resolve(baseline, catalog);
+
+        var equipped = CreatePlayer(catalog);
+        equipped.Loadout.EquippedItemIds.Add(new ItemId(swordId));
+        equipped.Loadout.Equipment.Add(new PlayerEquipmentSlot(swordId, EnhancementLevel: 0));
+        var resolved = PlayerAttributeResolver.Resolve(equipped, catalog);
+
+        Assert.Equal(baseAttrs.PhysicalDamageBonusPoints + staffBonus, resolved.PhysicalDamageBonusPoints, precision: 9);
+    }
 }

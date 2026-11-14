@@ -1691,7 +1691,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 1,
     level: 1,
     baseStatRatios: { physicalAttack: 0.2 },
-    flatStats: { physicalAttack: 10, accuracy: 10 },
+    flatStats: { physicalAttack: 10, accuracy: 10, physicalDamageBonusPoints: 5 },
   },
   'equipment.pishan-blade': {
     equipmentId: 'equipment.pishan-blade',
@@ -1852,7 +1852,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 2,
     level: 18,
     baseStatRatios: { physicalAttack: 0.32 },
-    flatStats: { physicalAttack: 16, accuracy: 16 },
+    flatStats: { physicalAttack: 16, accuracy: 16, physicalDamageBonusPoints: 15 },
   },
   'equipment.zhansha-blade': {
     equipmentId: 'equipment.zhansha-blade',
