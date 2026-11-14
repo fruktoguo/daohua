@@ -12,7 +12,18 @@ import { Modal } from './Modal'
 import { MonsterTooltipTarget } from './MonsterDisplay'
 import { useUiStore } from '../uiStore'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
-import { resolveAnchorBounds, resolveVisibleMapIds } from './worldMapVisibility'
+import { resolveNodeIconUrl } from '../game/nodeIcons'
+import {
+  computeAnchorFitViewport,
+  computeWorldCanvasSize,
+  MAX_RELATIVE_ZOOM,
+  MIN_RELATIVE_ZOOM,
+  reprojectViewportOnResize,
+  resolveAnchorBounds,
+  resolveVisibleMapIds,
+  toWorldPixel,
+  type WorldCanvasSize,
+} from './worldMapVisibility'
 import { buildLocationChatMarkup } from '../game/chatMarkup'
 import { shareToChat } from '../game/chatShare'
 
@@ -33,7 +44,7 @@ function stableEdgeHash(value: string): number {
   return Math.abs(hash)
 }
 
-/** 计算连线的轻微弧线控制点与文字落点；弯曲量随边长收敛，端点保持不变 */
+/** 计算基准像素空间内连线的轻微弧线控制点与文字落点；弯曲量随边长收敛，端点保持不变 */
 function getEdgeCurve(
   from: { x: number; y: number },
   to: { x: number; y: number },
@@ -42,7 +53,7 @@ function getEdgeCurve(
   const dx = to.x - from.x
   const dy = to.y - from.y
   const length = Math.hypot(dx, dy) || 1
-  const bend = Math.min(3.2, 0.7 + length * 0.06)
+  const bend = Math.min(26, 6 + length * 0.06)
   const direction = stableEdgeHash(edgeId) % 2 === 0 ? 1 : -1
   const offset = bend * direction
   const normalX = -dy / length
@@ -66,11 +77,8 @@ interface WorldGraphView {
   edges: readonly WorldEdgeDefinition[]
 }
 
-/** 世界坐标包围盒（决定画布相对视口的尺寸：1 世界单位 = 1% 视口宽/高） */
-interface WorldBounds {
-  width: number
-  height: number
-}
+/** 全图画布的基准像素包围盒（100×100 世界单位 = 960×640 基准像素） */
+type WorldBounds = WorldCanvasSize
 
 /** 路径规划计算结果 */
 interface PathPlanResult {
@@ -218,7 +226,6 @@ function usePlayerDisplayPosition(
     durationSeconds: number
     travelSegments?: TravelSegment[] | null
   } | undefined,
-  worldBounds: WorldBounds,
   hidden = false,
 ): {
   playerPosRef: React.RefObject<{ x: number; y: number }>
@@ -234,7 +241,6 @@ function usePlayerDisplayPosition(
     world,
     activeTravel,
     hidden,
-    worldBounds,
     lastProgressSec: activeTravel?.progressSeconds ?? 0,
     lastUpdateMs: performance.now(),
   })
@@ -249,11 +255,10 @@ function usePlayerDisplayPosition(
       world,
       activeTravel,
       hidden,
-      worldBounds,
       lastProgressSec: activeTravel?.progressSeconds ?? 0,
       lastUpdateMs: progressChanged || travelChanged ? now : prev.lastUpdateMs,
     }
-  }, [map, world, activeTravel, hidden, worldBounds])
+  }, [map, world, activeTravel, hidden])
 
   useEffect(() => {
     let animId: number | null = null
@@ -333,9 +338,9 @@ function usePlayerDisplayPosition(
     const syncDom = (coord: { x: number; y: number }) => {
       playerPosRef.current = coord
       if (markerRef.current) {
-        const bounds = stateRef.current.worldBounds
-        markerRef.current.style.left = `${(coord.x / bounds.width) * 100}%`
-        markerRef.current.style.top = `${(coord.y / bounds.height) * 100}%`
+        const px = toWorldPixel(coord.x, coord.y)
+        markerRef.current.style.left = `${px.x}px`
+        markerRef.current.style.top = `${px.y}px`
       }
     }
 
@@ -388,7 +393,7 @@ function usePlayerDisplayPosition(
       }
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [map, world, activeTravel, hidden, worldBounds])
+  }, [map, world, activeTravel, hidden])
 
   return { playerPosRef, markerRef }
 }
@@ -428,14 +433,90 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
   )
 })
 
+interface MapNodeButtonProps {
+  nodeId: string
+  node: WorldNodeDefinition
+  xPx: number
+  yPx: number
+  isCurrent: boolean
+  isSelected: boolean
+  isGateway: boolean
+  isDestination: boolean
+  onSelect: (nodeId: string) => void
+}
+
+/** 大世界地图节点实体：支持「可选灵境地标图像 + 紧凑修仙名称牌匾」双形态渲染。 */
+const MapNodeButton = memo(function MapNodeButton({
+  nodeId,
+  node,
+  xPx,
+  yPx,
+  isCurrent,
+  isSelected,
+  isGateway,
+  isDestination,
+  onSelect,
+}: MapNodeButtonProps): React.JSX.Element {
+  const t = useT()
+  const imageUrl = resolveNodeIconUrl(nodeId)
+  const hasBoss = (node.bossEnemies?.length ?? 0) > 0
+  const isSecret = Boolean(node.hidden)
+  const isSect = nodeId.startsWith('node.zongmen.')
+
+  const className = [
+    'world-map-node',
+    imageUrl ? 'has-image' : '',
+    isCurrent ? 'is-current' : '',
+    isSelected ? 'is-selected' : '',
+    isGateway ? 'is-gateway' : '',
+    hasBoss ? 'has-boss' : '',
+    isSecret ? 'is-secret' : '',
+    isSect ? 'is-sect' : '',
+    isDestination ? 'is-destination' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <button
+      aria-label={t('combat.map.nodeAria', { name: node.name, description: node.description })}
+      aria-pressed={isSelected}
+      className={className}
+      data-node-id={nodeId}
+      onClick={e => {
+        e.stopPropagation()
+        onSelect(nodeId)
+      }}
+      style={{ left: `${xPx}px`, top: `${yPx}px` }}
+      type="button"
+    >
+      {imageUrl && (
+        <span className="world-map-node-media">
+          <img
+            alt=""
+            aria-hidden="true"
+            className="world-map-node-img"
+            decoding="async"
+            draggable={false}
+            src={imageUrl}
+          />
+        </span>
+      )}
+      <span className="world-map-node-plaque">
+        <strong className="world-map-node-name">{node.name}</strong>
+      </span>
+    </button>
+  )
+})
+
 /**
  * 修仙大千世界大地图与游历导航面板 (WorldMapPanel)
  *
  * 核心功能与交互流程：
- * 1. 响应式自适应布局：基于 100% 相对坐标与像素级 SVG 覆盖渲染，杜绝任何字形拉伸变形；
- * 2. 交互式漫游视口：支持鼠标拖拽 (Pan)、触屏漫游与缩放微调 (Zoom)，提供快捷定位与重置；
- * 3. 玩家位置居中：打开地图时默认将玩家当前所在位置（驻留地点或行进路径）对齐至视口中心；
- * 4. 可靠节点交互：区分平移漫游与地点点击，支持一键精准选中地点并查看详情；
+ * 1. 统一度量等比世界坐标系：基于 9.6×6.4 固定基准像素空间绘制全要素并通过画布整体缩放，各显示比例构图严格一致；
+ * 2. 交互式漫游视口：支持鼠标拖拽 (Pan)、滚轮锚点缩放、触屏双指捏合与 Resize 重投影；
+ * 3. 玩家位置居中：打开地图或点击定位时自动将玩家所在位置（驻留地点或行进路径）居中展示；
+ * 4. 可靠节点交互：区分平移漫游与地点点击，支持纯牌匾及「地标图像+牌匾」双形态；
  * 5. 宽域连线交互：宽达 28px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)。
  */
 export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { hidden?: boolean } = {}): React.JSX.Element {
@@ -501,8 +582,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     [worldIndex, isNodeRevealed, revealedNodeIdSet],
   )
 
-  // 世界坐标包围盒：画布按世界尺寸铺放（1 世界单位 = 1% 视口宽/高）。
-  const worldBounds = useMemo<WorldBounds>(() => {
+  // 全图画布的固定基准像素包围盒：保证全缩放比下一律保持 3:2 基准世界空间度量。
+  const worldCanvasSize = useMemo<WorldBounds>(() => {
     let maxX = 100
     let maxY = 100
     for (const node of worldIndex.nodes) {
@@ -510,10 +591,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       if (node.x > maxX) maxX = node.x
       if (node.y > maxY) maxY = node.y
     }
-    return { width: maxX + 12, height: maxY + 8 }
+    return computeWorldCanvasSize(maxX, maxY)
   }, [worldIndex, isNodeRevealed])
-  const nx = useCallback((x: number) => `${(x / worldBounds.width) * 100}%`, [worldBounds])
-  const ny = useCallback((y: number) => `${(y / worldBounds.height) * 100}%`, [worldBounds])
 
   // 关口节点：持有通往其他区域跨域边的节点，给界门描边提示
   const gatewayNodeIds = useMemo(() => {
@@ -576,7 +655,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     [worldIndex, visibleNodeIdSet],
   )
 
-  const { playerPosRef, markerRef } = usePlayerDisplayPosition(worldGraphView, world, activeTravel, worldBounds, hidden)
+  const { playerPosRef, markerRef } = usePlayerDisplayPosition(worldGraphView, world, activeTravel, hidden)
 
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
@@ -589,6 +668,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   // 手势期间不再逐次 setState，避免每次 pointermove 把整张地图的 element 树 reconcile 一遍。
   const zoomRef = useRef(zoom)
   const panRef = useRef(pan)
+  const fitScaleRef = useRef<number>(1)
+  const stageSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 })
   const commitViewTimerRef = useRef<number | null>(null)
 
   /** 直接把视口变换写到画布元素（唯一视觉出口），同步 ref；不触发 React 渲染。 */
@@ -630,6 +711,12 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const canvas = canvasRef.current
     if (canvas) canvas.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
   }, [pan, zoom])
+
+  const clampScale = useCallback((candidateScale: number): number => {
+    const base = Math.max(0.05, fitScaleRef.current)
+    return Math.min(base * MAX_RELATIVE_ZOOM, Math.max(base * MIN_RELATIVE_ZOOM, candidateScale))
+  }, [])
+
   // 新手引导地图目标地点聚焦运镜动画状态
   const tutorialMapFocusNodeId = useUiStore(state => state.tutorialMapFocusNodeId)
   const panAnimFrameRef = useRef<number | null>(null)
@@ -650,6 +737,15 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     moved: boolean
     targetNodeId: string | null
   } | null>(null)
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const pinchStartRef = useRef<{
+    dist: number
+    scale: number
+    midX: number
+    midY: number
+    panX: number
+    panY: number
+  } | null>(null)
 
   // 滚轮缩放：React 合成 onWheel 挂在根节点上是 passive 的，preventDefault 无效；
   // 必须在容器上挂非 passive 的原生 wheel 监听才能真正阻止页面同时滚动。
@@ -665,10 +761,10 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
       const zoomFactor = event.deltaY < 0 ? 1.12 : 0.89
       const prevZoom = zoomRef.current
-      const nextZoom = Math.min(1.8, Math.max(0.3, prevZoom * zoomFactor))
+      const nextZoom = clampScale(prevZoom * zoomFactor)
       if (nextZoom === prevZoom) return
 
-      // 以鼠标位置为锚点缩放：先求指针下的世界坐标，再反推新的平移量。
+      // 以鼠标位置为锚点缩放：先求指针下的基准像素世界坐标，再反推新的平移量。
       const worldX = (mouseX - panRef.current.x) / prevZoom
       const worldY = (mouseY - panRef.current.y) / prevZoom
       // 直接落画面：连续滚轮期间不做 React 渲染，静默 120ms 后再把终值回填 state。
@@ -680,10 +776,10 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
     return () => stage.removeEventListener('wheel', onWheel)
-  }, [cancelPanAnim, scheduleViewportCommit, writeViewport])
+  }, [cancelPanAnim, clampScale, scheduleViewportCommit, writeViewport])
 
   // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前动态坐标）
-  const centerOnPlayer = useCallback((targetZoom?: number) => {
+  const centerOnPlayer = useCallback((targetScale?: number) => {
     cancelPanAnim()
     const stage = stageRef.current
     if (!stage) return
@@ -691,21 +787,35 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const stageH = stage.clientHeight
     if (!stageW || !stageH) return
 
-    const z = targetZoom ?? zoomRef.current
-    const pos = playerPosRef.current
-    const playerPxX = (pos.x / 100) * stageW
-    const playerPxY = (pos.y / 100) * stageH
+    const z = targetScale !== undefined ? clampScale(targetScale) : zoomRef.current
+    const playerPx = toWorldPixel(playerPosRef.current.x, playerPosRef.current.y)
 
-    setPan({
-      x: Math.round(stageW / 2 - playerPxX * z),
-      y: Math.round(stageH / 2 - playerPxY * z),
-    })
-  }, [cancelPanAnim])
+    writeViewport(
+      {
+        x: stageW / 2 - playerPx.x * z,
+        y: stageH / 2 - playerPx.y * z,
+      },
+      z,
+    )
+    commitViewport()
+  }, [cancelPanAnim, clampScale, commitViewport, writeViewport])
+
   // 视口自动适配锚框：驻留节点 → 所在区域全部节点 ∪ 相邻节点（跨域关口含对侧节点）；
   // 行进在边上 → 就近端点所在区域 ∪ 两端点邻居；兜底 world.mapId 区域。
   // 邻接区域仍整体渲染、可漫游查看，但不整个纳入适配范围，
   // 避免驻留关口或跨界途中按双区并集缩放把整图压得过小。
   const edgeNearFromSide = world.edgeProgress < 0.5
+  const getAnchorBounds = useCallback(() => resolveAnchorBounds({
+    world,
+    selectedNodeId,
+    maps,
+    worldIndex,
+    gatewayNodeIds,
+    edgeNearFromSide,
+  }), [world, selectedNodeId, maps, worldIndex, gatewayNodeIds, edgeNearFromSide])
+  const getAnchorBoundsRef = useRef(getAnchorBounds)
+  getAnchorBoundsRef.current = getAnchorBounds
+
   const fitToAnchorRegion = useCallback(() => {
     cancelPanAnim()
     const stage = stageRef.current
@@ -714,54 +824,65 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     const stageH = stage.clientHeight
     if (!stageW || !stageH) return
 
-    const bounds = resolveAnchorBounds({
-      world,
-      selectedNodeId,
-      maps,
-      worldIndex,
-      gatewayNodeIds,
-      edgeNearFromSide,
-    })
+    const bounds = getAnchorBoundsRef.current()
     if (!bounds) return
 
-    const pad = 10
-    const minX = bounds.minX - pad
-    const minY = bounds.minY - pad
-    const maxX = bounds.maxX + pad
-    const maxY = bounds.maxY + pad
-    const unionW = Math.max(1, maxX - minX)
-    const unionH = Math.max(1, maxY - minY)
-    // 1 世界单位 = 1% 视口：unionW 单位在 zoom z 下占 unionW/100*stage*z px，
-    // 令其约等于视口的 96% → z = 96/unionW，与视口尺寸无关。
-    const nextZoom = Math.min(1.8, Math.max(0.3, Math.min(96 / unionW, 96 / unionH)))
-    const cx = (minX + maxX) / 2
-    const cy = (minY + maxY) / 2
-    setZoom(nextZoom)
-    setPan({
-      x: Math.round(stageW / 2 - (cx / 100) * stageW * nextZoom),
-      y: Math.round(stageH / 2 - (cy / 100) * stageH * nextZoom),
-    })
-  }, [world, selectedNodeId, maps, worldIndex, gatewayNodeIds, edgeNearFromSide, cancelPanAnim])
+    const fit = computeAnchorFitViewport(bounds, stageW, stageH)
+    fitScaleRef.current = fit.fitScale
+    stageSizeRef.current = { width: stageW, height: stageH }
+    writeViewport({ x: fit.viewport.panX, y: fit.viewport.panY }, fit.viewport.scale)
+    commitViewport()
+  }, [worldIndex.nodes.length, cancelPanAnim, writeViewport, commitViewport])
 
-  // 区域可见集合变化（含首次布局就绪）时自动适配视口；集合不变期间不打断玩家手动漫游
+  // 区域可见集合变化时自动适配视口；容器尺寸或 DPI 缩放变化时保持焦点与相对缩放等比重投影。
   const fittedKeyRef = useRef<string | null>(null)
   useEffect(() => {
+    if (hidden) return
     const stage = stageRef.current
     if (!stage) return
 
-    const tryFit = () => {
-      if (stage.clientWidth > 0 && stage.clientHeight > 0 && fittedKeyRef.current !== visibleKey) {
+    const syncViewport = () => {
+      const stageW = stage.clientWidth
+      const stageH = stage.clientHeight
+      if (stageW <= 0 || stageH <= 0) return
+
+      if (fittedKeyRef.current !== visibleKey) {
         fitToAnchorRegion()
         fittedKeyRef.current = visibleKey
+        return
+      }
+
+      const prevSize = stageSizeRef.current
+      if (prevSize.width > 0 && prevSize.height > 0 && (stageW !== prevSize.width || stageH !== prevSize.height)) {
+        cancelPanAnim()
+        const bounds = getAnchorBoundsRef.current()
+        if (!bounds) {
+          stageSizeRef.current = { width: stageW, height: stageH }
+          return
+        }
+        const nextFit = computeAnchorFitViewport(bounds, stageW, stageH)
+        const reprojected = reprojectViewportOnResize({
+          prevViewport: { panX: panRef.current.x, panY: panRef.current.y, scale: zoomRef.current },
+          prevStageWidth: prevSize.width,
+          prevStageHeight: prevSize.height,
+          prevFitScale: fitScaleRef.current,
+          nextStageWidth: stageW,
+          nextStageHeight: stageH,
+          nextFitScale: nextFit.fitScale,
+        })
+        fitScaleRef.current = nextFit.fitScale
+        stageSizeRef.current = { width: stageW, height: stageH }
+        writeViewport({ x: reprojected.viewport.panX, y: reprojected.viewport.panY }, reprojected.viewport.scale)
+        scheduleViewportCommit()
       }
     }
 
-    tryFit()
-    const rafId = requestAnimationFrame(tryFit)
+    syncViewport()
+    const rafId = requestAnimationFrame(syncViewport)
     const resizeObserver = new ResizeObserver(entries => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-          tryFit()
+          syncViewport()
         }
       }
     })
@@ -771,7 +892,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
     }
-  }, [visibleKey, fitToAnchorRegion])
+  }, [hidden, visibleKey, fitToAnchorRegion, cancelPanAnim, writeViewport, scheduleViewportCommit])
+
   // 新手引导点击目标地点时的运镜动画：
   // 打开地图后先让当前地点居中（停留约 360ms 锚定位置），再平滑平移至目标地点居中，
   // 确保在任何屏幕尺寸与显示比例下，目标节点均稳稳落于视口正中心，百分之百可点击。
@@ -800,20 +922,31 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       if (!stageW || !stageH) return false
 
       animatedFocusNodeIdRef.current = tutorialMapFocusNodeId
-      // 标记区域视口已适配，防止后续 ResizeObserver/tryFit 重复覆盖居中视角
+      // 若尚未执行过视口适配，先按基准尺寸计算等比 fitScale，防止首次引导 scale 落回 1
+      if (stageSizeRef.current.width === 0 || stageSizeRef.current.height === 0) {
+        const bounds = getAnchorBoundsRef.current()
+        if (bounds) {
+          const initFit = computeAnchorFitViewport(bounds, stageW, stageH)
+          fitScaleRef.current = initFit.fitScale
+          stageSizeRef.current = { width: stageW, height: stageH }
+          writeViewport({ x: initFit.viewport.panX, y: initFit.viewport.panY }, initFit.viewport.scale)
+        }
+      }
+      // 标记区域视口已适配，防止后续 ResizeObserver/syncViewport 重复覆盖居中视角
       fittedKeyRef.current = visibleKey
 
       const currentZoom = zoomRef.current
-      const fromPos = playerPosRef.current
+      const fromPx = toWorldPixel(playerPosRef.current.x, playerPosRef.current.y)
+      const targetPx = toWorldPixel(targetNode.x, targetNode.y)
 
       // 起点：当前地点居中；终点：目标地点居中
       const startPan = {
-        x: Math.round(stageW / 2 - (fromPos.x / 100) * stageW * currentZoom),
-        y: Math.round(stageH / 2 - (fromPos.y / 100) * stageH * currentZoom),
+        x: stageW / 2 - fromPx.x * currentZoom,
+        y: stageH / 2 - fromPx.y * currentZoom,
       }
       const targetPan = {
-        x: Math.round(stageW / 2 - (targetNode.x / 100) * stageW * currentZoom),
-        y: Math.round(stageH / 2 - (targetNode.y / 100) * stageH * currentZoom),
+        x: stageW / 2 - targetPx.x * currentZoom,
+        y: stageH / 2 - targetPx.y * currentZoom,
       }
 
       // 阶段 1：先让当前地点居中（直接落画面，运镜期间不触发 React 渲染）
@@ -844,8 +977,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
         const progress = Math.min(1, (elapsed - HOLD_DELAY_MS) / PAN_DURATION_MS)
         const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2
-        const nextX = Math.round(startPan.x + (targetPan.x - startPan.x) * ease)
-        const nextY = Math.round(startPan.y + (targetPan.y - startPan.y) * ease)
+        const nextX = startPan.x + (targetPan.x - startPan.x) * ease
+        const nextY = startPan.y + (targetPan.y - startPan.y) * ease
 
         // 逐帧只写画布 transform（合成器直出），规避整图 element 树每帧 reconcile
         writeViewport({ x: nextX, y: nextY }, currentZoom)
@@ -893,12 +1026,37 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     [activeTravel?.travelSegments],
   )
 
-  // 拖拽漫游事件监听：仅在位移超过 4px 时激活拖拽捕获，防止截断节点点击
+  // 拖拽漫游与双指触摸缩放：仅在位移超过 4px 时激活拖拽捕获，防止截断节点点击
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     cancelPanAnim()
     const target = e.target as HTMLElement
     if (target.closest('.world-map-toolbar')) return
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    if (activePointersRef.current.size === 2 && stageRef.current) {
+      const pts = [...activePointersRef.current.values()]
+      const rect = stageRef.current.getBoundingClientRect()
+      const midX = (pts[0].x + pts[1].x) / 2 - rect.left
+      const midY = (pts[0].y + pts[1].y) / 2 - rect.top
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      dragStartRef.current = null
+      isDraggingRef.current = true
+      setIsDragging(true)
+      pinchStartRef.current = {
+        dist: Math.max(1, dist),
+        scale: zoomRef.current,
+        midX,
+        midY,
+        panX: panRef.current.x,
+        panY: panRef.current.y,
+      }
+      commitViewport()
+      return
+    }
+
+    if (activePointersRef.current.size > 2) return
 
     const nodeEl = target.closest<HTMLElement>('.world-map-node')
     const targetNodeId = nodeEl?.getAttribute('data-node-id') ?? null
@@ -920,6 +1078,24 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   }, [cancelPanAnim, commitViewport])
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+
+    if (pinchStartRef.current && activePointersRef.current.size >= 2 && stageRef.current) {
+      const pts = [...activePointersRef.current.values()]
+      const rect = stageRef.current.getBoundingClientRect()
+      const midX = (pts[0].x + pts[1].x) / 2 - rect.left
+      const midY = (pts[0].y + pts[1].y) / 2 - rect.top
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      const pinch = pinchStartRef.current
+      const nextScale = clampScale(pinch.scale * (dist / pinch.dist))
+      const worldX = (midX - pinch.panX) / pinch.scale
+      const worldY = (midY - pinch.panY) / pinch.scale
+      writeViewport({ x: midX - worldX * nextScale, y: midY - worldY * nextScale }, nextScale)
+      return
+    }
+
     if (!dragStartRef.current) return
     const dx = e.clientX - dragStartRef.current.clientX
     const dy = e.clientY - dragStartRef.current.clientY
@@ -946,9 +1122,26 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       x: dragStartRef.current.panX + dx,
       y: dragStartRef.current.panY + dy,
     }, zoomRef.current)
-  }, [writeViewport])
+  }, [clampScale, writeViewport])
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    activePointersRef.current.delete(e.pointerId)
+
+    if (pinchStartRef.current) {
+      if (activePointersRef.current.size < 2) {
+        pinchStartRef.current = null
+        isDraggingRef.current = false
+        setIsDragging(false)
+        commitViewport()
+      }
+      try {
+        stageRef.current?.releasePointerCapture(e.pointerId)
+      } catch {
+        // 忽略可能已释放的捕获
+      }
+      return
+    }
+
     if (!dragStartRef.current) return
     const { moved, targetNodeId } = dragStartRef.current
     dragStartRef.current = null
@@ -1058,6 +1251,9 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     return <div className="world-map-loading">{t('combat.map.loading')}</div>
   }
 
+  const initialPlayerPx = toWorldPixel(playerPosRef.current.x, playerPosRef.current.y)
+  const onImageNode = Boolean(world.nodeId && resolveNodeIconUrl(world.nodeId))
+
   return (
     <div className="world-map-layout">
       <section
@@ -1084,21 +1280,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           <div className="world-map-zoom-group">
             <button
               className="world-map-tool-btn icon-only"
-              onClick={() => {
-                const nextZoom = Math.min(1.8, zoomRef.current + 0.15)
-                setZoom(nextZoom)
-                centerOnPlayer(nextZoom)
-              }}
+              onClick={() => centerOnPlayer(zoomRef.current * 1.18)}
               title={t('combat.map.zoomIn')}
               type="button"
             >＋</button>
             <button
               className="world-map-tool-btn icon-only"
-              onClick={() => {
-                const nextZoom = Math.max(0.3, zoomRef.current - 0.15)
-                setZoom(nextZoom)
-                centerOnPlayer(nextZoom)
-              }}
+              onClick={() => centerOnPlayer(zoomRef.current / 1.18)}
               title={t('combat.map.zoomOut')}
               type="button"
             >－</button>
@@ -1111,19 +1299,24 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           </div>
         </div>
 
-        {/* 漫游画布视口：尺寸 = 世界坐标包围盒，区域按全局坐标落位。
+        {/* 漫游画布视口：尺寸 = 固定基准像素包围盒，整体等比缩放。
             transform 由 writeViewport/useLayoutEffect 命令式写入，刻意不放进 JSX——
             React 不拥有该属性，才能让拖拽/滚轮/运镜绕开整图重渲染。 */}
         <div
           className="world-map-canvas"
           ref={canvasRef}
           style={{
-            width: `${worldBounds.width}%`,
-            height: `${worldBounds.height}%`,
+            width: `${worldCanvasSize.width}px`,
+            height: `${worldCanvasSize.height}px`,
           }}
         >
-          {/* SVG 区域界框 / 路径与距离标注（像素渲染，100% 正常字形比例） */}
-          <svg className="world-map-edges">
+          {/* SVG 区域界框 / 路径与距离标注（统一基准像素坐标系，随画布整体等比缩放） */}
+          <svg
+            className="world-map-edges"
+            height={worldCanvasSize.height}
+            viewBox={`0 0 ${worldCanvasSize.width} ${worldCanvasSize.height}`}
+            width={worldCanvasSize.width}
+          >
             <defs>
               <filter id="world-route-glow" x="-20%" y="-20%" width="140%" height="140%">
                 <feDropShadow dx="0" dy="0" floodColor="#e8d69a" floodOpacity="0.7" stdDeviation="3" />
@@ -1132,26 +1325,28 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             {/* 可见区域虚线界框与区域名牌 */}
             {visibleRegions.map(({ map: region, bounds }) => {
               const framePad = 8
-              const fx = bounds.minX - framePad
-              const fy = bounds.minY - framePad
-              const fw = bounds.maxX - bounds.minX + framePad * 2
-              const fh = bounds.maxY - bounds.minY + framePad * 2
+              const minPx = toWorldPixel(bounds.minX - framePad, bounds.minY - framePad)
+              const maxPx = toWorldPixel(bounds.maxX + framePad, bounds.maxY + framePad)
+              const fw = maxPx.x - minPx.x
+              const fh = maxPx.y - minPx.y
+              const cx = (minPx.x + maxPx.x) / 2
+              const labelY = Math.max(20, minPx.y + 20)
               return (
                 <g className="world-map-region" key={region.mapId}>
                   <rect
                     className="world-map-region-frame"
-                    height={`${(fh / worldBounds.height) * 100}%`}
+                    height={fh}
                     rx={14}
-                    width={`${(fw / worldBounds.width) * 100}%`}
-                    x={nx(fx)}
-                    y={ny(fy)}
+                    width={fw}
+                    x={minPx.x}
+                    y={minPx.y}
                   />
                   <text
                     className="world-map-region-name"
                     dominantBaseline="central"
                     textAnchor="middle"
-                    x={nx((bounds.minX + bounds.maxX) / 2)}
-                    y={ny(Math.max(3, fy + 3.5))}
+                    x={cx}
+                    y={labelY}
                   >
                     {region.name}
                   </text>
@@ -1163,10 +1358,12 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               const to = worldIndex.nodes.find(node => node.nodeId === edge.toNodeId)
               if (!from || !to) return null
               const distance = getEdgeDistance(from, to)
+              const fromPx = toWorldPixel(from.x, from.y)
+              const toPx = toWorldPixel(to.x, to.y)
               const isPlanned = plannedEdges.has(edge.edgeId)
               const isCrossing = worldIndex.nodeOwner.get(edge.fromNodeId) !== worldIndex.nodeOwner.get(edge.toNodeId)
-              const curve = getEdgeCurve(from, to, edge.edgeId)
-              const curvePath = `M ${from.x} ${from.y} Q ${curve.controlX} ${curve.controlY} ${to.x} ${to.y}`
+              const curve = getEdgeCurve(fromPx, toPx, edge.edgeId)
+              const curvePath = `M ${fromPx.x} ${fromPx.y} Q ${curve.controlX} ${curve.controlY} ${toPx.x} ${toPx.y}`
 
               return (
                 <g
@@ -1174,29 +1371,19 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   className={`world-map-edge-group${isPlanned ? ' is-planned' : ''}${isCrossing ? ' is-crossing' : ''}`}
                   key={edge.edgeId}
                 >
-                  {/* 曲线路径层：viewBox 直接使用世界坐标，preserveAspectRatio=none 映射到画布尺寸 */}
-                  <svg
-                    className="world-map-edge-curve"
-                    height="100%"
-                    overflow="visible"
-                    preserveAspectRatio="none"
-                    viewBox={`0 0 ${worldBounds.width} ${worldBounds.height}`}
-                    width="100%"
-                  >
-                    {/* 宽容度高的透明交互拾取层 (28px) */}
-                    <path className="world-map-edge-hitbox" d={curvePath} vectorEffect="non-scaling-stroke" />
-                    {/* 底色衬线 */}
-                    <path className="world-map-edge-bg" d={curvePath} vectorEffect="non-scaling-stroke" />
-                    {/* 核心主路径 */}
-                    <path className="world-map-edge-line" d={curvePath} vectorEffect="non-scaling-stroke" />
-                  </svg>
-                  {/* 距离文字标注（标准字形比例，带黑色轮廓发光） */}
+                  {/* 宽容度高的透明交互拾取层 (28px) */}
+                  <path className="world-map-edge-hitbox" d={curvePath} />
+                  {/* 底色衬线 */}
+                  <path className="world-map-edge-bg" d={curvePath} />
+                  {/* 核心主路径 */}
+                  <path className="world-map-edge-line" d={curvePath} />
+                  {/* 距离文字标注 */}
                   <text
                     className="world-map-edge-label-text"
                     dominantBaseline="central"
                     textAnchor="middle"
-                    x={nx(curve.labelX)}
-                    y={ny(curve.labelY)}
+                    x={curve.labelX}
+                    y={curve.labelY}
                   >
                     {t('combat.map.edgeDistance', { distance: distance.toFixed(1) })}
                   </text>
@@ -1207,37 +1394,31 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
           {/* 地图节点实体按钮（仅渲染可见区域） */}
           {visibleNodes.map(node => {
-            const isCurrent = node.nodeId === world.nodeId
-            const isSelected = selectedNodeId === node.nodeId
-            const isGateway = gatewayNodeIds.has(node.nodeId)
-
+            const posPx = toWorldPixel(node.x, node.y)
             return (
-              <button
-                aria-label={t('combat.map.nodeAria', { name: node.name, description: node.description })}
-                aria-pressed={isSelected}
-                className={`world-map-node${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}${isGateway ? ' is-gateway' : ''}`}
-                data-node-id={node.nodeId}
+              <MapNodeButton
+                isCurrent={node.nodeId === world.nodeId}
+                isDestination={activeTravel?.travelDestinationNodeId === node.nodeId}
+                isGateway={gatewayNodeIds.has(node.nodeId)}
+                isSelected={selectedNodeId === node.nodeId}
                 key={node.nodeId}
-                onClick={e => {
-                  e.stopPropagation()
-                  setSelectedNodeId(node.nodeId)
-                }}
-                style={{ left: nx(node.x), top: ny(node.y) }}
-                type="button"
-              >
-                <strong>{node.name}</strong>
-              </button>
+                node={node}
+                nodeId={node.nodeId}
+                onSelect={setSelectedNodeId}
+                xPx={posPx.x}
+                yPx={posPx.y}
+              />
             )
           })}
 
           {/* 玩家当前位置向下箭头指示器 */}
           <div
             aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
-            className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}`}
+            className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}${onImageNode ? ' is-on-image-node' : ''}`}
             ref={markerRef}
             style={{
-              left: nx(playerPosRef.current.x),
-              top: ny(playerPosRef.current.y),
+              left: `${initialPlayerPx.x}px`,
+              top: `${initialPlayerPx.y}px`,
             }}
             title={world.locationName}
           >

@@ -85,7 +85,7 @@
 :root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--seal); }
 :root[data-theme="light"] ::selection { color: var(--on-accent); background: var(--seal); }
 :root[data-theme="light"] input[type="checkbox"] { accent-color: var(--seal); }
-:root[data-theme="light"] :is(.panel-header h2, .world-map-node > strong, .arena-overhead > strong, .arena-buff-glyph, .arena-search-text-vertical) { text-shadow: none; }
+:root[data-theme="light"] :is(.panel-header h2, .world-map-node-name, .arena-overhead > strong, .arena-buff-glyph, .arena-search-text-vertical) { text-shadow: none; }
 
 /* 印章红接管主操作与选中态：实心主按钮、导航红条、tab/胶囊选中、勾选项，金色退回纹饰与语义。 */
 :root[data-theme="light"] :is(.action-modal-submit, .modal-form-submit, .login-submit-btn, .status-btn.primary, .confirm-dialog-actions .confirm-primary:not(.danger), .quantity-selector button.active) {
@@ -215,7 +215,8 @@
 :root[data-theme="light"] .topbar,
 :root[data-theme="light"] .compound-stat-label:hover,
 :root[data-theme="light"] .world-map-tool-btn:hover,
-:root[data-theme="light"] .world-map-node:hover:not(:disabled),
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-media,
 :root[data-theme="light"] .arena-buff-square .arena-buff-stack {
   background: rgba(var(--surface-rgb), 0.95);
 }
@@ -577,7 +578,8 @@
   background: rgba(var(--surface-rgb), 0.58);
 }
 
-:root[data-theme="light"] .world-map-node {
+:root[data-theme="light"] .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node-media {
   background: linear-gradient(135deg, rgba(201, 180, 109, 0.14), transparent 52%), rgba(var(--surface-rgb), 0.96);
 }
 
@@ -656,7 +658,9 @@
   box-shadow: 0 0 10px var(--gold-faint) !important;
 }
 
-:root[data-theme="light"] .world-map-node.is-selected { background: #e8dbc0; }
+:root[data-theme="light"] .world-map-node.is-selected .world-map-node-plaque { background: #e8dbc0; }
+:root[data-theme="light"] .world-map-node.is-selected .world-map-node-media { background: #efe4ce; }
+:root[data-theme="light"] .world-map-region-name { fill: var(--jade); stroke: var(--panel); }
 :root[data-theme="light"] .world-map-edge-bg { stroke: #d1c4a8; }
 :root[data-theme="light"] .world-map-edge-line { stroke: var(--gold-dim); }
 :root[data-theme="light"] .world-map-edge-group.is-planned .world-map-edge-line { stroke: var(--gold-bright); }
@@ -760,10 +764,13 @@
 :root[data-theme="light"] .item-tooltip--emperor { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), 0 0 20px rgba(242, 209, 124, 0.18); }
 :root[data-theme="light"] .world-map-stage::after { box-shadow: inset 0 0 90px rgba(71, 49, 18, 0.175); }
 :root[data-theme="light"] .world-map-tool-btn { box-shadow: 0 2px 8px rgba(71, 49, 18, 0.15); }
-:root[data-theme="light"] .world-map-node { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 8px 20px rgba(71, 49, 18, 0.14); }
-:root[data-theme="light"] .world-map-node>strong { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.2); }
-:root[data-theme="light"] .world-map-node:hover:not(:disabled) { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 0 16px rgba(232, 214, 154, 0.4); }
-:root[data-theme="light"] .world-map-node.is-selected { box-shadow: 0 0 0 3px rgba(71, 49, 18, 0.17), 0 0 24px rgba(232, 214, 154, 0.45); }
+:root[data-theme="light"] .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 6px 16px rgba(71, 49, 18, 0.14); }
+:root[data-theme="light"] .world-map-node-name { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.2); }
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node:hover:not(:disabled) .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 0 16px rgba(232, 214, 154, 0.4); }
+:root[data-theme="light"] .world-map-node.is-selected .world-map-node-plaque,
+:root[data-theme="light"] .world-map-node.is-selected .world-map-node-media { box-shadow: 0 0 0 2px rgba(71, 49, 18, 0.17), 0 0 22px rgba(232, 214, 154, 0.45); }
 :root[data-theme="light"] .combat-arena-shell { box-shadow: inset 0 0 54px rgba(71, 49, 18, 0.12); }
 :root[data-theme="light"] .arena-overhead>strong { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.237); }
 :root[data-theme="light"] .arena-buff-square { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.15); }

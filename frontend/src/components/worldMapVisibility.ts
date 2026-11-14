@@ -164,3 +164,165 @@ export function resolveAnchorBounds(params: ResolveAnchorBoundsParams): WorldAnc
 
   return { minX, minY, maxX, maxY }
 }
+
+/** 世界单位到固定基准像素的换算倍率（100×100 世界单位 = 960×640 基准像素，固定 3:2 比例） */
+export const WORLD_UNIT_X = 9.6
+export const WORLD_UNIT_Y = 6.4
+
+/** 相对适配倍率（relativeZoom）允许的最小/最大用户缩放倍数 */
+export const MIN_RELATIVE_ZOOM = 0.45
+export const MAX_RELATIVE_ZOOM = 2.6
+
+export interface WorldPixelPoint {
+  x: number
+  y: number
+}
+
+export interface WorldCanvasSize {
+  width: number
+  height: number
+}
+
+export interface MapViewport {
+  panX: number
+  panY: number
+  scale: number
+}
+
+export interface FitViewportResult {
+  viewport: MapViewport
+  fitScale: number
+  relativeZoom: number
+  focusWorld: WorldPixelPoint
+}
+
+/** 将配表世界坐标转换为固定基准像素坐标。 */
+export function toWorldPixel(x: number, y: number): WorldPixelPoint {
+  return { x: x * WORLD_UNIT_X, y: y * WORLD_UNIT_Y }
+}
+
+/** 计算全图画布的固定基准像素尺寸。 */
+export function computeWorldCanvasSize(maxWorldX: number, maxWorldY: number): WorldCanvasSize {
+  const px = toWorldPixel(Math.max(100, maxWorldX) + 12, Math.max(100, maxWorldY) + 8)
+  return { width: px.x, height: px.y }
+}
+
+/** 将用户相对缩放倍率钳制在安全交互区间内。 */
+export function clampRelativeZoom(relativeZoom: number): number {
+  return Math.min(MAX_RELATIVE_ZOOM, Math.max(MIN_RELATIVE_ZOOM, relativeZoom))
+}
+
+/**
+ * 依据当前锚点包围盒与舞台像素尺寸计算初始/复位等比视口。
+ * 同一组锚点在不同显示比例下会产出相同的相对屏幕构图。
+ */
+export function computeAnchorFitViewport(
+  anchorBounds: { minX: number; minY: number; maxX: number; maxY: number },
+  stageWidth: number,
+  stageHeight: number,
+): FitViewportResult {
+  const safeW = Math.max(1, stageWidth)
+  const safeH = Math.max(1, stageHeight)
+  const padX = 11
+  const padY = 11
+  const minPx = toWorldPixel(anchorBounds.minX - padX, anchorBounds.minY - padY)
+  const maxPx = toWorldPixel(anchorBounds.maxX + padX, anchorBounds.maxY + padY)
+  const contentW = Math.max(1, maxPx.x - minPx.x)
+  const contentH = Math.max(1, maxPx.y - minPx.y)
+  const rawFitScale = Math.min((safeW * 0.96) / contentW, (safeH * 0.96) / contentH)
+  const fitScale = Math.max(0.05, Math.min(8, rawFitScale))
+  const focusWorld = {
+    x: (minPx.x + maxPx.x) / 2,
+    y: (minPx.y + maxPx.y) / 2,
+  }
+  return {
+    fitScale,
+    relativeZoom: 1,
+    focusWorld,
+    viewport: {
+      scale: fitScale,
+      panX: safeW / 2 - focusWorld.x * fitScale,
+      panY: safeH / 2 - focusWorld.y * fitScale,
+    },
+  }
+}
+
+/**
+ * 在舞台尺寸/DPI 缩放变化时保持焦点世界坐标与相对缩放倍率进行等比重投影。
+ */
+export function reprojectViewportOnResize(params: {
+  prevViewport: MapViewport
+  prevStageWidth: number
+  prevStageHeight: number
+  prevFitScale: number
+  nextStageWidth: number
+  nextStageHeight: number
+  nextFitScale: number
+}): { viewport: MapViewport; relativeZoom: number; focusWorld: WorldPixelPoint } {
+  const {
+    prevViewport,
+    prevStageWidth,
+    prevStageHeight,
+    prevFitScale,
+    nextStageWidth,
+    nextStageHeight,
+    nextFitScale,
+  } = params
+  const safePrevScale = Math.max(0.001, prevViewport.scale)
+  const safePrevFit = Math.max(0.001, prevFitScale)
+  const relativeZoom = clampRelativeZoom(safePrevScale / safePrevFit)
+  const focusWorld = {
+    x: (prevStageWidth / 2 - prevViewport.panX) / safePrevScale,
+    y: (prevStageHeight / 2 - prevViewport.panY) / safePrevScale,
+  }
+  const nextScale = nextFitScale * relativeZoom
+  return {
+    relativeZoom,
+    focusWorld,
+    viewport: {
+      scale: nextScale,
+      panX: nextStageWidth / 2 - focusWorld.x * nextScale,
+      panY: nextStageHeight / 2 - focusWorld.y * nextScale,
+    },
+  }
+}
+
+/**
+ * 将按优先级排列的 glob 资源映射合并为以无扩展名文件名（即 nodeId）为键的查找表。
+ * 数组中靠后的映射覆盖靠前的映射（用于 .webp > .png > .svg 优先级）。
+ */
+export function buildNodeIconLookup(
+  modulesByPriority: ReadonlyArray<Record<string, string>>,
+): ReadonlyMap<string, string> {
+  const map = new Map<string, string>()
+  for (const modules of modulesByPriority) {
+    for (const [rawPath, url] of Object.entries(modules)) {
+      const normalized = rawPath.replace(/\\/g, '/')
+      const fileName = normalized.slice(normalized.lastIndexOf('/') + 1)
+      if (!fileName || fileName.startsWith('.')) continue
+      const dotIdx = fileName.lastIndexOf('.')
+      const stem = dotIdx > 0 ? fileName.slice(0, dotIdx) : fileName
+      if (stem && url) {
+        map.set(stem, url)
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * 从节点图标查找表中检索指定 nodeId 对应的图像 URL；
+ * 宗门专属驻地（node.zongmen.*）在未命中精确文件时回退至共享键 node.zongmen。
+ */
+export function lookupNodeIconFromMap(
+  iconMap: ReadonlyMap<string, string>,
+  nodeId: string,
+): string | null {
+  if (!nodeId) return null
+  const exact = iconMap.get(nodeId)
+  if (exact) return exact
+  if (nodeId.startsWith('node.zongmen.')) {
+    return iconMap.get('node.zongmen') ?? null
+  }
+  return null
+}
