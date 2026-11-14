@@ -1,148 +1,973 @@
-/* =========================================================================
-   道化太初 · 战斗演武画廊 —— 画廊专属样式
-   约定：真实界面样式一律来自 frontend/src 直链样式表，本文件只承载：
-   1. 特效覆盖层与特效节点基类（全部绝对定位，零布局回流）；
-   2. 演武控制台与画廊标记；
-   3. 跨技能共享的通用粒子/震屏关键帧（技能专属帧在各 vfx/abilities/*.js 内自含注入）。
-   ========================================================================= */
+/* 道化太初 · 战斗演武画廊样式表（兼容双层 Canvas 叠层架构） */
+:root {
+  --bg: #080a09;
+  --bg-raised: #101412;
+  --panel: #131815;
+  --gold: #c9b46d;
+  --gold-bright: #f2dfa2;
+  --gold-dim: rgba(201, 180, 109, 0.42);
+  --gold-faint: rgba(201, 180, 109, 0.16);
+  --text: #e6dfd1;
+  --text-dim: #928a78;
+  --jade: #3cd093;
+  --qi: #5ec8f8;
+  --seal: #d9534f;
+}
 
-/* ---------- 特效覆盖层（挂在 .combat-arena-shell 内，overflow:hidden 裁剪） ---------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: radial-gradient(circle at 50% 18%, #151c18 0%, #080a09 68%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  overflow-x: hidden;
+}
+
+.gallery-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 10px 14px;
+  gap: 10px;
+}
+
+/* 顶部导航栏 */
+.gallery-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--gold-dim);
+  background: linear-gradient(180deg, rgba(24, 30, 26, 0.96), rgba(14, 18, 15, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(201, 180, 109, 0.08);
+  flex-shrink: 0;
+}
+
+.gallery-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gallery-brand > div {
+  min-width: 0;
+}
+
+.gallery-brand-seal {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--gold);
+  background: rgba(201, 180, 109, 0.14);
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.gallery-brand h1 {
+  margin: 0;
+  font-size: clamp(14px, 2.2vw, 17px);
+  color: var(--gold-bright);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.gallery-subtitle {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.gallery-topbar-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.hud-pill {
+  padding: 4px 10px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.hud-pill.is-accent {
+  border-color: rgba(94, 200, 248, 0.45);
+  color: var(--qi);
+}
+
+.hud-pill.is-hot {
+  border-color: rgba(245, 196, 81, 0.72);
+  color: var(--gold-bright);
+  background: rgba(245, 196, 81, 0.12);
+}
+
+.gallery-topbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-ctl,
+.btn-mini {
+  cursor: pointer;
+  border: 1px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.08);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 12px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-ctl:hover,
+.btn-mini:hover {
+  border-color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.18);
+  color: var(--gold-bright);
+}
+
+.btn-ctl.is-active {
+  border-color: var(--jade);
+  background: rgba(60, 208, 147, 0.16);
+  color: #a7f3d0;
+}
+
+.btn-ctl.is-danger {
+  border-color: rgba(217, 83, 79, 0.55);
+  color: #fca5a5;
+}
+
+.btn-mini {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.selftest-banner {
+  padding: 7px 14px;
+  border: 1px solid #3cd093;
+  background: rgba(20, 65, 45, 0.55);
+  color: #bbf7d0;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.selftest-banner.is-fail {
+  border-color: #ef4444;
+  background: rgba(95, 22, 22, 0.65);
+  color: #fecaca;
+}
+
+/* 主网格布局 */
+.gallery-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+}
+
+.gallery-center-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ================= 双层画布演武场 ================= */
+.arena-shell {
+  position: relative;
+  height: clamp(320px, 44vh, 450px);
+  min-height: 310px;
+  border: 1px solid var(--gold-dim);
+  background:
+    radial-gradient(ellipse at 50% 62%, rgba(40, 56, 46, 0.24) 0%, rgba(10, 13, 11, 0.92) 72%),
+    linear-gradient(rgba(201, 180, 109, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201, 180, 109, 0.04) 1px, transparent 1px),
+    #0a0c0b;
+  background-size: auto, 28px 28px, 28px 28px, auto;
+  overflow: hidden;
+  isolation: isolate;
+  flex-shrink: 0;
+}
+
+/* 关键叠层顺序：ground(1) -> units(2) -> sky(8) -> HUD(10) */
+.vfx-ground-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.combat-arena-field.arena-field {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 28px;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  height: 100%;
+  padding: 24px clamp(32px, 4.5vw, 64px) 22px;
+  background: transparent;
+}
+
 .vfx-stage-overlay {
   position: absolute;
-  z-index: 8;
   inset: 0;
-  overflow: hidden;
+  z-index: 8;
   pointer-events: none;
 }
 
-/* 特效节点统一基类：以目标点为中心展开，自身不占据布局空间 */
-.vfx-node {
+.vfx-float-num {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
+  font-weight: 800;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   pointer-events: none;
-  transform: translateZ(0);
+  white-space: nowrap;
+  z-index: 9;
 }
 
-/* ---------- 屏幕震动（挂在 .combat-arena-shell，只动 transform） ---------- */
-@keyframes vfx-quake {
-  0%, 100% { transform: translate(0, 0); }
-  20% { transform: translate(-3px, 2px); }
-  40% { transform: translate(3px, -2px); }
-  60% { transform: translate(-2px, -2px); }
-  80% { transform: translate(2px, 2px); }
-}
-@keyframes vfx-quake-heavy {
-  0%, 100% { transform: translate(0, 0); }
-  15% { transform: translate(-7px, 4px); }
-  30% { transform: translate(6px, -5px); }
-  45% { transform: translate(-5px, -4px); }
-  60% { transform: translate(5px, 3px); }
-  75% { transform: translate(-3px, 2px); }
-  90% { transform: translate(2px, -2px); }
-}
-.combat-arena-shell.is-quake { animation: vfx-quake 0.34s ease-out both; }
-.combat-arena-shell.is-quake-heavy { animation: vfx-quake-heavy 0.46s ease-out both; }
-
-/* ---------- 跳字扩展：暴击印章 / 灵力消耗 / 状态字（挂在真实 arena-resource-floats 内） ---------- */
-.arena-resource-floats em.is-crit {
-  font-size: 15px;
-  font-weight: 900;
-  color: #ffd166;
-  text-shadow: 0 0 8px rgba(255, 90, 40, 0.9), 0 1px 2px #000;
-}
-.arena-resource-floats em .dmg-float-stamp {
-  display: block;
-  margin-bottom: 1px;
-  color: #ff6b4a;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-align: center;
+.arena-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  min-width: 0;
 }
 
-/* ---------- Buff 行占位：预留一行高度，获得增益时不推挤立绘/行动条（布局稳定） ---------- */
-.arena-actor-buff-list { min-height: 26px; }
-.arena-actor-buff-list:empty::after { content: ""; display: block; height: 0; }
-
-/* ---------- 演武目标选中环（沿用真实 hover 金辉语法，仅提示演出目标） ---------- */
-.arena-actor.is-selected-target .arena-avatar .character-avatar {
-  filter: drop-shadow(0 0 10px rgba(232, 214, 154, 0.75)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
-}
-.arena-actor.is-selected-target::before {
-  position: absolute;
-  z-index: 0;
-  top: 50%;
-  left: 50%;
-  width: 76px;
-  height: 76px;
-  margin: -44px 0 0 -38px;
-  border: 1px dashed rgba(232, 214, 154, 0.55);
-  border-radius: 50%;
-  content: "";
-  animation: vfx-target-spin 6s linear infinite;
-}
-@keyframes vfx-target-spin { to { transform: rotate(360deg); } }
-
-/* ---------- 功法瓦片演武态：吟唱中槽位发光脉冲 ---------- */
-.combat-ability-cell.is-vfx-casting {
-  box-shadow: 0 0 0 1px rgba(232, 214, 154, 0.8), 0 0 16px rgba(232, 214, 154, 0.45);
-}
-.combat-ability-cell.is-vfx-cd { filter: saturate(0.4) brightness(0.7); }
-
-/* ---------- 演武控制台（右栏「演武」tab，沿用 abilities-section/slot-group 面板语法） ---------- */
-.vfx-console-panel { display: flex; flex-direction: column; gap: 10px; padding: 10px; overflow-y: auto; }
-.vfx-console-block { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: 1px solid rgba(201, 180, 109, 0.12); }
-.vfx-console-block:last-child { border-bottom: 0; }
-.vfx-segment { display: flex; gap: 0; border: 1px solid rgba(201, 180, 109, 0.28); border-radius: 3px; overflow: hidden; }
-.vfx-segment-btn {
-  flex: 1;
-  padding: 5px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-dim);
+.arena-column-title {
   font-size: 11px;
-  cursor: pointer;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
 }
-.vfx-segment-btn.is-active { background: rgba(201, 180, 109, 0.16); color: var(--gold-bright); }
-.vfx-console-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.vfx-ctl-btn {
-  padding: 4px 10px;
-  border: 1px solid rgba(201, 180, 109, 0.28);
-  border-radius: 3px;
-  background: rgba(201, 180, 109, 0.06);
+
+.arena-unit-list {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 2.2vw, 28px);
+  width: 100%;
+}
+
+/* 角色卡（精准承载坐标锚点） */
+.arena-unit {
+  position: relative;
+  width: 116px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, opacity 0.25s;
+}
+
+.arena-unit:hover {
+  border-color: var(--gold-faint);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.arena-unit.is-selected {
+  border-color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.09);
+  box-shadow: 0 0 14px rgba(201, 180, 109, 0.16);
+}
+
+.arena-unit.is-target {
+  border-color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.2);
+}
+
+.arena-unit.is-defeated {
+  opacity: 0.35;
+  filter: grayscale(0.85);
+}
+
+.arena-unit-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 1px 4px #000;
+  white-space: nowrap;
+}
+
+.arena-unit-role {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.arena-unit-avatar {
+  position: relative;
+  width: 82px;
+  height: 106px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arena-unit-avatar img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.72));
+  pointer-events: none;
+}
+
+.arena-unit.is-enemy .arena-unit-avatar img {
+  transform: scaleX(-1);
+}
+
+.unit-bars {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.unit-bar-row {
+  position: relative;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.unit-bar-fill {
+  height: 100%;
+  transition: width 0.22s ease-out;
+}
+
+.unit-bar-fill.is-hp {
+  background: linear-gradient(90deg, #15803d, #22c55e);
+}
+
+.arena-unit.is-enemy .unit-bar-fill.is-hp {
+  background: linear-gradient(90deg, #991b1b, #ef4444);
+}
+
+.unit-bar-fill.is-mp {
+  background: linear-gradient(90deg, #0369a1, #38bdf8);
+}
+
+.unit-bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+
+.unit-buffs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  min-height: 16px;
+}
+
+.unit-buff-pill {
+  padding: 1px 5px;
+  border: 1px solid rgba(201, 180, 109, 0.45);
+  background: rgba(15, 23, 19, 0.88);
+  font-size: 9px;
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
+
+.unit-buff-pill.is-yixing {
+  border-color: #c084fc;
+  color: #f3e8ff;
+  background: rgba(88, 28, 135, 0.65);
+}
+
+.unit-buff-pill.is-formation {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+}
+
+.unit-buff-pill.is-ranhun {
+  border-color: #f97316;
+  color: #ffedd5;
+  background: rgba(154, 52, 18, 0.65);
+}
+
+/* 舞台浮动读条与阵法栏 */
+.arena-cast-hud {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(10, 13, 11, 0.88);
+  font-size: 11px;
+}
+
+.arena-cast-hud[hidden] {
+  display: none;
+}
+
+.cast-hud-name {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.cast-hud-track {
+  width: 140px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.cast-hud-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--gold), #ffffff);
+}
+
+.arena-formation-hud {
+  position: absolute;
+  right: 14px;
+  top: 10px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.formation-badge-btn {
+  cursor: pointer;
+  padding: 4px 9px;
+  border: 1px solid #38bdf8;
+  background: rgba(12, 34, 48, 0.86);
+  color: #e0f2fe;
+  font-size: 11px;
+}
+
+.formation-badge-btn:hover {
+  background: rgba(56, 189, 248, 0.28);
+}
+
+/* ================= 底部控制台与全量点映目录 ================= */
+.gallery-console {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(15, 19, 17, 0.94);
+}
+
+.console-hotbars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.hotbar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hotbar-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hotbar-slots {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.hot-slot-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 4px;
+  min-height: 54px;
+  cursor: pointer;
+  border: 1px solid var(--gold-faint);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   font-size: 11px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.14s, background 0.14s, transform 0.1s;
 }
-.vfx-ctl-btn:hover { border-color: var(--gold-bright); color: var(--gold-bright); }
-.vfx-ctl-btn.is-active { border-color: #34d399; color: #6ee7b7; background: rgba(16, 185, 129, 0.12); }
-.vfx-ctl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.vfx-console-hint { margin: 0; color: var(--text-muted); font-size: 10.5px; line-height: 1.6; }
-.vfx-console-hint code { color: var(--gold-dim); font-size: 10px; }
-.vfx-selftest { color: var(--text-dim); font-size: 11px; line-height: 1.7; white-space: pre-wrap; }
-.vfx-selftest.is-pass { color: #6ee7b7; }
-.vfx-selftest.is-fail { color: #fca5a5; }
 
-/* ---------- 已学功法目录瓦片沿用真实 item-tile，画廊追加演出光标提示 ---------- */
-.abilities-learned-grid .item-tile { cursor: pointer; }
-.abilities-learned-grid .item-tile:hover { filter: brightness(1.18); }
-.catalog-ability-tile { position: relative; min-height: 62px; }
+.hot-slot-btn:hover {
+  border-color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+}
 
-/* ---------- 战斗日志类型着色（真实 log-message 之上的画廊扩展修饰） ---------- */
-.log-entry--damage .log-message { color: #f0a08a; }
-.log-entry--heal .log-message { color: #7dd6a8; }
-.log-entry--cast .log-message { color: #b9a5f0; }
-.log-entry--buff .log-message { color: var(--gold-bright); }
-.log-entry--defeat .log-message { color: #8a8f9e; font-style: italic; }
-.log-entry--system .log-message { color: var(--gold-dim); }
+.hot-slot-btn:active {
+  transform: scale(0.97);
+}
 
-/* ---------- 自检报告 ---------- */
-.vfx-selftest-row { padding: 1px 0; }
-.vfx-selftest-row.ok { color: #6ee7b7; }
-.vfx-selftest-row.fail { color: #fca5a5; }
-.vfx-selftest-row i { color: var(--text-muted); font-style: normal; }
-.vfx-selftest-summary { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(201, 180, 109, 0.15); color: var(--gold-bright); font-weight: 700; }
+.hot-slot-btn.is-morphed {
+  border-color: #c084fc;
+  background: rgba(139, 92, 246, 0.22);
+  color: #f5d0fe;
+}
+
+.hot-slot-btn .slot-key {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.slot-icon-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.slot-glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.12);
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.console-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  border-bottom: 1px solid var(--gold-faint);
+  padding-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.console-tab {
+  cursor: pointer;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.console-tab.is-active {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.14);
+  color: var(--gold-bright);
+}
+
+.console-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 7px;
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+}
+
+.catalog-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.catalog-card:hover {
+  border-color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.1);
+}
+
+.catalog-card.is-selected {
+  border-color: var(--jade);
+  background: rgba(60, 208, 147, 0.11);
+}
+
+.catalog-card.is-passive {
+  cursor: default;
+  opacity: 0.88;
+}
+
+.catalog-card-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--gold-faint);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.catalog-card-icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.catalog-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.catalog-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+.catalog-card-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.tier-chip {
+  padding: 0 4px;
+  border: 1px solid var(--gold-faint);
+  font-size: 9px;
+  color: var(--gold);
+}
+
+.tier-chip.is-t2 {
+  border-color: rgba(192, 132, 252, 0.55);
+  color: #e9d5ff;
+}
+
+/* ================= 右侧检视与战报 ================= */
+.gallery-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.inspector-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gold-dim);
+  background: rgba(15, 19, 17, 0.94);
+  padding: 10px;
+  gap: 8px;
+}
+
+.inspector-card.is-log-card {
+  flex: 1;
+  min-height: 0;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--gold-faint);
+  padding-bottom: 6px;
+}
+
+.inspector-header h2 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--gold-bright);
+}
+
+.inspector-tag {
+  font-size: 11px;
+  color: var(--jade);
+}
+
+.inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.detail-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.detail-kv strong {
+  color: var(--text);
+}
+
+.detail-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.combat-log-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.log-row {
+  padding: 4px 6px;
+  border-left: 2px solid var(--gold-dim);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+}
+
+.log-row.is-crit {
+  border-left-color: #fbbf24;
+  color: #fef08a;
+}
+
+.log-row.is-heal {
+  border-left-color: #34d399;
+  color: #a7f3d0;
+}
+
+.log-row.is-consumable {
+  border-left-color: #38bdf8;
+  color: #bae6fd;
+}
+
+/* ================= 矮横屏适配（1280x640 / 1600x620 等低视高窗口） ================= */
+@media (min-width: 861px) and (max-height: 760px) {
+  .gallery-app {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .arena-shell {
+    height: clamp(236px, 43dvh, 320px);
+    min-height: 230px;
+  }
+  .combat-arena-field.arena-field {
+    gap: 18px;
+    padding: 16px clamp(26px, 4vw, 52px) 16px;
+  }
+  .arena-unit {
+    width: 96px;
+    padding: 4px;
+    gap: 3px;
+  }
+  .arena-unit-avatar {
+    width: 66px;
+    height: 82px;
+  }
+}
+
+/* ================= 窄窗 / 平板单列适配 ================= */
+@media (max-width: 1100px) {
+  html,
+  body {
+    height: auto;
+    overflow-y: auto;
+  }
+  .gallery-app {
+    height: auto;
+    min-height: 100dvh;
+    max-height: none;
+    overflow: visible;
+  }
+  .gallery-topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .gallery-main {
+    grid-template-columns: 1fr;
+    flex: none;
+  }
+  .console-hotbars {
+    grid-template-columns: 1fr;
+  }
+  .console-catalog-grid {
+    min-height: 220px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .inspector-card.is-log-card .combat-log-list {
+    max-height: 220px;
+  }
+}
+
+/* ================= 竖屏与手机视口 3v3 纵列阵型 ================= */
+@media (max-width: 860px), (max-aspect-ratio: 10/11) and (max-width: 1024px) {
+  .gallery-app {
+    padding: 8px;
+    gap: 8px;
+  }
+  .gallery-topbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .gallery-brand-seal {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+  .gallery-subtitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .arena-shell {
+    height: clamp(368px, 49dvh, 430px);
+    min-height: 368px;
+  }
+  .combat-arena-field.arena-field {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(10px, 3.5vw, 24px);
+    padding: 26px clamp(16px, 4vw, 32px) 12px;
+    align-items: stretch;
+  }
+  .arena-column {
+    gap: 4px;
+    justify-content: center;
+  }
+  .arena-column-title {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .arena-unit-list {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .arena-unit {
+    width: clamp(92px, 34vw, 128px);
+    padding: 4px 5px;
+    gap: 2px;
+  }
+  .arena-unit-name {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+  .arena-unit-role {
+    display: none;
+  }
+  .arena-unit-avatar {
+    width: 48px;
+    height: 54px;
+  }
+  .unit-bars {
+    gap: 2px;
+  }
+  .unit-bar-row {
+    height: 7px;
+  }
+  .unit-bar-row:nth-child(2) {
+    height: 5px;
+  }
+  .unit-bar-text {
+    font-size: 7px;
+  }
+  .unit-buffs {
+    position: absolute;
+    top: 18px;
+    right: 2px;
+    flex-direction: column;
+    align-items: flex-end;
+    min-height: 0;
+    pointer-events: none;
+    gap: 2px;
+    z-index: 3;
+  }
+  .unit-buff-pill {
+    padding: 0 3px;
+    font-size: 8px;
+    line-height: 1.3;
+  }
+  .arena-cast-hud {
+    left: 8px;
+    bottom: 6px;
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+  .cast-hud-track {
+    width: 84px;
+  }
+}
+
+/* ================= 超窄手机屏操作台网格 ================= */
+@media (max-width: 480px) {
+  .gallery-topbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .btn-ctl {
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+  .hotbar-slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .console-catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  }
+}

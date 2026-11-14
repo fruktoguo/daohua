@@ -1,607 +1,942 @@
-/* =========================================================================
- * 演武沙盘状态机 (DaohuaSandbox)
+/**
+ * 道化太初 · 演武画廊战斗状态机与响应式调度沙盒
  *
  * 职责：
- * - 维护演示单位的 HP/MP/行动条/冷却/Buff 状态，结算走真实功法配表字段；
- * - 施法管线：扣灵力 → 吟唱(castMilliseconds) → 按 targetType 解析目标
- *   → 调起 vfx/abilities/<id>.js 演出 → ctx.impact/heal/buffApply 定时结算；
- * - 环境普攻底噪：行动条推进 + 普攻演出 + 受击反馈，模拟真实战斗节奏；
- * - 结算语义仅服务演示（±10% 浮动、12% 会心×1.6），不代表服务端权威数值。
- * ========================================================================= */
-(function () {
+ * 1. 维护 3v3 演武单位（血量、内力、Buff/阵法、移形状态、燃魂层数）。
+ * 2. 管理技能蓄力读条、常驻读条法阵句柄与快慢读条倍速切换。
+ * 3. 管理 11 个战斗消耗品（丹药持续回流、雷击符直伤、阵盘常驻光阵句柄及天雷/血煞被动触发）。
+ * 4. 驱动「自动演武」多技能与消耗品组合轮播。
+ */
+(function (global) {
   'use strict';
-  const VFX = window.DaohuaVFX;
-  const CATALOG = window.DaohuaCatalog;
 
-  /* ---------------- 演示单位（HP/MP 为沙盘展示值，技能行为以配表为准） ---------------- */
-  const ACTOR_DEFS = {
-    // 我方三人：少侠（前排中先锋）+ 云裳（中排中）+ 岳罡（后排中），与敌方纵深对称 3v3
-    player: { name: '少侠', side: 'ally', hp: 150, mp: 70, atk: 30, attackInterval: 3200 },
-    ally2: { name: '云裳', side: 'ally', hp: 120, mp: 90, atk: 22, attackInterval: 3600 },
-    ally3: { name: '岳罡', side: 'ally', hp: 200, mp: 50, atk: 26, attackInterval: 4000 },
-    enemy1: { name: '魔化野兔', side: 'enemy', hp: 450, mp: 100, atk: 12, attackInterval: 4200 },
-    enemy2: { name: '魔猿', side: 'enemy', hp: 950, mp: 250, atk: 24, attackInterval: 3800 },
-    enemy3: { name: '星屑火鸦', side: 'enemy', hp: 850, mp: 350, atk: 18, attackInterval: 4600 },
+  var ALLY_TEMPLATES = [
+    {
+      id: 'ally-0',
+      side: 'ally',
+      name: '凌虚子',
+      role: '剑修·主将',
+      avatar: 'player.webp',
+      maxHp: 1200,
+      maxMp: 600,
+      physAtk: 145,
+      spellAtk: 125,
+    },
+    {
+      id: 'ally-1',
+      side: 'ally',
+      name: '青蘅',
+      role: '灵医·辅助',
+      avatar: 'avatar-wood-female.webp',
+      maxHp: 940,
+      maxMp: 540,
+      physAtk: 60,
+      spellAtk: 130,
+    },
+    {
+      id: 'ally-2',
+      side: 'ally',
+      name: '玄岳',
+      role: '体修·前卫',
+      avatar: 'avatar-body-male.webp',
+      maxHp: 1650,
+      maxMp: 380,
+      physAtk: 115,
+      spellAtk: 55,
+    },
+  ];
+
+  var ENEMY_TEMPLATES = [
+    {
+      id: 'enemy-0',
+      side: 'enemy',
+      name: '妖化暴兔',
+      role: '前排精怪',
+      avatar: 'demonized-rabbit.webp',
+      maxHp: 2200,
+      maxMp: 220,
+      physAtk: 85,
+      spellAtk: 60,
+    },
+    {
+      id: 'enemy-1',
+      side: 'enemy',
+      name: '魔化巨猿',
+      role: '狂暴重装',
+      avatar: 'demon-ape.webp',
+      maxHp: 3200,
+      maxMp: 260,
+      physAtk: 115,
+      spellAtk: 70,
+    },
+    {
+      id: 'enemy-2',
+      side: 'enemy',
+      name: '星炎魔鸦',
+      role: '后排妖禽',
+      avatar: 'star-flame-crow.webp',
+      maxHp: 2400,
+      maxMp: 360,
+      physAtk: 75,
+      spellAtk: 115,
+    },
+  ];
+
+  var sandbox = {
+    units: [],
+    selectedCasterId: 'ally-0',
+    selectedTargetId: 'enemy-1',
+    fastCast: true,
+    autoDemo: false,
+    casting: null,
+    activeFormations: {
+      personal: null,
+      team: null,
+    },
+    logs: [],
+    listeners: new Set(),
+    unitElResolver: null,
+    tickTimer: 0,
+    demoTimer: 0,
+    demoStep: 0,
   };
 
-  const CRIT_CHANCE = 0.12;
-  const CRIT_RATIO = 1.6;
-  const TICK_MS = 100;
+  function cloneUnit(tpl) {
+    return {
+      id: tpl.id,
+      side: tpl.side,
+      name: tpl.name,
+      role: tpl.role,
+      avatar: tpl.avatar,
+      hp: tpl.maxHp,
+      maxHp: tpl.maxHp,
+      mp: tpl.maxMp,
+      maxMp: tpl.maxMp,
+      physAtk: tpl.physAtk,
+      spellAtk: tpl.spellAtk,
+      buffs: Object.create(null),
+    };
+  }
 
-  const actors = {};
-  const slotCells = new Map();   // abilityId -> 装配槽 cell 元素（冷却遮罩挂载点）
-  let ambient = true;
-  let autoDemoTimers = [];
-  let demoSide = 'ally';
-
-  /* ---------------- DOM 查询 ---------------- */
-  function el(id) { return document.getElementById(id); }
-
-  function actorEl(id) { return document.querySelector('.arena-actor[data-actor="' + id + '"]'); }
-
-  function buildActors() {
-    Object.keys(ACTOR_DEFS).forEach(id => {
-      const def = ACTOR_DEFS[id];
-      const dom = actorEl(id);
-      actors[id] = {
-        id,
-        name: def.name,
-        side: def.side,
-        el: dom,
-        hp: def.hp,
-        maxHp: def.hp,
-        mp: def.mp,
-        maxMp: def.mp,
-        atk: def.atk,
-        attackInterval: def.attackInterval,
-        alive: true,
-        casting: false,
-        actionRatio: 0,
-        cooldowns: {},            // abilityId -> 剩余 ms（敌方用；玩家冷却同时画槽位遮罩）
-        buffs: [],
-      };
+  function emitChange(reason) {
+    sandbox.listeners.forEach(function (fn) {
+      try {
+        fn(reason, sandbox);
+      } catch (err) {
+        console.error('[Sandbox listener error]', err);
+      }
     });
   }
 
-  function resourceEl(actor, kind) {
-    return actor.el && actor.el.querySelector('.arena-resource--' + kind);
+  function addLog(text, kind) {
+    var now = new Date();
+    var ts =
+      String(now.getHours()).padStart(2, '0') +
+      ':' +
+      String(now.getMinutes()).padStart(2, '0') +
+      ':' +
+      String(now.getSeconds()).padStart(2, '0');
+    sandbox.logs.unshift({ ts: ts, text: text, kind: kind || 'normal' });
+    if (sandbox.logs.length > 80) sandbox.logs.length = 80;
+    emitChange('log');
   }
 
-  function actionBarEl(actor) {
-    return actor.el && actor.el.querySelector('.arena-action-bar');
-  }
-
-  function actionFill(actor) {
-    const bar = actionBarEl(actor);
-    return bar ? bar.querySelector('.arena-action-track i b') : null;
-  }
-
-  function actionBadge(actor) {
-    const bar = actionBarEl(actor);
-    return bar ? bar.querySelector('.arena-action-badge') : null;
-  }
-
-  /* ---------------- 日志 ---------------- */
-  function log(msg, cls) {
-    const list = el('logList');
-    if (!list) return;
-    // 真实 GameLogPanel 同构：<li><time/> + <span.log-message/></li>
-    const li = document.createElement('li');
-    li.className = 'log-entry' + (cls ? ' log-entry--' + cls : '');
-    const time = new Date();
-    const t = document.createElement('time');
-    t.textContent =
-      String(time.getHours()).padStart(2, '0') + ':' +
-      String(time.getMinutes()).padStart(2, '0') + ':' +
-      String(time.getSeconds()).padStart(2, '0');
-    const span = document.createElement('span');
-    span.className = 'log-message';
-    span.textContent = msg;
-    li.append(t, span);
-    list.prepend(li);
-    while (list.children.length > 80) list.lastChild.remove();
-  }
-
-  /* ---------------- 血条 / 资源刷新 ---------------- */
-  function setVitals(actor) {
-    const hpRatio = Math.max(0, actor.hp / actor.maxHp);
-    const mpRatio = Math.max(0, Math.min(1, actor.mp / actor.maxMp));
-    const hp = resourceEl(actor, 'hp');
-    const mp = resourceEl(actor, 'mp');
-    if (hp) {
-      hp.querySelector('.arena-resource-track i').style.transform = 'scaleX(' + hpRatio + ')';
-      hp.querySelector('.arena-resource-badge').textContent = Math.ceil(actor.hp) + ' / ' + actor.maxHp;
+  function getUnit(id) {
+    for (var i = 0; i < sandbox.units.length; i++) {
+      if (sandbox.units[i].id === id) return sandbox.units[i];
     }
-    if (mp) {
-      mp.querySelector('.arena-resource-track i').style.transform = 'scaleX(' + mpRatio + ')';
-      mp.querySelector('.arena-resource-badge').textContent = Math.ceil(actor.mp) + ' / ' + actor.maxMp;
-    }
-    syncQueueVitals();
+    return null;
   }
 
-  /** 顶栏队列中心的双方气血聚合（真实界面同位置；我方聚合全体存活友方，与敌方口径对称） */
-  function syncQueueVitals() {
-    const allies = Object.values(actors).filter(a => a.side === 'ally');
-    const enemies = Object.values(actors).filter(a => a.side === 'enemy');
-    if (!allies.length) return;
-    const aHp = allies.reduce((s, a) => s + Math.max(0, a.hp), 0);
-    const aMax = allies.reduce((s, a) => s + a.maxHp, 0);
-    const eHp = enemies.reduce((s, a) => s + Math.max(0, a.hp), 0);
-    const eMax = enemies.reduce((s, a) => s + a.maxHp, 0);
-    const pf = el('queuePlayerHpFill');
-    const pv = el('queuePlayerHpValue');
-    const ef = el('queueEnemyHpFill');
-    const ev = el('queueEnemyHpValue');
-    if (pf) pf.style.transform = 'scaleX(' + (aMax ? aHp / aMax : 0) + ')';
-    if (pv) pv.textContent = Math.ceil(aHp) + ' / ' + aMax + '（' + (aMax ? Math.round(aHp / aMax * 100) : 0) + '%）';
-    if (ef) ef.style.transform = 'scaleX(' + (eMax ? eHp / eMax : 0) + ')';
-    if (ev) ev.textContent = Math.ceil(eHp) + ' / ' + eMax + '（' + (eMax ? Math.round(eHp / eMax * 100) : 0) + '%）';
+  function getLivingUnits(side) {
+    return sandbox.units.filter(function (u) {
+      return u.side === side && u.hp > 0;
+    });
   }
 
-  /* ---------------- 行动条 ---------------- */
-  function setActionBar(actor, ratio, opts) {
-    const fill = actionFill(actor);
-    const bar = actionBarEl(actor);
-    if (!fill || !bar) return;
-    if (opts && opts.transitionMs != null) {
-      fill.style.transition = 'transform ' + opts.transitionMs + 'ms linear';
-    } else {
-      fill.style.transition = 'none';
+  function getEl(unitId) {
+    if (typeof sandbox.unitElResolver === 'function') {
+      return sandbox.unitElResolver(unitId);
     }
-    fill.style.transform = 'scaleX(' + Math.max(0, Math.min(1, ratio)) + ')';
-    const badge = actionBadge(actor);
-    if (badge) {
-      if (opts && opts.label) {
-        badge.textContent = opts.label;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
+    return document.querySelector('.arena-unit[data-unit-id="' + unitId + '"]');
+  }
+
+  function getUnitEls(units) {
+    return units
+      .map(function (u) {
+        return getEl(u.id);
+      })
+      .filter(Boolean);
+  }
+
+  function buildCtx(caster, targets, extra) {
+    var allyUnits = getLivingUnits('ally');
+    var enemyUnits = getLivingUnits('enemy');
+    var targetList = Array.isArray(targets) ? targets : targets ? [targets] : [];
+    var primary = targetList[0] || caster;
+
+    var ctx = {
+      caster: caster,
+      casterEl: caster ? getEl(caster.id) : null,
+      target: primary,
+      targetEl: primary ? getEl(primary.id) : null,
+      targets: targetList,
+      targetEls: getUnitEls(targetList),
+      allyEls: getUnitEls(allyUnits),
+      enemyEls: getUnitEls(enemyUnits),
+    };
+    if (extra) {
+      Object.keys(extra).forEach(function (k) {
+        ctx[k] = extra[k];
+      });
+    }
+    return ctx;
+  }
+
+  function ensureTeamAlive(side) {
+    var living = getLivingUnits(side);
+    if (living.length > 0) return;
+    var sideUnits = sandbox.units.filter(function (u) {
+      return u.side === side;
+    });
+    sideUnits.forEach(function (u) {
+      u.hp = u.maxHp;
+      u.mp = u.maxMp;
+      u.buffs = Object.create(null);
+      var el = getEl(u.id);
+      if (el && global.DaohuaVFX) {
+        global.DaohuaVFX.play('feedback.revive', { targetEl: el });
       }
+    });
+    addLog((side === 'enemy' ? '敌方阵营' : '我方道友') + '气血重聚，悉数复苏再战！', 'heal');
+    emitChange('revive');
+  }
+
+  function cancelActiveCast() {
+    if (!sandbox.casting) return;
+    clearInterval(sandbox.casting.progressTimer);
+    clearTimeout(sandbox.casting.doneTimer);
+    if (sandbox.casting.ringHandle && typeof sandbox.casting.ringHandle.stop === 'function') {
+      sandbox.casting.ringHandle.stop(160);
     }
-    bar.classList.toggle('arena-action-bar--wait', !(opts && opts.active));
-    bar.classList.toggle('arena-action-bar--cast', !!(opts && opts.casting));
+    sandbox.casting = null;
+    emitChange('cast');
   }
 
-  /* ---------------- 目标解析（对齐真实 targetType 语义） ---------------- */
-  function aliveOf(side) {
-    return Object.values(actors).filter(a => a.side === side && a.alive);
-  }
-
-  function resolveTargets(caster, ability) {
-    const foeSide = caster.side === 'ally' ? 'enemy' : 'ally';
-    const allySide = caster.side;
-    switch (ability.targetType) {
-      case 'self':
-        return [caster];
-      case 'allEnemies':
-        return aliveOf(foeSide);
-      case 'allAllies':
-        return aliveOf(allySide);
-      case 'lowestHitpointsAlly': {
-        const allies = aliveOf(allySide);
-        if (!allies.length) return [];
-        return [allies.reduce((a, b) => (a.hp / a.maxHp <= b.hp / b.maxHp ? a : b))];
-      }
-      case 'single':
-      default: {
-        const foes = aliveOf(foeSide);
-        return foes.length ? [foes[0]] : [];
-      }
+  function clearFormations() {
+    if (sandbox.activeFormations.personal && sandbox.activeFormations.personal.handle) {
+      sandbox.activeFormations.personal.handle.stop(250);
     }
+    if (sandbox.activeFormations.team && sandbox.activeFormations.team.handle) {
+      sandbox.activeFormations.team.handle.stop(250);
+    }
+    sandbox.activeFormations.personal = null;
+    sandbox.activeFormations.team = null;
   }
 
-  /* ---------------- 结算 ---------------- */
-  function applyDamage(caster, target, spec, opts) {
-    if (!target.alive) return;
-    const ratio = spec.damageRatio || 0.85;
-    const flat = spec.flatDamage || 6;
-    const variance = 0.9 + Math.random() * 0.2;
-    const crit = (opts && opts.crit) || Math.random() < CRIT_CHANCE;
-    const raw = (caster.atk * ratio + flat) * variance * (crit ? CRIT_RATIO : 1);
-    const dmg = Math.max(1, Math.round(raw));
+  function resetArena() {
+    cancelActiveCast();
+    clearFormations();
+    if (global.DaohuaVFX) {
+      global.DaohuaVFX.clear();
+    }
+    sandbox.units = ALLY_TEMPLATES.map(cloneUnit).concat(ENEMY_TEMPLATES.map(cloneUnit));
+    sandbox.selectedCasterId = 'ally-0';
+    sandbox.selectedTargetId = 'enemy-1';
+    sandbox.logs = [];
+    addLog('演武场重置完成，凌虚子就位候命。', 'normal');
+    emitChange('reset');
+  }
 
-    const hpBefore = target.hp / target.maxHp;
+  function applyDamage(attacker, target, rawDmg, opts) {
+    if (!target || target.hp <= 0) return { damage: 0, killed: false, crit: false };
+    opts = opts || {};
+    var crit = opts.forceCrit !== undefined ? opts.forceCrit : Math.random() < 0.28;
+    var dmg = Math.max(12, Math.round(rawDmg * (crit ? 1.55 : 1) * (0.94 + Math.random() * 0.12)));
+    if (attacker && attacker.buffs['buff.pozhen']) {
+      dmg += 40;
+    }
+    if (attacker && attacker.buffs['pill.heqi']) {
+      dmg = Math.round(dmg * 1.15);
+    }
     target.hp = Math.max(0, target.hp - dmg);
-    const hpAfter = target.hp / target.maxHp;
+    var killed = target.hp <= 0;
 
-    setVitals(target);
-    VFX.resourceSlice(target.el, 'hp', hpAfter, Math.max(0.01, hpBefore - hpAfter));
-    VFX.floatText(target.el, '-' + dmg, { kind: 'hp', crit, stamp: crit ? '暴击' : null });
-    VFX.impact(target.el, Math.min(1, dmg / target.maxHp * 3.2), opts && opts.impactVariant);
-    log((spec.name || '普攻') + ' 命中 ' + target.name + '，造成 ' + dmg + ' 点伤害' + (crit ? '（会心）' : ''), 'damage');
-
-    if (target.hp <= 0) kill(target);
-  }
-
-  function applyHeal(caster, target, spec) {
-    if (!target.alive) return;
-    const ratio = spec.healingRatio || 0.6;
-    const flat = spec.flatHealing || 20;
-    const amount = Math.round((caster.atk * ratio + flat) * (0.9 + Math.random() * 0.2));
-    const hpBefore = target.hp / target.maxHp;
-    target.hp = Math.min(target.maxHp, target.hp + amount);
-    setVitals(target);
-    VFX.resourceSlice(target.el, 'hp', hpBefore, Math.max(0.01, target.hp / target.maxHp - hpBefore));
-    VFX.floatText(target.el, '+' + amount, { kind: 'hp', positive: true, stamp: '恢复' });
-    log((spec.name || '治疗') + ' 为 ' + target.name + ' 恢复 ' + amount + ' 点气血', 'heal');
-  }
-
-  function applyBuffFx(target, buffDef) {
-    const buff = buffDef || { name: '破阵子', durationSeconds: 30 };
-    const list = target.el && target.el.querySelector('.arena-actor-buff-list');
-    if (list) {
-      const sq = document.createElement('span');
-      sq.className = 'arena-buff-square';
-      sq.title = buff.name + '（' + buff.durationSeconds + 's）';
-      const cd = document.createElement('i');
-      cd.className = 'arena-buff-cd-fill';
-      cd.style.animationDuration = buff.durationSeconds + 's';
-      sq.appendChild(cd);
-      const txt = document.createElement('b');
-      txt.textContent = buff.name.charAt(0);
-      sq.appendChild(txt);
-      list.appendChild(sq);
-      target.buffs.push(sq);
-      VFX.after(buff.durationSeconds * 1000, () => sq.remove());
+    if (killed && global.DaohuaVFX) {
+      global.DaohuaVFX.after(220, function () {
+        var tel = getEl(target.id);
+        if (tel) global.DaohuaVFX.play('feedback.defeat', { targetEl: tel });
+        addLog(target.name + ' 力竭败退！', 'crit');
+        emitChange('units');
+        // 3.6 秒后自动补位重生，防止演武场缺兵
+        global.DaohuaVFX.after(3400, function () {
+          if (target.hp <= 0) {
+            target.hp = target.maxHp;
+            target.buffs = Object.create(null);
+            var revEl = getEl(target.id);
+            if (revEl) global.DaohuaVFX.play('feedback.revive', { targetEl: revEl });
+            emitChange('units');
+          }
+        });
+      });
     }
-    // 全局 Buff 栏：玩家获得增益时顶栏同步出现 chip（与真实 BuffBar 同位）
-    if (target.id === 'player') {
-      const bar = el('buffBar');
-      if (bar) {
-        // 真实 BuffBar chip 同构：30×30 方格 + svg 图标 + buff-tip 悬停气泡
-        const chip = document.createElement('span');
-        chip.className = 'buff-chip';
-        chip.setAttribute('tabindex', '0');
-        chip.innerHTML = '<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-buff"></use></svg>' +
-          '<span class="buff-tip"><b></b><em></em></span>';
-        chip.querySelector('.buff-tip b').textContent = buff.name;
-        chip.querySelector('.buff-tip em').textContent = buff.durationSeconds + 's';
-        bar.appendChild(chip);
-        bar.hidden = false;
-        VFX.after(buff.durationSeconds * 1000, () => {
-          chip.remove();
-          if (!bar.children.length) bar.hidden = true;
+
+    return { damage: dmg, killed: killed, crit: crit };
+  }
+
+  function applyHeal(target, amount) {
+    if (!target || target.hp <= 0) return 0;
+    var gain = Math.min(target.maxHp - target.hp, Math.round(amount));
+    target.hp += Math.max(0, gain);
+    return Math.max(Math.round(amount), gain);
+  }
+
+  function grantBuff(unit, buffId, name, durationMs, extra) {
+    if (!unit || unit.hp <= 0) return;
+    unit.buffs[buffId] = {
+      id: buffId,
+      name: name,
+      expiresAt: Date.now() + durationMs,
+      durationMs: durationMs,
+      stacks: (extra && extra.stacks) || (unit.buffs[buffId] ? unit.buffs[buffId].stacks || 1 : 1),
+      hpPerSec: (extra && extra.hpPerSec) || 0,
+      mpPerSec: (extra && extra.mpPerSec) || 0,
+      kind: (extra && extra.kind) || 'buff',
+    };
+  }
+
+  function triggerFormationProc(which, targetUnit, sourceDamage) {
+    ensureTeamAlive('enemy');
+    var caster = getUnit(sandbox.selectedCasterId) || getUnit('ally-0');
+    var enemy =
+      targetUnit && targetUnit.hp > 0
+        ? targetUnit
+        : getUnit(sandbox.selectedTargetId) || getLivingUnits('enemy')[0];
+    if (!caster || !enemy) return;
+
+    var VFX = global.DaohuaVFX;
+    if (!VFX) return;
+
+    if (which === 'tianlei') {
+      if (!sandbox.activeFormations.personal || sandbox.activeFormations.personal.itemId !== 'item.tianlei-formation-disk') {
+        useConsumable('item.tianlei-formation-disk');
+      }
+      var res = applyDamage(caster, enemy, Math.round(caster.spellAtk * 1.15 + 45), { forceCrit: false });
+      var handleT = sandbox.activeFormations.personal && sandbox.activeFormations.personal.handle;
+      if (handleT && typeof handleT.pulse === 'function') handleT.pulse('#7dd3fc', 1.65);
+
+      VFX.play(
+        'item.tianlei-formation-disk.proc',
+        buildCtx(caster, [enemy], {
+          formationHandle: handleT,
+          damage: res.damage,
+          element: 'wood',
+        })
+      );
+      addLog('天雷阵共鸣反击【' + enemy.name + '】，造成 ' + res.damage + ' 点真雷伤害！', 'consumable');
+    } else if (which === 'xuesha') {
+      if (!sandbox.activeFormations.personal || sandbox.activeFormations.personal.itemId !== 'item.xuesha-formation-disk') {
+        useConsumable('item.xuesha-formation-disk');
+      }
+      var dmg = sourceDamage || Math.round(caster.physAtk * 0.95 + 35);
+      var resX = applyDamage(caster, enemy, dmg * 0.65, { forceCrit: false });
+      var steal = Math.max(40, resX.damage);
+      applyHeal(caster, steal);
+
+      var handleX = sandbox.activeFormations.personal && sandbox.activeFormations.personal.handle;
+      if (handleX && typeof handleX.pulse === 'function') handleX.pulse('#ef4444', 1.75);
+
+      VFX.play(
+        'item.xuesha-formation-disk.proc',
+        buildCtx(caster, [enemy], {
+          formationHandle: handleX,
+          damage: resX.damage,
+          lifesteal: steal,
+        })
+      );
+      addLog('血煞阵汲血反哺：对【' + enemy.name + '】造成 ' + resX.damage + ' 血煞伤，并吸取 ' + steal + ' 气血！', 'consumable');
+    }
+    emitChange('units');
+  }
+
+  function resolveTargets(caster, skill, forceTayun) {
+    var enemies = getLivingUnits('enemy');
+    var allies = getLivingUnits('ally');
+    var effectiveType = forceTayun ? 'allEnemies' : skill.targetType;
+
+    if (effectiveType === 'self') return [caster];
+    if (effectiveType === 'allAllies') return allies;
+    if (effectiveType === 'allEnemies') return enemies;
+    if (effectiveType === 'lowestHitpointsAlly') {
+      var sorted = allies.slice().sort(function (a, b) {
+        return a.hp / a.maxHp - b.hp / b.maxHp;
+      });
+      return [sorted[0] || caster];
+    }
+    var chosen = getUnit(sandbox.selectedTargetId);
+    if (chosen && chosen.side === 'enemy' && chosen.hp > 0) return [chosen];
+    return [enemies[0]].filter(Boolean);
+  }
+
+  function executeSkillPayload(caster, skill, opts) {
+    opts = opts || {};
+    var VFX = global.DaohuaVFX;
+    if (!VFX) return;
+
+    var hasYixing = !!caster.buffs['buff.yixing'];
+    var useTayun = !!(opts.forceTayun || (skill.id === 'ability.zhanyu' && hasYixing));
+    var effectId = useTayun ? 'ability.zhanyu.tayun' : skill.id;
+    var targets = resolveTargets(caster, skill, useTayun);
+
+    // 消耗内力（演武模式若内力不足则自动补满灵泉方便展示）
+    if (skill.mpCost) {
+      if (caster.mp < skill.mpCost) caster.mp = caster.maxMp;
+      caster.mp = Math.max(0, caster.mp - skill.mpCost);
+    }
+
+    var totalDmg = 0;
+    var primaryTarget = targets[0] || null;
+    var anyKilled = false;
+
+    if (skill.effectType === 'heal') {
+      var healAmt = Math.round(caster.spellAtk * (skill.healRatio || 0.6) + (skill.flatHeal || 20));
+      targets.forEach(function (t) {
+        applyHeal(t, healAmt);
+      });
+      VFX.play(
+        effectId,
+        buildCtx(caster, targets, {
+          skill: skill,
+          element: skill.element,
+          heal: healAmt,
+          tier: skill.tier,
+        })
+      );
+      addLog(caster.name + ' 施展【' + skill.name + '】，为 ' + (primaryTarget ? primaryTarget.name : '友方') + ' 回复 ' + healAmt + ' 生命。', 'heal');
+    } else if (skill.effectType === 'buff') {
+      if (skill.id === 'ability.yueqian') {
+        targets.forEach(function (t) {
+          grantBuff(t, 'buff.yixing', '移形', 5000, { kind: 'yixing' });
+        });
+      } else if (skill.id === 'ability.pozhen-melody') {
+        targets.forEach(function (t) {
+          grantBuff(t, 'buff.pozhen', '破阵子', 10000);
+        });
+      } else if (skill.id === 'ability.ganlu') {
+        targets.forEach(function (t) {
+          grantBuff(t, 'buff.ganlu', '甘露', 10000, { hpPerSec: 18 });
+        });
+      } else if (skill.id === 'ability.sui-gang') {
+        grantBuff(caster, 'buff.sui-gang', '碎罡', 20000);
+        grantBuff(caster, 'buff.sha-li', '煞力', 20000);
+        grantBuff(caster, 'buff.gang-feng', '罡锋', 20000);
+      } else if (skill.buff) {
+        targets.forEach(function (t) {
+          grantBuff(t, skill.buff.buffId, skill.buff.name, (skill.buff.durationSeconds || 15) * 1000);
+        });
+      }
+      VFX.play(
+        effectId,
+        buildCtx(caster, targets, {
+          skill: skill,
+          element: skill.element,
+          tier: skill.tier,
+        })
+      );
+      addLog(caster.name + ' 施展【' + skill.name + '】，加持 ' + (skill.id === 'ability.sui-gang' ? '碎罡/煞力/罡锋 三重真意' : skill.buff ? skill.buff.name : '状态') + '！', 'normal');
+    } else {
+      // 伤害技能（如果是斩玉变招踏云或贯星演示击杀连星）
+      var baseAtk = skill.kind === 'spell' ? caster.spellAtk : caster.physAtk;
+      var raw = baseAtk * (skill.dmgRatio || 1.0) + (skill.flat || 20);
+      if (useTayun) raw *= 1.35;
+
+      var critAny = false;
+      targets.forEach(function (t, idx) {
+        if (opts.forceKill && idx === 0) t.hp = Math.min(t.hp, 60);
+        var res = applyDamage(caster, t, raw, { forceCrit: opts.forceCrit });
+        totalDmg += res.damage;
+        if (res.crit) critAny = true;
+        if (res.killed) anyKilled = true;
+        if (skill.ranhunBaseStacks) {
+          var prevStacks = t.buffs['buff.ranhun'] ? t.buffs['buff.ranhun'].stacks : 0;
+          grantBuff(t, 'buff.ranhun', '燃魂×' + Math.min(20, prevStacks + skill.ranhunBaseStacks), 10000, {
+            stacks: Math.min(20, prevStacks + skill.ranhunBaseStacks),
+            kind: 'ranhun',
+          });
+        }
+      });
+
+      // 如果贯星击杀且还有活敌，追加一次连环斩杀展示
+      if (skill.id === 'ability.star-piercer' && anyKilled) {
+        var leftover = getLivingUnits('enemy')[0];
+        if (leftover) {
+          applyDamage(caster, leftover, raw * 0.72);
+        }
+      }
+
+      // 移形状态消耗 1 层（若是直接点演示踏云则保留体验提示）
+      if (skill.id === 'ability.zhanyu' && hasYixing && !opts.preserveYixing) {
+        delete caster.buffs['buff.yixing'];
+      }
+
+      VFX.play(
+        effectId,
+        buildCtx(caster, targets, {
+          skill: skill,
+          element: skill.element,
+          damage: totalDmg,
+          perTargetDamage: Math.round(totalDmg / Math.max(1, targets.length)),
+          crit: critAny,
+          morphed: useTayun,
+          kill: anyKilled || !!opts.forceKill,
+          tier: skill.tier,
+        })
+      );
+
+      var shownName = useTayun ? '踏云（移形·斩玉）' : skill.name;
+      addLog(
+        caster.name +
+          ' 施展【' +
+          shownName +
+          '】，命中 ' +
+          targets.length +
+          ' 名敌人造成共 ' +
+          totalDmg +
+          ' 伤害' +
+          (critAny ? '（暴击！）' : '。'),
+        critAny ? 'crit' : 'normal'
+      );
+
+      // 联动阵盘被动触发：天雷阵或血煞阵
+      var personal = sandbox.activeFormations.personal;
+      if (personal && primaryTarget && primaryTarget.hp > 0) {
+        if (personal.itemId === 'item.tianlei-formation-disk') {
+          VFX.after(280, function () {
+            triggerFormationProc('tianlei', primaryTarget, totalDmg);
+          });
+        } else if (personal.itemId === 'item.xuesha-formation-disk') {
+          VFX.after(300, function () {
+            triggerFormationProc('xuesha', primaryTarget, totalDmg);
+          });
+        }
+      }
+    }
+
+    emitChange('units');
+  }
+
+  function castAbility(abilityId, opts) {
+    opts = opts || {};
+    var isForcedTayun = abilityId === 'ability.zhanyu.tayun';
+    var realId = isForcedTayun ? 'ability.zhanyu' : abilityId;
+    var skill = global.DaohuaCatalog.byId(realId);
+    if (!skill || !skill.active) return;
+
+    ensureTeamAlive('ally');
+    if (skill.effectType === 'damage') ensureTeamAlive('enemy');
+
+    var caster = getUnit(sandbox.selectedCasterId) || getLivingUnits('ally')[0];
+    if (!caster || caster.hp <= 0) caster = getLivingUnits('ally')[0];
+    if (!caster) return;
+
+    cancelActiveCast();
+
+    var rawCast = skill.castTimeMs || 500;
+    var durMs = opts.instant ? 0 : Math.max(110, Math.round(rawCast * (sandbox.fastCast ? 0.18 : 1)));
+    var VFX = global.DaohuaVFX;
+    var casterEl = getEl(caster.id);
+
+    if (durMs <= 0 || !VFX) {
+      executeSkillPayload(caster, skill, Object.assign({ forceTayun: isForcedTayun }, opts));
+      return;
+    }
+
+    var ringHandle = VFX.play('feedback.castRing', {
+      casterEl: casterEl,
+      element: skill.element,
+      skill: skill,
+      durationMs: durMs,
+    });
+
+    var startAt = performance.now();
+    var displayName = isForcedTayun || (skill.id === 'ability.zhanyu' && caster.buffs['buff.yixing']) ? '踏云' : skill.name;
+    sandbox.casting = {
+      name: displayName,
+      element: skill.element,
+      casterId: caster.id,
+      progress: 0,
+      ringHandle: ringHandle,
+      progressTimer: setInterval(function () {
+        if (!sandbox.casting) return;
+        sandbox.casting.progress = Math.min(1, (performance.now() - startAt) / durMs);
+        emitChange('cast');
+      }, 30),
+      doneTimer: setTimeout(function () {
+        if (sandbox.casting) {
+          clearInterval(sandbox.casting.progressTimer);
+          if (sandbox.casting.ringHandle && typeof sandbox.casting.ringHandle.stop === 'function') {
+            sandbox.casting.ringHandle.stop(180);
+          }
+          sandbox.casting = null;
+          emitChange('cast');
+        }
+        executeSkillPayload(caster, skill, Object.assign({ forceTayun: isForcedTayun }, opts));
+      }, durMs),
+    };
+    emitChange('cast');
+  }
+
+  function useConsumable(itemId, opts) {
+    opts = opts || {};
+    var item = global.DaohuaCatalog.byId(itemId);
+    if (!item) return;
+
+    ensureTeamAlive('ally');
+    if (item.targetType === 'singleEnemy') ensureTeamAlive('enemy');
+
+    var caster = getUnit(sandbox.selectedCasterId) || getLivingUnits('ally')[0];
+    var VFX = global.DaohuaVFX;
+    if (!caster || !VFX) return;
+
+    if (item.consumableType === 'pill') {
+      // 丹药疗效 + Buff 持续回流
+      var isHp =
+        itemId === 'item.zhixue-powder' ||
+        itemId === 'item.shengji-balm' ||
+        itemId === 'item.huangya-pill';
+      var burstHeal = itemId === 'item.huangya-pill' ? 150 : itemId === 'item.shengji-balm' ? 72 : itemId === 'item.zhixue-powder' ? 36 : 0;
+      var burstMp = itemId === 'item.heqi-pill' ? 100 : itemId === 'item.ningqi-powder' ? 48 : itemId === 'item.shunqi-pill' ? 24 : 0;
+
+      if (burstHeal > 0) applyHeal(caster, burstHeal);
+      if (burstMp > 0) caster.mp = Math.min(caster.maxMp, caster.mp + burstMp);
+
+      var buffKey = itemId === 'item.heqi-pill' ? 'pill.heqi' : 'pill.' + item.id.split('.')[1];
+      grantBuff(caster, buffKey, item.name, 30000, {
+        hpPerSec: isHp ? Math.max(4, Math.round(burstHeal / 10)) : 0,
+        mpPerSec: !isHp ? Math.max(3, Math.round(burstMp / 10)) : 0,
+        kind: 'pill',
+      });
+
+      VFX.play(
+        item.id,
+        buildCtx(caster, [caster], {
+          consumable: item,
+          heal: burstHeal,
+          mana: burstMp,
+          tier: item.tier,
+        })
+      );
+      addLog(caster.name + ' 服下消耗品【' + item.name + '】：' + item.effectSummary, 'consumable');
+    } else if (item.consumableType === 'talisman') {
+      var target = getUnit(sandbox.selectedTargetId) || getLivingUnits('enemy')[0];
+      if (!target) return;
+      var manaCost = Math.round(caster.maxMp * (item.manaCostRatio || 0.05));
+      caster.mp = Math.max(0, caster.mp - manaCost);
+      var total = Math.round(caster.spellAtk * (item.spellAttackRatio || 2.0) + caster.mp * (item.manaDamageRatio || 0.2));
+      var res = applyDamage(caster, target, total, { forceCrit: opts.forceCrit });
+
+      VFX.play(
+        item.id,
+        buildCtx(caster, [target], {
+          consumable: item,
+          damage: res.damage,
+          crit: res.crit,
+          element: 'wood',
+          tier: item.tier,
+        })
+      );
+      addLog(caster.name + ' 祭出【雷击符】直击 ' + target.name + '，轰出 ' + res.damage + ' 雷法+倾泻伤！', 'consumable');
+    } else if (item.consumableType === 'formation') {
+      var isTeam = !!item.teamWide;
+      var slotKey = isTeam ? 'team' : 'personal';
+      if (sandbox.activeFormations[slotKey]) {
+        if (sandbox.activeFormations[slotKey].handle) {
+          sandbox.activeFormations[slotKey].handle.stop(320);
+        }
+        var oldBuffId = sandbox.activeFormations[slotKey].buffId;
+        sandbox.units.forEach(function (u) {
+          delete u.buffs[oldBuffId];
+        });
+      }
+
+      var targetsF = isTeam ? getLivingUnits('ally') : [caster];
+      targetsF.forEach(function (u) {
+        grantBuff(u, item.formationBuffId, item.formationName, 300000, {
+          hpPerSec: item.id === 'item.juling-formation-disk' ? 12 : 0,
+          mpPerSec: item.id === 'item.juling-formation-disk' ? 9 : 0,
+          kind: 'formation',
+        });
+      });
+
+      var handle = VFX.play(
+        item.id,
+        buildCtx(caster, targetsF, {
+          consumable: item,
+          tier: item.tier,
+        })
+      );
+
+      sandbox.activeFormations[slotKey] = {
+        buffId: item.formationBuffId,
+        itemId: item.id,
+        name: item.formationName,
+        casterId: caster.id,
+        handle: handle && typeof handle.stop === 'function' ? handle : null,
+        expiresAt: Date.now() + 300000,
+      };
+      addLog(caster.name + ' 展开【' + item.formationName + '】(' + (isTeam ? '全队常驻' : '个人常驻') + ')！', 'consumable');
+    }
+
+    emitChange('units');
+  }
+
+  function triggerEnemyAttack() {
+    ensureTeamAlive('enemy');
+    ensureTeamAlive('ally');
+    var attackers = getLivingUnits('enemy');
+    var attacker = attackers[(Math.random() * attackers.length) | 0];
+    var allies = getLivingUnits('ally');
+    var tauntTarget = allies.find(function (u) {
+      return !!u.buffs['buff.taunt'];
+    });
+    var victim = tauntTarget || allies[0];
+    if (!attacker || !victim) return;
+
+    var eskill = global.DaohuaCatalog.ENEMY_SKILLS[(Math.random() * global.DaohuaCatalog.ENEMY_SKILLS.length) | 0];
+    var res = applyDamage(attacker, victim, attacker.physAtk * eskill.ratio);
+
+    var VFX = global.DaohuaVFX;
+    if (VFX) {
+      VFX.play('feedback.attack', {
+        side: 'enemy',
+        attackerKey: attacker.id,
+        casterEl: getEl(attacker.id),
+        targetEl: getEl(victim.id),
+        element: eskill.element,
+        damage: res.damage,
+        crit: res.crit,
+        hit: true,
+      });
+      VFX.play('feedback.impact', {
+        targetEl: getEl(victim.id),
+        amount: res.damage,
+        crit: res.crit,
+        element: eskill.element,
+        text: '-' + res.damage,
+      });
+
+      // 受击触发天雷阵反击
+      var personal = sandbox.activeFormations.personal;
+      if (personal && personal.itemId === 'item.tianlei-formation-disk' && victim.id === personal.casterId) {
+        VFX.after(240, function () {
+          triggerFormationProc('tianlei', attacker);
         });
       }
     }
-    VFX.floatText(target.el, buff.name, { kind: 'hp', positive: true, stamp: '增益' });
-    log(target.name + ' 获得增益「' + buff.name + '」（' + buff.durationSeconds + ' 秒）', 'buff');
+    addLog(attacker.name + ' 施展【' + eskill.name + '】命中 ' + victim.name + ' (-' + res.damage + ')。', 'normal');
+    emitChange('units');
   }
 
-  function kill(actor) {
-    if (!actor.alive) return;
-    actor.alive = false;
-    actor.casting = false;
-    VFX.defeat(actor.el);
-    VFX.floatText(actor.el, '力竭', { kind: 'hp', stamp: '阵亡' });
-    setActionBar(actor, 0);
-    log(actor.name + ' 力竭倒下', 'defeat');
-    if (actor.side === 'enemy' && !aliveOf('enemy').length) {
-      log('敌阵全灭 —— 可在控制台「重置战场」重新演武', 'system');
-    }
-    if (actor.side === 'ally' && !aliveOf('ally').length) {
-      log('我方全员败北 —— 点击「复活」或「重置战场」继续', 'system');
-    } else if (actor.id === 'player') {
-      log('少侠败北 —— 点击「复活」或「重置战场」继续', 'system');
-    }
-  }
+  function runShowcase(showcaseId) {
+    var VFX = global.DaohuaVFX;
+    if (!VFX) return;
+    ensureTeamAlive('ally');
+    ensureTeamAlive('enemy');
+    var caster = getUnit(sandbox.selectedCasterId) || getLivingUnits('ally')[0];
+    var target = getUnit(sandbox.selectedTargetId) || getLivingUnits('enemy')[0];
 
-  function reviveActor(actor) {
-    actor.alive = true;
-    actor.hp = Math.max(actor.hp, Math.round(actor.maxHp * 0.5));
-    setVitals(actor);
-    VFX.revive(actor.el);
-    VFX.floatText(actor.el, '+' + Math.ceil(actor.hp), { kind: 'hp', positive: true, stamp: '复活' });
-    log(actor.name + ' 重燃战意，重返战场', 'heal');
-  }
-
-  /* ---------------- 施法管线 ---------------- */
-  function castAbility(casterId, abilityId, opts) {
-    const caster = actors[casterId];
-    const ability = CATALOG.byId(abilityId);
-    if (!caster || !ability) return false;
-    const manual = !!(opts && opts.manual);
-    if (!caster.alive) { log(caster.name + ' 已倒下，无法出手', 'system'); return false; }
-    if (caster.casting) { log(caster.name + ' 正在吟唱中', 'system'); return false; }
-    // 手动演武（点击槽位/功法格/轮播）不进冷却也不耗灵力：冷却遮罩/灵力条仅用于展示真实 UI 行为
-    const cd = caster.cooldowns[abilityId] || 0;
-    if (!manual && cd > 0) { log('「' + ability.name + '」冷却中（' + (cd / 1000).toFixed(1) + 's）', 'system'); return false; }
-    if (!manual) {
-      if (caster.mp < ability.manaCost) {
-        log(caster.name + ' 灵力不足，无法施展「' + ability.name + '」（需 ' + ability.manaCost + '）', 'system');
-        return false;
-      }
-      // 扣灵力 + 灵力条跳字（负值表示消耗）
-      caster.mp -= ability.manaCost;
-      setVitals(caster);
-      VFX.floatText(caster.el, '-' + ability.manaCost, { kind: 'mp' });
-    }
-
-    const castMs = ability.castMilliseconds;
-    caster.casting = true;
-    setActionBar(caster, 0, { active: true, casting: true });
-    // 吟唱期：行动条按真实 castMilliseconds 线性推进 + 徽标显示功法名
-    VFX.after(30, () => setActionBar(caster, 1, { transitionMs: Math.max(60, castMs - 30), active: true, casting: true, label: ability.name }));
-    // 聚灵法阵门槛与变体（粒子色相/轨迹）在 feedback.castRing 内按 ability 统一判定
-    VFX.play('feedback.castRing', { caster, targets: [], castMs, ability, impact: () => {}, heal: () => {}, threat: () => {}, buffApply: () => {}, kill, reviveActor, regen: () => {} });
-    log(caster.name + ' 开始吟唱「' + ability.name + '」（' + (castMs / 1000).toFixed(1) + 's）', 'cast');
-
-    VFX.after(castMs, () => {
-      caster.casting = false;
-      if (!caster.alive) { setActionBar(caster, 0); return; }
-      const targets = resolveTargets(caster, ability);
-      setActionBar(caster, 0, { active: false });
-      if (!targets.length) {
-        log('「' + ability.name + '」没有可命中的目标', 'system');
-        return;
-      }
-      // 冷却开始（真实 cooldownMilliseconds；0CD 不记；手动演武不记冷却）
-      if (ability.cooldownMilliseconds > 0 && !manual) {
-        caster.cooldowns[abilityId] = ability.cooldownMilliseconds;
-      }
-      const ctx = buildCtx(caster, targets, ability);
-      VFX.play(abilityId, ctx);
-      log(caster.name + ' 施展「' + ability.name + '」' + describeTargets(ability, targets), 'cast');
-    });
-    return true;
-  }
-
-  function describeTargets(ability, targets) {
-    const names = targets.map(t => t.name).join('、');
-    switch (ability.targetType) {
-      case 'self': return '（运功自身）';
-      case 'allEnemies': return ' → 敌阵全体（' + names + '）';
-      case 'allAllies': return ' → 我方全体（' + names + '）';
-      default: return ' → ' + names;
-    }
-  }
-
-  /** 技能脚本结算回调上下文：所有伤害/治疗/增益经此定时落地 */
-  function buildCtx(caster, targets, ability) {
-    return {
-      caster,
-      targets,
-      castMs: ability.castMilliseconds || 0,
-      ability,
-      impact: (target, atMs, opts) => VFX.after(atMs || 0, () => applyDamage(caster, target, ability, opts)),
-      heal: (target, atMs) => VFX.after(atMs || 0, () => applyHeal(caster, target, ability)),
-      threat: (target, atMs) => VFX.after(atMs || 0, () => {
-        VFX.floatText(target.el, '威胁 +' + (ability.threatGain || 0), { kind: 'hp', stamp: '嘲讽' });
-        log(target.name + ' 运功怒喝，威胁值 +' + (ability.threatGain || 0), 'buff');
-      }),
-      buffApply: (target, atMs) => VFX.after(atMs || 0, () => applyBuffFx(target, ability.buff)),
-      kill,
-      reviveActor,
-      regen: (actor) => {
-        actor.mp = Math.min(actor.maxMp, actor.mp + actor.maxMp * 0.15);
-        setVitals(actor);
-        VFX.floatText(actor.el, '+' + Math.round(actor.maxMp * 0.15), { kind: 'mp', positive: true, stamp: '调息' });
-      },
-    };
-  }
-
-  /** 普攻：真实 attack 动作 + 命中结算（环境底噪与演示按钮共用） */
-  function basicAttack(attackerId, targetId) {
-    const attacker = actors[attackerId];
-    if (!attacker || !attacker.alive || attacker.casting) return false;
-    const foeSide = attacker.side === 'ally' ? 'enemy' : 'ally';
-    const foes = aliveOf(foeSide);
-    // 未指定目标时在存活敌阵中随机择一（3v3 混战演示，覆盖多目标受击/阵亡面）
-    const target = targetId ? actors[targetId] : foes[Math.floor(Math.random() * foes.length)];
-    if (!target || !target.alive) return false;
-    const ctx = {
-      caster: attacker,
-      targets: [target],
-      castMs: 0,
-      impact: (t, atMs, opts) => VFX.after(atMs || 0, () => applyDamage(attacker, t, { name: '普攻', damageRatio: 0.85, flatDamage: 6 }, opts)),
-      heal: () => {}, threat: () => {}, buffApply: () => {},
-      kill, reviveActor, regen: () => {},
-    };
-    VFX.play('feedback.attack', ctx);
-    return true;
-  }
-
-  /* ---------------- 通用反馈演示按钮 ---------------- */
-  function playFeedback(kind, variant) {
-    const demoCaster = demoSide === 'ally' ? actors.player : (aliveOf('enemy')[0] || actors.enemy1);
-    const foes = demoSide === 'ally' ? aliveOf('enemy') : aliveOf('ally');
-    const target = foes[0] || actors.player;
-    const ctx = {
-      caster: demoCaster,
-      targets: [target],
-      castMs: 900,
-      variant,
-      impact: (t, atMs, opts) => VFX.after(atMs || 0, () => {
-        if (kind === 'crit') {
-          applyDamage(demoCaster, t, { name: '会心一击', damageRatio: 1.4, flatDamage: 30 }, { ...opts, crit: true });
-        } else {
-          applyDamage(demoCaster, t, { name: '受击演示', damageRatio: 0.5, flatDamage: 8 }, opts);
-        }
-      }),
-      heal: () => {}, threat: () => {},
-      buffApply: () => {},
-      kill, reviveActor,
-      regen: (actor) => {
-        actor.mp = Math.min(actor.maxMp, actor.mp + actor.maxMp * 0.15);
-        setVitals(actor);
-        VFX.floatText(actor.el, '+' + Math.round(actor.maxMp * 0.15), { kind: 'mp', positive: true, stamp: '调息' });
-      },
-    };
-    switch (kind) {
-      case 'attack': return VFX.play('feedback.attack', ctx);
-      case 'impact': return VFX.play('feedback.impact', ctx);
-      case 'crit':   return VFX.play('feedback.crit', ctx);
-      case 'defeat': {
-        const victim = foes[0] || target;
-        ctx.targets = [victim];
-        ctx.kill = kill;
-        return VFX.play('feedback.defeat', ctx);
-      }
-      case 'regen':  ctx.caster = demoCaster; return VFX.play('feedback.regen', ctx);
-      case 'revive': {
-        // 复活全部阵亡单位；无阵亡则对当前目标演示复活特效
-        const dead = Object.values(actors).filter(a => !a.alive);
-        ctx.targets = dead.length ? dead : [target];
-        return VFX.play('feedback.revive', ctx);
-      }
-    }
-    return 0;
-  }
-
-  /* ---------------- 环境底噪：行动条推进 + 自动普攻 + 灵力回复 ---------------- */
-  function tick() {
-    Object.values(actors).forEach(actor => {
-      // 冷却递减
-      Object.keys(actor.cooldowns).forEach(id => {
-        actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - TICK_MS);
-        if (actor.cooldowns[id] <= 0) delete actor.cooldowns[id];
+    if (showcaseId === 'showcase.tayun') {
+      grantBuff(caster, 'buff.yixing', '移形', 5000, { kind: 'yixing' });
+      addLog('演示连携：【移形】触发，斩玉切换为群体【踏云】！', 'consumable');
+      castAbility('ability.zhanyu.tayun', { preserveYixing: true });
+    } else if (showcaseId === 'showcase.star-kill') {
+      addLog('演示机制：【贯星】击杀低血敌兵后连环贯刺余敌！', 'crit');
+      castAbility('ability.star-piercer', { forceKill: true, forceCrit: true });
+    } else if (showcaseId === 'showcase.crit') {
+      if (!target) return;
+      var res = applyDamage(caster, target, 420, { forceCrit: true });
+      VFX.play('feedback.crit', {
+        targetEl: getEl(target.id),
+        amount: res.damage,
+        element: 'metal',
       });
-      if (!actor.alive) return;
-      // 灵力缓缓回复（沙盘演示速率）
-      if (actor.mp < actor.maxMp) {
-        actor.mp = Math.min(actor.maxMp, actor.mp + actor.maxMp * 0.004);
-        const mp = resourceEl(actor, 'mp');
-        if (mp) {
-          mp.querySelector('.arena-resource-track i').style.transform = 'scaleX(' + (actor.mp / actor.maxMp) + ')';
-          mp.querySelector('.arena-resource-badge').textContent = Math.ceil(actor.mp) + ' / ' + actor.maxMp;
-        }
-      }
-      // 环境普攻：行动条推进，满则出手
-      if (ambient && !actor.casting) {
-        actor.actionRatio += TICK_MS / actor.attackInterval;
-        if (actor.actionRatio >= 1) {
-          actor.actionRatio = 0;
-          basicAttack(actor.id);
-        }
-        if (!actor.casting) setActionBar(actor, actor.actionRatio, { active: true });
-      }
-    });
-    // 玩家功法冷却遮罩（真实 combat-ability-cooldown 同构）
-    updateCooldownOverlays();
-  }
-
-  function updateCooldownOverlays() {
-    const player = actors.player;
-    if (!player) return;
-    slotCells.forEach((cell, abilityId) => {
-      const ability = CATALOG.byId(abilityId);
-      let overlay = cell.querySelector('.combat-ability-cooldown');
-      const remaining = player.cooldowns[abilityId] || 0;
-      if (remaining > 0 && ability) {
-        if (!overlay) {
-          overlay = document.createElement('span');
-          overlay.className = 'combat-ability-cooldown';
-          cell.appendChild(overlay);
-        }
-        overlay.style.setProperty('--cooldown-ratio', String(Math.min(1, remaining / ability.cooldownMilliseconds)));
-        overlay.textContent = (remaining / 1000).toFixed(1) + 's';
-        overlay.hidden = false;
-      } else if (overlay) {
-        overlay.remove();
-      }
-    });
-  }
-
-  /* ---------------- 全量功法轮播 ---------------- */
-  function autoDemo() {
-    stopAutoDemo();
-    const casterId = demoSide === 'ally' ? 'player' : 'enemy2';
-    const caster = actors[casterId];
-    if (!caster) {
-      log('演示出手方不可用，请先重置战场', 'system');
-      return 0;
+      addLog('演示通用暴击爆裂：命中 ' + target.name + ' 暴击 ' + res.damage + '！', 'crit');
+      emitChange('units');
+    } else if (showcaseId === 'showcase.defeat-revive') {
+      if (!target) return;
+      var tel = getEl(target.id);
+      VFX.play('feedback.defeat', { targetEl: tel });
+      addLog('演示败退与重聚特效：' + target.name + ' 败退 -> 1.1s后重生。', 'normal');
+      VFX.after(1100, function () {
+        VFX.play('feedback.revive', { targetEl: tel });
+      });
+    } else if (showcaseId === 'showcase.tianlei-proc') {
+      triggerFormationProc('tianlei');
+    } else if (showcaseId === 'showcase.xuesha-proc') {
+      triggerFormationProc('xuesha');
+    } else if (showcaseId === 'showcase.enemy-attack') {
+      triggerEnemyAttack();
+    } else if (showcaseId === 'showcase.basic-combo') {
+      if (!target) return;
+      var comboNames = ['断岳斜劈', '惊鸿逆撩', '穿云疾刺', '残月横扫', '双绝交错'];
+      comboNames.forEach(function (cname, idx) {
+        VFX.after(idx * 330, function () {
+          ensureTeamAlive('ally');
+          ensureTeamAlive('enemy');
+          var liveTarget = target.hp > 0 ? target : getLivingUnits('enemy')[0];
+          if (!liveTarget) return;
+          var resC = applyDamage(caster, liveTarget, caster.physAtk * (1 + idx * 0.08));
+          VFX.play('feedback.attack', {
+            side: 'ally',
+            attackerKey: caster.id,
+            attackVariant: idx,
+            casterEl: getEl(caster.id),
+            targetEl: getEl(liveTarget.id),
+            element: 'none',
+            damage: resC.damage,
+            crit: resC.crit,
+            hit: true,
+          });
+          addLog(
+            caster.name +
+              ' 使出第 ' +
+              (idx + 1) +
+              ' 式普攻【' +
+              cname +
+              '】命中 ' +
+              liveTarget.name +
+              ' (-' +
+              resC.damage +
+              ')' +
+              (resC.crit ? '（暴击！）' : '。'),
+            resC.crit ? 'crit' : 'normal'
+          );
+          emitChange('units');
+        });
+      });
     }
-    // 出手方已阵亡则先复位战场，保证轮播完整跑完十式
-    if (!caster.alive) resetAll();
-    caster.mp = caster.maxMp;
-    setVitals(caster);
-    let t = 600;
-    CATALOG.ABILITIES.forEach(ability => {
-      const timer = setTimeout(() => {
-        // 轮播中途被环境普攻带走则复活续演，不中断演出节奏
-        if (!caster.alive) reviveActor(caster);
-        caster.mp = caster.maxMp; // 轮播时保持灵力充足，专注演出
-        setVitals(caster);
-        castAbility(casterId, ability.id, { manual: true });
-      }, t);
-      autoDemoTimers.push(timer);
-      t += ability.castMilliseconds + 2400;
-    });
-    log('开始全量功法轮播（' + CATALOG.ABILITIES.length + ' 式 · ' + (demoSide === 'ally' ? '我方' : '敌方') + '出手）', 'system');
-    return t;
   }
 
-  function stopAutoDemo() {
-    autoDemoTimers.forEach(t => clearTimeout(t));
-    autoDemoTimers = [];
+  function startSimulationLoop() {
+    if (sandbox.tickTimer) clearInterval(sandbox.tickTimer);
+    var regenTickCount = 0;
+    sandbox.tickTimer = setInterval(function () {
+      var now = Date.now();
+      var dirty = false;
+      regenTickCount++;
+      var doRegenVfx = regenTickCount % 5 === 0; // 每秒一次持续回血/回蓝星尘
+
+      sandbox.units.forEach(function (u) {
+        if (u.hp <= 0) return;
+        Object.keys(u.buffs).forEach(function (bk) {
+          var b = u.buffs[bk];
+          if (b.expiresAt <= now) {
+            delete u.buffs[bk];
+            dirty = true;
+            return;
+          }
+          if (doRegenVfx && (b.hpPerSec > 0 || b.mpPerSec > 0)) {
+            if (b.hpPerSec > 0 && u.hp < u.maxHp) {
+              applyHeal(u, b.hpPerSec);
+              if (global.DaohuaVFX) {
+                global.DaohuaVFX.play('feedback.regen', {
+                  targetEl: getEl(u.id),
+                  kind: 'hp',
+                  amount: b.hpPerSec,
+                });
+              }
+              dirty = true;
+            }
+            if (b.mpPerSec > 0 && u.mp < u.maxMp) {
+              u.mp = Math.min(u.maxMp, u.mp + b.mpPerSec);
+              if (global.DaohuaVFX) {
+                global.DaohuaVFX.play('feedback.regen', {
+                  targetEl: getEl(u.id),
+                  kind: 'mp',
+                  amount: b.mpPerSec,
+                });
+              }
+              dirty = true;
+            }
+          }
+        });
+      });
+
+      ['personal', 'team'].forEach(function (k) {
+        var f = sandbox.activeFormations[k];
+        if (f && f.expiresAt <= now) {
+          if (f.handle) f.handle.stop(350);
+          sandbox.activeFormations[k] = null;
+          dirty = true;
+        }
+      });
+
+      if (dirty) emitChange('units');
+    }, 200);
   }
 
-  /* ---------------- 重置 ---------------- */
-  function resetAll() {
-    stopAutoDemo();
-    VFX.resetAll();
-    Object.values(actors).forEach(actor => {
-      const def = ACTOR_DEFS[actor.id];
-      actor.hp = def.hp;
-      actor.maxHp = def.hp;
-      actor.mp = def.mp;
-      actor.maxMp = def.mp;
-      actor.alive = true;
-      actor.casting = false;
-      actor.actionRatio = 0;
-      actor.cooldowns = {};
-      actor.buffs = [];
-      if (actor.el) {
-        actor.el.classList.remove('is-dead', 'is-hit', 'is-action-attack', 'is-action-cast');
-        const avatar = actor.el.querySelector('.character-avatar');
-        if (avatar) avatar.classList.remove('is-dead');
-        const buffList = actor.el.querySelector('.arena-actor-buff-list');
-        if (buffList) buffList.innerHTML = '';
-      }
-      setVitals(actor);
-      setActionBar(actor, 0);
-    });
-    const bar = el('buffBar');
-    if (bar) { bar.innerHTML = ''; bar.hidden = true; }
-    log('战场已重置 —— 全员气血/灵力恢复，增益与冷却清空', 'system');
-  }
+  var AUTO_DEMO_PLAYLIST = [
+    { type: 'consumable', id: 'item.tianlei-formation-disk' },
+    { type: 'skill', id: 'ability.heavy-slash' },
+    { type: 'skill', id: 'ability.huoyan-fengbao' },
+    { type: 'skill', id: 'ability.yueqian' },
+    { type: 'skill', id: 'ability.zhanyu' },
+    { type: 'consumable', id: 'item.leiji-talisman' },
+    { type: 'skill', id: 'ability.tide' },
+    { type: 'consumable', id: 'item.xuesha-formation-disk' },
+    { type: 'skill', id: 'ability.star-piercer' },
+    { type: 'consumable', id: 'item.huangya-pill' },
+    { type: 'skill', id: 'ability.lightning-attraction' },
+    { type: 'skill', id: 'ability.pozhen-melody' },
+  ];
 
-  /* ---------------- 装配槽位绑定（gallery.js 渲染后注册） ---------------- */
-  function bindSlot(abilityId, cellEl) {
-    slotCells.set(abilityId, cellEl);
-  }
-
-  function setAmbient(on) {
-    ambient = !!on;
-    if (!ambient) {
-      Object.values(actors).forEach(a => { if (!a.casting) setActionBar(a, 0); });
+  function toggleAutoDemo(force) {
+    sandbox.autoDemo = force !== undefined ? !!force : !sandbox.autoDemo;
+    clearInterval(sandbox.demoTimer);
+    if (sandbox.autoDemo) {
+      var runStep = function () {
+        var step = AUTO_DEMO_PLAYLIST[sandbox.demoStep % AUTO_DEMO_PLAYLIST.length];
+        sandbox.demoStep++;
+        if (step.type === 'consumable') useConsumable(step.id);
+        else castAbility(step.id);
+        if (sandbox.demoStep % 3 === 0 && global.DaohuaVFX) {
+          global.DaohuaVFX.after(1050, triggerEnemyAttack);
+        }
+      };
+      runStep();
+      sandbox.demoTimer = setInterval(runStep, 2300);
     }
-    return ambient;
+    emitChange('demo');
   }
 
-  function setDemoSide(side) {
-    demoSide = side === 'enemy' ? 'enemy' : 'ally';
-    return demoSide;
+  function setFastCast(v) {
+    sandbox.fastCast = !!v;
+    emitChange('speed');
   }
 
-  buildActors();
-  setInterval(tick, TICK_MS);
+  resetArena();
+  startSimulationLoop();
 
-  window.DaohuaSandbox = {
-    actors,
-    ambient: () => ambient,
-    basicAttack,
-    bindSlot,
-    castAbility,
-    demoSide: () => demoSide,
-    autoDemo,
-    stopAutoDemo,
-    playFeedback,
-    resetAll,
-    reviveActor,
-    setAmbient,
-    setDemoSide,
-    log,
-    resolveTargets,
+  global.DaohuaSandbox = {
+    state: sandbox,
+    reset: resetArena,
+    castAbility: castAbility,
+    useConsumable: useConsumable,
+    triggerFormationProc: triggerFormationProc,
+    triggerEnemyAttack: triggerEnemyAttack,
+    runShowcase: runShowcase,
+    toggleAutoDemo: toggleAutoDemo,
+    setFastCast: setFastCast,
+    getUnit: getUnit,
+    getLivingUnits: getLivingUnits,
+    subscribe: function (fn) {
+      sandbox.listeners.add(fn);
+      return function () {
+        sandbox.listeners.delete(fn);
+      };
+    },
+    setUnitElResolver: function (fn) {
+      sandbox.unitElResolver = fn;
+    },
   };
-})();
+})(window);
