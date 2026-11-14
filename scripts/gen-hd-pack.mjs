@@ -23,6 +23,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -82,16 +83,109 @@ function collectPackFiles(buckets) {
   return [...best.values()]
 }
 
-function emitDir(files, subDir) {
-  const target = path.join(outDir, subDir)
-  fs.mkdirSync(target, { recursive: true })
-  for (const f of files) {
-    fs.copyFileSync(f.abs, path.join(target, f.file))
-  }
-  return files.length
+let cachedWebpEncoderPromise = null
+
+/** 探测当前环境下可用的 WebP 转码后端（sharp → cwebp → ffmpeg → python PIL）。 */
+async function resolveWebpEncoder() {
+  if (cachedWebpEncoderPromise) return cachedWebpEncoderPromise
+  cachedWebpEncoderPromise = (async () => {
+    for (const pkgAnchor of [import.meta.url, path.join(rootDir, 'frontend', 'package.json')]) {
+      try {
+        const req = createRequire(pkgAnchor)
+        const sharpMod = req('sharp')
+        const sharpFn = sharpMod?.default || sharpMod
+        if (typeof sharpFn === 'function') {
+          return {
+            name: 'sharp',
+            convert: async (srcPath, destPath) => {
+              await sharpFn(srcPath).webp({ quality: 90 }).toFile(destPath)
+            },
+          }
+        }
+      } catch {
+        // 继续探测下一后端
+      }
+    }
+
+    const probeCmd = (cmd, args) => {
+      try {
+        execFileSync(cmd, args, { stdio: 'ignore' })
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    if (probeCmd('cwebp', ['-version'])) {
+      return {
+        name: 'cwebp',
+        convert: async (srcPath, destPath) => {
+          execFileSync('cwebp', ['-quiet', '-q', '90', srcPath, '-o', destPath], { stdio: 'pipe' })
+        },
+      }
+    }
+
+    if (probeCmd('ffmpeg', ['-version'])) {
+      return {
+        name: 'ffmpeg',
+        convert: async (srcPath, destPath) => {
+          execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', srcPath, '-c:v', 'libwebp', '-q:v', '90', destPath], { stdio: 'pipe' })
+        },
+      }
+    }
+
+    for (const py of ['python3', 'python']) {
+      if (probeCmd(py, ['-c', 'import PIL.Image'])) {
+        return {
+          name: `${py}(PIL)`,
+          convert: async (srcPath, destPath) => {
+            execFileSync(
+              py,
+              [
+                '-c',
+                'import sys; from PIL import Image; Image.open(sys.argv[1]).convert("RGBA").save(sys.argv[2], "WEBP", quality=90)',
+                srcPath,
+                destPath,
+              ],
+              { stdio: 'pipe' },
+            )
+          },
+        }
+      }
+    }
+
+    throw new Error('未找到可用的 WebP 转码工具（需要 sharp / cwebp / ffmpeg / python-Pillow 之一），无法把 .png/.jpg 图标转为 .webp。')
+  })()
+  return cachedWebpEncoderPromise
 }
 
-function main() {
+async function emitDir(files, subDir) {
+  const target = path.join(outDir, subDir)
+  fs.mkdirSync(target, { recursive: true })
+  let converted = 0
+  for (const f of files) {
+    const ext = path.extname(f.file).toLowerCase()
+    const id = itemIdOf(f.file)
+    // HD 别名（hdAliases）统一按 /hd/<subDir>/<id>.webp 寻址，产物必须全部落成 .webp
+    const destPath = path.join(target, `${id}.webp`)
+    if (ext === '.webp') {
+      fs.copyFileSync(f.abs, destPath)
+    } else {
+      const encoder = await resolveWebpEncoder()
+      await encoder.convert(f.abs, destPath)
+      converted++
+    }
+  }
+  // 防线校验：确保产物目录绝不残余非 .webp 位图文件
+  for (const name of fs.readdirSync(target)) {
+    if (path.extname(name).toLowerCase() !== '.webp') {
+      throw new Error(`[gen-hd-pack] ${subDir}/${name} 不是 .webp，拒绝产出未转码资源。`)
+    }
+  }
+  return { count: files.length, converted }
+}
+
+async function main() {
   fs.rmSync(outDir, { recursive: true, force: true })
   fs.mkdirSync(outDir, { recursive: true })
 
@@ -110,9 +204,9 @@ function main() {
     .filter(name => path.extname(name).toLowerCase() === '.webp')
     .map(name => ({ file: name, abs: path.join(ART_AVATARS, name) }))
 
-  const itemCount = emitDir(items, 'items')
-  const buildingCount = emitDir(buildings, 'buildings')
-  const avatarCount = emitDir(avatars, 'avatars')
+  const itemsRes = await emitDir(items, 'items')
+  const buildingsRes = await emitDir(buildings, 'buildings')
+  const avatarsRes = await emitDir(avatars, 'avatars')
 
   // 复用清单生成器产出 /hd 前缀清单（键形如 "/hd/items/foo.webp"）
   const manifestScript = path.join(__dirname, 'gen-asset-manifest.mjs')
@@ -120,7 +214,7 @@ function main() {
 
   const totalSize = duDir(outDir)
   console.log(`[gen-hd-pack] HD 资源包生成完成 → ${outDir}`)
-  console.log(`  • items: ${itemCount} | buildings: ${buildingCount} | avatars: ${avatarCount} | 总大小: ${formatMb(totalSize)}`)
+  console.log(`  • items: ${itemsRes.count} (转码 ${itemsRes.converted}) | buildings: ${buildingsRes.count} (转码 ${buildingsRes.converted}) | avatars: ${avatarsRes.count} | 总大小: ${formatMb(totalSize)}`)
 }
 
 function duDir(dir) {
@@ -137,4 +231,7 @@ function formatMb(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
-main()
+main().catch(err => {
+  console.error(err?.stack || err?.message || err)
+  process.exit(1)
+})

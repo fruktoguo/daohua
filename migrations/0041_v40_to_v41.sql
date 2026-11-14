@@ -9,9 +9,9 @@
 
 BEGIN;
 
-UPDATE game.player_state_heads SET schema_version = 38 WHERE schema_version <> 38;
-UPDATE game.player_state_sections SET schema_version = 38 WHERE schema_version <> 38;
-UPDATE platform.section_flush_queue SET schema_version = 38 WHERE schema_version <> 38;
+UPDATE game.player_state_heads SET schema_version = 38 WHERE schema_version < 38;
+UPDATE game.player_state_sections SET schema_version = 38 WHERE schema_version < 38;
+UPDATE platform.section_flush_queue SET schema_version = 38 WHERE schema_version < 38;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (41, now()) ON CONFLICT (version) DO NOTHING;

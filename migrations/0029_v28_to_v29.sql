@@ -10,9 +10,9 @@ ALTER TABLE social.parties
 
 -- 存档载荷 v25-v29 均无字段变化，仅标签随库内容版本同步推进；
 -- v25-v28 迁移未触及存档标签，本版本一次性把存量标签收敛到 29。
-UPDATE game.player_state_heads SET schema_version = 29 WHERE schema_version <> 29;
-UPDATE game.player_state_sections SET schema_version = 29 WHERE schema_version <> 29;
-UPDATE platform.section_flush_queue SET schema_version = 29 WHERE schema_version <> 29;
+UPDATE game.player_state_heads SET schema_version = 29 WHERE schema_version < 29;
+UPDATE game.player_state_sections SET schema_version = 29 WHERE schema_version < 29;
+UPDATE platform.section_flush_queue SET schema_version = 29 WHERE schema_version < 29;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (29, now()) ON CONFLICT (version) DO NOTHING;

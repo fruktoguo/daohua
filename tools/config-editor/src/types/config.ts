@@ -200,12 +200,8 @@ export interface CombatantConfig {
   rank?: string; // minion | elite | boss（缺省 minion）
   budgetCost?: number;
   weights?: Record<string, number>; // 倾向权重：hp/mp/ad/ap/armor/mres/hit/eva/crit/cavoid/break/parry
-  modifiers?: Record<string, number>; // 百分比点数修饰：增减伤/攻速/冷却/威胁等（DataTool 词汇表校验）
+  modifiers?: Record<string, number>; // 修饰字典：百分比点数与固定伤/减伤平面通道（DataTool 词汇表校验）
   attackIntervalMilliseconds?: number;
-  hpDrainPoints?: number;
-  mpDrainPoints?: number;
-  damageReflectPoints?: number;
-  healingBonusPoints?: number;
   dropTable?: CombatDropDefinition[];
   skills?: MonsterSkillConfig[];
   qiReward?: number;

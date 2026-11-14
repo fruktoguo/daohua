@@ -34,7 +34,13 @@ BEGIN;
         PRIMARY KEY(zongmen_id,player_id,left_at)
     );
 
-ALTER TABLE social.chat_messages DROP CONSTRAINT chat_messages_channel_check;
+ALTER TABLE social.zongmen OWNER TO daohua_bootstrap;
+ALTER TABLE social.zongmen_members OWNER TO daohua_bootstrap;
+ALTER TABLE social.zongmen_requests OWNER TO daohua_bootstrap;
+ALTER TABLE social.zongmen_departures OWNER TO daohua_bootstrap;
+GRANT SELECT, INSERT, UPDATE, DELETE ON social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures TO daohua_api;
+
+ALTER TABLE social.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_channel_check;
 ALTER TABLE social.chat_messages ADD CONSTRAINT chat_messages_channel_check CHECK (channel IN ('world','nearby','friend','party','sect'));
 INSERT INTO platform.schema_version(version, applied_at) VALUES (49, now()) ON CONFLICT (version) DO NOTHING;
 COMMIT;

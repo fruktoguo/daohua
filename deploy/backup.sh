@@ -29,7 +29,7 @@ BACKUP_DAILY_KEEP="${BACKUP_DAILY_KEEP:-7}"
 BACKUP_WEEKLY_KEEP="${BACKUP_WEEKLY_KEEP:-4}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
 BACKUP_COMPRESS_LEVEL="${BACKUP_COMPRESS_LEVEL:-3}"
-LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
+LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-db-backup.lock}"
 
 if [[ "${EUID}" -ne 0 && "${ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
@@ -57,6 +57,7 @@ timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 hour_archive="${BACKUP_DIR}/hourly/daohua-postgres-hourly-${timestamp}.dump"
 partial="${hour_archive}.partial"
 sha_file="${hour_archive}.sha256"
+trap 'rm -f "$partial"' EXIT
 
 db_state="$(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$DB_CONTAINER_NAME" 2>/dev/null || true)"
 if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
@@ -75,8 +76,14 @@ if ! compose exec -T -e BACKUP_COMPRESS_LEVEL="${BACKUP_COMPRESS_LEVEL}" db sh -
   exit 1
 fi
 
+# 必须在正式移入归档目录前完成归档完整性校验，严禁损坏文件污染备份链
+if ! compose exec -T db pg_restore --list <"$partial" >/dev/null; then
+  rm -f "$partial"
+  printf '数据库备份完整性校验失败（pg_restore --list），已丢弃临时文件。\n' >&2
+  exit 1
+fi
+
 mv "$partial" "$hour_archive"
-compose exec -T db pg_restore --list <"$hour_archive" >/dev/null
 (cd "$(dirname "$hour_archive")" && sha256sum "$(basename "$hour_archive")" >"$sha_file")
 
 utc_hour="$(date -u +'%H')"

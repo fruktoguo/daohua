@@ -365,33 +365,6 @@ export function MonstersEditor() {
                 min={0}
                 unit="ms"
               />
-
-              <NumberInput
-                label="气血汲取点数 (HpDrainPoints)"
-                value={currentMonster.hpDrainPoints}
-                onChange={v => handleUpdate({ hpDrainPoints: v })}
-                step={1}
-                min={0}
-                unit="点"
-              />
-
-              <NumberInput
-                label="灵力汲取点数 (MpDrainPoints)"
-                value={currentMonster.mpDrainPoints}
-                onChange={v => handleUpdate({ mpDrainPoints: v })}
-                step={1}
-                min={0}
-                unit="点"
-              />
-
-              <NumberInput
-                label="伤害反弹点数 (DamageReflectPoints)"
-                value={currentMonster.damageReflectPoints}
-                onChange={v => handleUpdate({ damageReflectPoints: v })}
-                step={1}
-                min={0}
-                unit="点"
-              />
             </div>
           </div>
 
@@ -415,11 +388,11 @@ export function MonstersEditor() {
             </div>
           </div>
 
-          {/* 百分比点数修饰矩阵卡片 */}
+          {/* 点数与固定伤减修饰矩阵卡片 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">点数修饰矩阵 (Modifiers)</h3>
-              <span className="text-[11px] text-zinc-500">100 点 = 100%；增伤 Linear / 减伤速率 NonLinear</span>
+              <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">修饰矩阵 (Modifiers)</h3>
+              <span className="text-[11px] text-zinc-500">点数键 100 点 = 100%（增伤 Linear / 减伤 NonLinear）；fixed* 为固定伤害/减伤平面值</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {MONSTER_MODIFIER_KEYS.map(w => (
@@ -429,7 +402,7 @@ export function MonstersEditor() {
                   value={currentMonster.modifiers?.[w.key]}
                   onChange={v => handleUpdateModifier(w.key, v)}
                   step={1}
-                  unit="点"
+                  unit={w.unit ?? '点'}
                 />
               ))}
             </div>

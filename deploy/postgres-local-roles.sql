@@ -19,19 +19,21 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     identity.auth_sessions, identity.audit_events, identity.data_protection_keys,
     identity.account_risk_signals, identity.account_risk_events, platform.account_risk_policy, platform.account_risk_key,
     game.player_state_heads, game.player_state_sections, game.player_action_queue,
-    game.player_runtime_leases, game.player_projection, game.node_buildings,
+    game.player_runtime_leases, game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.node_buildings,
     economy.player_asset_balances, economy.player_asset_instances, economy.transactions,
-    economy.transaction_lines, economy.reservations, market.partition_leases,
-    market.orders, market.trades, market.settlement_claims, platform.section_flush_queue,
-    platform.integration_outbox, platform.command_receipts, platform.compute_jobs,
+    economy.transaction_lines, economy.reservations, economy.shop_daily_purchases, economy.transient_idempotency,
+    market.partition_leases, market.orders, market.trades, market.item_stats, market.settlement_claims, market.settlement_cursors,
+    platform.section_flush_queue, platform.integration_outbox, platform.command_receipts, platform.compute_jobs,
     social.friend_requests, social.friendships, social.parties, social.party_members,
-    social.party_sessions, social.party_invitations, social.party_seekers, social.doudizhu_games,
-    social.player_invitations, social.chat_messages TO daohua_api;
+    social.party_sessions, social.party_session_inbox, social.party_invitations, social.party_seekers, social.doudizhu_games,
+    social.player_invitations, social.chat_messages,
+    social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures TO daohua_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections, game.player_action_queue,
     game.player_projection, platform.section_flush_queue, platform.integration_outbox,
     social.friend_requests, social.friendships, social.parties, social.party_members,
     social.party_sessions, social.party_invitations, social.party_seekers,
     social.player_invitations, social.chat_messages TO daohua_worker;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity, game, economy, market, platform, social TO daohua_api, daohua_worker;
 -- metrics 只读取 PostgreSQL 统计，不获得账号、密钥、玩家载荷或账本的 SELECT。
 GRANT pg_read_all_stats TO daohua_metrics;
 -- 归档脚本需要创建月分区；仅开放两个归档所在 schema 及对应热表。

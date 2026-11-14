@@ -22,6 +22,7 @@ import {
   createConfigBackup,
   type ApiResponse
 } from '../api/client';
+import { MONSTER_MODIFIER_KEYS } from '../types/enums';
 
 /** 跨表引用索引：每张表提供 O(1) 的 id→完整配置 Map 与供下拉搜索的轻量条目列表；nodes 索引跨地图聚合并附 mapId/mapName 归属。全部由 configs 派生，随编辑实时重建。 */
 export interface GlobalLookups {
@@ -291,8 +292,35 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     }
 
     // 2. 检查 Monsters
+    const allowedMonsterModifierKeys = new Set(MONSTER_MODIFIER_KEYS.map(k => k.key));
     if (configs['monsters.json']) {
       for (const m of configs['monsters.json']) {
+        for (const topKey of Object.keys(m as unknown as Record<string, unknown>)) {
+          if (allowedMonsterModifierKeys.has(topKey)) {
+            errors.push({
+              id: `mon-${m.id}-top-${topKey}`,
+              sourceFile: 'monsters.json',
+              itemId: m.id,
+              field: topKey,
+              message: `怪物 [${m.name}] 的字段 [${topKey}] 不得放在顶层，请移至 modifiers.${topKey}`,
+              severity: 'error'
+            });
+          }
+        }
+        if (m.modifiers) {
+          for (const modKey of Object.keys(m.modifiers)) {
+            if (!allowedMonsterModifierKeys.has(modKey)) {
+              errors.push({
+                id: `mon-${m.id}-mod-${modKey}`,
+                sourceFile: 'monsters.json',
+                itemId: m.id,
+                field: `modifiers.${modKey}`,
+                message: `怪物 [${m.name}] 的 modifiers.${modKey} 不在 DataTool 授权词汇表内`,
+                severity: 'error'
+              });
+            }
+          }
+        }
         if (m.skills) {
           for (const sk of m.skills) {
             if (sk.abilityId && !lookups.abilities.has(sk.abilityId)) {

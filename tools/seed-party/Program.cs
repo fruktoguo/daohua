@@ -239,7 +239,7 @@ foreach (var mate in teammates)
 if (apply)
 {
     await social.TryUpdatePartyProfileAsync(partyId,
-        new PartyProfileRecord("猛攻", "any", TargetNodeId, 0, false), now, CancellationToken.None);
+        new PartyProfileRecord("猛攻", "any", TargetNodeId, 0, false, false), now, CancellationToken.None);
     await social.TryUpdatePartyOpenSlotsAsync(partyId, 3, now, CancellationToken.None);
 }
 

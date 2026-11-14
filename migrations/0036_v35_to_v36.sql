@@ -2,9 +2,9 @@
 -- 表结构未变，库内容版本标签随存档载荷标签推进至 36。
 BEGIN;
 
-UPDATE game.player_state_heads SET schema_version = 36 WHERE schema_version <> 36;
-UPDATE game.player_state_sections SET schema_version = 36 WHERE schema_version <> 36;
-UPDATE platform.section_flush_queue SET schema_version = 36 WHERE schema_version <> 36;
+UPDATE game.player_state_heads SET schema_version = 36 WHERE schema_version < 36;
+UPDATE game.player_state_sections SET schema_version = 36 WHERE schema_version < 36;
+UPDATE platform.section_flush_queue SET schema_version = 36 WHERE schema_version < 36;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (36, now()) ON CONFLICT (version) DO NOTHING;

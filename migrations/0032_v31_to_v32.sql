@@ -3,9 +3,9 @@
 -- 存档/队列 schema_version 标签随库内容版本同步推进至 32，表结构未变。
 BEGIN;
 
-UPDATE game.player_state_heads SET schema_version = 32 WHERE schema_version <> 32;
-UPDATE game.player_state_sections SET schema_version = 32 WHERE schema_version <> 32;
-UPDATE platform.section_flush_queue SET schema_version = 32 WHERE schema_version <> 32;
+UPDATE game.player_state_heads SET schema_version = 32 WHERE schema_version < 32;
+UPDATE game.player_state_sections SET schema_version = 32 WHERE schema_version < 32;
+UPDATE platform.section_flush_queue SET schema_version = 32 WHERE schema_version < 32;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (32, now()) ON CONFLICT (version) DO NOTHING;

@@ -58,9 +58,9 @@ FULL OUTER JOIN (
 ) t ON o.asset_id = t.asset_id AND o.variant = t.variant
 ON CONFLICT (asset_id, variant) DO NOTHING;
 
-UPDATE game.player_state_heads SET schema_version = 33 WHERE schema_version <> 33;
-UPDATE game.player_state_sections SET schema_version = 33 WHERE schema_version <> 33;
-UPDATE platform.section_flush_queue SET schema_version = 33 WHERE schema_version <> 33;
+UPDATE game.player_state_heads SET schema_version = 33 WHERE schema_version < 33;
+UPDATE game.player_state_sections SET schema_version = 33 WHERE schema_version < 33;
+UPDATE platform.section_flush_queue SET schema_version = 33 WHERE schema_version < 33;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (33, now()) ON CONFLICT (version) DO NOTHING;

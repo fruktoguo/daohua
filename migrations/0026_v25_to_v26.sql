@@ -9,3 +9,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_market_trades_buyer
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_market_trades_seller
     ON market.trades (seller_id, traded_at);
+
+-- CREATE INDEX CONCURRENTLY 不可置于事务块内，版本号追加紧随其后执行。
+INSERT INTO platform.schema_version(version, applied_at)
+    VALUES (26, now()) ON CONFLICT (version) DO NOTHING;

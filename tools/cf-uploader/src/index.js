@@ -323,6 +323,76 @@ async function verifyTicket(ticketStr, secret) {
   }
 }
 
+const SAFE_RASTER_IMAGES = {
+  png: { mime: "image/png", ext: "png" },
+  jpg: { mime: "image/jpeg", ext: "jpg" },
+  jpeg: { mime: "image/jpeg", ext: "jpg" },
+  gif: { mime: "image/gif", ext: "gif" },
+  webp: { mime: "image/webp", ext: "webp" },
+};
+
+const SAFE_RASTER_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/**
+ * 基于二进制文件头魔数字节检测安全光栅图片格式（PNG / JPEG / GIF / WebP），拒绝 SVG/HTML 等可执行载荷。
+ */
+function detectSafeRasterImage(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return SAFE_RASTER_IMAGES.png;
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return SAFE_RASTER_IMAGES.jpg;
+  }
+  if (
+    bytes.length >= 6 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  ) {
+    return SAFE_RASTER_IMAGES.gif;
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return SAFE_RASTER_IMAGES.webp;
+  }
+  return null;
+}
+
+function normalizeDeclaredMime(rawContentType) {
+  const base = String(rawContentType || "").split(";")[0].trim().toLowerCase();
+  if (base === "image/jpg") return "image/jpeg";
+  return base;
+}
+
+function resolveSafeRasterMimeByKey(key) {
+  const match = String(key || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!match) return null;
+  return SAFE_RASTER_IMAGES[match[1]]?.mime || null;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -382,7 +452,7 @@ export default {
       try {
         const contentType = request.headers.get("Content-Type") || "";
         let fileData;
-        let mimeType = "image/png";
+        let declaredMime = "";
 
         if (contentType.includes("multipart/form-data")) {
           const formData = await request.formData();
@@ -391,14 +461,34 @@ export default {
             return new Response("缺少文件 payload", { status: 400, headers: corsHeaders });
           }
           fileData = await file.arrayBuffer();
-          mimeType = file.type || "image/png";
+          declaredMime = normalizeDeclaredMime(file.type);
         } else {
           fileData = await request.arrayBuffer();
-          mimeType = contentType || "image/png";
+          declaredMime = normalizeDeclaredMime(contentType);
         }
 
         if (!fileData || fileData.byteLength === 0) {
           return new Response("文件内容为空", { status: 400, headers: corsHeaders });
+        }
+
+        // 严禁盲信表单 file.type：按文件头魔数字节校验真实图片白名单
+        const detectedImage = detectSafeRasterImage(fileData);
+        if (!detectedImage) {
+          return new Response("不支持或非法的图片格式：仅允许 PNG/JPEG/GIF/WebP 真实光栅图像", {
+            status: 415,
+            headers: corsHeaders,
+          });
+        }
+
+        if (
+          declaredMime &&
+          declaredMime !== "application/octet-stream" &&
+          declaredMime !== detectedImage.mime
+        ) {
+          return new Response("文件声明 MIME 与二进制魔数不匹配，拒绝上传", {
+            status: 415,
+            headers: corsHeaders,
+          });
         }
 
         // 计算上传二进制文件的实际 SHA-256 哈希
@@ -415,11 +505,23 @@ export default {
           });
         }
 
-        const ext = payload.ext || "png";
+        const requestedExt = String(payload.ext || "").replace(/^\./, "").trim().toLowerCase();
+        if (requestedExt) {
+          const requestedFormat = SAFE_RASTER_IMAGES[requestedExt];
+          if (!requestedFormat || requestedFormat.ext !== detectedImage.ext) {
+            return new Response("Ticket 扩展名与真实图片格式不匹配，拒绝落盘", {
+              status: 400,
+              headers: corsHeaders,
+            });
+          }
+        }
+
+        const ext = detectedImage.ext;
+        const mimeType = detectedImage.mime;
         // 基于哈希前 16 位确定文件名，同图绝对同名，全服自动物理去重
         const filename = `${actualHash.slice(0, 16)}.${ext}`;
 
-        // 检查 R2 是否已有该文件
+        // 写入永久 R2 存储桶（强制采用魔数检测出的安全光栅 MIME）
         await env.MY_BUCKET.put(filename, fileData, {
           httpMetadata: {
             contentType: mimeType,
@@ -427,50 +529,9 @@ export default {
           },
         });
 
-        let fastUrl = `${url.origin}/${filename}`;
-        try {
-          // 尝试同步上传至国内高速图床（路过图床 ax1x.com CDN，国内秒开，14天免登录外链）
-          const pageRes = await fetch("https://imgchr.com/", {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-          });
-          if (pageRes.ok) {
-            const pageHtml = await pageRes.text();
-            const cookies = [];
-            pageRes.headers.forEach((value, key) => {
-              if (key.toLowerCase() === "set-cookie") cookies.push(value);
-            });
-            const cookieStr = cookies.length ? cookies.map(c => c.split(";")[0]).join("; ") : "";
-            const tokenMatch = pageHtml.match(/PF\.obj\.config\.auth_token\s*=\s*"([^"]+)"/);
-            const authToken = tokenMatch ? tokenMatch[1] : null;
+        const permanentUrl = `${url.origin}/${filename}`;
 
-            const uploadForm = new FormData();
-            uploadForm.append("source", new Blob([fileData], { type: mimeType }), filename);
-            uploadForm.append("type", "file");
-            uploadForm.append("action", "upload");
-            if (authToken) uploadForm.append("auth_token", authToken);
-
-            const uploadRes = await fetch("https://imgchr.com/json", {
-              method: "POST",
-              headers: {
-                "Cookie": cookieStr,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              },
-              body: uploadForm,
-            });
-            if (uploadRes.ok) {
-              const uploadJson = await uploadRes.json();
-              if (uploadJson.status_code === 200 && uploadJson.image?.url) {
-                fastUrl = uploadJson.image.url;
-              }
-            }
-          }
-        } catch (e) {
-          // 降级使用 R2 直链
-        }
-
-        return new Response(fastUrl, {
+        return new Response(permanentUrl, {
           status: 200,
           headers: {
             ...corsHeaders,
@@ -525,6 +586,21 @@ export default {
 
       const headers = new Headers(corsHeaders);
       object.writeHttpMetadata(headers);
+      // 强制追加防 MIME 嗅探与严格 CSP 沙盒，彻底阻断 SVG/HTML 在图床源站执行脚本
+      headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
+
+      const storedMime = normalizeDeclaredMime(headers.get("Content-Type"));
+      if (!SAFE_RASTER_MIMES.has(storedMime)) {
+        const fallbackMime = resolveSafeRasterMimeByKey(object.key);
+        if (fallbackMime) {
+          headers.set("Content-Type", fallbackMime);
+        } else {
+          headers.set("Content-Type", "application/octet-stream");
+          headers.set("Content-Disposition", "attachment");
+        }
+      }
+
       headers.set("ETag", object.httpEtag);
       headers.set("Cache-Control", "public, max-age=31536000, immutable");
 

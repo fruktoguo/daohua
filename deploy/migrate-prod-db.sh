@@ -25,20 +25,30 @@
 #
 # 环境变量:
 #   DAOHUA_DIR     生产部署目录（默认 /opt/daohua）
+#   ENV_FILE       环境变量文件（默认 ${DAOHUA_DIR}/daohua.env，提供 DB_BOOTSTRAP_USER 等）
 #   DB_CONTAINER   数据库容器名（默认 daohua-db）
-#   DB_USER/DB_NAME/DB_PASSWORD  数据库连接（默认从 daohua.env 读取）
+#   DB_USER/DB_BOOTSTRAP_USER/DB_NAME  数据库连接（优先读取环境文件 DB_BOOTSTRAP_USER，默认 daohua_bootstrap）
 #   COMPOSE_FILE   compose 文件（默认 ${DAOHUA_DIR}/compose.prod.yaml）
 # ==============================================================================
 set -Eeuo pipefail
 
 DAOHUA_DIR="${DAOHUA_DIR:-/opt/daohua}"
+ENV_FILE="${ENV_FILE:-${DAOHUA_DIR}/daohua.env}"
+EXPLICIT_DB_USER="${DB_USER:-}"
+EXPLICIT_DB_NAME="${DB_NAME:-}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
 # docker 命令名可覆盖：仅用于在非生产环境（如 WSL/桌面混合环境）复演同一套流程。
 DOCKER="${DOCKER:-docker}"
 DB_CONTAINER="${DB_CONTAINER:-daohua-db}"
-DB_USER="${DB_USER:-daohua}"
-DB_NAME="${DB_NAME:-daohua}"
+DB_USER="${EXPLICIT_DB_USER:-${DB_BOOTSTRAP_USER:-daohua_bootstrap}}"
+DB_NAME="${EXPLICIT_DB_NAME:-${DB_NAME:-daohua}}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DAOHUA_DIR}/compose.prod.yaml}"
-ENV_FILE="${ENV_FILE:-${DAOHUA_DIR}/daohua.env}"
 MIGRATIONS_DIR="${MIGRATIONS_DIR:-${DAOHUA_DIR}/migrations}"
 BACKUP_DIR="${BACKUP_DIR:-${DAOHUA_DIR}/backups/pre-migration}"
 

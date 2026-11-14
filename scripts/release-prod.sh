@@ -443,7 +443,7 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   ODIN_STATUS='{"status":"offline"}'
   for _ in {1..15}; do
     ODIN_STATUS="$(ssh -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
-    if [[ "$ODIN_STATUS" == *'"status":"healthy"'* || "$ODIN_STATUS" == *'"healthy"'* ]]; then
+    if [[ "$ODIN_STATUS" == *'"status":"ok"'* ]]; then
       break
     fi
     sleep 1

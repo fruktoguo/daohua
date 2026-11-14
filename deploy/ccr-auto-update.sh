@@ -132,7 +132,7 @@ if [[ -f "$EXPECTED_SCHEMA_VERSION_FILE" ]]; then
   if [[ -n "$expected_schema_version" ]]; then
     db_schema_version="$(
       docker exec "${DB_CONTAINER_NAME:-daohua-db}" \
-        psql -X -t -A -U "${DB_USER_NAME:-daohua}" -d "${DB_NAME:-daohua}" \
+        psql -X -t -A -U "${DB_BOOTSTRAP_USER:-daohua_bootstrap}" -d "${DB_NAME:-daohua}" \
         -c 'SELECT max(version) FROM platform.schema_version;' 2>/dev/null || true
     )"
     if [[ "$db_schema_version" != "$expected_schema_version" ]]; then

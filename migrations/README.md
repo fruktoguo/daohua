@@ -4,7 +4,7 @@
 
 ## 硬约束（可整体删除）
 
-当前源码目标为库 v52 / 玩家载荷 v42。`0052_v51_to_v52.sql` 推进库版本并将存档标签统一推进至 v42：战斗快照新增的入战定格特质 Traits 可缺省解码为 Empty，迁移瞬间处于战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。对不可缺省解码的旧载荷，启动链检测后仍须交互确认，拒绝或无 TTY 中止；恢复备份须配套匹配版本的应用，不可用新程序直接改写旧标签。
+当前源码目标为库 v54 / 玩家载荷 v43。`0054_v53_to_v54.sql` 为 `game.player_projection` 扩充 `experience/lifetime_experience/duel_wins/duel_losses/avatar` 五列（回填 `codec='json'` 存量行），新增全服排行榜整点快照表 `game.leaderboard_snapshots` 与 `game.leaderboard_ranks` 并补齐 `daohua_api`/`daohua_bootstrap` 权限，同时把可缺省新增的 `duelWins`/`duelLosses` 与 `publicLoadoutVisible` 载荷标签推进至 v43。对不可缺省解码的旧载荷，启动链检测后仍须交互确认，拒绝或无 TTY 中止；恢复备份须配套匹配版本的应用，不可用新程序直接改写旧标签。
 
 - 本目录**随时可整体删除**，不产生任何影响：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 - 空库启动永远由权威 `src/Server/Clean/PostgresSchema.cs` 的 `PostgresSchema.Sql` 直建当前版本，不经过本目录。
@@ -80,6 +80,11 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0042_v41_to_v42.sql` | 放宽 `party_session_inbox.consumed_transaction_id` 约束（允许 NULL，外键改 ON DELETE SET NULL），解绑历史推演流水；`ix_section_flush_ready` 优化为单列 (next_attempt_at) 恢复 HOT；schema_version 写入 42，存档标签未变 |
 | `0043_v42_to_v43.sql` | `transaction_lines` 外键补充 ON DELETE CASCADE；落地两级流水留存体系（长期流水 market/shop.buy/player.unlock_avatar 留 14 天，短期易失性流水留 2 小时并级联删除）；schema_version 写入 43，存档标签未变 |
 | `0048_v47_to_v48.sql` | 战斗面板特质等级、Buff 来源与真实伤害统计均可缺省解码；三处玩家分段标签由 40 推进至 41，数据库版本推进至 48，不改写载荷 |
-| `0049_v48_to_v49.sql` | 宗门、成员、申请邀请与离宗时间，启用宗门传音；不改变个人分段载荷 |
+| `0049_v48_to_v49.sql` | 宗门、成员、申请邀请与离宗时间，启用宗门传音；不改变个人分段载荷（已补齐幂等约束与最小角色权限） |
+| `0050_v49_to_v50.sql` | `social.chat_messages` 增发送者境界列；`social.parties.open_slots` 默认槽位调整为 3 |
+| `0051_v50_to_v51.sql` | 新增队伍斗地主底注、准备状态及权威牌局检查点表 `social.doudizhu_games`（已补幂等与 CONFLICT 守卫） |
+| `0052_v51_to_v52.sql` | 推进玩家八分段载荷标签至 42（战斗快照入战定格特质，可缺省解码），schema_version 写入 52 |
+| `0053_v52_to_v53.sql` | 新增瞬时经济幂等防重表 `economy.transient_idempotency` 及清理索引；补全 `daohua_api`/`daohua_worker` 遗漏表及全序列权限，schema_version 写入 53 |
+| `0054_v53_to_v54.sql` | `game.player_projection` 扩五列并新增 `game.leaderboard_snapshots`/`leaderboard_ranks` 与索引权限；推进玩家载荷标签至 43（`duelWins`/`duelLosses`、`publicLoadoutVisible` 可缺省），schema_version 写入 54 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

@@ -48,10 +48,16 @@ docker exec "$DB_CONTAINER_NAME" sh -ceu '
   PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未注入}" \
     pg_basebackup -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D "$1" -Fp -X stream -c fast -P
 ' sh "$container_tmp"
-docker exec "$DB_CONTAINER_NAME" tar -C "$container_tmp" -czf - . >"$partial"
-mv "$partial" "$archive"
-sha256sum "$archive" >"${archive}.sha256"
 docker exec "$DB_CONTAINER_NAME" test -f "$container_tmp/backup_manifest"
+docker exec "$DB_CONTAINER_NAME" tar -C "$container_tmp" -czf - . >"$partial"
+# 必须在原子移入正式基线目录前校验 gzip/tar 流与 backup_manifest 存在性
+if ! gzip -t "$partial" || ! tar -tzf "$partial" | grep -Eq '^(\./)?backup_manifest$'; then
+  rm -f "$partial"
+  printf '物理基线备份完整性校验失败，已丢弃损坏临时文件。\n' >&2
+  exit 1
+fi
+mv "$partial" "$archive"
+(cd "$(dirname "$archive")" && sha256sum "$(basename "$archive")" >"${archive}.sha256")
 printf '物理基线备份完成: %s\n' "$archive"
 printf 'WAL/PITR 校验清单: backup_manifest（位于归档内）\n'
 

@@ -235,9 +235,9 @@ export const MONSTER_WEIGHT_KEYS: { key: string; label: string }[] = [
   { key: 'parry', label: '招架 (Parry)' }
 ];
 
-// 13d-2. 怪物百分比点数修饰键 —— ParseMonsterDefinitions modifiers 段消费键（战斗设计 §7.5 词汇表）
-/** 怪物百分比点数修饰键清单：modifiers 字典合法键（DataTool 词汇表强制校验），100 点 = 100% 效果。 */
-export const MONSTER_MODIFIER_KEYS: { key: string; label: string }[] = [
+// 13d-2. 怪物修饰键 —— ParseMonsterDefinitions modifiers 段消费键（战斗设计 §7.5 词汇表 + 固定伤减通道）
+/** 怪物 modifiers 合法键清单（DataTool MonsterModifierKeys 词汇表强制校验）。 */
+export const MONSTER_MODIFIER_KEYS: { key: string; label: string; unit?: string }[] = [
   { key: 'physicalDamageBonusPoints', label: '物理增伤点' },
   { key: 'spellDamageBonusPoints', label: '法术增伤点' },
   { key: 'metalDamageBonusPoints', label: '金系增伤点' },
@@ -260,7 +260,21 @@ export const MONSTER_MODIFIER_KEYS: { key: string; label: string }[] = [
   { key: 'actionSpeedPoints', label: '行动速度点' },
   { key: 'cooldownReductionPoints', label: '冷却缩减点' },
   { key: 'threatBonusPoints', label: '威胁增幅点' },
-  { key: 'criticalDamageBonusPoints', label: '暴击伤害点' }
+  { key: 'criticalDamageBonusPoints', label: '暴击伤害点' },
+  { key: 'hpDrainPoints', label: '气血汲取点' },
+  { key: 'mpDrainPoints', label: '灵力汲取点' },
+  { key: 'damageReflectPoints', label: '伤害反弹点' },
+  { key: 'healingBonusPoints', label: '治疗增幅点' },
+  { key: 'threatOnTakenPoints', label: '受击涨威胁点' },
+  { key: 'dropBonusPoints', label: '掉落加成点' },
+  { key: 'cultivationExpBonusPoints', label: '修为加成点' },
+  { key: 'combatExpBonusPoints', label: '历练加成点' },
+  { key: 'fixedDamageBonus', label: '全固定伤害加成', unit: '值' },
+  { key: 'fixedDamageReduction', label: '全固定伤害减免', unit: '值' },
+  { key: 'fixedPhysicalDamageBonus', label: '物理固定伤害加成', unit: '值' },
+  { key: 'fixedPhysicalDamageReduction', label: '物理固定伤害减免', unit: '值' },
+  { key: 'fixedSpellDamageBonus', label: '法术固定伤害加成', unit: '值' },
+  { key: 'fixedSpellDamageReduction', label: '法术固定伤害减免', unit: '值' }
 ];
 
 // 13e. 行动收益类型与结算频率 —— ParseYields 词汇表

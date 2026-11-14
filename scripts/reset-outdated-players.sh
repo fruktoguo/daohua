@@ -197,7 +197,16 @@ DELETE FROM social.party_invitations WHERE invitee_id IN (SELECT player_id FROM 
    OR inviter_id IN (SELECT player_id FROM _stale_players)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM social.party_seekers WHERE player_id IN (SELECT player_id FROM _stale_players);
-DELETE FROM social.party_sessions WHERE party_id IN (SELECT party_id FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players));
+DELETE FROM social.party_session_inbox
+ WHERE player_id IN (SELECT player_id FROM _stale_players)
+    OR session_id IN (
+        SELECT session_id FROM social.party_sessions
+         WHERE party_id IN (SELECT party_id FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players))
+            OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players))
+    );
+DELETE FROM social.party_sessions
+ WHERE party_id IN (SELECT party_id FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players))
+    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM social.party_members WHERE player_id IN (SELECT player_id FROM _stale_players)
    OR party_id IN (SELECT party_id FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players));
 DELETE FROM social.parties WHERE leader_id IN (SELECT player_id FROM _stale_players);

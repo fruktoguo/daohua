@@ -6,13 +6,13 @@ set -Eeuo pipefail
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
-WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-1}"
+WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-72}"
 
 usage() {
   printf '%s\n' \
     '用法：wal-archive.sh verify|prune|status' \
     '  verify  检查文件名、权限、临时文件和最近 WAL 段' \
-    '  prune   删除超过 WAL_RETENTION_HOURS 的 WAL 段（默认 1 小时）' \
+    '  prune   删除超过 WAL_RETENTION_HOURS 的 WAL 段（默认 72 小时，覆盖 3 天基线窗口）' \
     '  status  输出归档目录容量与文件数量'
 }
 
@@ -27,7 +27,7 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
   WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
-  WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-1}"
+  WAL_RETENTION_HOURS="${WAL_RETENTION_HOURS:-72}"
 fi
 
 action="${1:-status}"

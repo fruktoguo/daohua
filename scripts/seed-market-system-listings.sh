@@ -238,20 +238,34 @@ for (const file of fs.readdirSync(equipmentDir).sort()) {
 }
 equipments.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 
-// 装备强化变体挂售档位：+10/+20 与基础件同价（系统货架统一按最低系统报价=材料成本价）。
+// 装备强化变体挂售档位：+10/+20 对齐 EnhancementRules.CalculateEquipmentSellPrice(2 * cost, N) 地板定价，
+// 避免按 +0 成本挂单导致 40 倍套利倒挂。
 const enhancedSeedLevels = [10, 20];
+const enhancementDepreciation = {
+  10: { beta: 7.687, fee: 739 },
+  20: { beta: 19.353, fee: 3322 },
+};
+function calculateEnhancedEquipmentSeedPrice(baseMaterialCost, level) {
+  const row = enhancementDepreciation[level];
+  if (!row) return baseMaterialCost;
+  const baseSellPrice = baseMaterialCost * 2;
+  return Math.round(baseSellPrice * (1 + row.beta) + row.fee);
+}
 
-// 统一挂售清单：物品价 = 回收价一半、装备全部变体档 = 材料成本价；定价基准写入 SQL 注释备查。
+// 统一挂售清单：物品价 = 回收价一半、装备 +0 = 材料成本价、强化变体 +10/+20 = 含强化折旧公式单价；定价基准写入 SQL 注释备查。
 // 基础变体幂等键沿用 system-seed:{assetId}（与历史种子兼容），强化变体追加 :{variant} 后缀，
 // 保证重复执行只为缺失变体补挂。
 const listings = [
   ...items.map(item => ({ id: item.id, variant: '', name: item.name, price: item.sellPrice / 2, basis: `回收价 ${item.sellPrice} → 挂售价 ${item.sellPrice / 2}` })),
   ...equipments.flatMap(equipment => [
     { id: equipment.id, variant: '', name: equipment.name, price: equipment.cost, basis: `锻造材料成本价 ${equipment.cost}` },
-    ...enhancedSeedLevels.map(level => ({
-      id: equipment.id, variant: `+${level}`, name: `${equipment.name} +${level}`,
-      price: equipment.cost, basis: `锻造材料成本价 ${equipment.cost}（与 +0 同价）`,
-    })),
+    ...enhancedSeedLevels.map(level => {
+      const price = calculateEnhancedEquipmentSeedPrice(equipment.cost, level);
+      return {
+        id: equipment.id, variant: `+${level}`, name: `${equipment.name} +${level}`,
+        price, basis: `含强化地板价 Math.round(2*${equipment.cost}*(1+${enhancementDepreciation[level].beta})+${enhancementDepreciation[level].fee}) = ${price}`,
+      };
+    }),
   ]),
 ];
 
@@ -259,7 +273,7 @@ const esc = (text) => String(text).replace(/'/g, "''");
 const lines = [];
 lines.push(`-- 由 scripts/seed-market-system-listings.sh 生成：系统身份坊市挂售种子`);
 lines.push(`-- 分区 ${partitionId}，挂单 ${listings.length} 条（物品 ${items.length} + 装备 ${equipments.length}×3 档变体），每条 ${listingQuantity} 份`);
-lines.push(`-- 挂售价口径：物品 = 回收价 / 2，装备 +0/+10/+20 全档 = 锻造材料成本价`);
+lines.push(`-- 挂售价口径：物品 = 回收价 / 2，装备 +0 = 材料成本价，+10/+20 = CalculateEquipmentSellPrice(2*cost, level)`);
 lines.push('BEGIN;');
 lines.push('');
 lines.push('-- 系统身份：不可登录账号 + 货架玩家（固定 UUID 幂等）');

@@ -8,9 +8,9 @@ UPDATE game.player_projection p SET offline_since = h.last_simulated_at
 FROM game.player_state_heads h
 WHERE h.player_id = p.player_id AND p.presence <> 'online' AND p.offline_since IS NULL;
 
-UPDATE game.player_state_heads SET schema_version = 31 WHERE schema_version <> 31;
-UPDATE game.player_state_sections SET schema_version = 31 WHERE schema_version <> 31;
-UPDATE platform.section_flush_queue SET schema_version = 31 WHERE schema_version <> 31;
+UPDATE game.player_state_heads SET schema_version = 31 WHERE schema_version < 31;
+UPDATE game.player_state_sections SET schema_version = 31 WHERE schema_version < 31;
+UPDATE platform.section_flush_queue SET schema_version = 31 WHERE schema_version < 31;
 
 INSERT INTO platform.schema_version(version, applied_at)
     VALUES (31, now()) ON CONFLICT (version) DO NOTHING;
