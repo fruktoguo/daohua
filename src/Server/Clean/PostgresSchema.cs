@@ -3,9 +3,10 @@ namespace Server.Clean;
 /// <summary>schema 一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
-    /// <summary>当前本地库内容版本（表结构 + 存档载荷标签）；与 platform.schema_version 表中的
-    /// 最大版本必须一致。约定：SectionCodec.CurrentSchemaVersion 每次升级时本常量同步 +1，
-    /// 存档标签 UPDATE 内嵌在 migrations/NNNN_vX_to_vY.sql 对应版本文件中。</summary>
+    /// <summary>当前本地库内容版本（表结构 + 存档载荷标签 + 破档配表同步锚点）；与 platform.schema_version 表中的
+    /// 最大版本必须一致。约定：凡改动数据库结构/权限、SectionCodec 存档载荷或影响旧存档加载的配表删改时本常量 +1
+    /// （若玩家分段载荷变动则 SectionCodec.CurrentSchemaVersion 同步 +1），并在 docs/backend/db-version-changes.md
+    /// 登记 vX -&gt; vY 变更说明（日常不再强制手写单次 migrations/*.sql，待 prod-release 时统一合写或手动迁移）。</summary>
     /// v14：settings 分段载荷新增 tutorialStep 新手引导里程碑（可缺省解码为 0），存档标签推进，表结构未变。
     /// v13：identity.players 增 invite_code 唯一邀请码，新增 social.player_invitations 邀请关系与里程碑领奖标记；存档载荷未变。
     /// v12：loadout 分段触发条件迁移为 abilityTriggers 按功法 ID 映射（可缺省解码），存档标签推进，表结构未变。
@@ -76,7 +77,8 @@ public static class PostgresSchema
     /// v54：全服排行榜整点快照（game.leaderboard_snapshots / game.leaderboard_ranks）与
     /// game.player_projection 扩列（experience/lifetime_experience/duel_wins/duel_losses/avatar）；
     /// progression 增 duelWins/duelLosses、settings 增 publicLoadoutVisible（均可缺省解码），玩家载荷标签推进至 v43。
-    public const int Version = 54;
+    /// v55：identity.accounts 增 is_bot boolean NOT NULL DEFAULT false（标记市场机器人账号，屏蔽附近玩家列表与全服排行榜）；玩家载荷标签保持 v43 不变。
+    public const int Version = 55;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -96,7 +98,8 @@ public static class PostgresSchema
         status smallint NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL,
-        taptap_openid varchar(128) NULL
+        taptap_openid varchar(128) NULL,
+        is_bot boolean NOT NULL DEFAULT false
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_taptap_openid ON identity.accounts(taptap_openid) WHERE taptap_openid IS NOT NULL;
 
@@ -720,7 +723,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

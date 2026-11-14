@@ -400,6 +400,213 @@ public sealed class LeaderboardTests
         Assert.Equal(1d, sectDto1.MyRank!.Score);
     }
 
+    /// <summary>真实 PostgreSQL 集成：is_bot = true 的账号必须从全部个人榜与宗门成员统计（含全机器人宗门）中剔除。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task RebuildAsync_ExcludesIsBotAccountsAndBotZongmen()
+    {
+        var source = PostgresTestSchema.GetSharedDataSource(PostgresTestSchema.RequireConnectionString("全服排行榜机器人剔除测试"));
+        await PostgresTestSchema.EnsureAsync(source);
+
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
+        var humanId = Guid.NewGuid();
+        var botId = Guid.NewGuid();
+        var sectBotId = Guid.NewGuid();
+        var humanSectId = Guid.NewGuid();
+        var botSectId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await using (var conn = await source.OpenConnectionAsync())
+        {
+            await using var batch = new NpgsqlBatch(conn)
+            {
+                BatchCommands =
+                {
+                    new NpgsqlBatchCommand("""
+                        INSERT INTO identity.accounts(account_id, login_normalized, password_hash, password_salt, password_iterations, created_at, updated_at, is_bot)
+                        VALUES ($1, $2, '\x00'::bytea, '\x00'::bytea, 100000, $7, $7, false),
+                               ($3, $4, '\x00'::bytea, '\x00'::bytea, 100000, $7, $7, true),
+                               ($5, $6, '\x00'::bytea, '\x00'::bytea, 100000, $7, $7, true);
+                        """)
+                    {
+                        Parameters =
+                        {
+                            new NpgsqlParameter { Value = humanId },
+                            new NpgsqlParameter { Value = $"human_{humanId:N}" },
+                            new NpgsqlParameter { Value = botId },
+                            new NpgsqlParameter { Value = $"bot_{botId:N}" },
+                            new NpgsqlParameter { Value = sectBotId },
+                            new NpgsqlParameter { Value = $"bot_{sectBotId:N}" },
+                            new NpgsqlParameter { Value = now },
+                        }
+                    },
+                    new NpgsqlBatchCommand("""
+                        INSERT INTO identity.players(player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at, status)
+                        VALUES ($1, $1, '真人修士', $2, $7, $7, 1),
+                               ($3, $3, '坊市机器人甲', $4, $7, $7, 1),
+                               ($5, $5, '坊市机器人乙', $6, $7, $7, 1);
+                        """)
+                    {
+                        Parameters =
+                        {
+                            new NpgsqlParameter { Value = humanId },
+                            new NpgsqlParameter { Value = $"HUMAN_{humanId:N}" },
+                            new NpgsqlParameter { Value = botId },
+                            new NpgsqlParameter { Value = $"BOTA_{botId:N}" },
+                            new NpgsqlParameter { Value = sectBotId },
+                            new NpgsqlParameter { Value = $"BOTB_{sectBotId:N}" },
+                            new NpgsqlParameter { Value = now },
+                        }
+                    },
+                }
+            };
+            await batch.ExecuteNonQueryAsync();
+        }
+
+        var humanAgg = PlayerAggregate.Create(new(humanId), new(humanId), "真人修士", now, catalog.Fingerprint);
+        humanAgg.Progression.RealmLevel = 15;
+        humanAgg.Progression.DuelWins = 3;
+
+        var botAgg = PlayerAggregate.Create(new(botId), new(botId), "坊市机器人", now, catalog.Fingerprint);
+        botAgg.Progression.RealmLevel = 999;
+        botAgg.Progression.Experience = 999999;
+        botAgg.Progression.DuelWins = 88888;
+        botAgg.Loadout.TechniqueExperiences["alchemy"] = 50000;
+
+        await sections.EnqueueSectionsAsync(
+            SectionCodec.EncodeAggregateFull(humanAgg.ExportState(), now)
+                .Concat(SectionCodec.EncodeAggregateFull(botAgg.ExportState(), now))
+                .ToArray());
+        await sections.FlushPendingAsync(256, TimeSpan.FromSeconds(30));
+
+        await using (var conn = await source.OpenConnectionAsync())
+        {
+            var humanSectName = $"真宗{humanSectId:N}"[..16];
+            var botSectName = $"机宗{botSectId:N}"[..16];
+            await using var batch = new NpgsqlBatch(conn)
+            {
+                BatchCommands =
+                {
+                    new NpgsqlBatchCommand("""
+                        INSERT INTO economy.player_asset_balances(player_id, asset_id, variant, quantity, version, updated_at)
+                        VALUES ($1, 'currency.spirit-stone', '', 100, 1, $3),
+                               ($2, 'currency.spirit-stone', '', 999999999, 1, $3);
+                        """)
+                    {
+                        Parameters =
+                        {
+                            new NpgsqlParameter { Value = humanId },
+                            new NpgsqlParameter { Value = botId },
+                            new NpgsqlParameter { Value = now },
+                        }
+                    },
+                    new NpgsqlBatchCommand("""
+                        INSERT INTO social.zongmen(zongmen_id, name, name_normalized, prefix, leader_id, anchor_node_id, created_at)
+                        VALUES ($1, $2, $2, '真', $3, 'node.yunxi-village', $6),
+                               ($4, $5, $5, '机', $7, 'node.yunxi-village', $6);
+                        """)
+                    {
+                        Parameters =
+                        {
+                            new NpgsqlParameter { Value = humanSectId },
+                            new NpgsqlParameter { Value = humanSectName },
+                            new NpgsqlParameter { Value = humanId },
+                            new NpgsqlParameter { Value = botSectId },
+                            new NpgsqlParameter { Value = botSectName },
+                            new NpgsqlParameter { Value = now },
+                            new NpgsqlParameter { Value = botId },
+                        }
+                    },
+                    new NpgsqlBatchCommand("""
+                        INSERT INTO social.zongmen_members(player_id, zongmen_id, role, joined_at)
+                        VALUES ($1, $2, 0, $6),
+                               ($3, $2, 1, $6),
+                               ($4, $5, 0, $6);
+                        """)
+                    {
+                        Parameters =
+                        {
+                            new NpgsqlParameter { Value = humanId },
+                            new NpgsqlParameter { Value = humanSectId },
+                            new NpgsqlParameter { Value = sectBotId },
+                            new NpgsqlParameter { Value = botId },
+                            new NpgsqlParameter { Value = botSectId },
+                            new NpgsqlParameter { Value = now },
+                        }
+                    },
+                }
+            };
+            await batch.ExecuteNonQueryAsync();
+        }
+
+        // 数据库当前有效非机器人账号数（同 Collection 前序测试可能已留存若干真人账号，精确对账即可，不假定净库）。
+        long expectedHumanCount;
+        await using (var conn = await source.OpenConnectionAsync())
+        {
+            await using var countCmd = new NpgsqlCommand("""
+                SELECT count(*)
+                FROM identity.players i
+                JOIN identity.accounts a ON a.account_id = i.account_id
+                WHERE i.status = 1 AND NOT a.is_bot
+                """, conn);
+            expectedHumanCount = (long)(await countCmd.ExecuteScalarAsync())!;
+        }
+
+        var runtime = new LeaderboardRuntime(
+            source, sections, new StubPlayerRuntime(), market: null, catalog, NullLogger<LeaderboardRuntime>.Instance);
+        await runtime.RebuildAsync();
+
+        var botIdText = botId.ToString("D");
+        var sectBotIdText = sectBotId.ToString("D");
+
+        // 1. 境界 / 灵石 / 斗法 / 技艺榜：botId 虽持有最高数值，但被完全排除；ParticipantCount 严格等于非机器人数量。
+        var realmDto = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.Realm, humanId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.Equal((int)expectedHumanCount, realmDto.ParticipantCount);
+        Assert.NotNull(realmDto.MyRank);
+        Assert.DoesNotContain(realmDto.Entries, e => e.PlayerId == botIdText || e.PlayerId == sectBotIdText);
+
+        var stoneForBot = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.SpiritStone, botId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.DoesNotContain(stoneForBot.Entries, e => e.PlayerId == botIdText || e.PlayerId == sectBotIdText);
+        Assert.Null(stoneForBot.MyRank);
+
+        var duelForBot = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.Duel, botId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.DoesNotContain(duelForBot.Entries, e => e.PlayerId == botIdText || e.PlayerId == sectBotIdText);
+        Assert.Null(duelForBot.MyRank);
+
+        var alchemyBoardId = LeaderboardBoardIds.Technique("alchemy");
+        var alchemyForBot = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(alchemyBoardId, botId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.DoesNotContain(alchemyForBot.Entries, e => e.PlayerId == botIdText || e.PlayerId == sectBotIdText);
+        Assert.Null(alchemyForBot.MyRank);
+
+        // 2. 宗门榜：混合宗门不计入机器人成员（MemberCount == 1），全机器人宗门不入榜且机器人查不到本宗名次。
+        var sectForHuman = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.Zongmen, humanId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        var humanSectEntry = Assert.Single(sectForHuman.Entries, e => e.ZongmenId == humanSectId.ToString("D"));
+        Assert.Equal(1, humanSectEntry.MemberCount);
+        Assert.DoesNotContain(sectForHuman.Entries, e => e.ZongmenId == botSectId.ToString("D"));
+
+        var sectForBot = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.Zongmen, botId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.Null(sectForBot.MyRank);
+        var sectForMixedBot = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(
+            runtime.TryGetBoard(LeaderboardBoardIds.Zongmen, sectBotId, default)!.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        Assert.Null(sectForMixedBot.MyRank);
+
+        // 3. 数据库名次表 game.leaderboard_ranks 中绝不落入任何机器人名次行。
+        await using (var conn = await source.OpenConnectionAsync())
+        {
+            await using var rankCmd = new NpgsqlCommand(
+                "SELECT count(*) FROM game.leaderboard_ranks WHERE player_id = ANY($1)", conn);
+            rankCmd.Parameters.Add(new NpgsqlParameter { Value = new[] { botId, sectBotId } });
+            Assert.Equal(0L, (long)(await rankCmd.ExecuteScalarAsync())!);
+        }
+    }
+
     private static void As(HttpClient client, Guid playerId)
     {
         client.DefaultRequestHeaders.Remove("x-test-player");

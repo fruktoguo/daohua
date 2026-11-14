@@ -94,6 +94,34 @@ public sealed class AccountAuthTests
         Assert.True(info.PlayerSeq > 0);
     }
 
+    /// <summary>新建账号 is_bot 默认 false，标记为 true 后 ValidateSessionAsync 必须透传 IsBot。</summary>
+    [Fact]
+    public async Task IsBotDefaultsToFalseAndPropagatesToSessionIdentity()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var account = UniqueAccount();
+        var registered = await repository.RegisterAsync(account, "bot-pass-1", null, null, new AccountRiskSignals(DeviceId: account));
+        Assert.True(registered.Success);
+
+        var normalIdentity = await repository.ValidateSessionAsync(registered.SessionToken!);
+        Assert.NotNull(normalIdentity);
+        Assert.False(normalIdentity!.IsBot);
+
+        await using (var conn = await source.OpenConnectionAsync())
+        {
+            await using var cmd = new NpgsqlCommand("UPDATE identity.accounts SET is_bot = true WHERE account_id = $1", conn);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = registered.AccountId!.Value });
+            Assert.Equal(1, await cmd.ExecuteNonQueryAsync());
+        }
+
+        // 重新登录签发新令牌绕开旧令牌短缓存，确认 ValidateSessionAsync 读取最新 a.is_bot。
+        var botLogin = await repository.LoginAsync(account, "bot-pass-1", new AccountRiskSignals(DeviceId: account));
+        Assert.True(botLogin.Success);
+        var botIdentity = await repository.ValidateSessionAsync(botLogin.SessionToken!);
+        Assert.NotNull(botIdentity);
+        Assert.True(botIdentity!.IsBot);
+    }
+
     /// <summary>默认公开构造函数必须保持 600,000 次 PBKDF2-SHA512 基线，不能被测试加速参数影响。</summary>
     [Fact]
     public void DefaultConstructorUses600kPbkdf2Iterations()

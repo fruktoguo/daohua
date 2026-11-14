@@ -48,7 +48,8 @@ public sealed class SessionAuthenticationHandler(
             new Claim("player_id", identity.PlayerId.ToString("D")),
             new Claim(ClaimTypes.Name, identity.Account),
             new Claim("display_name", identity.DisplayName),
-            new Claim("sequence_id", identity.SequenceId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            new Claim("sequence_id", identity.SequenceId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new Claim("is_bot", identity.IsBot ? "true" : "false")
         };
         var schemeName = Scheme.Name ?? SessionAuthenticationDefaults.Scheme;
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, schemeName));

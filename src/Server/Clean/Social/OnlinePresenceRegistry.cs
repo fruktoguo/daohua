@@ -29,14 +29,18 @@ public sealed class OnlinePresenceRegistry
     /// </summary>
     public event Func<Guid, ValueTask>? NodeChanged;
 
-    private readonly record struct Entry(string DisplayName, string? NodeId, int RealmLevel, double Valuation, string Avatar);
+    private readonly record struct Entry(string DisplayName, string? NodeId, int RealmLevel, double Valuation, string Avatar, bool IsBot);
 
     /// <summary>登记或刷新在线玩家；节点变化时返回受影响的玩家集合。</summary>
     /// <param name="playerId">玩家 ID。</param>
     /// <param name="displayName">玩家道号。</param>
     /// <param name="nodeId">当前地图节点 ID；行进在边上时为 null。</param>
+    /// <param name="realmLevel">当前境界等级。</param>
+    /// <param name="valuation">当前身家估值。</param>
+    /// <param name="avatar">玩家形象标识。</param>
+    /// <param name="isBot">是否为机器人账号；为 true 时不进入节点索引与附近玩家列表，换节点也不惊扰邻近玩家。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, int realmLevel = 1, double valuation = 0, string avatar = "player", CancellationToken cancellationToken = default)
+    public ValueTask RegisterAsync(Guid playerId, string displayName, string? nodeId, int realmLevel = 1, double valuation = 0, string avatar = "player", bool isBot = false, CancellationToken cancellationToken = default)
     {
         List<Guid> affected;
         bool nodeChanged;
@@ -44,14 +48,19 @@ public sealed class OnlinePresenceRegistry
         lock (_gate)
         {
             newlyOnline = !_entries.TryGetValue(playerId, out var previous);
-            _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation, string.IsNullOrWhiteSpace(avatar) ? "player" : avatar);
+            _entries[playerId] = new Entry(displayName, nodeId, realmLevel, valuation, string.IsNullOrWhiteSpace(avatar) ? "player" : avatar, isBot);
             nodeChanged = previous.NodeId != nodeId;
-            if (nodeChanged)
+            // 机器人账号仅保留在线登记与自身节点坐标，不写入附近倒排索引；若从非机器人切为机器人则摘除旧索引。
+            var previousVisibleNode = previous.IsBot ? null : previous.NodeId;
+            var currentVisibleNode = isBot ? null : nodeId;
+            if (previousVisibleNode != currentVisibleNode)
             {
-                RemoveFromNodeIndex(previous.NodeId, playerId);
-                AddToNodeIndex(nodeId, playerId);
+                RemoveFromNodeIndex(previousVisibleNode, playerId);
+                AddToNodeIndex(currentVisibleNode, playerId);
             }
-            affected = CollectAffected(previous.NodeId, nodeId);
+            affected = previousVisibleNode is null && currentVisibleNode is null
+                ? []
+                : CollectAffected(previousVisibleNode, currentVisibleNode);
         }
         return newlyOnline ? PublishOnlineChangedAsync(playerId, affected, nodeChanged ? playerId : null)
             : PublishAsync(affected, nodeChanged ? playerId : null);
@@ -69,9 +78,16 @@ public sealed class OnlinePresenceRegistry
             if (!_entries.TryGetValue(playerId, out var previous)) return ValueTask.CompletedTask;
             if (previous.NodeId == nodeId) return ValueTask.CompletedTask;
             _entries[playerId] = previous with { NodeId = nodeId };
-            RemoveFromNodeIndex(previous.NodeId, playerId);
-            AddToNodeIndex(nodeId, playerId);
-            affected = CollectAffected(previous.NodeId, nodeId);
+            if (previous.IsBot)
+            {
+                affected = [];
+            }
+            else
+            {
+                RemoveFromNodeIndex(previous.NodeId, playerId);
+                AddToNodeIndex(nodeId, playerId);
+                affected = CollectAffected(previous.NodeId, nodeId);
+            }
         }
         return PublishAsync(affected, playerId);
     }
@@ -89,7 +105,7 @@ public sealed class OnlinePresenceRegistry
             var normalized = string.IsNullOrWhiteSpace(avatar) ? "player" : avatar;
             if (previous.Avatar == normalized) return ValueTask.CompletedTask;
             _entries[playerId] = previous with { Avatar = normalized };
-            affected = CollectAffected(previous.NodeId, previous.NodeId);
+            affected = previous.IsBot ? [] : CollectAffected(previous.NodeId, previous.NodeId);
         }
         return PublishAsync(affected);
     }
@@ -103,9 +119,16 @@ public sealed class OnlinePresenceRegistry
         lock (_gate)
         {
             if (!_entries.Remove(playerId, out var previous)) return ValueTask.CompletedTask;
-            // 索引先行摘除：CollectAffected 看到的旧节点集合已不含本人。
-            RemoveFromNodeIndex(previous.NodeId, playerId);
-            affected = CollectAffected(previous.NodeId, null);
+            if (previous.IsBot)
+            {
+                affected = [];
+            }
+            else
+            {
+                // 索引先行摘除：CollectAffected 看到的旧节点集合已不含本人。
+                RemoveFromNodeIndex(previous.NodeId, playerId);
+                affected = CollectAffected(previous.NodeId, null);
+            }
         }
         return PublishOnlineChangedAsync(playerId, affected, null);
     }
@@ -147,6 +170,7 @@ public sealed class OnlinePresenceRegistry
             {
                 // 索引与主表同锁维护，命中集合中的玩家必定仍登记在 _entries。
                 var entry = _entries[playerId];
+                if (entry.IsBot) continue;
                 result.Add(new NearbyPlayerDto(playerId.ToString("D"), entry.DisplayName, entry.RealmLevel, entry.Valuation, entry.Avatar));
             }
         }

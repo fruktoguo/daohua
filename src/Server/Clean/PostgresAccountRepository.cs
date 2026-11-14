@@ -96,7 +96,8 @@ public interface IAccountRepository
 /// <param name="Account">登录账号。</param>
 /// <param name="DisplayName">当前道号。</param>
 /// <param name="SequenceId">角色序号（identity.players.player_seq 自增编号）。</param>
-public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName, long SequenceId);
+/// <param name="IsBot">是否为机器人账号（identity.accounts.is_bot，默认 false；为 true 时不出现在附近玩家与全服排行榜）。</param>
+public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName, long SequenceId, bool IsBot = false);
 
 /// <summary>账号与会话的关系存储；密码明文和 token 明文永不入库。</summary>
 public sealed class PostgresAccountRepository(
@@ -412,7 +413,7 @@ public sealed class PostgresAccountRepository(
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name, s.expires_at, p.player_seq
+            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name, s.expires_at, p.player_seq, a.is_bot
             FROM identity.auth_sessions s
             JOIN identity.accounts a ON s.account_id = a.account_id
             JOIN identity.players p ON p.account_id = a.account_id
@@ -424,7 +425,7 @@ public sealed class PostgresAccountRepository(
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = tokenHash });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
-        var identity = new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(5));
+        var identity = new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(5), reader.GetBoolean(6));
         // 缓存截止取「TTL 上限」与「会话自身过期时刻」的较早者，过期语义不被缓存放宽。
         var sessionExpiresAt = reader.GetFieldValue<DateTimeOffset>(4);
         var cacheUntil = now.Add(SessionCacheTtl);

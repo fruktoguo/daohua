@@ -507,8 +507,9 @@ public sealed class LeaderboardRuntime
                    COALESCE(p.duel_losses, 0),
                    COALESCE(NULLIF(p.avatar, ''), 'player')
             FROM identity.players i
+            JOIN identity.accounts a ON a.account_id = i.account_id
             LEFT JOIN game.player_projection p ON p.player_id = i.player_id
-            WHERE i.status = 1
+            WHERE i.status = 1 AND NOT a.is_bot
             """, connection);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -565,8 +566,11 @@ public sealed class LeaderboardRuntime
 
         var membersByZongmen = new Dictionary<Guid, List<Guid>>(headers.Count);
         await using (var cmd = new NpgsqlCommand("""
-            SELECT zongmen_id, player_id
-            FROM social.zongmen_members
+            SELECT zm.zongmen_id, zm.player_id
+            FROM social.zongmen_members zm
+            JOIN identity.players i ON i.player_id = zm.player_id
+            JOIN identity.accounts a ON a.account_id = i.account_id
+            WHERE i.status = 1 AND NOT a.is_bot
             """, connection))
         await using (var reader = await cmd.ExecuteReaderAsync(ct))
         {

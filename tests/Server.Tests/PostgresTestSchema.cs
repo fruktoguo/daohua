@@ -48,6 +48,7 @@ internal static class PostgresTestSchema
                 {
                     await using var prePatch = new NpgsqlCommand("""
                         ALTER TABLE IF EXISTS identity.accounts ADD COLUMN IF NOT EXISTS taptap_openid varchar(128) NULL;
+                        ALTER TABLE IF EXISTS identity.accounts ADD COLUMN IF NOT EXISTS is_bot boolean NOT NULL DEFAULT false;
                         """, connection) { CommandTimeout = 60 };
                     await prePatch.ExecuteNonQueryAsync();
                     await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection) { CommandTimeout = 60 };

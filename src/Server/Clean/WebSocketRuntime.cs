@@ -379,6 +379,7 @@ public static class WebSocketEndpoint
         var accountRisk = context.RequestServices.GetRequiredService<AccountAbuse.PostgresAccountRiskRepository>();
         var riskContext = context.RequestServices.GetRequiredService<AccountAbuse.AccountRiskRequestContext>();
         var accountId = Guid.Parse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var isBot = string.Equals(context.User.FindFirstValue("is_bot"), "true", StringComparison.OrdinalIgnoreCase);
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         // 会话令牌哈希随会话登记：登出/改密吊销 HTTP 会话时按哈希精确踢线对应 WebSocket，
         // 避免被吊销的挂机连接继续持有可用的命令通道。
@@ -437,7 +438,7 @@ public static class WebSocketEndpoint
             }
             var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token, logger);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
-                accountRisk, riskContext, context, accountId, grace, presenceStats);
+                accountRisk, riskContext, context, accountId, isBot, grace, presenceStats);
             await Task.WhenAny(sendTask, receiveTask);
             // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
             // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
@@ -569,6 +570,7 @@ public static class WebSocketEndpoint
         AccountAbuse.AccountRiskRequestContext riskContext,
         HttpContext context,
         Guid accountId,
+        bool isBot,
         DisconnectGraceRegistry grace,
         Social.IPlayerPresenceStatsService presenceStats)
     {
@@ -725,7 +727,7 @@ public static class WebSocketEndpoint
                         // 迁地途中（EdgeId 非空）按「不在节点」登记，与 UpdateNodeAsync 口径一致。
                         var presenceTask = presence.RegisterAsync(session.PlayerId, displayName,
                             initial.State.World.EdgeId is null ? initial.State.World.NodeId : null,
-                            initial.State.Progression.RealmLevel, 0, initial.State.Settings.Avatar, cancellationToken);
+                            initial.State.Progression.RealmLevel, 0, initial.State.Settings.Avatar, isBot, cancellationToken);
                         var initialSnapshot = await snapshotTask;
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         // 握手快照必达：属性面板实际写入即解除一次性交付武装。
