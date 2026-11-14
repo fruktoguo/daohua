@@ -121,10 +121,13 @@ node scripts/smoke-production.mjs http://127.0.0.1:5128
 docker compose -f compose.yaml down
 ```
 
-生产同构拓扑验证（真实生产编排为 `deploy/compose.prod.yaml`，要求预先构建好的不可变镜像；app 以 `Production` 运行，端口 `127.0.0.1:15128`）：
+生产同构拓扑验证（真实生产编排为 `deploy/compose.prod.yaml`，要求预先构建好的不可变镜像与角色分离密钥；app 以 `Production` 运行，端口 `127.0.0.1:15128`）：
 
 ```bash
-DB_PASSWORD='<本地验证口令>' APP_IMAGE='daohua:prod-verify' COMPUTE_IMAGE='daohua-compute:prod-verify' \
+POSTGRES_PASSWORD='<本地验证口令>' DB_BOOTSTRAP_PASSWORD='<本地验证口令>' DB_API_PASSWORD='<本地验证口令>' \
+DB_MARKET_PASSWORD='<本地验证口令>' DB_COMPUTE_PASSWORD='<本地验证口令>' DB_BACKUP_PASSWORD='<本地验证口令>' \
+CHAT_IMAGE_SECRET='<本地验证密钥>' BACKUP_TOKEN='<本地验证令牌>' \
+APP_IMAGE='daohua:prod-verify' COMPUTE_IMAGE='daohua-compute:prod-verify' \
 COMPUTE_TOKEN='<本地验证令牌>' docker compose -f deploy/compose.prod.yaml up -d
 node scripts/smoke-production.mjs http://127.0.0.1:15128
 docker compose -f deploy/compose.prod.yaml down

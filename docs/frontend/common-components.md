@@ -19,8 +19,8 @@
   - **攻击间隔规则收拢**：修仙规则中装备不具备“攻击间隔”属性，服务端配表映射与前端悬浮展示已彻底移除。
   - **通用独立数量副气泡联动**：传入 `quantity={amount}` 属性，自动在主卡片旁附加独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
   - **通用属性数值加成独立副气泡窗口 (Bonus Aside Cards)**：支持通过 `createBonusAsideCard`（入参 `id`, `mark`, `title`, `subtitle`, `tone`, `items: BonusAsideItem[]`）与 `BonusAsideList` 列表渲染组件，将**装备攻防与百分比加成（`createEquipmentBonusAsideCard`）**、**内功心法常驻增益与修为获取（`createInternalAbilityBonusAsideCard`）**、**丹药加成（修炼、采集、炼丹、药效时长）**以及**实时 Buff/Debuff（`createBuffAsideCard`）**彻底从主卡片中解耦抽离，作为独立的副气泡并排展示。每一行严格对齐装备属性经典规范：**[极简二值小图标 StatGlyph] + [圆角药丸属性名胶囊 capsule-label] + [专属下划线加成数值 underlined-value（固定数值或百分比均等宽粗体高亮右对齐）]**，全游戏视觉规范严整同构。
-  - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
-  - **特质条目与全实体 Buff 独立副气泡联动 (`resolveTraitAsideCards` / `resolveItemTooltipAsideCards`)**：全游戏凡涉及战内 Buff、状态赋予或触发效果的实体（特质长条 `TraitBarItem`、万象图鉴技能 `CodexAbilityEntry`、技能秘籍残卷 `ItemTooltipTarget`、装备与消耗品等），Hover 时一律禁止仅在自身主卡片中单薄交代文字，统一通过 Aside Card 联动呈现结构化标准 Buff 悬浮窗（色调 `purple`/`emerald`，标明「特质状态」/「战内状态」，包含持续时间、气机消弭/威胁增幅、数值加成与机制条目），全链路交互与视觉严整同构。
+  - **功法书与招式残卷参悟副气泡联动 + 双形态「变招」独立技能副窗**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行仅保留等级、冷却、吟唱、灵力消耗四项基础信息；涉及 Buff 的详细属性加成与规则统一由并排的独立 Buff 副窗承载。双形态技能（含 `yixingMorphName`，如《斩玉》→《踏云》）通过 `describeMorphAbility` 与 `createAbilityMorphAsideCard` 弹出右上角标 `[变招]`、与主功法卡完全同构的第二独立技能副窗（`tone: 'qi'`），并伴随关联状态完整独立窗。全游戏所有技能入口（功法槽、已学列表、选择器、图鉴、妖兽功法瓦片、名片技能瓦片、战报日志引用）一律挂载 `resolveAbilityAsideCards`。
+  - **特质条目与全实体独立 Buff 悬浮副窗统一收拢 (`createStandaloneBuffAsideCard` / `resolveTraitAsideCards` / `resolveItemTooltipAsideCards`)**：全游戏凡涉及战内 Buff、状态赋予或触发效果的实体（功法技能、特质长条 `TraitBarItem`、万象图鉴、装备与消耗品、实时 Buff 方块等），一律通过结构统一的独立副卡片呈现：标题直接显示纯状态名（不加 `战内增益·`/`状态·` 前缀），右上角标统一为 `[增益]` / `[减益]` / `[状态]`，头部 `subtitle` 统一标明持续时间（`持续 X 秒` 或 `持续 X 秒 · 叠层刷新`）或机制触发条件（如 `战内常驻` / `受击叠层 · 跨波清除`），条目采用 `BonusAsideList` 对齐 `[StatGlyph] + [capsule-label] + [underlined-value]`。
   - **内功心法六维资质雷达图统一收拢 (`RootAspectRadarChart`)**：内功心法的六维（体魄/经脉/力道/根骨/身法/神识）资质加成与经验重分配彻底告别生硬文本，统一收拢为纯 SVG 矢量雷达图（`RootAspectRadarChart`），展示金虚线 100% 基准环、灵光青动态多边形、中心点与环周百分比数值（随心法等级动态放大，超常特化青蓝高亮、削减暗淡、绝弃危红），并在气泡、Aside 副卡与图鉴中无缝挂载。
   - **通用技能与技艺升级进度附属副气泡窗口 (Progress Aside Card)**：支持通过 `createProgressAsideCard` 与 `createAbilityProgressAsideCard`，在功法技能瓦片（斗法槽位、已学功法目录、选择器网格、内视面板）及左侧技艺栏二级菜单（炼丹/炼器/符箓/阵法/强化）hover 时，并排挂载独立的「升级进度」副气泡窗口。主卡片保持精简的效果叙述与当前加成属性（彻底剥离主悬浮信息内杂糅的经验数字），副卡片统一展示徽记（`[参悟]` / `[技艺]`）、当前等级与百分比副标、格式化经验差额（`当前进度：current / max`，满级显`已达最高等级`）以及带有前缘高光光斑与修仙五行色彩的渐变进度条（`.daohua-floating-aside-progress`）。
   - **通用描述/说明独立副气泡窗口 (Description Aside Card)**：支持通过 `createDescriptionAsideCard`（入参 `id`, `mark`, `title`, `subtitle`, `description`, `lines`, `tone`），在主卡片旁并排挂载独立的机制/规则说明信息窗。样式类为 `.daohua-floating-aside-desc`，文本支持纯文本与 `ValueText` 自动高亮，并维持紧凑优雅的微光卡片排版。首发场景落地于**内功心法六维资质倾向说明**（`createInternalRootExpAsideCard` / `resolveAbilityAsideCards`）：在功法神通面板装配槽与已学列表、功法网格待选列表、主界面战斗面板槽位、战斗属性面板、万象图鉴及储物袋/坊市秘籍残卷等全链路，挂载徽记为「倾向」、标题为「六维倾向说明」的灵气青修仙副气泡，清晰提示战斗时获取的六维经验会按照内功标注的六维百分比去增幅入账。
@@ -32,7 +32,7 @@
   - **竖屏与高度受限视口自适应等比缩放与滚动兜底**：当悬浮窗携带多副卡片在竖屏（$\le 768\text{px}$）单列纵向堆叠导致总高度超出屏幕时，`computeSafeFloatingPosition` 自动测量未缩放尺寸并解算等比缩放因子 `scale = Math.min(1.0, availableHeight / naturalHeight)`，硬性下限最多缩小到 **50%**（`scale: 0.5`）；视口翻转、对齐与边界 Clamp 均以物理缩放包围盒运算，配合 `transform-origin: top left` 杜绝漂移；极端情况下缩小至 50% 仍超视口时，由浮层整体容器（`.daohua-floating-layer`）无缝衔接 `overflow-y: auto` 滚动兜底，彻底消灭卡片溢出屏幕外的痛点。
   - **移动端触屏长按手势与捕获阶段防误触物理隔离**：全系统凡使用 `FloatingPopover` 体系的 Hover 标的（包括装备/道具/技能/怪物/状态等），触屏端按压 350ms 触发长按弹出悬浮详情卡并伴随轻微灵觉振动（`navigator.vibrate(15)`），手指滑屏（>10px）自动取消；长按松手后，在原生 DOM 捕获阶段（Capture Phase）彻底掐灭随后的模拟 `click` 事件（`stopImmediatePropagation` / `preventDefault`），确保绝对不会误触发装备槽更换、背包使用、购买或技能弹窗等底层子元素的业务点击；纯展示标的（无按钮包裹）在触屏下依旧支持轻触查看。
   - **生态生灵悬浮详情统一收拢 (`MonsterTooltipTarget` / `MonsterInfoCard`)**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）、讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）、万象图鉴妖兽收录（`CodexPage.CodexMonsterEntry`）与日志敌怪引用（`LogFeed.EnemyReference`）全面统一收拢走 `frontend/src/components/MonsterDisplay.tsx`。共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、修仙伤害流派与五行属性描述、出没周期、击杀修为收益、施展功法瓦片行（`MonsterAbilityTile`，与玩家技能格子同构，具备元素/类别丝带、Lv 等级角标、WebP 图标/名称与独立参悟详情浮层）、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防，已剔除多余攻击间隔）；彻底消灭生态面板双层 Popover 的体验割裂与多处面板同怪不同展的断层。
-  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维基础属性、生活技艺等级以及全身装配），弹窗于顶层唯一挂载。战斗消耗品复用 `ItemTile` / `ItemTooltipTarget` 显示普通钱包「可用」数量，离线储备另列并用 `FloatingTooltip` 说明不可售与退回时机，禁止两者相加。
+  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员、全服排行榜条目与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维与特殊属性、生活技艺等级以及全身装配）；目标玩家可在「设置 → 隐私」关闭非同队配装可见性（本人与当前同队成员恒定全量可见），关闭后非同队访客仍可开启名片查看基础/属性/六维/技艺等级/身家，但服务端裁撤装备/功法/特质/消耗品并下发 `loadoutHidden=true`，弹窗在「配装」子页展示隐私受限提示。弹窗于顶层唯一挂载。战斗消耗品复用 `ItemTile` / `ItemTooltipTarget` 显示普通钱包「可用」数量，离线储备另列并用 `FloatingTooltip` 说明不可售与退回时机，禁止两者相加。
   - **身家估值构成悬浮窗 (`ValuationHoverTarget` / `ValuationDisplay`)**：全游戏凡展示「身家」之处（名片弹窗 `PlayerCardModal`、附近修士卡片 `NearbyPanel`、同道队伍成员与大厅散人卡片 `SocialPage` 等），统一挂载该组件。Hover 时弹出浮层，展示总身家及「战斗装备」、「参悟功法」、「技艺工具」三项细分估值，支持无 breakdown 时的保底说明；源码 `frontend/src/components/ValuationDisplay.tsx`。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
   - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
@@ -73,12 +73,13 @@
 
 ---
 
-## 4.1 竖屏底部两级导航 (Mobile Bottom Nav)
+## 4.1 主导航结构（桌面侧边栏 & 竖屏底部两级导航）
 
-- **适用场景**：竖屏（≤960px）底部主导航。一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。
+- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
+- **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。
 - **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
-- **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 作为技艺组的子行被复用；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
-- **样式类名**：`.bottom-nav`, `.bottom-nav-row`, `.bottom-glyph`, `.bottom-glyph-badge`, `.bottom-sub-nav`, `.bottom-sub-tabs`, `.bottom-sub-tab-btn`, `.bottom-sub-tab-glyph`, `.bottom-sub-tab-text`, `.bottom-sub-tab-badge`
+- **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 与 `SocialSubTabs` 分别承载技艺与同道通用二级子行；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
+- **样式类名**：`.bottom-nav`, `.bottom-nav-row`, `.bottom-glyph`, `.bottom-glyph-badge`, `.bottom-sub-nav`, `.bottom-sub-nav--social`, `.bottom-sub-tabs`, `.bottom-sub-tabs--social`, `.bottom-sub-tab-btn`, `.bottom-sub-tab-glyph`, `.bottom-sub-tab-text`, `.bottom-sub-tab-badge`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.bottom-nav`)，浅色主题接管见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
 
 ---
@@ -366,7 +367,7 @@
 
 - **适用场景**：
   - 修炼、炼丹、炼器、采集与历练等交互行动的纯净微型展示卡片（标准每行 4 个网格排布，严格遵循“只显示名称，不展示多余图标或详情”规范，右上角复用标准 `item-corner item-corner--top-right` 内部胶囊角标，整张卡片与角标受 `data-rarity` 品质色彩驱动，点击唤起对应配置/执行弹窗） -> `ActionCard`
-  - **真实等级换算**：未指定显式等级时，由 `convertTierToLevel` 统一将等阶换算为等级（等阶1->1级，等阶2->18级，等阶3->30级，等阶N->`18 + (N - 2) * 12` 级）。
+  - **真实等级解析**：优先读取行动自身显式 `level`，缺省时直读产出物（装备/物品）显式 `level` 或输入材料最大 `level`，最终默认 `1` 级（不经由等阶换算）。
   - **品质色彩联动**：由 `resolveActionRarity` 依据产出物/装备/遭遇解析品质色调（`mundane`/`spirit`/`mystic`/`earth`/`heaven`等），驱动边框微光与背景着色。
 - **组件源码**：[`frontend/src/App.tsx`](../../frontend/src/App.tsx)
 - **等级与品质解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
@@ -433,18 +434,19 @@
 ## 27. 战斗技能特效加载模块 (Combat VFX)
 
 - **适用场景**：
-  - 历练遭遇战/斗法回放中功法出手、普攻命中、吟唱前摇的粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
-  - **单一真源**：特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（画廊与正式前端共享同一批 classic-script 队列模块，无 import/export）；脚本向 `window.DaohuaVFXModules` 推入注册函数，前端经 `import.meta.glob(eager)` 引入后在 `createCombatVfx` drain 注册——改画廊脚本即改正式页面演出。
-  - **模块化注册**：`vfx/abilities/<skill>.js` 每真实功法一个模块，`VFX.register('ability.x', handler)`；前端 glob 自动发现——新增技能只需在画廊目录新增文件并在画廊 `index.html` 加一行 script 标签，正式前端零改动。
-  - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEls, ability, castMs, after}` 由桥接层在出手时刻解析（目标按配表 `targetType` 从 `.arena-actor--player/enemy:not(.is-dead)` DOM 快照），技能模块只做纯粒子演出，不写结算。
-  - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
-  - **结算边界**：伤害跳字/血条碎条/受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担，特效模块不触碰战斗状态。
+  - 历练遭遇战/组队讨伐/斗法回放中功法出手（含 0ms 瞬发技与「斩玉→踏云」移形变招）、消耗品（雷击符/战斗丹药/常驻阵盘及反击 `.proc`）、普攻暴击、吟唱前摇、复活与尸体消散的双层 High-DPI Canvas 2D 流体粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
+  - **单一真源**：引擎内核（`core.js` v2.3.0）与全部特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（`feedback.js`、`abilities/*.js`、`consumables/*.js`，共 38 个注册 ID）；前端经 Vite 副作用导入与 `import.meta.glob(eager)` 直接执行并在 `mount(..., { mode: 'production' })` 挂载——改画廊脚本即同步改正式页面演出。
+  - **双层叠加架构**：底层地面画布 `.vfx-ground-overlay`（`z-index: 1`，位于 `.combat-arena-field` 下方）承接脚下法阵/阵盘/地裂/波纹；高层天幕画布 `.vfx-stage-overlay`（`z-index: 8`，位于角色上方、顶栏操作区 `.combat-arena-top-actions` 与弹窗下方）承接刀光/雷霆/流光飞弹/爆发粒子。
+  - **模块化注册**：`vfx/abilities/*.js` 与 `vfx/consumables/*.js` 向 `window.DaohuaVFXModules` 推入注册函数 `VFX.register('id', handler)`；前端 glob 自动发现——新增技能只需在画廊目录新增文件并在画廊 `index.html` 加一行 script 标签，正式前端零改动。
+  - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEl, targetEls, allyEls, enemyEls, ability, castMs, morphed, formationHandle, after}` 由桥接层在出手时刻结合 `data-actor-key` 解析（兼容 `.arena-actor-card` `--arena-scale` 与竖屏纵列坐标系），技能模块只做纯粒子演出，不写结算。
+  - **触发源**：玩家/盟友/敌方吟唱 `castingAbilityId`/`pendingAbilityId`（即播 `feedback.castRing`）；`recentCombatEvents` / `duel.events` 事件流驱动全部主动技（同拍多目标聚合）、变招踏云、天雷/血煞阵盘反击 `.proc` 及普攻/暴击/闪避；消耗品冷却跃迁与战内 Buff 同步驱动 6 种丹药、雷击符与 4 种常驻阵盘启停；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
+  - **结算边界**：伤害跳字/血条碎条/权威受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担；生产模式下引擎自动屏蔽演示性 `floatText`/`defeat`/`revive` 状态类突变，绝不篡改真实战斗状态。
   - **批次时序与击中帧锁步**：服务端按资源自然窗口（默认 5 秒）批量结算，一次快照可能携带窗口内多次出手。`frontend/src/game/combatFeedback.ts` 以稳定事件键（不随数组下标漂移）去重，并把同一批新事件压缩到 520ms 预算内按出手先后重放、同刻多段连击按 110ms 错峰；`ArenaActor` 的出手/受击/闪避与 `ArenaResource` 的浮字、血条落地共用该时间轴——有事件承接的掉血一律等击中帧（普攻 200ms / 施法 280ms）与数字同时落地，只有 DoT/反伤等无事件掉血才即时保底；浮字上限 24 条，伤害数字至少保留 1 点量级。灵力条只对消耗产浮字、不产切片，单位阵亡后冻结演出，尸体阵容保留战斗末值（`mp` 不再清零）。
-  - **普攻与受击变体**：常态攻击变化复用共享 `vfx/feedback.js`；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`，画廊由 `vfx/core.js` 挂载相同样式。逐项查看使用画廊演武控制台。
-  - **尸体消散**：波次清空转入搜寻相位后服务端即清空 `enemies[]`，`CombatArena` 缓存战斗相位末帧敌方阵容继续以尸体形态（`is-dead`、不可交互）展示至寻敌倒数 1 秒，到点调 `CombatVfxRuntime.playCorpseDissipate()` 对全部 `.arena-actor--enemy` 播残魂萤火（画廊 `core.js` `defeat()` 同参数），槽位 CSS 淡出（`arena-corpse-dissipate` + `--corpse-fade-ms`）同步收束至新一波入场。
-- **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` 引擎原语+DaohuaVFX 门面 · `useCombatVfx.ts` React 桥 · `index.ts` 加载器与目标解析）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
-- **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-stage-overlay`/`.vfx-node`/震屏 keyframes；技能专属样式各脚本 `VFX.injectStyles` 自含）
-- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef)` 一行；返回值是运行时 ref，供快照调度之外的一次性演出主动触发（当前仅尸体消散）。
+  - **普攻与受击变体**：常态攻击/暴击/撞击复用共享 `vfx/feedback.js`；其中 `feedback.attack` 内置五式通用招式轮换（`0` 断岳斜劈 / `1` 惊鸿逆撩 / `2` 穿云疾刺 / `3` 残月横扫 / `4` 双绝交错，不区分武器与怪物，由 `CombatVfxRuntime` 按 `canonicalAttackerKey` 递增 `attackerKey`/`attackVariant` 独立推进连段，亦支持显式传入 `ctx.attackVariant`）；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`。逐项查看使用画廊演武控制台。
+  - **尸体消散**：波次清空转入搜寻相位后服务端即清空 `enemies[]`，`CombatArena` 缓存战斗相位末帧敌方阵容继续以尸体形态（`is-dead`、不可交互）展示至寻敌倒数 1 秒，到点调 `CombatVfxRuntime.playCorpseDissipate()` 对全部 `.arena-actor--enemy` 播 `feedback.defeat` Canvas 残魂碎片与灵雾，槽位 CSS 淡出（`arena-corpse-dissipate` + `--corpse-fade-ms`）同步收束至新一波入场。
+- **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` Canvas v2.3.0 TS 门面 · `useCombatVfx.ts` React 全通道桥接 · `index.ts` 运行时与锚点/常驻阵管理 · `vfxRouting.ts` 纯规则映射）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
+- **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-ground-overlay`/`.vfx-stage-overlay`/顶栏层级保护）
+- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-ground-overlay"/>` 与 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef, groundOverlayRef, recentCombatEvents)`；返回值是运行时 ref，供快照调度之外的一次性演出（尸体消散）主动触发。
 - **注意**：`vite.config.ts` 的 `server.fs.allow: ['..']` 为 dev server serve 仓库根共享脚本所必需，勿删。
 
 ---
@@ -465,7 +467,7 @@
 
 - **适用场景**：
   - 游戏设置中心及一切「多分类偏好/账号管理」页面：`.settings-layout` = 左侧竖排分类栏（`.settings-nav`，`.settings-nav-item` 图标格 + 楷体标签 + 金色内描边高亮，分类图标经 `SETTINGS_NAV_ICONS` 内联 SVG 按分类键注册）+ 右侧限宽 640px 的 `.settings-content` 内容列（`role="tablist"`/`role="tab"`/`role="tabpanel"` 语义齐备）。
-  - 分组卡片 `.settings-group`（金色左边条小标题 `.settings-group-title`）内统一使用 `.setting-row`「`.setting-text`（`.setting-label` + `.setting-desc`）| 控件/`.setting-value`」设置行，行间虚线分隔；危险操作分组加 `.settings-group--danger`（红调边框与标题）。
+  - 分组卡片 `.settings-group`（金色左边条小标题 `.settings-group-title`）内统一使用 `.setting-row`「`.setting-text`（`.setting-label` + `.setting-desc`）| 控件/`.setting-value`」设置行，行间虚线分隔；危险操作分组加 `.settings-group--danger`（红调边框与标题）。「隐私」(`privacy`) 子页签复用 `.settings-group` + `.setting-row` + `.presence-options` 控制角色名片非同队配装可见性（默认开放，对同队固定保持开放）。
   - 账号资料卡 `.settings-profile`（立绘 `.settings-profile-avatar` + 道号/序号 `.settings-profile-name` + 账号 `.settings-profile-meta` + 改名/冷却入口）；账号安全分组承载修改密码入口（`.inline-modify-btn` + `ChangePasswordModal`）；分段选项按钮复用 `.presence-options`。
   - 「形象」独立分类页：`.avatar-selection-grid` 内排列 `.avatar-tile` 紧凑瓦片（`.avatar-tile-icon` 立绘 + `.avatar-tile-name` 名称，选中态金色边框），扩展形象只需在 `AVATAR_OPTIONS` 追加条目。
   - **移动端（≤960px）自动降级**：左栏分类栏变顶部横向滚动分类条（active 态改下划线；`align-self: start` + 布局 `align-content: start` 防止网格行被剩余空间撑高），内容列解除限宽。
@@ -541,8 +543,10 @@
   - **高信息密度目标与参数区**：右栏「目标地点」将标题/已选数/区域筛选/全选清空压缩至顶部工具条并采用多列紧凑网格（卡片仅保留地名与 `加成×N` 徽记，完整环境加成与所属区域改为悬停复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示），「难度」（默认/T1~T5 + 全选/仅默认）与「模拟时长」「随机种子」分别单行紧凑排列（移动端自动折行）；通过 Worker `listCombatNodeIds` 复用引擎 `resolveCombatAction` 的行动匹配规则，严格筛选具备讨伐行动的战斗节点与所属地图（自动排除无讨伐行动节点如 `node.tea-house` 与纯非战斗地图）；
   - **综合报表展示（真实修为口径）**：
     - 修为总计与速率统一取纯净产出的真实修为 `lifetimeExperience`（剥离居底蕴 3 倍燃烧增幅且不受境界修为上限截断），完整呈现战斗经验、六维经验、遭遇/轮次/击杀（普/精/首领）/死亡、战利品与冻结行情净估值、Buff/冷却残留及事件日志与 `DroppedEventCount`；全表大型数值统一复用 `UnitNumber`（中文单位 + 悬停 4 位中文分段明细）。
-    - **高信息密度对比页**：顶部「最高地点」卡片压缩为单行条带，移除地点表中的「建筑加成」列（悬停地点单元格复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示所属区域与建筑/阵法/拥挤加成）及冗余「时长」显示，支持「斩妖/时」「修为/时」「六维/时」「净估值/时」「死亡」五项指标点击排序及正倒序切换。
-    - **可搜索详细页与五行占比**：顶部全部地点改用复用 `FloatingPopover` 的可搜索下拉框（按地点/区域/难度筛选）；「伤害与承伤」页签切换为每秒均值（`/s`），区分物理/术法/真伤三段占比条与治疗速率，悬停伤害或承伤单元可通过 `FloatingPopover` 展示五行占比（金/木/水/火/土/无属性）。
+    - **高信息密度对比页**：顶部「最高地点」卡片压缩为单行条带，移除地点表中的「建筑加成」列（悬停地点单元格复用 `FloatingPopover` + `FloatingInfoCard` 惰性展示所属区域与建筑/阵法/拥挤加成）及冗余「时长」显示，支持「场次/时」（讨伐成功完成场次速率）「修为/时」「六维/时」「净估值/时」「死亡」五项指标点击排序及正倒序切换。
+    - **可搜索详细页与五行占比**：顶部全部地点改用复用 `FloatingPopover` 的可搜索下拉框（按地点/区域/难度筛选）；总览保留「击杀」并独立展示「场次/时（完成 N 场）」；「伤害与承伤」页签切换为每秒均值（`/s`），区分物理/术法/真伤三段占比条与治疗速率，悬停伤害或承伤单元可通过 `FloatingPopover` 展示五行占比（金/木/水/火/土/无属性）。
+    - **详情页战斗效率实时条（`CombatHeaderRateBar`）**：位于主界面「详情」页头部右上角「统计」按钮旁，仅当当前队首行动为战斗任务且存在进行中战报 `duel.currentReport` 时展示，复用 `calculateBriefStats` 与 `UnitNumber` 实时呈现金/青/红三色装饰胶囊（`灵石/日`、`修为/日`、`场/时`）。
+    - **详情页竖屏全屏专注按钮（`.combat-detail-expand-btn`）**：仅在 `@media (orientation: portrait)` 下出现于 `CombatDetailsPage` `.combat-detail-panel-header` 第一行最右侧（≤640px `.combat-detail-header-actions` 折行时不随之下移），切换 `.is-combat-detail-expanded` 令详情面板全屏铺满（`z-index: 55` 覆盖顶栏与底部导航、高于其下的界面但低于 `Modal`/`FloatingPopover`/`TutorialOverlay`/`Notice`），详细交互口径见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
   - 主弹窗容器：[`frontend/src/components/simulator/CombatSimulatorModal.tsx`](../../frontend/src/components/simulator/CombatSimulatorModal.tsx)
   - 会话状态缓存：[`frontend/src/game/simulator/simulatorStore.ts`](../../frontend/src/game/simulator/simulatorStore.ts)
   - 阵容编辑：[`frontend/src/components/simulator/SimulatorProfileEditor.tsx`](../../frontend/src/components/simulator/SimulatorProfileEditor.tsx)
@@ -639,3 +643,13 @@
   - [`frontend/src/game/zongmenMap.ts`](../../frontend/src/game/zongmenMap.ts)
 - **资源目录**：`frontend/src/assets/nodes/`（构建期按独立资源缓存，不内联 base64）
 - **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css)（搜索 `.expedition-content`, `.world-map-node`, `.world-map-node-media`, `.world-map-node-plaque`, `.world-player-marker`），浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 40. 全服排行榜视图模板 (LeaderboardPage)
+
+- **适用场景**：
+  - 全服 12 榜（境界 / 技艺 7 门 / 身家 / 灵石 / 宗门 / 斗法）整点快照浏览与本人排名定位，收拢于桌面侧边栏「其他」分组与移动端「更多」分组（页签 `leaderboard`）。
+  - 复用 `OptionToggle` / 二级榜签栏 + 技艺子切换条 + 榜行列表（前三名次徽标 + `CharacterAvatar` + 道号/宗门前缀 + `RealmBadge` + `UnitNumber` 紧凑数值 + `ValuationHoverTarget` 身家分项悬停）+ 「我的名次」常驻卡片 + 顶部快照时间/整点倒计时与手动刷新钮；点击玩家行通过 `useSocialStore.getState().requestPlayerCard(playerId)` 唤起 `PlayerCardModal`。
+- **组件源码**：[`frontend/src/components/LeaderboardPage.tsx`](../../frontend/src/components/LeaderboardPage.tsx)
+- **样式文件**：[`frontend/src/styles/leaderboard.css`](../../frontend/src/styles/leaderboard.css)，浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
