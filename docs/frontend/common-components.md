@@ -624,3 +624,18 @@
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.topbar-actions`, `.topbar-link-btn`)，浅色主题见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
 
 - **侧栏可折叠二级导航**：技艺与同道使用同一 `nav-group` / `nav-sub-menu` 模板；入口与状态见 `frontend/src/App.tsx`、`frontend/src/uiStore.ts`，样式见 `frontend/src/styles.css`。
+
+---
+
+## 39. 大世界地图等比画布与节点图像牌匾 (WorldMapPanel & Node Icons)
+
+- **适用场景**：
+  - **大世界等比基准像素画布与无畸变重投影**：统一采用 `WORLD_UNIT_X = 9.6`、`WORLD_UNIT_Y = 6.4`（`100 × 100` 世界单位恒定等于 `960 × 640` 基准像素，固定 3:2 比例），通过外层画布单一 `translate(panX, panY) scale(fitScale * relativeZoom)` 变换保证全 DPI/浏览器缩放下的相对构图与节点净空一致，容器尺寸变化时通过 `reprojectViewportOnResize` 保持焦点与相对缩放比 -> `WorldMapPanel`, `worldMapVisibility.ts`
+  - **节点地标图像与紧凑修仙牌匾**：支持无图纯紧凑牌匾与有图「上方折角灵境图像 + 下方名称牌匾」双形态自动切换（基于 `frontend/src/assets/nodes/<nodeId>.{webp,png,svg}` 自动发现，`node.zongmen.*` 可回退 `node.zongmen`），显式透传 `nodeId` 并保留关口/首领/秘境/宗门/赶路终点/当前驻留语义样式 -> `MapNodeButton`, `resolveNodeIconUrl`
+- **组件源码**：
+  - [`frontend/src/components/WorldMapPanel.tsx`](../../frontend/src/components/WorldMapPanel.tsx)
+  - [`frontend/src/components/worldMapVisibility.ts`](../../frontend/src/components/worldMapVisibility.ts)
+  - [`frontend/src/game/nodeIcons.ts`](../../frontend/src/game/nodeIcons.ts)
+  - [`frontend/src/game/zongmenMap.ts`](../../frontend/src/game/zongmenMap.ts)
+- **资源目录**：`frontend/src/assets/nodes/`（构建期按独立资源缓存，不内联 base64）
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css)（搜索 `.expedition-content`, `.world-map-node`, `.world-map-node-media`, `.world-map-node-plaque`, `.world-player-marker`），浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
