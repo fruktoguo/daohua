@@ -99,8 +99,12 @@ if (!string.IsNullOrWhiteSpace(backupDir))
     backupBaseUrl ??= "https://daohua.yuohira.com/internal/backups";
 
     var backupToken = builder.Configuration["ComputeNode:BackupStorage:Token"]
-                      ?? Environment.GetEnvironmentVariable("DAOHUA_BACKUP_TOKEN")
-                      ?? "daohua-backup-token-9f7b3a1d8e2c";
+                      ?? Environment.GetEnvironmentVariable("DAOHUA_BACKUP_TOKEN");
+    if (string.IsNullOrWhiteSpace(backupToken))
+    {
+        throw new InvalidOperationException(
+            "已启用 ComputeNode 备份归档目录，但未配置 ComputeNode:BackupStorage:Token 或 DAOHUA_BACKUP_TOKEN。");
+    }
     var intervalMinutes = builder.Configuration.GetValue("ComputeNode:BackupStorage:IntervalMinutes", 60);
     var retentionDays = builder.Configuration.GetValue("ComputeNode:BackupStorage:RetentionDays", 90);
 

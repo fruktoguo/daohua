@@ -116,6 +116,10 @@ services:
       Ops__Enabled: "${OPS_ENABLED:-true}"
       Ops__Path: "${OPS_PATH:-}"
       Ops__Token: "${OPS_TOKEN:-}"
+      Chat__ImageSecret: ${CHAT_IMAGE_SECRET:?需要在 /opt/daohua/daohua.env 设置专用 CHAT_IMAGE_SECRET}
+      TapTap__ClientId: "${TAPTAP_CLIENT_ID:-}"
+      TapTap__ClientSecret: "${TAPTAP_CLIENT_SECRET:-}"
+      TapTap__RedirectUri: "${TAPTAP_REDIRECT_URI:-https://daohua.yuohira.com/api/v1/auth/taptap/callback}"
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

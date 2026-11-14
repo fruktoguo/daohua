@@ -26,7 +26,7 @@ API 的 GC 采用渐进式驻留策略（`src/Server/Server.csproj`）：`Dynami
 - Ubuntu Server 24.04 LTS、linux/amd64。
 - .NET SDK 10、Node.js 22、npm、Docker Engine/Compose/Buildx。
 - 服务器 SSH 别名 `yuohira`，生产目录 `/opt/daohua`，Compose 项目名 `daohua`。
-- `/opt/daohua/daohua.env` 保存 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅初始化与受控备份）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；业务运行账号不得具有超级用户或 bootstrap 权限。不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`；部署脚本以 `install -d -m 0700 -o 70 -g 70` 创建目录，压缩归档权限为 0600。
+- `/opt/daohua/daohua.env` 保存 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅初始化与受控备份）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN`、`BACKUP_TOKEN`（至少 32 位高熵令牌，由 `install-caddy.sh` 同步注入 `/etc/caddy/daohua-secrets.env` 保护 `/internal/backups/*`）、`CHAT_IMAGE_SECRET`（至少 32 位高熵 HMAC 密钥，与 Cloudflare Worker `IMAGE_SECRET` 成对，生产环境缺失即 fail-fast）、可选 `TAPTAP_CLIENT_ID`/`TAPTAP_CLIENT_SECRET`/`TAPTAP_REDIRECT_URI`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；业务运行账号不得具有超级用户或 bootstrap 权限。不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`；部署脚本以 `install -d -m 0700 -o 70 -g 70` 创建目录，压缩归档权限为 0600。
 - CCR 登录只允许 `docker login --password-stdin`，不得把 auth 配置写入仓库或镜像。
 
 首次克隆：
@@ -117,7 +117,7 @@ scripts/deploy-prod.sh \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<ComputeNode digest>
 ```
 
-脚本会只读检查远端 Docker/Compose/权限，校验 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅数据库初始化）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对 digest 镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
+脚本会只读检查远端 Docker/Compose/权限，校验 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅数据库初始化）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN`、`BACKUP_TOKEN` 与 `CHAT_IMAGE_SECRET`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对 digest 镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
 
 部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）、`daohua-ledger-archive.timer`（每日流水分区归档）和 `daohua-wal-archive.timer`（每小时 WAL 巡检/轮转）。任一定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
@@ -255,6 +255,7 @@ sudo /opt/daohua/pitr-restore.sh \
    - **环境变量配置**：
      ```bash
      export DAOHUA_BACKUP_STORAGE_DIR=/data/daohua-backups
+     export DAOHUA_BACKUP_TOKEN='<来自主服 /opt/daohua/daohua.env 的 BACKUP_TOKEN>'
      ```
    - **自适应行为**：
      - 自动复用上游 `DAOHUA_COMPUTE_UPSTREAM_URLS` 推导主服 443 HTTPS 安全凭据通道（`https://.../internal/backups/`）；

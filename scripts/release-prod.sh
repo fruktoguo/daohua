@@ -91,6 +91,14 @@ done
 
 cd "$ROOT_DIR"
 
+# 自动加载本机受控发布凭据文件（已被 .gitignore 忽略，不入库）
+if [[ -f "$ROOT_DIR/.env.release.local" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source "$ROOT_DIR/.env.release.local"
+  set +a
+fi
+
 # 临时目录与日志收拢
 RELEASE_TMP="$(mktemp -d /tmp/daohua-release.XXXXXX 2>/dev/null || mktemp -d -t daohua-release.XXXXXX)"
 cleanup() {
@@ -118,6 +126,18 @@ if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" 
   printf '错误: 工作区存在未提交改动，正式发布拒绝执行。\n' >&2
   git status --short
   exit 1
+fi
+
+# 2.5 前置校验烟测凭据（禁止在脚本中硬编码默认密码）
+if [[ "$SKIP_SMOKE" != "1" ]] && [[ -z "${SMOKE_COOKIE:-}" && -z "${SMOKE_SESSION_TOKEN:-}" ]]; then
+  if [[ -z "${SMOKE_PASSWORD:-}" ]]; then
+    printf '错误: 启用发布烟测时必须设置 SMOKE_PASSWORD（可在被 .gitignore 忽略的 .env.release.local 中配置），禁止硬编码默认口令。\n' >&2
+    exit 1
+  fi
+  if [[ "${SMOKE_PASSWORD}" =~ ^(DaohuaSmoke#|change-me|replace-me|password|secret|verify-) ]]; then
+    printf '错误: SMOKE_PASSWORD 仍使用已废弃泄露口令或占位符，请轮换后再发布。\n' >&2
+    exit 1
+  fi
 fi
 
 GIT_REV="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
@@ -191,7 +211,7 @@ fi
 # 镜像构建基于 git archive HEAD：--bump/--version 写入的版本文件必须先提交，
 # 否则镜像内版本与标签不一致且 docker-build-prod 会拒绝 dirty worktree。
 # 在此提前拦截，避免三路并发流空跑后才失败。
-if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then
   printf '错误: 版本号解析后工作区存在未提交改动。\n' >&2
   printf '      生产镜像由 git archive HEAD 构建，--bump/--version 产生的版本变更\n' >&2
   printf '      必须先提交（建议 chore(release): 升级版本至 vX.Y.Z）再执行发布。\n' >&2
@@ -336,9 +356,9 @@ printf '  - Compute Image: %s\n' "$COMPUTE_IMAGE_REF"
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 3/4] 部署主服并热切换 odin 计算节点...\n'
 
-# 1. 固定专用烟测账号与口令（优先读取外部环境变量，默认使用固定专用验证账号，避免每次发布残留垃圾账号）
+# 1. 固定专用烟测账号与口令（优先读取外部环境变量或 .env.release.local，禁止在脚本硬编码默认口令）
 SMOKE_ACC="${SMOKE_ACCOUNT:-smoke_ci_verifier}"
-SMOKE_PW="${SMOKE_PASSWORD:-DaohuaSmoke#2026}"
+SMOKE_PW="${SMOKE_PASSWORD:-}"
 
 DEPLOY_FLAGS=(
   "--host" "$REMOTE_HOST"

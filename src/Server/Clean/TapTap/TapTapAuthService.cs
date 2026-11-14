@@ -13,14 +13,11 @@ public sealed class TapTapOptions
 {
     public const string SectionName = "TapTap";
 
-    /// <summary>开发者控制台申请的 Client ID (公钥)。</summary>
-    public string ClientId { get; set; } = "12sdlpl1c9fa8grldi";
+    /// <summary>开发者控制台申请的 Client ID (公钥)，须通过配置或环境变量注入。</summary>
+    public string ClientId { get; set; } = string.Empty;
 
-    /// <summary>开发者控制台申请的 Client Secret (私钥)。</summary>
-    public string ClientSecret { get; set; } = "REDACTED_TAPTAP_CLIENT_SECRET";
-
-    /// <summary>开发者控制台申请的 Client Token。</summary>
-    public string ClientToken { get; set; } = "REDACTED_TAPTAP_CLIENT_TOKEN";
+    /// <summary>开发者控制台申请的 Client Secret (私钥)，须通过配置或环境变量注入，禁止硬编码。</summary>
+    public string ClientSecret { get; set; } = string.Empty;
 
     /// <summary>OAuth 2.0 网页授权回调默认重定向地址。</summary>
     public string RedirectUri { get; set; } = "https://daohua.yuohira.com/api/v1/auth/taptap/callback";
@@ -57,6 +54,11 @@ public sealed class TapTapAuthService
         _logger = logger;
     }
 
+    /// <summary>TapTap 网页 OAuth 所需的 ClientId 与 ClientSecret 是否均已配置。</summary>
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(_options.ClientId)
+        && !string.IsNullOrWhiteSpace(_options.ClientSecret);
+
     /// <summary>构造 TapTap 网页授权跳转地址。</summary>
     public string BuildAuthorizeUrl(string state, string? customRedirectUri = null)
     {
@@ -69,6 +71,12 @@ public sealed class TapTapAuthService
     /// <summary>使用授权码 code 换取 Access Token (包含 kid 与 mac_key)。</summary>
     public async Task<TapTapAccessToken?> ExchangeCodeForTokenAsync(string code, string? customRedirectUri = null, CancellationToken ct = default)
     {
+        if (!IsConfigured)
+        {
+            _logger.LogWarning("TapTap OAuth is not configured (missing ClientId or ClientSecret).");
+            return null;
+        }
+
         var redirect = !string.IsNullOrWhiteSpace(customRedirectUri) ? customRedirectUri : _options.RedirectUri;
         var parameters = new Dictionary<string, string>
         {
@@ -122,6 +130,12 @@ public sealed class TapTapAuthService
     /// <summary>使用 kid 和 mac_key 签算 MAC Token 并获取用户 Profile。</summary>
     public async Task<TapTapUserProfile?> GetUserProfileAsync(TapTapAccessToken token, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(_options.ClientId))
+        {
+            _logger.LogWarning("TapTap ClientId is not configured.");
+            return null;
+        }
+
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString("D10");
         var nonce = GenerateRandomNonce(8);
         var method = "GET";

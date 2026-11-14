@@ -59,6 +59,8 @@ internal static class PostgresTestSchema
                         ALTER TABLE IF EXISTS social.parties ADD COLUMN IF NOT EXISTS doudizhu_stake double precision NOT NULL DEFAULT 10
                             CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision);
                         ALTER TABLE IF EXISTS social.party_members ADD COLUMN IF NOT EXISTS doudizhu_ready boolean NOT NULL DEFAULT false;
+                        ALTER TABLE IF EXISTS social.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_channel_check;
+                        ALTER TABLE IF EXISTS social.chat_messages ADD CONSTRAINT chat_messages_channel_check CHECK (channel IN ('world','nearby','friend','party','sect'));
                         """, connection) { CommandTimeout = 60 };
                     await patch.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""

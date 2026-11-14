@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace Server.Clean.Social;
 
@@ -44,9 +45,28 @@ public sealed class ChatImageUploadRegistry
     /// <summary>全服哈希去重缓存：SHA256Hex -> PublicUrl</summary>
     private readonly ConcurrentDictionary<string, string> _hashToUrl = new(StringComparer.OrdinalIgnoreCase);
 
-    public ChatImageUploadRegistry(IConfiguration configuration)
+    public ChatImageUploadRegistry(IConfiguration configuration, IHostEnvironment? hostEnvironment = null)
     {
-        var secret = configuration["Chat:ImageSecret"] ?? "daohua-chat-image-secret-2026";
+        var secret = configuration["Chat:ImageSecret"]?.Trim();
+        var isProduction = hostEnvironment?.IsProduction() == true;
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            if (isProduction)
+            {
+                throw new InvalidOperationException(
+                    "生产环境必须显式配置高熵 Chat:ImageSecret（环境变量 Chat__ImageSecret）。");
+            }
+
+            // 开发/测试未显式配置时自动生成进程级随机密钥，避免任何静态默认值进入公开源码
+            secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        }
+        else if (isProduction && (secret.Length < 32 || secret.StartsWith("daohua-chat-image-secret", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "生产环境 Chat:ImageSecret 长度不足 32 位或仍使用历史泄露默认值，拒绝启动。");
+        }
+
         _secretBytes = Encoding.UTF8.GetBytes(secret);
 
         _uploadEndpoint = configuration["Chat:ImageUploadEndpoint"]

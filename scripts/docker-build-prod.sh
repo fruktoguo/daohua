@@ -98,6 +98,12 @@ if [[ "$BUILD" == "1" ]]; then
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/daohua-prod-build-XXXXXX")"
   trap 'rm -rf "$STAGING_DIR"' EXIT
   git archive HEAD | tar -x -C "$STAGING_DIR"
+  if [[ "$ALLOW_DIRTY" == "1" ]]; then
+    dirty_commit="$(git stash create || true)"
+    if [[ -n "$dirty_commit" ]]; then
+      git archive "$dirty_commit" | tar -x -C "$STAGING_DIR"
+    fi
+  fi
   mkdir -p "$STAGING_DIR/src/Private" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
   cp -R "$ROOT_DIR/vendor/YuoCore/." "$STAGING_DIR/vendor/YuoCore/"
   cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/"

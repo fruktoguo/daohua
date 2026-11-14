@@ -14,10 +14,13 @@ while true; do
         echo "[$(date "+%F %T")] compute node not running, starting" >> "$LOG"
         nohup proot-distro login ubuntu -- /bin/bash -c "
             cd /root/daohua-compute
+            # 备份拉取令牌与计算节点专属令牌从设备受控 0600 文件注入，不入仓库、不裸露在命令行
+            [ -f /etc/daohua-backup-sync.env ] && . /etc/daohua-backup-sync.env && export DAOHUA_BACKUP_TOKEN
             export DAOHUA_COMPUTE_TOKEN=odin-local-test-token-0123456789abcdef
             export DAOHUA_COMPUTE_UPSTREAM_URLS=wss://daohua.yuohira.com/internal/compute-link
             export DAOHUA_COMPUTE_NODE_NAME=odin
             export DAOHUA_COMPUTE_URLS=http://0.0.0.0:8090
+            export DAOHUA_BACKUP_STORAGE_DIR=/root/daohua-backups
             export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
             exec /root/daohua-compute/DaoHua.ComputeNode
         " </dev/null >>/data/data/com.termux/files/home/daohua_compute.log 2>&1 &

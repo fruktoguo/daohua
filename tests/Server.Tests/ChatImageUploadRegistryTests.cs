@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Server.Clean.Social;
 using Xunit;
 
@@ -116,6 +118,51 @@ public sealed class ChatImageUploadRegistryTests
         Assert.Equal(sha256, root.GetProperty("hash").GetString());
         Assert.Equal("webp", root.GetProperty("ext").GetString());
         Assert.True(root.GetProperty("exp").GetInt64() > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    }
+
+    [Fact]
+    public void ProductionEnvironment_RequiresStrongConfiguredImageSecret()
+    {
+        var prodEnv = new FakeHostEnvironment { EnvironmentName = Environments.Production };
+
+        var emptyConfig = new ConfigurationBuilder().Build();
+        Assert.Throws<InvalidOperationException>(() => new ChatImageUploadRegistry(emptyConfig, prodEnv));
+
+        var weakConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Chat:ImageSecret"] = "short-weak-secret" })
+            .Build();
+        Assert.Throws<InvalidOperationException>(() => new ChatImageUploadRegistry(weakConfig, prodEnv));
+
+        var strongConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Chat:ImageSecret"] = "0123456789abcdef0123456789abcdef" })
+            .Build();
+        var registry = new ChatImageUploadRegistry(strongConfig, prodEnv);
+        var ok = registry.TryAcquireUploadTicket(Guid.NewGuid(), new string('e', 64), "png", out var result, out var err);
+        Assert.True(ok);
+        Assert.Null(err);
+        Assert.NotNull(result.Ticket);
+    }
+
+    [Fact]
+    public void NonProductionEnvironment_GeneratesEphemeralSecretWhenUnconfigured()
+    {
+        var devEnv = new FakeHostEnvironment { EnvironmentName = Environments.Development };
+        var emptyConfig = new ConfigurationBuilder().Build();
+
+        var registry = new ChatImageUploadRegistry(emptyConfig, devEnv);
+        var ok = registry.TryAcquireUploadTicket(Guid.NewGuid(), new string('f', 64), "webp", out var result, out var err);
+
+        Assert.True(ok);
+        Assert.Null(err);
+        Assert.NotNull(result.Ticket);
+    }
+
+    private sealed class FakeHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "Server.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private static string PadBase64(string b64)

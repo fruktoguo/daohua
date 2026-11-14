@@ -244,6 +244,9 @@ app.MapHealthChecks("/readyz", new HealthCheckOptions
 
 if (processRole == ServerProcessRole.Api)
 {
+    // 启动期即时解析图床签名注册表：生产环境缺少或弱配置 Chat:ImageSecret 时直接 fail-fast
+    _ = app.Services.GetRequiredService<Server.Clean.Social.ChatImageUploadRegistry>();
+
     // 市场入账事件 → 在线玩家钱包失效：成交对手方/退款属主的余额差量
     // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
     var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
@@ -550,12 +553,16 @@ if (processRole == ServerProcessRole.Api)
     // TapTap 授权与一人一号登录
     auth.MapGet("/taptap/url", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? redirectUri) =>
     {
+        if (!tapAuth.IsConfigured)
+            return Results.Json(Problem(503, "TAPTAP_NOT_CONFIGURED", "当前环境未配置 TapTap 网页授权凭据。"), statusCode: 503);
         var state = Guid.NewGuid().ToString("N")[..16];
         var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
         return Results.Ok(new { url, state });
     });
     auth.MapGet("/taptap/authorize", (DaoHua.Server.Clean.TapTap.TapTapAuthService tapAuth, string? state, string? redirectUri) =>
     {
+        if (!tapAuth.IsConfigured)
+            return Results.Redirect("/?login_error=taptap_not_configured");
         var safeState = !string.IsNullOrWhiteSpace(state) ? state : Guid.NewGuid().ToString("N")[..16];
         var url = tapAuth.BuildAuthorizeUrl(safeState, redirectUri);
         return Results.Redirect(url);

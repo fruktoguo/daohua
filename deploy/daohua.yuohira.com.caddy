@@ -2,7 +2,7 @@ daohua.yuohira.com {
 	encode zstd gzip
 	@backup_auth {
 		path /internal/backups/*
-		header X-Backup-Token "daohua-backup-token-9f7b3a1d8e2c"
+		header X-Backup-Token "{$DAOHUA_BACKUP_TOKEN}"
 	}
 	handle @backup_auth {
 		uri strip_prefix /internal/backups

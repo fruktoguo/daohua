@@ -1,5 +1,3 @@
-const DEFAULT_SECRET = "daohua-chat-image-secret-2026";
-
 const HTML_PAGE = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -348,7 +346,13 @@ export default {
 
     // 3. 上传接口 (POST /upload 或 POST /)
     if (request.method === "POST" && (url.pathname === "/" || url.pathname === "/upload")) {
-      const secret = env.IMAGE_SECRET || DEFAULT_SECRET;
+      const secret = env.IMAGE_SECRET;
+      if (!secret || typeof secret !== "string" || secret.length < 32) {
+        return new Response("服务未就绪：未配置有效的 IMAGE_SECRET 签名密钥", {
+          status: 500,
+          headers: corsHeaders,
+        });
+      }
 
       // 提取 Ticket：支持 X-Upload-Ticket 请求头或 Authorization: Bearer
       let ticketStr = request.headers.get("X-Upload-Ticket");

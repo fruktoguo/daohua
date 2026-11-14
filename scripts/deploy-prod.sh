@@ -215,8 +215,16 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "DB_WORKER_USER/DB_WORKER_PASSWORD 必须显式配置专用 worker 角色凭据。\n" >&2
     exit 1
   fi
-  if sudo grep -Eq "^(DB_BOOTSTRAP_PASSWORD|DB_APP_PASSWORD|DB_WORKER_PASSWORD|COMPUTE_TOKEN)=(change-me|replace-me|password|secret|verify-)" /opt/daohua/daohua.env; then
-    printf "生产环境变量仍使用明显占位值，拒绝部署。\n" >&2
+  if ! sudo grep -Eq "^BACKUP_TOKEN=[^[:space:]#]{32,}$" /opt/daohua/daohua.env; then
+    printf "BACKUP_TOKEN 必须显式配置且长度不少于 32 位。\n" >&2
+    exit 1
+  fi
+  if ! sudo grep -Eq "^CHAT_IMAGE_SECRET=[^[:space:]#]{32,}$" /opt/daohua/daohua.env; then
+    printf "CHAT_IMAGE_SECRET 必须显式配置且长度不少于 32 位。\n" >&2
+    exit 1
+  fi
+  if sudo grep -Eq "^(DB_BOOTSTRAP_PASSWORD|DB_APP_PASSWORD|DB_WORKER_PASSWORD|COMPUTE_TOKEN|BACKUP_TOKEN|CHAT_IMAGE_SECRET|TAPTAP_CLIENT_SECRET)=(change-me|replace-me|password|secret|verify-|daohua-backup-token|daohua-chat-image-secret)" /opt/daohua/daohua.env; then
+    printf "生产环境变量仍使用明显占位值或已废弃默认值，拒绝部署。\n" >&2
     exit 1
   fi
 '

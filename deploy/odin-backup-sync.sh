@@ -13,10 +13,23 @@
 
 set -Eeuo pipefail
 
+ENV_FILE="${ENV_FILE:-/etc/daohua-backup-sync.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
 BACKUP_URL="${BACKUP_URL:-https://daohua.yuohira.com/internal/backups}"
-BACKUP_TOKEN="${BACKUP_TOKEN:-daohua-backup-token-9f7b3a1d8e2c}"
+BACKUP_TOKEN="${BACKUP_TOKEN:-${DAOHUA_BACKUP_TOKEN:-}}"
 LOCAL_DIR="${LOCAL_DIR:-/root/daohua-backups}"
 LOCK_FILE="/tmp/odin-backup-sync.lock"
+
+if [[ -z "$BACKUP_TOKEN" ]]; then
+  printf '错误: 未配置 BACKUP_TOKEN / DAOHUA_BACKUP_TOKEN（可在 %s 设置），拒绝执行备份拉取。\n' "$ENV_FILE" >&2
+  exit 1
+fi
 
 exec 8>"$LOCK_FILE"
 if ! flock -n 8; then

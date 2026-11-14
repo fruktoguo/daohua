@@ -22,6 +22,10 @@ SOURCE_FILE="${1:-}"
 CADDY_FILE="/etc/caddy/Caddyfile"
 SITES_DIR="/etc/caddy/sites"
 TARGET_FILE="${SITES_DIR}/daohua.caddy"
+ENV_FILE="/opt/daohua/daohua.env"
+CADDY_SECRETS_FILE="/etc/caddy/daohua-secrets.env"
+CADDY_DROPIN_DIR="/etc/systemd/system/caddy.service.d"
+CADDY_DROPIN_FILE="${CADDY_DROPIN_DIR}/daohua-env.conf"
 IMPORT_LINE='import /etc/caddy/sites/*.caddy'
 TIMESTAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
 MAIN_BACKUP="${CADDY_FILE}.backup-${TIMESTAMP}"
@@ -41,7 +45,57 @@ if [[ ! -f "$CADDY_FILE" ]]; then
   exit 1
 fi
 
-install -d -m 0755 "$SITES_DIR"
+read_env_value() {
+  local file="$1" key="$2" raw=""
+  [[ -f "$file" ]] || return 1
+  raw="$(grep -E "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true)"
+  raw="${raw%$'\r'}"
+  raw="${raw#\"}"
+  raw="${raw%\"}"
+  raw="${raw#\'}"
+  raw="${raw%\'}"
+  printf '%s' "$raw"
+}
+
+resolved_token="${DAOHUA_BACKUP_TOKEN:-}"
+if [[ -z "$resolved_token" ]]; then
+  resolved_token="$(read_env_value "$ENV_FILE" "BACKUP_TOKEN" || true)"
+fi
+if [[ -z "$resolved_token" ]]; then
+  resolved_token="$(read_env_value "$ENV_FILE" "DAOHUA_BACKUP_TOKEN" || true)"
+fi
+if [[ -z "$resolved_token" ]]; then
+  resolved_token="$(read_env_value "$CADDY_SECRETS_FILE" "DAOHUA_BACKUP_TOKEN" || true)"
+fi
+
+if [[ -z "$resolved_token" || "${#resolved_token}" -lt 32 ]]; then
+  printf '错误: DAOHUA_BACKUP_TOKEN/BACKUP_TOKEN 未设置或长度不足 32 位，拒绝配置 Caddy 备份鉴权路由。\n' >&2
+  exit 1
+fi
+if [[ ! "$resolved_token" =~ ^[A-Za-z0-9._~+/-]+=*$ ]]; then
+  printf '错误: DAOHUA_BACKUP_TOKEN 包含非法字符，拒绝写入 Caddy 环境文件。\n' >&2
+  exit 1
+fi
+if [[ "$resolved_token" =~ ^(daohua-backup-token|change-me|replace-me|verify-|secret|password) ]]; then
+  printf '错误: DAOHUA_BACKUP_TOKEN 仍使用已废弃泄露值或占位符，拒绝部署。\n' >&2
+  exit 1
+fi
+
+install -d -m 0755 /etc/caddy "$SITES_DIR" "$CADDY_DROPIN_DIR"
+install -m 0600 -o root -g root /dev/null "$CADDY_SECRETS_FILE"
+printf 'DAOHUA_BACKUP_TOKEN=%s\n' "$resolved_token" >"$CADDY_SECRETS_FILE"
+chmod 0600 "$CADDY_SECRETS_FILE"
+
+cat >"$CADDY_DROPIN_FILE" <<EOF
+[Service]
+EnvironmentFile=${CADDY_SECRETS_FILE}
+ExecStart=
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
+EOF
+chmod 0644 "$CADDY_DROPIN_FILE"
+systemctl daemon-reload
+export DAOHUA_BACKUP_TOKEN="$resolved_token"
+
 cp --preserve=mode,ownership,timestamps "$CADDY_FILE" "$MAIN_BACKUP"
 if [[ -f "$TARGET_FILE" ]]; then
   SITE_EXISTED=1
@@ -69,12 +123,15 @@ if ! caddy validate --config "$CADDY_FILE"; then
   caddy validate --config "$CADDY_FILE"
   exit 1
 fi
-if ! systemctl reload caddy; then
-  printf 'Caddy reload 失败，正在恢复原配置。\n' >&2
-  rollback
-  caddy validate --config "$CADDY_FILE"
-  systemctl reload caddy
-  exit 1
+if ! timeout 25s systemctl reload caddy; then
+  printf '警告: Caddy reload 超时或失败，改用 systemctl restart caddy 使配置生效。\n' >&2
+  if ! systemctl restart caddy; then
+    printf 'Caddy restart 失败，正在恢复原配置。\n' >&2
+    rollback
+    caddy validate --config "$CADDY_FILE"
+    timeout 25s systemctl reload caddy || systemctl restart caddy
+    exit 1
+  fi
 fi
 
 printf 'Caddy 站点已安装: %s\n' "$TARGET_FILE"

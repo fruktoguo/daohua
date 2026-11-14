@@ -322,6 +322,7 @@ if [[ "$RUN_COMPOSE" -eq 1 ]]; then
     APP_IMAGE=daohua:verify \
     COMPUTE_IMAGE=daohua-compute:verify \
     COMPUTE_TOKEN=verify-compute-token \
+    CHAT_IMAGE_SECRET=verify-chat-image-secret-0123456789abcdef \
       docker compose -f deploy/compose.prod.yaml config --quiet
   else
     printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
