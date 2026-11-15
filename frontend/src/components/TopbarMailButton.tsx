@@ -9,7 +9,7 @@ import { Icon } from './Icon'
  * 顶栏右上角传书邮件入口按钮：
  * - 位于主题太极切换按钮紧邻左侧（桌面与竖屏全尺寸可见）；
  * - 存在未读邮件、未领取附件或服务端广播冷推标记时展示红点徽记；
- * - 点击将主内容区切换/还原为邮件中心面板。
+ * - 点击唤起/收起仙门传书独立弹窗，保持底层主视图与导航状态不中断。
  */
 export const TopbarMailButton = memo(function TopbarMailButton(): React.JSX.Element {
   const t = useT()

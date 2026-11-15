@@ -66,6 +66,8 @@ export interface MailStore {
   refreshList: (options?: { silent?: boolean }) => Promise<void>
   /** 选中一封邮件并在需要时按需拉取正文详情（首读时后端同步置为已读） */
   selectMail: (mailKey: string) => Promise<void>
+  /** 清空当前选中的邮件 */
+  clearSelection: () => void
   /** 领取单封邮件全部附件 */
   claimMail: (mailKey: string) => Promise<void>
   /** 一键领取当前可领的全部邮件附件 */
@@ -100,6 +102,20 @@ function extractErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
 
+/**
+ * 列表刷新、切换筛选或删除后对齐当前选中键：
+ * 仅当原选中键仍在当前可见列表中时予以保留，绝不擅自回退选中未点击的邮件（避免静默标为已读或悬空无正文）。
+ */
+function resolveRetainedSelection(
+  currentKey: string | null,
+  mails: readonly MailListItemDto[],
+  filter: MailFilter,
+): string | null {
+  if (!currentKey) return null
+  const visible = filterMailItems(mails, filter)
+  return visible.some(item => item.mailKey === currentKey) ? currentKey : null
+}
+
 // 用模块级递增序号取消/忽略乱序响应，避免旧请求覆盖新列表或新选定邮件。
 let listRequestSeq = 0
 let detailRequestSeq = 0
@@ -127,14 +143,10 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   setFilter: filter => {
-    set(state => {
-      const visible = filterMailItems(state.mails, filter)
-      const keepSelected = state.selectedMailKey && visible.some(item => item.mailKey === state.selectedMailKey)
-      return {
-        filter,
-        selectedMailKey: keepSelected ? state.selectedMailKey : (visible[0]?.mailKey ?? null),
-      }
-    })
+    set(state => ({
+      filter,
+      selectedMailKey: resolveRetainedSelection(state.selectedMailKey, state.mails, filter),
+    }))
   },
 
   refreshList: async (options) => {
@@ -156,13 +168,11 @@ export const useMailStore = create<MailStore>((set, get) => ({
             nextDetails[key] = { ...detail, ...updated }
           }
         }
-        const visible = filterMailItems(nextMails, state.filter)
-        const selectedStillVisible = state.selectedMailKey && visible.some(item => item.mailKey === state.selectedMailKey)
         return {
           mails: nextMails,
           detailsByKey: nextDetails,
           summary: response.summary,
-          selectedMailKey: selectedStillVisible ? state.selectedMailKey : (visible[0]?.mailKey ?? null),
+          selectedMailKey: resolveRetainedSelection(state.selectedMailKey, nextMails, state.filter),
           loadingList: false,
           listLoaded: true,
           error: null,
@@ -173,6 +183,10 @@ export const useMailStore = create<MailStore>((set, get) => ({
       const message = extractErrorMessage(cause, getT()('app.mail.loadFailed'))
       set({ loadingList: false, error: message })
     }
+  },
+
+  clearSelection: () => {
+    set({ selectedMailKey: null })
   },
 
   selectMail: async mailKey => {
@@ -288,10 +302,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
         const nextMails = state.mails.filter(item => !deletedSet.has(item.mailKey))
         const nextDetails = { ...state.detailsByKey }
         for (const key of deletedSet) delete nextDetails[key]
-        const visible = filterMailItems(nextMails, state.filter)
-        const nextSelected = state.selectedMailKey && !deletedSet.has(state.selectedMailKey)
-          ? state.selectedMailKey
-          : (visible[0]?.mailKey ?? null)
+        const nextSelected = resolveRetainedSelection(state.selectedMailKey, nextMails, state.filter)
         return {
           summary: response.summary,
           mails: nextMails,
@@ -318,10 +329,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
         const nextMails = state.mails.filter(item => !deletedSet.has(item.mailKey))
         const nextDetails = { ...state.detailsByKey }
         for (const key of deletedSet) delete nextDetails[key]
-        const visible = filterMailItems(nextMails, state.filter)
-        const nextSelected = state.selectedMailKey && !deletedSet.has(state.selectedMailKey)
-          ? state.selectedMailKey
-          : (visible[0]?.mailKey ?? null)
+        const nextSelected = resolveRetainedSelection(state.selectedMailKey, nextMails, state.filter)
         return {
           summary: response.summary,
           mails: nextMails,

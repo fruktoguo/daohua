@@ -153,11 +153,11 @@ interface UiStore {
   simulatorOpen: boolean
   /** 切换/设置模拟器弹窗状态 */
   setSimulatorOpen: (open: boolean) => void
-  /** 邮件面板覆盖开启状态（为 true 时主内容区切换为邮件界面，原 activeTab 保留以便关闭后还原） */
+  /** 仙门传书独立弹窗开启状态（挂载于顶层弹窗层，不替换底层主视区） */
   mailOpen: boolean
-  /** 设置邮件面板开启状态 */
+  /** 设置仙门传书弹窗开启状态 */
   setMailOpen: (open: boolean) => void
-  /** 切换邮件面板开合状态 */
+  /** 切换仙门传书弹窗开合状态 */
   toggleMailOpen: () => void
   /** 新手引导完成或跳过后的「帮助」引导提示弹窗状态 */
   helpPromptOpen: boolean
@@ -210,7 +210,7 @@ export const useUiStore = create<UiStore>(set => ({
       }))
       return
     }
-    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏邮件面板与帮助弹窗
+    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏传书与帮助弹窗
     set(state => ({
       activeTab,
       mailOpen: false,
@@ -298,8 +298,8 @@ export const useUiStore = create<UiStore>(set => ({
   },
   mobileNavMemory: INITIAL_NAV_MEMORY,
   activateMobileNavGroup: group => set(state => {
-    // 已在该分组且邮件面板未覆盖：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项；
-    // 若邮件面板正覆盖前景，则立即收起邮件面板回到该分组当前页签
+    // 已在该分组且传书弹窗未打开：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项；
+    // 若传书弹窗处于打开态，则先收起弹窗回到该分组当前页签
     if (mobileNavGroupIdOf(state.activeTab) === group) {
       return state.mailOpen ? { mailOpen: false } : {}
     }

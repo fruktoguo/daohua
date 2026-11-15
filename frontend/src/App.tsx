@@ -76,7 +76,7 @@ const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ 
 const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
 const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
 const HelpModal = lazy(() => import('./components/HelpModal').then(module => ({ default: module.HelpModal })))
-const MailPage = lazy(() => import('./components/MailPage').then(module => ({ default: module.MailPage })))
+const MailModal = lazy(() => import('./components/MailModal').then(module => ({ default: module.MailModal })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
@@ -959,8 +959,6 @@ const SidebarTabGroup = memo(function SidebarTabGroup({
 const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
-  const mailOpen = useUiStore(state => state.mailOpen)
-  const navActiveTab: TabId | null = mailOpen ? null : activeTab
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const activateMobileNavGroup = useUiStore(state => state.activateMobileNavGroup)
   const marketNavExpanded = useUiStore(state => state.marketNavExpanded)
@@ -1006,7 +1004,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
     <aside className="sidebar panel" aria-label={t('app.nav.sidebarAria')}>
       <nav className="sidebar-nav">
         <button
-          className={`nav-item${navActiveTab === 'insight' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'insight' ? ' active' : ''}`}
           onClick={() => setActiveTab('insight')}
           type="button"
         >
@@ -1016,7 +1014,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
         <SidebarTabGroup
-          activeTab={navActiveTab}
+          activeTab={activeTab}
           expanded={marketNavExpanded}
           icon="market"
           label={t('app.nav.marketGroup')}
@@ -1029,7 +1027,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           tabs={SIDEBAR_MARKET_TABS}
         />
         <button
-          className={`nav-item${navActiveTab === 'exploration' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'exploration' ? ' active' : ''}`}
           onClick={() => setActiveTab('exploration')}
           type="button"
         >
@@ -1042,9 +1040,9 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
         {/* 技艺（可展开/折叠二级菜单：炼丹、炼器、符箓、阵法、强化） */}
         <div className="nav-group">
           <button
-            className={`nav-item nav-item--collapsible${navActiveTab === 'crafting' ? ' active' : ''}`}
+            className={`nav-item nav-item--collapsible${activeTab === 'crafting' ? ' active' : ''}`}
             onClick={() => {
-              if (navActiveTab !== 'crafting') {
+              if (activeTab !== 'crafting') {
                 setActiveTab('crafting')
                 setCraftingNavExpanded(true)
               } else {
@@ -1117,7 +1115,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
                     trigger="hover"
                   >
                     <button
-                      className={`nav-sub-item${navActiveTab === 'crafting' && craftingMode === mode.id ? ' active' : ''}`}
+                      className={`nav-sub-item${activeTab === 'crafting' && craftingMode === mode.id ? ' active' : ''}`}
                       onClick={() => {
                         setActiveTab('crafting')
                         setCraftingMode(mode.id)
@@ -1141,7 +1139,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
         </div>
 
         <button
-          className={`nav-item${navActiveTab === 'map' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'map' ? ' active' : ''}`}
           data-tour="nav-map"
           onClick={() => setActiveTab('map')}
           type="button"
@@ -1152,7 +1150,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
         <button
-          className={`nav-item${navActiveTab === 'combat' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'combat' ? ' active' : ''}`}
           onClick={() => setActiveTab('combat')}
           type="button"
         >
@@ -1162,10 +1160,10 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
         <div className="nav-group">
-          <button className={`nav-item nav-item--collapsible${navActiveTab === 'social' ? ' active' : ''}`}
+          <button className={`nav-item nav-item--collapsible${activeTab === 'social' ? ' active' : ''}`}
             aria-expanded={socialNavExpanded}
             onClick={() => {
-              if (navActiveTab !== 'social') { setActiveTab('social'); setSocialNavExpanded(true) }
+              if (activeTab !== 'social') { setActiveTab('social'); setSocialNavExpanded(true) }
               else setSocialNavExpanded(expanded => !expanded)
             }} type="button">
             <span className="nav-glyph" aria-hidden="true"><Icon name="social" /></span>
@@ -1174,14 +1172,14 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </button>
           {socialNavExpanded && <div className="nav-sub-menu">
             {SOCIAL_NAV_TABS.map(({ id: tab }) =>
-              <button className={`nav-sub-item${navActiveTab === 'social' && socialSubTab === tab ? ' active' : ''}`}
+              <button className={`nav-sub-item${activeTab === 'social' && socialSubTab === tab ? ' active' : ''}`}
                 key={tab} onClick={() => { setActiveTab('social'); setSocialSubTab(tab) }} type="button">
                 <span className="nav-label">{t(`social.sub.${tab}`)}</span>
               </button>)}
           </div>}
         </div>
         <SidebarTabGroup
-          activeTab={navActiveTab}
+          activeTab={activeTab}
           expanded={otherNavExpanded}
           icon="more"
           label={t('app.nav.other')}
@@ -1196,7 +1194,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
       </nav>
       <div className="sidebar-footer">
         <button
-          className={`nav-item${navActiveTab === 'records' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'records' ? ' active' : ''}`}
           onClick={() => setActiveTab('records')}
           type="button"
         >
@@ -1206,7 +1204,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
         <button
-          className={`nav-item${navActiveTab === 'settings' ? ' active' : ''}`}
+          className={`nav-item${activeTab === 'settings' ? ' active' : ''}`}
           onClick={() => setActiveTab('settings')}
           type="button"
         >
@@ -2845,7 +2843,6 @@ const LOG_GROUPS_FOR_BADGE = ['all', 'world', 'nearby', 'system', 'friend', 'sec
 const BottomNav = memo(function BottomNav(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
-  const mailOpen = useUiStore(state => state.mailOpen)
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const activateGroup = useUiStore(state => state.activateMobileNavGroup)
   const navRef = useRef<HTMLElement>(null)
@@ -2868,8 +2865,8 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
   const subBadge = (tab: TabId): number => tab === 'log' ? logUnread : tab === 'social' ? inviteBadge : 0
 
   // 子行高度随内容（技艺条比纯文字子行高，同道在「更多」子行之上叠加通用二级行）变化，用实测高度反写 CSS 变量驱动底部占位。
-  const subVisible = !mailOpen && activeGroup.subNav !== 'none'
-  const socialSubVisible = !mailOpen && activeTab === 'social'
+  const subVisible = activeGroup.subNav !== 'none'
+  const socialSubVisible = activeTab === 'social'
   useLayoutEffect(() => {
     const node = navRef.current
     if (!node) return undefined
@@ -2918,7 +2915,7 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
       )}
       <div className="bottom-nav-row">
         {MOBILE_NAV_GROUPS.map(group => {
-          const isActive = !mailOpen && group.id === activeGroupId
+          const isActive = group.id === activeGroupId
           const badge = group.id === 'more' ? moreBadge : 0
           return (
             <button
@@ -2966,6 +2963,7 @@ export default function App(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const mailOpen = useUiStore(state => state.mailOpen)
+  const setMailOpen = useUiStore(state => state.setMailOpen)
   const mobileLayout = useMobileLayout()
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
@@ -3123,45 +3121,37 @@ export default function App(): React.JSX.Element {
           <Sidebar />
           <div className="center-column">
             <main className="main-content">
-              <ExplorationPage hidden={mailOpen || activeTab !== 'exploration'} />
-              <CraftingPage hidden={mailOpen || activeTab !== 'crafting'} />
-              <MapPage hidden={mailOpen || activeTab !== 'map'} />
-              <CombatDetailsPage hidden={mailOpen || activeTab !== 'combat'} />
-              {mailOpen ? (
-                <Suspense fallback={<PanelLoading label={t('app.mail.title')} />}>
-                  <MailPage />
-                </Suspense>
-              ) : (
-                <>
-                  <Suspense fallback={null}>
-                    {activeTab === 'insight' && <InsightPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'market' && <MarketPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'social' && <SocialPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'codex' && <CodexPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'leaderboard' && <LeaderboardPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'changelog' && <ChangelogPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'shop' && <ShopPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
-                    {activeTab === 'settings' && <SettingsPage />}
-                  </Suspense>
-                  {activeTab === 'records' && <RecordsPanel />}
-                  {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
-                  {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" expandable={false} />}
-                </>
-              )}
+              <ExplorationPage hidden={activeTab !== 'exploration'} />
+              <CraftingPage hidden={activeTab !== 'crafting'} />
+              <MapPage hidden={activeTab !== 'map'} />
+              <CombatDetailsPage hidden={activeTab !== 'combat'} />
+              <Suspense fallback={null}>
+                {activeTab === 'insight' && <InsightPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'market' && <MarketPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'social' && <SocialPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'codex' && <CodexPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'leaderboard' && <LeaderboardPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'changelog' && <ChangelogPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'shop' && <ShopPage />}
+              </Suspense>
+              <Suspense fallback={null}>
+                {activeTab === 'settings' && <SettingsPage />}
+              </Suspense>
+              {activeTab === 'records' && <RecordsPanel />}
+              {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
+              {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" expandable={false} />}
             </main>
             <div className="desktop-log">{!mobileLayout && <GameLogPanel />}</div>
           </div>
@@ -3181,6 +3171,11 @@ export default function App(): React.JSX.Element {
         {helpModalOpen && (
           <Suspense fallback={null}>
             <HelpModal open={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
+          </Suspense>
+        )}
+        {mailOpen && (
+          <Suspense fallback={null}>
+            <MailModal open={mailOpen} onClose={() => setMailOpen(false)} />
           </Suspense>
         )}
         {simulatorOpen && (

@@ -549,8 +549,8 @@ export const appZh = {
       mailTip: '仙门传书（点击查看邮件）',
       mailTipNew: '仙门传书 · 有新飞书传信待查收',
       mailTipCounts: '仙门传书 · {unread} 封未读，{claimable} 封待领附件',
-      mailAria: '打开仙门传书界面',
-      mailAriaCounts: '打开仙门传书界面（{unread} 封未读，{claimable} 封待领附件）',
+      mailAria: '打开仙门传书弹窗',
+      mailAriaCounts: '打开仙门传书弹窗（{unread} 封未读，{claimable} 封待领附件）',
       mailRedDotAria: '存在未读邮件或待领附件',
     },
     // 行动队列
@@ -942,11 +942,9 @@ export const appZh = {
     // 传书邮件中心
     mail: {
       title: '仙门传书',
-      subtitle: '收阅宗门公告与同道飞书，一键领取修行物资',
-      backToGame: '返回修行',
-      backToGameAria: '关闭传书界面并返回原修炼面板',
       backToList: '返回列表',
-      summaryCounts: '共 {total} 封 · {unread} 未读 · {claimable} 可领',
+      countBadge: '{total} 封',
+      showAllBtn: '查看全部传书',
       claimAll: '一键领取',
       claimBtn: '领取附件',
       claiming: '领取中…',
@@ -957,7 +955,7 @@ export const appZh = {
       deleteRead: '删除已读',
       deleteBtn: '删除邮件',
       deleting: '删除中…',
-      deleteBlockedUnclaimed: '该邮件存在尚未领取的附件，请先领取后再删除。',
+      deleteBlockedUnclaimed: '含未领附件，请先领取后再删除',
       deleteSuccessNotice: '邮件已删除。',
       deleteReadConfirmTitle: '清理已读传书',
       deleteReadConfirmDesc: '将删除所有已阅读且无可领附件的邮件；仍含未领附件的邮件会自动保留。',
