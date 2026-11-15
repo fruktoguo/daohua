@@ -104,12 +104,14 @@ public sealed class TapTapOAuthStateProtector
             return false;
 
         var payload = $"{parts[0]}.{parts[1]}";
-        var expectedSignature = HMACSHA256.HashData(_hmacKey, Encoding.UTF8.GetBytes(payload));
-        if (!TryBase64UrlDecode(parts[2], out var providedSignature))
+        var expectedSignature = ComputeSignatureBase64Url(payload);
+        // 直接以规范 Base64Url 文本做恒定时间比对，拒绝尾字符无效填充位被篡改的非规范签名
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(expectedSignature),
+                Encoding.UTF8.GetBytes(parts[2])))
+        {
             return false;
-
-        if (!CryptographicOperations.FixedTimeEquals(expectedSignature, providedSignature))
-            return false;
+        }
 
         var queryBytes = Encoding.UTF8.GetBytes(queryState.Trim());
         var cookieStateBytes = Encoding.UTF8.GetBytes(parts[0]);
@@ -123,21 +125,5 @@ public sealed class TapTapOAuthStateProtector
             .Replace("+", "-")
             .Replace("/", "_")
             .TrimEnd('=');
-    }
-
-    private static bool TryBase64UrlDecode(string input, out byte[] decoded)
-    {
-        var padded = input.Replace('-', '+').Replace('_', '/');
-        padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
-        try
-        {
-            decoded = Convert.FromBase64String(padded);
-            return true;
-        }
-        catch (FormatException)
-        {
-            decoded = [];
-            return false;
-        }
     }
 }
