@@ -8,6 +8,7 @@ import { gameClient } from '../network/gameClient'
 import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore, type AvatarOption } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
+import { useUiStore } from '../uiStore'
 import { TUTORIAL_DONE } from '../tutorial/steps'
 import { CLIENT_VERSION } from '../network/versionManager'
 import {
@@ -589,6 +590,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
         onConfirm={() => {
           setSkipConfirmOpen(false)
           gameClient.sendCommand('tutorial.skip', {})
+          useUiStore.getState().notifyTutorialExternalSkip()
         }}
         onClose={() => setSkipConfirmOpen(false)}
       />

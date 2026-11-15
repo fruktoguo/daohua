@@ -75,7 +75,7 @@
 
 ## 4.1 主导航结构（桌面侧边栏 & 竖屏底部两级导航）
 
-- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜/更新日志]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
+- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜/更新日志/帮助]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
 - **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。
 - **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
 - **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 与 `SocialSubTabs` 分别承载技艺与同道通用二级子行；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
@@ -684,3 +684,14 @@
   - [`frontend/src/components/MailPage.tsx`](../../frontend/src/components/MailPage.tsx)
   - [`frontend/src/game/mailStore.ts`](../../frontend/src/game/mailStore.ts)
 - **样式文件**：[`frontend/src/styles/mail.css`](../../frontend/src/styles/mail.css)（含深浅双主题 `[data-theme="light"]` 变量及 `<= 960px` / `<= 520px` 响应式顶栏与邮件双栏规则），物品格焦点锚点见 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)
+
+## 43. 修行指南帮助页与新手引导收尾提示弹窗 (`HelpPage` / `HelpPromptModal`)
+
+- **适用场景**：
+  - 「其他 → 帮助」（竖屏「更多 → 帮助」）系统化五章十四节文本教程阅读、关键词实时过滤、`RichTemplateText` 实体词条悬浮/地点跳转与各节一键直达对应玩法面板；
+  - 新手引导完成或确认跳过后（含浮层内跳过及设置页跳过）主动弹窗告知帮助中心入口，并与更新日志公告弹窗自动互斥避让。
+- **组件与数据源码**：
+  - [`frontend/src/components/HelpPage.tsx`](../../frontend/src/components/HelpPage.tsx)
+  - [`frontend/src/components/HelpPromptModal.tsx`](../../frontend/src/components/HelpPromptModal.tsx)
+  - [`frontend/src/data/helpGuide.ts`](../../frontend/src/data/helpGuide.ts)
+- **样式文件**：[`frontend/src/styles/help.css`](../../frontend/src/styles/help.css)（严格采用 `--text-*` 阶梯字号 Token，内聚 `[data-theme="light"]` 明亮主题覆盖与 `<= 960px` 横向目录折叠断点）

@@ -1,0 +1,667 @@
+/* ============================================================================
+ * 「其他 → 帮助」修行指南页面与新手引导结束提示弹窗样式
+ * 严格使用阶梯字号 Token (--text-*) 与深浅双主题变量
+ * ========================================================================== */
+
+.help-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.help-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.help-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.help-title-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.help-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 36%, transparent);
+  color: var(--gold-bright, var(--gold));
+}
+
+.help-title {
+  margin: 0;
+  font-family: var(--font-kaiti);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--gold-bright, var(--gold));
+  letter-spacing: 0.04em;
+}
+
+.help-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+}
+
+.help-subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.help-hover-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--qi) 30%, transparent);
+  background: color-mix(in srgb, var(--qi) 9%, transparent);
+  font-size: var(--text-xs);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.help-hover-banner svg {
+  flex-shrink: 0;
+  color: var(--qi);
+}
+
+.help-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 84%, transparent);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.help-search-box:focus-within {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 15%, transparent);
+}
+
+.help-search-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 11px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.help-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-bright, var(--text));
+  font-size: var(--text-base);
+  font-family: inherit;
+  outline: none;
+}
+
+.help-search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.help-search-clear {
+  flex-shrink: 0;
+  margin-right: 6px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.help-search-clear:hover {
+  color: var(--gold-bright, var(--gold));
+  border-color: var(--gold);
+}
+
+.help-search-summary {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--gold) 36%, transparent);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  font-size: var(--text-xs);
+  color: var(--gold-bright, var(--gold));
+  white-space: nowrap;
+}
+
+/* ====== 主体双栏 ====== */
+
+.help-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.help-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.help-chapter-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 78%, transparent);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+}
+
+.help-chapter-tab:hover {
+  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  background: color-mix(in srgb, var(--gold) 8%, var(--bg-raised));
+}
+
+.help-chapter-tab.is-active {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 15%, var(--bg-raised));
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.help-chapter-tab-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.help-chapter-badge {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+
+.help-chapter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid var(--gold-faint);
+  font-family: var(--font-number);
+  font-size: var(--text-2xs);
+  color: var(--text-dim);
+}
+
+.help-chapter-tab.is-active .help-chapter-count {
+  color: var(--gold-bright, var(--gold));
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+.help-chapter-tab-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-bright, var(--text));
+  line-height: 1.35;
+}
+
+/* ====== 右侧内容区 ====== */
+
+.help-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.help-chapter-banner {
+  padding: 12px 15px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--gold) 32%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--gold) 12%, var(--panel)),
+    color-mix(in srgb, var(--bg-raised) 88%, transparent)
+  );
+}
+
+.help-chapter-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.help-chapter-banner-badge {
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gold-bright, var(--gold));
+}
+
+.help-chapter-banner-title {
+  margin: 0;
+  font-family: var(--font-kaiti);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+}
+
+.help-chapter-banner-summary {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.help-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.help-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 86%, transparent);
+}
+
+.help-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--gold-faint) 75%, transparent);
+}
+
+.help-card-title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.help-card-ordinal {
+  font-family: var(--font-number);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--gold);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+}
+
+.help-card-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+}
+
+.help-card-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--qi) 38%, transparent);
+  background: color-mix(in srgb, var(--qi) 10%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--qi);
+}
+
+.help-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  color: var(--gold-bright, var(--gold));
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.help-jump-btn:hover {
+  border-color: var(--gold-bright, var(--gold));
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+}
+
+.help-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text);
+  user-select: text;
+}
+
+.help-card-body p {
+  margin: 0;
+}
+
+.help-card-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  border-left: 3px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 8%, var(--bg));
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text);
+  user-select: text;
+}
+
+.help-card-tip-icon {
+  display: inline-flex;
+  align-items: center;
+  padding-top: 2px;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.help-card-tip-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.help-card-tip-label {
+  font-weight: 700;
+  color: var(--gold-bright, var(--gold));
+}
+
+.help-card-tip-label::after {
+  content: '：';
+}
+
+.help-card-tip-text {
+  color: var(--text);
+}
+
+/* ====== 空状态 ====== */
+
+.help-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 18px;
+  border-radius: 10px;
+  border: 1px dashed var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 60%, transparent);
+  text-align: center;
+}
+
+.help-empty-icon {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.help-empty-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+}
+
+.help-empty-desc {
+  margin: 0;
+  max-width: 360px;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ====== 新手引导结束/跳过「帮助」提示弹窗 ====== */
+
+.help-prompt-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.help-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.help-prompt-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  color: var(--gold-bright, var(--gold));
+  flex-shrink: 0;
+}
+
+.help-prompt-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.help-prompt-kicker {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+
+.help-prompt-heading {
+  margin: 0;
+  font-family: var(--font-kaiti);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+}
+
+.help-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg) 52%, transparent);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.help-prompt-body p {
+  margin: 0;
+}
+
+.help-prompt-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 96px;
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.help-btn--secondary {
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--text);
+}
+
+.help-btn--secondary:hover {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.help-btn--primary {
+  border: 1px solid color-mix(in srgb, var(--gold) 65%, transparent);
+  background: color-mix(in srgb, var(--gold) 22%, transparent);
+  color: var(--gold-bright, var(--gold));
+}
+
+.help-btn--primary:hover {
+  border-color: var(--gold-bright, var(--gold));
+  background: color-mix(in srgb, var(--gold) 32%, transparent);
+}
+
+/* ====== 明亮主题适配 ====== */
+
+:root[data-theme="light"] .help-search-box,
+:root[data-theme="light"] .help-chapter-tab,
+:root[data-theme="light"] .help-card,
+:root[data-theme="light"] .help-empty {
+  background: rgba(255, 252, 245, 0.92);
+  border-color: rgba(145, 114, 42, 0.26);
+}
+
+:root[data-theme="light"] .help-chapter-tab.is-active {
+  background: rgba(235, 219, 178, 0.65);
+  border-color: #8f6f26;
+}
+
+:root[data-theme="light"] .help-chapter-banner {
+  background: linear-gradient(135deg, rgba(238, 224, 189, 0.72), rgba(252, 248, 238, 0.92));
+  border-color: rgba(145, 114, 42, 0.34);
+}
+
+:root[data-theme="light"] .help-hover-banner {
+  background: rgba(71, 134, 138, 0.1);
+  border-color: rgba(71, 134, 138, 0.28);
+}
+
+:root[data-theme="light"] .help-card-tip,
+:root[data-theme="light"] .help-prompt-body {
+  background: rgba(246, 240, 226, 0.8);
+}
+
+:root[data-theme="light"] .help-jump-btn,
+:root[data-theme="light"] .help-btn--primary {
+  background: rgba(163, 128, 43, 0.18);
+  border-color: rgba(143, 111, 38, 0.6);
+  color: #5c4308;
+}
+
+/* ====== 响应式断点（<= 960px 折叠为顶部横向目录，<= 720px 收紧卡片边距） ====== */
+
+@media (max-width: 960px) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .help-sidebar {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .help-chapter-tab {
+    flex: 0 0 auto;
+    min-width: 126px;
+  }
+
+  .help-chapter-tab.is-active {
+    box-shadow: inset 0 -2px 0 var(--gold);
+  }
+}
+
+@media (max-width: 720px) {
+  .help-page {
+    padding: 12px 12px 18px;
+  }
+
+  .help-card {
+    padding: 12px;
+  }
+
+  .help-prompt-footer {
+    justify-content: stretch;
+  }
+
+  .help-btn {
+    flex: 1 1 0;
+  }
+}

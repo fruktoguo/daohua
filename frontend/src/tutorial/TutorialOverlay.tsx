@@ -128,6 +128,7 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
   const tutorialStep = useGameStore(state => state.tutorialStep)
   const hasSnapshot = useGameStore(state => state.hasReceivedSnapshot)
   const worldNodeId = useGameStore(state => state.world.nodeId)
+  const tutorialExternalSkipSeq = useUiStore(state => state.tutorialExternalSkipSeq)
   const [phase, setPhase] = useState<OverlayPhase>('guiding')
   const [substep, setSubstep] = useState(0)
   const [hole, setHole] = useState<HoleRect | null>(null)
@@ -143,6 +144,8 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
   const resumedForRef = useRef(-1)
   /** 上一次见到的服务端步骤：restart 是唯一会让它倒退的路径（正常只增不减）。 */
   const prevStepRef = useRef(-1)
+  /** 上一次见到的外部（设置页）跳过信号序号 */
+  const prevExternalSkipSeqRef = useRef(tutorialExternalSkipSeq)
   /** 气泡卡实测尺寸：奖励区/逃生提示等使实际高度偏离估算，定位与避让必须用实测值。 */
   const cardRef = useRef<HTMLDivElement>(null)
   const [cardSize, setCardSize] = useState({ w: CARD_W, h: CARD_H })
@@ -210,7 +213,28 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
     gameClient.sendCommand('tutorial.skip', {})
     setConfirmingSkip(false)
     setPhase('hidden')
+    useUiStore.getState().setHelpPromptOpen(true)
   }, [])
+  const finishTutorial = useCallback(() => {
+    setPhase('hidden')
+    useUiStore.getState().setHelpPromptOpen(true)
+  }, [])
+
+  // 同步外部（如「设置 → 引导」确认跳过）状态，避免延迟收到服务端 Done 后误弹完成卡
+  useEffect(() => {
+    if (tutorialExternalSkipSeq === prevExternalSkipSeqRef.current) return
+    prevExternalSkipSeqRef.current = tutorialExternalSkipSeq
+    skippedRef.current = true
+    setConfirmingSkip(false)
+    setPhase('hidden')
+    useUiStore.getState().setHelpPromptOpen(true)
+  }, [tutorialExternalSkipSeq])
+
+  const overlayVisible = hasSnapshot && phase !== 'hidden' && (milestone !== null || phase === 'finished')
+  useEffect(() => {
+    useUiStore.getState().setTutorialOverlayActive(overlayVisible)
+    return () => useUiStore.getState().setTutorialOverlayActive(false)
+  }, [overlayVisible])
 
   // 里程碑翻转：重置子步骤；进入终态时按是否跳过决定弹结算卡或直接收起。
   // 恢复推导：本阶段行动/赶路已在队列（刷新/断线重连/阶段中段返回）时，直接落到
@@ -378,17 +402,22 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
   }, [phase, uiStep, substep])
 
   // Esc 视为跳过引导（与按钮同路径——先弹确认，确认态下 Esc 取消回引导）；
+  // 完成卡阶段按 Esc 直接结束并拉起「帮助」提示弹窗；
   // 但业务弹窗开着时 Esc 优先归弹窗消费（Modal 自身监听 Esc 关闭），
   // 避免一次按键同时关弹窗又跳过整个引导。
   useEffect(() => {
     if (phase === 'hidden') return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || document.querySelector('.modal-backdrop')) return
+      if (phase === 'finished') {
+        finishTutorial()
+        return
+      }
       setConfirmingSkip(prev => !prev)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [phase])
+  }, [phase, finishTutorial])
 
   if (!hasSnapshot || phase === 'hidden') return null
 
@@ -451,7 +480,7 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
               <ItemReference amount={10000} itemId="currency.spirit-stone" />
             </div>
             <div className="tutorial-actions">
-              <button className="tutorial-btn tutorial-btn--primary" onClick={() => setPhase('hidden')} type="button">{t('app.tutorial.finish')}</button>
+              <button className="tutorial-btn tutorial-btn--primary" onClick={finishTutorial} type="button">{t('app.tutorial.finish')}</button>
             </div>
           </>
         ) : uiStep && milestone ? (

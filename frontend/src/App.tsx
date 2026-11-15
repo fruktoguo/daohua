@@ -4,6 +4,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { PlayerCardModal } from './components/PlayerCardModal'
 import { AwakenResultModal } from './components/AwakenResultModal'
 import { ChangelogNoticeModal } from './components/ChangelogNoticeModal'
+import { HelpPromptModal } from './components/HelpPromptModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
@@ -74,6 +75,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
 const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
+const HelpPage = lazy(() => import('./components/HelpPage').then(module => ({ default: module.HelpPage })))
 const MailPage = lazy(() => import('./components/MailPage').then(module => ({ default: module.MailPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
@@ -878,7 +880,7 @@ const CRAFTING_FLOATING_TONE_MAP: Record<string, FloatingTone> = {
 const SIDEBAR_MARKET_TABS: readonly TabId[] = ['market', 'shop']
 
 /** 桌面端侧边栏「其他」分组子页签 */
-const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard', 'changelog']
+const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard', 'changelog', 'help']
 
 interface SidebarTabGroupProps {
   activeTab: TabId | null
@@ -2990,6 +2992,8 @@ export default function App(): React.JSX.Element {
   const setSimulatorOpen = useUiStore(state => state.setSimulatorOpen)
   const awakenResults = useUiStore(state => state.awakenResults)
   const tutorialStep = useGameStore(state => state.tutorialStep)
+  const tutorialOverlayActive = useUiStore(state => state.tutorialOverlayActive)
+  const helpPromptOpen = useUiStore(state => state.helpPromptOpen)
   const [catalogReady, setCatalogReady] = useState(false)
   const latestNoticeEntry = useMemo(() => resolveLatestNoticeEntry(), [])
   const dismissedSessionNoticeIdsRef = useRef<Set<string>>(new Set())
@@ -3002,12 +3006,15 @@ export default function App(): React.JSX.Element {
       setChangelogNoticeOpen(false)
       return
     }
-    if (tutorialStep < TUTORIAL_DONE || awakenResults) return
+    if (tutorialStep < TUTORIAL_DONE || tutorialOverlayActive || helpPromptOpen || awakenResults) {
+      setChangelogNoticeOpen(false)
+      return
+    }
     if (dismissedSessionNoticeIdsRef.current.has(noticeId)) return
     if (shouldShowChangelogNotice(latestNoticeEntry, readDismissedNoticeIds())) {
       setChangelogNoticeOpen(true)
     }
-  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, awakenResults])
+  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, tutorialOverlayActive, helpPromptOpen, awakenResults])
 
   const handleDismissChangelogNotice = useCallback(() => {
     if (latestNoticeEntry?.noticeId) {
@@ -3143,6 +3150,9 @@ export default function App(): React.JSX.Element {
                     {activeTab === 'changelog' && <ChangelogPage />}
                   </Suspense>
                   <Suspense fallback={null}>
+                    {activeTab === 'help' && <HelpPage />}
+                  </Suspense>
+                  <Suspense fallback={null}>
                     {activeTab === 'shop' && <ShopPage />}
                   </Suspense>
                   <Suspense fallback={null}>
@@ -3168,6 +3178,7 @@ export default function App(): React.JSX.Element {
           onViewAll={handleViewAllChangelog}
           open={changelogNoticeOpen}
         />
+        <HelpPromptModal />
         {simulatorOpen && (
           <Suspense fallback={null}>
             <CombatSimulatorModal open={simulatorOpen} onClose={() => setSimulatorOpen(false)} />

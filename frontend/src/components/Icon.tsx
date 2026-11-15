@@ -2,7 +2,7 @@ import { memo } from 'react'
 import type { ActionType } from '../game/types'
 
 /** 全站矢量图标名称：页签、行动类型与若干功能入口共用一套描边风格 */
-export type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'shop' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex' | 'leaderboard' | 'changelog' | 'more' | 'records'
+export type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'shop' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel' | 'codex' | 'leaderboard' | 'changelog' | 'help' | 'search' | 'more' | 'records'
   | 'lock' | 'building' | 'chat' | 'mail' | 'pin' | 'smile' | 'image' | 'alert' | 'bolt' | 'dice' | 'gate' | 'compass' | 'hourglass' | 'walk' | 'target' | 'close'
 
 /**
@@ -103,5 +103,9 @@ export const Icon = memo(function Icon({ name, size }: { name: IconName; size?: 
       return <svg {...common}><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></svg>
     case 'mail':
       return <svg {...common}><rect x="3.5" y="6" width="17" height="12" rx="1.8" /><path d="M4.2 7l7.8 5.6L19.8 7" /></svg>
+    case 'help':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M9.6 9.5a2.6 2.6 0 0 1 5 .9c0 1.6-2.6 2-2.6 3.6" /><circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none" /></svg>
+    case 'search':
+      return <svg {...common}><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /></svg>
   }
 })

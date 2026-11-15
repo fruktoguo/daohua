@@ -58,10 +58,11 @@ test('移动端导航：页签反查分组与分组取项一致', () => {
   }
 })
 
-test('移动端导航：坊市/商店同组、历练/地图同组、日志与同道归入更多组', () => {
+test('移动端导航：坊市/商店同组、历练/地图同组、日志、帮助与同道归入更多组', () => {
   assert.equal(mobileNavGroupIdOf('market'), mobileNavGroupIdOf('shop'))
   assert.equal(mobileNavGroupIdOf('exploration'), mobileNavGroupIdOf('map'))
   assert.equal(mobileNavGroupIdOf('log'), 'more')
+  assert.equal(mobileNavGroupIdOf('help'), 'more')
   assert.equal(mobileNavGroupIdOf('social'), 'more')
   assert.equal(mobileNavGroupIdOf('records'), 'more')
   // 详情是行动结算后的自动落点，必须保留一级直达

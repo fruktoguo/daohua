@@ -15,12 +15,23 @@ import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type
  * - 'market': 坊市交易行
  * - 'shop': 系统商店（官价直售与每日限购）
  * - 'social': 同道（队伍、宗门与邀请）
+ * - 'codex': 图鉴
+ * - 'leaderboard': 排行榜
+ * - 'changelog': 更新日志
+ * - 'help': 帮助教程
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'changelog' | 'inventory' | 'log' | 'records' | 'settings'
+export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'changelog' | 'help' | 'inventory' | 'log' | 'records' | 'settings'
+
+/** 帮助中心快捷跳转目标（支持直达一级页签与嵌套子选项卡） */
+export type HelpJumpTarget =
+  | { tab: 'insight' | 'exploration' | 'shop' | 'market' | 'combat' | 'codex' | 'inventory' }
+  | { tab: 'crafting'; craftingMode: CraftingMode; enhancementSubTab?: EnhancementSubTab }
+  | { tab: 'map'; mapSubTab?: MapSubTab }
+  | { tab: 'social'; socialSubTab?: SocialSubTab }
 
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
@@ -148,6 +159,22 @@ interface UiStore {
   setMailOpen: (open: boolean) => void
   /** 切换邮件面板开合状态 */
   toggleMailOpen: () => void
+  /** 新手引导完成或跳过后的「帮助」引导提示弹窗状态 */
+  helpPromptOpen: boolean
+  /** 设置「帮助」引导提示弹窗状态 */
+  setHelpPromptOpen: (open: boolean) => void
+  /** 新手引导浮层当前是否处于可见状态（用于与更新日志等开局弹窗互斥避让） */
+  tutorialOverlayActive: boolean
+  /** 同步新手引导浮层当前可见状态 */
+  setTutorialOverlayActive: (active: boolean) => void
+  /** 外部（设置页）确认跳过引导递增序号，供 TutorialOverlay 同步拉起帮助提示弹窗 */
+  tutorialExternalSkipSeq: number
+  /** 通知前端触发了外部引导跳过 */
+  notifyTutorialExternalSkip: () => void
+  /** 快捷跳转到「其他 -> 帮助」并展开侧栏分组 */
+  navigateToHelp: () => void
+  /** 从帮助条目一键跳转到对应游戏页面与子页签 */
+  executeHelpJump: (target: HelpJumpTarget) => void
 }
 
 /** 各分组的初始落点：组内首个页签（与 `MOBILE_NAV_GROUPS` 同源，避免两处硬编码顺序） */
@@ -272,4 +299,58 @@ export const useUiStore = create<UiStore>(set => ({
   mailOpen: false,
   setMailOpen: mailOpen => set({ mailOpen }),
   toggleMailOpen: () => set(state => ({ mailOpen: !state.mailOpen })),
+  helpPromptOpen: false,
+  setHelpPromptOpen: helpPromptOpen => set({ helpPromptOpen }),
+  tutorialOverlayActive: false,
+  setTutorialOverlayActive: tutorialOverlayActive => set({ tutorialOverlayActive }),
+  tutorialExternalSkipSeq: 0,
+  notifyTutorialExternalSkip: () => set(state => ({ tutorialExternalSkipSeq: state.tutorialExternalSkipSeq + 1 })),
+  navigateToHelp: () => set(state => ({
+    activeTab: 'help',
+    otherNavExpanded: true,
+    mailOpen: false,
+    helpPromptOpen: false,
+    mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('help')]: 'help' },
+  })),
+  executeHelpJump: target => set(state => {
+    const baseMemory = { ...state.mobileNavMemory, [mobileNavGroupIdOf(target.tab)]: target.tab }
+    if (target.tab === 'crafting') {
+      return {
+        activeTab: 'crafting',
+        craftingMode: target.craftingMode,
+        craftingNavExpanded: true,
+        ...(target.craftingMode === 'alchemy' ? { alchemySubTab: 'extraction' as AlchemySubTab } : {}),
+        ...(target.craftingMode === 'forging' ? { forgingSubTab: 'refining' as ForgingSubTab } : {}),
+        ...(target.craftingMode === 'enhancement'
+          ? { enhancementSubTab: (target.enhancementSubTab ?? 'enhance') as EnhancementSubTab }
+          : {}),
+        mailOpen: false,
+        mobileNavMemory: baseMemory,
+      }
+    }
+    if (target.tab === 'map') {
+      return {
+        activeTab: 'map',
+        mapSubTab: target.mapSubTab ?? 'map',
+        mailOpen: false,
+        mobileNavMemory: baseMemory,
+      }
+    }
+    if (target.tab === 'social') {
+      return {
+        activeTab: 'social',
+        socialNavExpanded: true,
+        socialSubTab: target.socialSubTab ?? 'party',
+        mailOpen: false,
+        mobileNavMemory: baseMemory,
+      }
+    }
+    return {
+      activeTab: target.tab,
+      ...(target.tab === 'shop' || target.tab === 'market' ? { marketNavExpanded: true } : {}),
+      ...(target.tab === 'codex' ? { otherNavExpanded: true } : {}),
+      mailOpen: false,
+      mobileNavMemory: baseMemory,
+    }
+  }),
 }))
