@@ -86,7 +86,6 @@ test('帮助指南：五章十四节结构、全量 i18n 词条覆盖与富文�
     'app.nav.help',
     'app.nav.helpHint',
     'app.help.title',
-    'app.help.subtitle',
     'app.help.chapterCountBadge',
     'app.help.hoverHint',
     'app.help.searchPlaceholder',
@@ -104,6 +103,11 @@ test('帮助指南：五章十四节结构、全量 i18n 词条覆盖与富文�
   ]) {
     requireZhValue(extraKey)
   }
+
+  // 验证前期讨伐补给词条已由修炼丹「引气丹」修正为战斗药散「止血散」
+  const earlyRouteBody = requireZhValue('app.help.chapters.intro.sections.earlyRoute.body')
+  assert.ok(earlyRouteBody.includes('{{item:item.zhixue-powder|止血散}}'), '前期路线应精准引用 1 级战斗回血药「止血散」')
+  assert.equal(earlyRouteBody.includes('item.qi-gathering-pill'), false, '前期战斗补给示例不应再误引探索修炼丹「引气丹」')
 
   let checkedRefs = 0
   const chapterIds = new Set()
@@ -207,36 +211,58 @@ test('帮助指南：富文本标记剥离与多关键字搜索过滤逻辑正�
   assert.equal(mod.filterHelpChapters(mod.HELP_CHAPTERS, '不存在的奇门术语xyz', t).length, 0)
 })
 
-test('界面状态：帮助直达跳转、深层子页签定位与引导结束状态联动', () => {
+test('界面状态：帮助独立弹窗、跳转收起、深层子页签定位与引导结束状态联动', () => {
   const store = mod.useUiStore
 
-  // 初始状态与弹窗跳转至帮助页
+  // 记录原页签与「更多」分组落点；点击帮助仅弹出独立弹窗，不改变底层视图与导航记忆
+  store.getState().setActiveTab('codex')
+  store.getState().setActiveTab('combat')
+  store.getState().setActiveTab('help')
+  assert.equal(store.getState().helpModalOpen, true)
+  assert.equal(store.getState().activeTab, 'combat')
+  assert.equal(store.getState().mobileNavMemory.more, 'codex')
+
+  // 点击其它常规页签会自动收起帮助弹窗
+  store.getState().setActiveTab('insight')
+  assert.equal(store.getState().helpModalOpen, false)
+  assert.equal(store.getState().activeTab, 'insight')
+
+  // 引导结束弹窗点「前往帮助」关闭提示弹窗并打开帮助独立弹窗
   store.getState().setHelpPromptOpen(true)
   assert.equal(store.getState().helpPromptOpen, true)
   store.getState().navigateToHelp()
-  assert.equal(store.getState().activeTab, 'help')
-  assert.equal(store.getState().otherNavExpanded, true)
   assert.equal(store.getState().helpPromptOpen, false)
-  assert.equal(store.getState().mailOpen, false)
-  assert.equal(store.getState().mobileNavMemory.more, 'help')
+  assert.equal(store.getState().helpModalOpen, true)
+  assert.equal(store.getState().activeTab, 'insight')
 
-  // 嵌套子页签跳转：技艺 -> 秘法 -> 化灵
+  // 嵌套子页签跳转：技艺 -> 秘法 -> 化灵（同时自动关闭帮助弹窗）
   store.getState().executeHelpJump({ tab: 'crafting', craftingMode: 'enhancement', enhancementSubTab: 'liquefy' })
+  assert.equal(store.getState().helpModalOpen, false)
   assert.equal(store.getState().activeTab, 'crafting')
   assert.equal(store.getState().craftingMode, 'enhancement')
   assert.equal(store.getState().enhancementSubTab, 'liquefy')
   assert.equal(store.getState().craftingNavExpanded, true)
 
   // 嵌套子页签跳转：地图 -> 附近建筑
+  store.getState().setHelpModalOpen(true)
   store.getState().executeHelpJump({ tab: 'map', mapSubTab: 'buildings' })
+  assert.equal(store.getState().helpModalOpen, false)
   assert.equal(store.getState().activeTab, 'map')
   assert.equal(store.getState().mapSubTab, 'buildings')
 
   // 嵌套子页签跳转：同道 -> 队伍
+  store.getState().setHelpModalOpen(true)
   store.getState().executeHelpJump({ tab: 'social', socialSubTab: 'party' })
+  assert.equal(store.getState().helpModalOpen, false)
   assert.equal(store.getState().activeTab, 'social')
   assert.equal(store.getState().socialSubTab, 'party')
   assert.equal(store.getState().socialNavExpanded, true)
+
+  // 正文地点链接跳转同样自动关闭帮助弹窗
+  store.getState().setHelpModalOpen(true)
+  store.getState().navigateToMapNode('node.yunxi-village')
+  assert.equal(store.getState().helpModalOpen, false)
+  assert.equal(store.getState().activeTab, 'map')
 
   // 引导层可见态与外部跳过序号同步
   store.getState().setTutorialOverlayActive(true)
@@ -244,4 +270,27 @@ test('界面状态：帮助直达跳转、深层子页签定位与引导结束�
   const beforeSeq = store.getState().tutorialExternalSkipSeq
   store.getState().notifyTutorialExternalSkip()
   assert.equal(store.getState().tutorialExternalSkipSeq, beforeSeq + 1)
+})
+
+test('静态布局契约：独立弹窗外壳锁定滚动、右栏独立滚动、竖屏章节置顶及字号 Token 合规', () => {
+  const modalSource = fs.readFileSync(path.resolve(process.cwd(), 'frontend/src/components/HelpModal.tsx'), 'utf8')
+  const cssSource = fs.readFileSync(path.resolve(process.cwd(), 'frontend/src/styles/help.css'), 'utf8')
+
+  assert.match(modalSource, /<Modal[\s\S]*className="help-modal"/, 'HelpModal 必须基于共享 Modal 渲染独立弹窗')
+  assert.match(modalSource, /className="help-bullet-list"/, '条目正文应使用紧凑分点列表提高信息密度')
+  assert.match(modalSource, /contentRef\.current\.scrollTop\s*=\s*0/, '切换章节或检索词时必须重置右栏独立滚动位置')
+
+  // 弹窗外壳不滚，仅右栏滚动
+  assert.match(cssSource, /\.help-modal\.modal-shell\s*\{[^}]*overflow:\s*hidden/, '.help-modal.modal-shell 必须禁用外层整框滚动')
+  assert.match(cssSource, /\.help-content\s*\{[^}]*overflow-y:\s*auto/, '.help-content 必须作为独立垂直滚动区')
+
+  // 竖屏 <= 960px 时左侧 Tab 改至顶部横向排列
+  const portraitBlockIndex = cssSource.indexOf('@media (max-width: 960px)')
+  assert.ok(portraitBlockIndex >= 0, 'help.css 必须定义 <= 960px 竖屏响应式断点')
+  const portraitCss = cssSource.slice(portraitBlockIndex)
+  assert.match(portraitCss, /\.help-layout\s*\{[^}]*flex-direction:\s*column/, '竖屏 .help-layout 必须切为纵向主轴以便目录置顶')
+  assert.match(portraitCss, /\.help-sidebar\s*\{[^}]*flex-direction:\s*row/, '竖屏 .help-sidebar 必须为顶部横向切换条')
+
+  // 严禁硬编码像素或 rem 字号，统一走 --text-* Token
+  assert.doesNotMatch(cssSource, /font-size:\s*\d+(?:\.\d+)?(?:px|rem)/, 'help.css 不得硬编码 px/rem 字号')
 })

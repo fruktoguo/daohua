@@ -685,13 +685,14 @@
   - [`frontend/src/game/mailStore.ts`](../../frontend/src/game/mailStore.ts)
 - **样式文件**：[`frontend/src/styles/mail.css`](../../frontend/src/styles/mail.css)（含深浅双主题 `[data-theme="light"]` 变量及 `<= 960px` / `<= 520px` 响应式顶栏与邮件双栏规则），物品格焦点锚点见 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)
 
-## 43. 修行指南帮助页与新手引导收尾提示弹窗 (`HelpPage` / `HelpPromptModal`)
+## 43. 修行指南独立弹窗与新手引导收尾提示 (`HelpModal` / `HelpPromptModal`)
 
 - **适用场景**：
-  - 「其他 → 帮助」（竖屏「更多 → 帮助」）系统化五章十四节文本教程阅读、关键词实时过滤、`RichTemplateText` 实体词条悬浮/地点跳转与各节一键直达对应玩法面板；
-  - 新手引导完成或确认跳过后（含浮层内跳过及设置页跳过）主动弹窗告知帮助中心入口，并与更新日志公告弹窗自动互斥避让。
+  - 点击「其他 → 帮助」（竖屏「更多 → 帮助」）或引导收尾弹窗「前往帮助」后，独立挂载全局大尺寸弹窗展示五章十四节高密度分点教程（不替换底层浏览视图，桌面端固定顶栏与左目录、右正文独立滚动；`<= 960px` 章节目录置顶为横向切换条、下方正文独立滚动）；
+  - 支持关键词实时检索、`RichTemplateText` 实体词条悬浮/点击直达大地图（点击后自动收起弹窗）与各节一键直达对应玩法页签；
+  - 新手引导完成或确认跳过后自动弹出 `HelpPromptModal` 提示入口，并与更新日志公告弹窗自动互斥避让。
 - **组件与数据源码**：
-  - [`frontend/src/components/HelpPage.tsx`](../../frontend/src/components/HelpPage.tsx)
+  - [`frontend/src/components/HelpModal.tsx`](../../frontend/src/components/HelpModal.tsx)
   - [`frontend/src/components/HelpPromptModal.tsx`](../../frontend/src/components/HelpPromptModal.tsx)
   - [`frontend/src/data/helpGuide.ts`](../../frontend/src/data/helpGuide.ts)
-- **样式文件**：[`frontend/src/styles/help.css`](../../frontend/src/styles/help.css)（严格采用 `--text-*` 阶梯字号 Token，内聚 `[data-theme="light"]` 明亮主题覆盖与 `<= 960px` 横向目录折叠断点）
+- **样式文件**：[`frontend/src/styles/help.css`](../../frontend/src/styles/help.css)（严格采用 `--text-*` 阶梯字号 Token，包含 `.help-modal.modal-shell` 外层零滚动锁定、`.help-content` 独立滚动容器、高密度分点卡片、内聚 `[data-theme="light"]` 明亮主题覆盖与 `<= 960px` 顶部横向目录响应式断点）

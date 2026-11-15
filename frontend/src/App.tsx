@@ -75,7 +75,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
 const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
-const HelpPage = lazy(() => import('./components/HelpPage').then(module => ({ default: module.HelpPage })))
+const HelpModal = lazy(() => import('./components/HelpModal').then(module => ({ default: module.HelpModal })))
 const MailPage = lazy(() => import('./components/MailPage').then(module => ({ default: module.MailPage })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
@@ -2994,6 +2994,8 @@ export default function App(): React.JSX.Element {
   const tutorialStep = useGameStore(state => state.tutorialStep)
   const tutorialOverlayActive = useUiStore(state => state.tutorialOverlayActive)
   const helpPromptOpen = useUiStore(state => state.helpPromptOpen)
+  const helpModalOpen = useUiStore(state => state.helpModalOpen)
+  const setHelpModalOpen = useUiStore(state => state.setHelpModalOpen)
   const [catalogReady, setCatalogReady] = useState(false)
   const latestNoticeEntry = useMemo(() => resolveLatestNoticeEntry(), [])
   const dismissedSessionNoticeIdsRef = useRef<Set<string>>(new Set())
@@ -3006,7 +3008,7 @@ export default function App(): React.JSX.Element {
       setChangelogNoticeOpen(false)
       return
     }
-    if (tutorialStep < TUTORIAL_DONE || tutorialOverlayActive || helpPromptOpen || awakenResults) {
+    if (tutorialStep < TUTORIAL_DONE || tutorialOverlayActive || helpPromptOpen || helpModalOpen || awakenResults) {
       setChangelogNoticeOpen(false)
       return
     }
@@ -3014,7 +3016,7 @@ export default function App(): React.JSX.Element {
     if (shouldShowChangelogNotice(latestNoticeEntry, readDismissedNoticeIds())) {
       setChangelogNoticeOpen(true)
     }
-  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, tutorialOverlayActive, helpPromptOpen, awakenResults])
+  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, tutorialOverlayActive, helpPromptOpen, helpModalOpen, awakenResults])
 
   const handleDismissChangelogNotice = useCallback(() => {
     if (latestNoticeEntry?.noticeId) {
@@ -3150,9 +3152,6 @@ export default function App(): React.JSX.Element {
                     {activeTab === 'changelog' && <ChangelogPage />}
                   </Suspense>
                   <Suspense fallback={null}>
-                    {activeTab === 'help' && <HelpPage />}
-                  </Suspense>
-                  <Suspense fallback={null}>
                     {activeTab === 'shop' && <ShopPage />}
                   </Suspense>
                   <Suspense fallback={null}>
@@ -3179,6 +3178,11 @@ export default function App(): React.JSX.Element {
           open={changelogNoticeOpen}
         />
         <HelpPromptModal />
+        {helpModalOpen && (
+          <Suspense fallback={null}>
+            <HelpModal open={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
+          </Suspense>
+        )}
         {simulatorOpen && (
           <Suspense fallback={null}>
             <CombatSimulatorModal open={simulatorOpen} onClose={() => setSimulatorOpen(false)} />

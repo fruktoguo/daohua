@@ -163,6 +163,10 @@ interface UiStore {
   helpPromptOpen: boolean
   /** 设置「帮助」引导提示弹窗状态 */
   setHelpPromptOpen: (open: boolean) => void
+  /** 「帮助」修行指南独立弹窗开启状态 */
+  helpModalOpen: boolean
+  /** 设置「帮助」修行指南独立弹窗开启状态 */
+  setHelpModalOpen: (open: boolean) => void
   /** 新手引导浮层当前是否处于可见状态（用于与更新日志等开局弹窗互斥避让） */
   tutorialOverlayActive: boolean
   /** 同步新手引导浮层当前可见状态 */
@@ -171,7 +175,7 @@ interface UiStore {
   tutorialExternalSkipSeq: number
   /** 通知前端触发了外部引导跳过 */
   notifyTutorialExternalSkip: () => void
-  /** 快捷跳转到「其他 -> 帮助」并展开侧栏分组 */
+  /** 关闭引导结束提示弹窗并唤起「帮助」独立教程弹窗 */
   navigateToHelp: () => void
   /** 从帮助条目一键跳转到对应游戏页面与子页签 */
   executeHelpJump: (target: HelpJumpTarget) => void
@@ -188,6 +192,11 @@ const INITIAL_NAV_MEMORY = Object.fromEntries(
 export const useUiStore = create<UiStore>(set => ({
   activeTab: 'exploration',
   setActiveTab: activeTab => {
+    // 'help' 以独立大尺寸弹窗展示，不替换底层正在查看的主视图与导航记忆
+    if (activeTab === 'help') {
+      set({ helpModalOpen: true })
+      return
+    }
     // 'alchemy' 不是独立页面：作为直达技艺-炼丹的别名，同时展开二级导航并复位子选项卡
     if (activeTab === 'alchemy') {
       set(state => ({
@@ -196,14 +205,16 @@ export const useUiStore = create<UiStore>(set => ({
         craftingNavExpanded: true,
         alchemySubTab: 'extraction',
         mailOpen: false,
+        helpModalOpen: false,
         mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('crafting')]: 'crafting' },
       }))
       return
     }
-    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏邮件面板
+    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏邮件面板与帮助弹窗
     set(state => ({
       activeTab,
       mailOpen: false,
+      helpModalOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(activeTab)]: activeTab },
     }))
   },
@@ -281,6 +292,7 @@ export const useUiStore = create<UiStore>(set => ({
       mapSubTab: 'map',
       mapFocusNodeId: nodeId,
       mailOpen: false,
+      helpModalOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(targetTab)]: targetTab },
     }))
   },
@@ -301,17 +313,16 @@ export const useUiStore = create<UiStore>(set => ({
   toggleMailOpen: () => set(state => ({ mailOpen: !state.mailOpen })),
   helpPromptOpen: false,
   setHelpPromptOpen: helpPromptOpen => set({ helpPromptOpen }),
+  helpModalOpen: false,
+  setHelpModalOpen: helpModalOpen => set({ helpModalOpen }),
   tutorialOverlayActive: false,
   setTutorialOverlayActive: tutorialOverlayActive => set({ tutorialOverlayActive }),
   tutorialExternalSkipSeq: 0,
   notifyTutorialExternalSkip: () => set(state => ({ tutorialExternalSkipSeq: state.tutorialExternalSkipSeq + 1 })),
-  navigateToHelp: () => set(state => ({
-    activeTab: 'help',
-    otherNavExpanded: true,
-    mailOpen: false,
+  navigateToHelp: () => set({
     helpPromptOpen: false,
-    mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('help')]: 'help' },
-  })),
+    helpModalOpen: true,
+  }),
   executeHelpJump: target => set(state => {
     const baseMemory = { ...state.mobileNavMemory, [mobileNavGroupIdOf(target.tab)]: target.tab }
     if (target.tab === 'crafting') {
@@ -325,6 +336,7 @@ export const useUiStore = create<UiStore>(set => ({
           ? { enhancementSubTab: (target.enhancementSubTab ?? 'enhance') as EnhancementSubTab }
           : {}),
         mailOpen: false,
+        helpModalOpen: false,
         mobileNavMemory: baseMemory,
       }
     }
@@ -333,6 +345,7 @@ export const useUiStore = create<UiStore>(set => ({
         activeTab: 'map',
         mapSubTab: target.mapSubTab ?? 'map',
         mailOpen: false,
+        helpModalOpen: false,
         mobileNavMemory: baseMemory,
       }
     }
@@ -342,6 +355,7 @@ export const useUiStore = create<UiStore>(set => ({
         socialNavExpanded: true,
         socialSubTab: target.socialSubTab ?? 'party',
         mailOpen: false,
+        helpModalOpen: false,
         mobileNavMemory: baseMemory,
       }
     }
@@ -350,6 +364,7 @@ export const useUiStore = create<UiStore>(set => ({
       ...(target.tab === 'shop' || target.tab === 'market' ? { marketNavExpanded: true } : {}),
       ...(target.tab === 'codex' ? { otherNavExpanded: true } : {}),
       mailOpen: false,
+      helpModalOpen: false,
       mobileNavMemory: baseMemory,
     }
   }),
