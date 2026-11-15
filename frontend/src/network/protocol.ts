@@ -74,6 +74,8 @@ export const WireMessageType = {
   PlayerCardRequest: 27,
   /** 服务端下发角色信息卡（按需查询应答，不随社交状态常驻下发） */
   PlayerCard: 28,
+  /** 服务端下发传书邮件红点摘要（含零扇出强制点亮标识） */
+  MailSummary: 29,
 } as const
 /** WireMessageType 常量表对应的值联合类型（帧类型编号） */
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
@@ -991,6 +993,74 @@ export interface LeaderboardSnapshotDto {
   myRank?: LeaderboardMyRankDto | null
 }
 
+/** 传书邮件顶栏红点摘要（WS MailSummary 推送与 HTTP 操作回执共享） */
+export interface MailSummaryDto {
+  unreadCount: number
+  claimableCount: number
+  forceRedDot?: boolean
+}
+
+/** 邮件附件条目 */
+export interface MailAttachmentDto {
+  itemId: string
+  quantity: number
+}
+
+/** 邮件轨道类型：全服群发 / 个人定向 */
+export type MailKind = 'broadcast' | 'personal'
+
+/** 邮件列表单行元数据（不含正文 body） */
+export interface MailListItemDto {
+  mailKey: string
+  kind: MailKind
+  title: string
+  senderName: string
+  createdAt: string
+  expiresAt: string
+  hasAttachments: boolean
+  isRead: boolean
+  isClaimed: boolean
+  onlyExistingPlayers: boolean
+  attachments: MailAttachmentDto[]
+}
+
+/** 单封邮件完整详情（按需拉取正文） */
+export interface MailDetailDto extends MailListItemDto {
+  body: string
+}
+
+/** GET /api/v1/mails 响应 */
+export interface MailListResponseDto {
+  mails: MailListItemDto[]
+  summary: MailSummaryDto
+}
+
+/** GET /api/v1/mails/{mailKey} 响应 */
+export interface MailDetailResponseDto {
+  mail: MailDetailDto
+  summary: MailSummaryDto
+}
+
+/** POST /api/v1/mails/{mailKey}/read 响应 */
+export interface MailReadResponseDto {
+  mailKey: string
+  summary: MailSummaryDto
+}
+
+/** 单封/一键领取附件响应 */
+export interface MailClaimResponseDto {
+  claimedMailKeys: string[]
+  grantedAttachments: MailAttachmentDto[]
+  summary: MailSummaryDto
+}
+
+/** 删除/删除已读响应 */
+export interface MailDeleteResponseDto {
+  deletedMailKeys: string[]
+  skippedUnclaimedCount: number
+  summary: MailSummaryDto
+}
+
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -1030,7 +1100,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.PlayerCard
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.MailSummary
 }
 
 function isWireCodec(value: number): value is WireCodec {

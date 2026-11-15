@@ -2210,6 +2210,38 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     }
 
     /// <summary>
+    /// 邮件领奖等外部资产事务提交后立刻重读已加载玩家钱包，并直接向订阅者推送零触及分段的资产差量快照。
+    /// 不推进 <c>StateVersion</c>，避免内存状态版本超前持久化分段头导致 CAS 冲突。
+    /// </summary>
+    public async ValueTask ReloadWalletAndNotifyAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        if (!_loaded.ContainsKey(playerId)) return;
+        PlayerRuntimeSnapshot? updated = null;
+        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_loaded.ContainsKey(playerId)) return;
+            var changed = await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
+            if (!changed) return;
+            // 显式传空触及分段集合：ProtocolSnapshotMapper.BuildDelta 仅对 Assets 做差量比对，跳过 8 段全编码。
+            updated = ToSnapshot(ecs.ExportSnapshot(playerId)) with
+            {
+                TouchedSections = new HashSet<PlayerSectionKind>(),
+                WireAttributesChanged = false
+            };
+            _loaded[playerId] = updated;
+        }
+        finally
+        {
+            gate.Release();
+        }
+        if (updated is not null)
+            await EmitNotificationsAsync([new RuntimeNotification(playerId, null, updated)]).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 优雅停机：解除市场入账订阅后逐玩家强制落盘并卸载（单个失败只记日志不阻断其余玩家），
     /// 最后释放玩家 gate 并销毁 ECS 世界；重复调用幂等。
     /// </summary>

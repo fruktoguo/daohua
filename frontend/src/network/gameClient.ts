@@ -1,4 +1,5 @@
 import { useGameStore } from '../game/gameStore'
+import { useMailStore } from '../game/mailStore'
 import { useSocialStore } from '../game/socialStore'
 import { getT } from '../i18n'
 import { chatService } from '../logging/chatService'
@@ -20,6 +21,7 @@ import {
   type ErrorDto,
   type HelloResponse,
   type LogBatchDto,
+  type MailSummaryDto,
   type PartyLobbyDto,
   type PartyLobbyRequestDto,
   type PartyProfileDto,
@@ -763,7 +765,8 @@ export class GameClient {
           const current = useGameStore.getState().toSnapshotView()
           const patch = await decodePlayerSnapshotDeltaDto(dto, current, envelope.payload)
           if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
-          useGameStore.getState().applyPatch(patch)
+          // 邮件领奖等纯资产补算会发零 StateVersion 增量包，需允许在同版本下合并资产变动
+          useGameStore.getState().applyPatch(patch, { allowSameVersion: Boolean(dto.changedAssets?.length) })
           appliedBusinessPayload = true
           break
         }
@@ -889,6 +892,17 @@ export class GameClient {
           const card = decodeJsonPayload<PlayerCardDto>(envelope)
           if (!card) throw new Error('角色信息卡载荷无效。')
           useSocialStore.getState().applyPlayerCard(card)
+          appliedBusinessPayload = true
+          break
+        }
+        case WireMessageType.MailSummary: {
+          const summary = decodeJsonPayload<MailSummaryDto>(envelope)
+          if (!summary) throw new Error('邮件摘要载荷无效。')
+          useMailStore.getState().applySummary(summary)
+          // 若玩家正停留在邮件界面且收到新广播/私信推送，后台刷新列表以便新邮件即时可见
+          if (useUiStore.getState().mailOpen) {
+            void useMailStore.getState().refreshList({ silent: true })
+          }
           appliedBusinessPayload = true
           break
         }

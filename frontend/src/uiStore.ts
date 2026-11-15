@@ -142,6 +142,12 @@ interface UiStore {
   simulatorOpen: boolean
   /** 切换/设置模拟器弹窗状态 */
   setSimulatorOpen: (open: boolean) => void
+  /** 邮件面板覆盖开启状态（为 true 时主内容区切换为邮件界面，原 activeTab 保留以便关闭后还原） */
+  mailOpen: boolean
+  /** 设置邮件面板开启状态 */
+  setMailOpen: (open: boolean) => void
+  /** 切换邮件面板开合状态 */
+  toggleMailOpen: () => void
 }
 
 /** 各分组的初始落点：组内首个页签（与 `MOBILE_NAV_GROUPS` 同源，避免两处硬编码顺序） */
@@ -162,13 +168,15 @@ export const useUiStore = create<UiStore>(set => ({
         craftingMode: 'alchemy',
         craftingNavExpanded: true,
         alchemySubTab: 'extraction',
+        mailOpen: false,
         mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('crafting')]: 'crafting' },
       }))
       return
     }
-    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见
+    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏邮件面板
     set(state => ({
       activeTab,
+      mailOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(activeTab)]: activeTab },
     }))
   },
@@ -177,6 +185,7 @@ export const useUiStore = create<UiStore>(set => ({
   // （符箓/阵法无二级子选项卡，仅切模式即可）
   setCraftingMode: craftingMode => set({
     craftingMode,
+    mailOpen: false,
     ...(craftingMode === 'alchemy'
       ? { alchemySubTab: 'extraction' as AlchemySubTab }
       : craftingMode === 'forging'
@@ -244,16 +253,23 @@ export const useUiStore = create<UiStore>(set => ({
       activeTab: targetTab,
       mapSubTab: 'map',
       mapFocusNodeId: nodeId,
+      mailOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(targetTab)]: targetTab },
     }))
   },
   mobileNavMemory: INITIAL_NAV_MEMORY,
   activateMobileNavGroup: group => set(state => {
-    // 已在该分组：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项
-    if (mobileNavGroupIdOf(state.activeTab) === group) return {}
+    // 已在该分组且邮件面板未覆盖：子行本就展开，重复点击不再改签，避免误触把玩家从子页签踢回首项；
+    // 若邮件面板正覆盖前景，则立即收起邮件面板回到该分组当前页签
+    if (mobileNavGroupIdOf(state.activeTab) === group) {
+      return state.mailOpen ? { mailOpen: false } : {}
+    }
     const target = state.mobileNavMemory[group] ?? MOBILE_NAV_GROUP_DEFS[group].tabs[0]
-    return { activeTab: target, mobileNavMemory: { ...state.mobileNavMemory, [group]: target } }
+    return { activeTab: target, mailOpen: false, mobileNavMemory: { ...state.mobileNavMemory, [group]: target } }
   }),
   simulatorOpen: false,
   setSimulatorOpen: simulatorOpen => set({ simulatorOpen }),
+  mailOpen: false,
+  setMailOpen: mailOpen => set({ mailOpen }),
+  toggleMailOpen: () => set(state => ({ mailOpen: !state.mailOpen })),
 }))

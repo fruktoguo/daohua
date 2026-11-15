@@ -589,6 +589,8 @@ public static class OpsPanel
 
         // 市场快捷操作：系统身份批量挂售/收购与撤单（端点实现在 OpsMarketActions）。
         group.MapOpsMarketActions();
+        // 传书邮件运营操作：个人/全服发件与公告撤回（端点实现在 OpsMailActions）。
+        group.MapOpsMailActions();
         group.MapFallback("/api/{**path}", () => Results.NotFound(new { code = "NOT_FOUND", message = "运维接口不存在。" }));
     }
 

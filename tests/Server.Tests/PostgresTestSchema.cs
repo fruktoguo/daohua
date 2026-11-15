@@ -91,6 +91,7 @@ internal static class PostgresTestSchema
                             social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
                             social.party_seekers, social.party_invitations, social.friendships, social.friend_requests,
                             social.chat_messages, social.player_invitations,
+                            social.broadcast_mails, social.player_mail_states, social.player_mails,
                             social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures,
                             economy.transactions, economy.transaction_lines, economy.player_asset_balances,
                             economy.player_asset_instances, economy.reservations, economy.shop_daily_purchases, economy.transient_idempotency,

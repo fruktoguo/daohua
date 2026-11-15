@@ -74,7 +74,9 @@ public enum WireMessageType : byte
     /// <summary>客户端请求队伍成员角色信息卡（仅 WebSocket 上行）</summary>
     PlayerCardRequest = 27,
     /// <summary>服务端下发角色信息卡（仅 WebSocket 下行）</summary>
-    PlayerCard = 28
+    PlayerCard = 28,
+    /// <summary>服务端下发传书邮件红点摘要（仅 WebSocket 下行，含 ForceRedDot 零扇出标记）</summary>
+    MailSummary = 29
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -1387,3 +1389,75 @@ public sealed record LeaderboardSnapshotDto(
     int ParticipantCount,
     IReadOnlyList<LeaderboardEntryDto> Entries,
     LeaderboardMyRankDto? MyRank = null);
+
+/// <summary>传书邮件顶栏红点摘要（WS MailSummary 推送与 HTTP 操作回执共享）。</summary>
+/// <param name="UnreadCount">未读邮件总数</param>
+/// <param name="ClaimableCount">含未领取附件邮件总数</param>
+/// <param name="ForceRedDot">零扇出群发广播提示标识：在线群发时置 true，玩家打开邮件中心后按真实汇总覆盖</param>
+public sealed record MailSummaryDto(
+    int UnreadCount,
+    int ClaimableCount,
+    bool ForceRedDot = false);
+
+/// <summary>邮件附件条目（与钱包资产 ID/数量同口径）。</summary>
+public sealed record MailAttachmentDto(
+    string ItemId,
+    double Quantity);
+
+/// <summary>邮件列表单行元数据（列表与正文分离，不含 Body 正文，节省列表带宽与内存）。</summary>
+/// <param name="MailKey">统一邮件键（群发 `b:{broadcastId}` / 个人 `p:{mailId}`）</param>
+/// <param name="Kind">邮件类型：`broadcast` / `personal`</param>
+public sealed record MailListItemDto(
+    string MailKey,
+    string Kind,
+    string Title,
+    string SenderName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt,
+    bool HasAttachments,
+    bool IsRead,
+    bool IsClaimed,
+    bool OnlyExistingPlayers,
+    IReadOnlyList<MailAttachmentDto> Attachments);
+
+/// <summary>单封邮件完整详情（点击展开时按需拉取）。</summary>
+public sealed record MailDetailDto(
+    string MailKey,
+    string Kind,
+    string Title,
+    string Body,
+    string SenderName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt,
+    bool HasAttachments,
+    bool IsRead,
+    bool IsClaimed,
+    bool OnlyExistingPlayers,
+    IReadOnlyList<MailAttachmentDto> Attachments);
+
+/// <summary>邮件列表响应（GET /api/v1/mails）。</summary>
+public sealed record MailListResponseDto(
+    IReadOnlyList<MailListItemDto> Mails,
+    MailSummaryDto Summary);
+
+/// <summary>单封邮件详情响应（GET /api/v1/mails/{mailKey}，自动含已读更新后的红点摘要）。</summary>
+public sealed record MailDetailResponseDto(
+    MailDetailDto Mail,
+    MailSummaryDto Summary);
+
+/// <summary>单封标记已读响应（POST /api/v1/mails/{mailKey}/read）。</summary>
+public sealed record MailReadResponseDto(
+    string MailKey,
+    MailSummaryDto Summary);
+
+/// <summary>领取邮件附件响应（单封与一键领取共用）。</summary>
+public sealed record MailClaimResponseDto(
+    IReadOnlyList<string> ClaimedMailKeys,
+    IReadOnlyList<MailAttachmentDto> GrantedAttachments,
+    MailSummaryDto Summary);
+
+/// <summary>删除邮件响应（单删与清理已读共用，带未领附件跳过计数）。</summary>
+public sealed record MailDeleteResponseDto(
+    IReadOnlyList<string> DeletedMailKeys,
+    int SkippedUnclaimedCount,
+    MailSummaryDto Summary);

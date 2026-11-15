@@ -81,6 +81,7 @@
 | `GET /ops/api/scheduler` | 推进边界、玩家推进延迟分布、行动队列长度分布、待触发队列规模 | 运行时快照聚合 |
 | `GET /ops/api/config` | 配表版本/指纹、协议版本、schema 版本、脱敏运行时配置摘要 | `GameDataCatalog` / `ServerOptions`（**绝不输出连接串与令牌**） |
 | `GET /ops/api/logs` | 日志环形缓冲，支持 `level` / `category` / `q`（关键词）/ `limit` | `OpsLogBuffer`（扩展过滤） |
+| `GET /ops/api/mails/broadcasts` | 最近全服群发公告列表与生效/撤销/过期状态 | `MailRuntime.ListOpsBroadcastsAsync` |
 
 ### 4.2 写操作
 
@@ -93,6 +94,9 @@
 | `POST /ops/api/actions/compute-drain` | 排空计算节点（单个或全部） | `ComputeLinkRegistry.BeginDrain` / `DrainAll` |
 | `POST /ops/api/actions/market-system-orders` | 以系统身份批量挂售/收购（单个品种 / 按品类 / 全部品种：可回收物品 + 装备） | 资金注入（`IEconomyTransactionStore`，`system-grant`）→ `MarketRuntime.PlaceAsync` 正常下单链路，即时上架 |
 | `POST /ops/api/actions/market-system-cancel` | 撤销系统挂单（指定品种或全部） | `MarketRuntime.GetOrders(系统玩家)` → 逐单 `CancelAsync` |
+| `POST /ops/api/actions/mail-send-player` | 向指定玩家（UUID 或道号）发送个人定向邮件（可带多附件） | `MailRuntime.SendPlayerMailAsync` → `Ops.Audit` |
+| `POST /ops/api/actions/mail-send-broadcast` | 发送全服群发邮件（可配置 `onlyExistingPlayers` 与有效期） | `MailRuntime.SendBroadcastMailAsync` → 单帧摘要推在线会话 → `Ops.Audit` |
+| `POST /ops/api/actions/mail-revoke-broadcast` | 撤销指定全服群发公告并刷新全局不可变公告缓存 | `MailRuntime.RevokeBroadcastMailAsync` → `Ops.Audit` |
 
 约束：
 

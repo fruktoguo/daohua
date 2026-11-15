@@ -141,6 +141,10 @@ try {
   // 整包 deepEqual 已覆盖「数量 3 / 离线储备 7」两个标量：普通钱包数量与不可售的离线储备
   // 被求和或互相覆盖都会让结构不等，无需再单独断言两个字段。
   assert.deepEqual(decodedCard, playerCard)
+  const mailSummary = { unreadCount: 2, claimableCount: 1, forceRedDot: true }
+  const mailEnvelope = decodeEnvelope(encodeJsonEnvelope(WireMessageType.MailSummary, createRequestId(), 2, mailSummary))
+  assert.equal(mailEnvelope.messageType, WireMessageType.MailSummary)
+  assert.deepEqual(decodeJsonPayload(mailEnvelope), mailSummary)
   const { parseCsvToMap, LOCALES } = mod
   const { registerBaseAttributeAnchors, calculateBaseAttributes } = mod
   const payload = {

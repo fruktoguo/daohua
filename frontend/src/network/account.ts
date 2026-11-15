@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { collectAccountSignals } from './accountSignals'
 import { useGameStore } from '../game/gameStore'
+import { useMailStore } from '../game/mailStore'
+import { useUiStore } from '../uiStore'
 import { requestJson } from './apiClient'
 import { gameClient } from './gameClient'
 import { setSessionAccount } from './sessionState'
@@ -272,6 +274,8 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     setSessionAccount(null)
     set({ currentAccount: null, sessionChecked: true })
     gameClient.dispose()
+    useUiStore.getState().setMailOpen(false)
+    useMailStore.getState().reset()
     useGameStore.getState().resetGameStore()
   },
 
@@ -317,5 +321,7 @@ export function resetAllLocalData(): void {
   gameClient.dispose()
   useAccountStore.setState({ currentAccount: null, savedAccounts: [], sessionChecked: true })
   setSessionAccount(null)
+  useUiStore.getState().setMailOpen(false)
+  useMailStore.getState().reset()
   useGameStore.getState().resetGameStore()
 }

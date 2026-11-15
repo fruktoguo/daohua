@@ -118,6 +118,8 @@ public interface IPlayerRuntime : IAsyncDisposable
     IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId);
     /// <summary>全部已加载玩家快照的稳定排序副本；供批量推进度量与运维旁路读取。</summary>
     ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default);
+    /// <summary>外部入账（如邮件领奖）提交后重读在线玩家钱包并立刻向 WebSocket 订阅者推送资产差量，不推进领域存档版本号。</summary>
+    ValueTask ReloadWalletAndNotifyAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 }
 
 /// <summary>跨宿主共用的运行时快照载荷。</summary>

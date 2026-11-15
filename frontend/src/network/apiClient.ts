@@ -1,7 +1,16 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
 import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
 import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/simulatorTypes'
-import { createRequestId, type LeaderboardIndexDto, type LeaderboardSnapshotDto } from './protocol'
+import {
+  createRequestId,
+  type LeaderboardIndexDto,
+  type LeaderboardSnapshotDto,
+  type MailClaimResponseDto,
+  type MailDeleteResponseDto,
+  type MailDetailResponseDto,
+  type MailListResponseDto,
+  type MailReadResponseDto,
+} from './protocol'
 import { getApiUrl, getHttpBase } from './apiUrl'
 
 export { getApiUrl, getHttpBase }
@@ -434,4 +443,49 @@ export function fetchLeaderboardBoard(
     viewerId,
     signal,
   )
+}
+
+/** 拉取玩家可见邮件列表（列表投影不含正文 body）与摘要计数 */
+export function fetchMailList(signal?: AbortSignal): Promise<MailListResponseDto> {
+  return requestJson<MailListResponseDto>('/api/v1/mails', { signal })
+}
+
+/** 按需拉取单封邮件详情（首次打开未读邮件时服务端同步落库已读并返回最新摘要） */
+export function fetchMailDetail(mailKey: string, signal?: AbortSignal): Promise<MailDetailResponseDto> {
+  return requestJson<MailDetailResponseDto>(`/api/v1/mails/${encodeURIComponent(mailKey)}`, { signal })
+}
+
+/** 显式标记指定邮件为已读 */
+export function markMailRead(mailKey: string): Promise<MailReadResponseDto> {
+  return requestJson<MailReadResponseDto>(`/api/v1/mails/${encodeURIComponent(mailKey)}/read`, { method: 'POST' })
+}
+
+/** 领取单封邮件全部附件（幂等 + Serializable 经济入账） */
+export function claimMailAttachments(mailKey: string): Promise<MailClaimResponseDto> {
+  return requestJson<MailClaimResponseDto>(`/api/v1/mails/${encodeURIComponent(mailKey)}/claim`, {
+    method: 'POST',
+    body: JSON.stringify({ requestId: createRequestId() }),
+  })
+}
+
+/** 一键领取当前所有可领邮件附件 */
+export function claimAllMailAttachments(): Promise<MailClaimResponseDto> {
+  return requestJson<MailClaimResponseDto>('/api/v1/mails/claim-all', {
+    method: 'POST',
+    body: JSON.stringify({ requestId: createRequestId() }),
+  })
+}
+
+/** 删除单封已无未领附件的邮件 */
+export function deleteMail(mailKey: string): Promise<MailDeleteResponseDto> {
+  return requestJson<MailDeleteResponseDto>(`/api/v1/mails/${encodeURIComponent(mailKey)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 批量删除已读且无可领附件的邮件 */
+export function deleteReadMails(): Promise<MailDeleteResponseDto> {
+  return requestJson<MailDeleteResponseDto>('/api/v1/mails/delete-read', {
+    method: 'POST',
+  })
 }

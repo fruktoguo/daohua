@@ -671,3 +671,16 @@
   - [`frontend/src/components/ChangelogPage.tsx`](../../frontend/src/components/ChangelogPage.tsx)
   - [`frontend/src/components/ChangelogNoticeModal.tsx`](../../frontend/src/components/ChangelogNoticeModal.tsx)
 - **样式文件**：[`frontend/src/styles/changelog.css`](../../frontend/src/styles/changelog.css)，行内引用样式见 [`frontend/src/styles.css`](../../frontend/src/styles.css)（搜索 `.log-reference`），浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 42. 顶栏传书按钮与邮件中心 (TopbarMailButton & MailPage)
+
+- **适用场景**：
+  - **顶栏右上角常驻传书角标**（置于 `.topbar-actions` 内、`TaijiToggle` 正左侧，横竖屏均常驻展示；当 `unreadCount > 0 || claimableCount > 0 || forceRedDot` 时点亮朱红未读角标圆点，竖屏窄屏下自适应压缩左侧 `.realm-progress` 境界进度条宽度防重叠） -> `TopbarMailButton`
+  - **中心替换邮件视图**（由 `uiStore.mailOpen` 驱动替代 `.main-content` 主视区，不占用移动端 7 个底栏主分组；提供全服/个人混合列表、左侧或顶部列表与详情拆分阅读、已读/未读区分、`RichTemplateText` 富文本正文、`ItemTile` + `ItemTooltipTarget` 附件格、`ItemIcon` 列表内联附件预览、单封领取/一键领取、单封删除/删除已读与未领附件 `ConfirmDialog`/禁用保护） -> `MailPage`, `useMailStore`
+- **组件源码**：
+  - [`frontend/src/components/TopbarMailButton.tsx`](../../frontend/src/components/TopbarMailButton.tsx)
+  - [`frontend/src/components/MailPage.tsx`](../../frontend/src/components/MailPage.tsx)
+  - [`frontend/src/game/mailStore.ts`](../../frontend/src/game/mailStore.ts)
+- **样式文件**：[`frontend/src/styles/mail.css`](../../frontend/src/styles/mail.css)（含深浅双主题 `[data-theme="light"]` 变量及 `<= 960px` / `<= 520px` 响应式顶栏与邮件双栏规则），物品格焦点锚点见 [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)

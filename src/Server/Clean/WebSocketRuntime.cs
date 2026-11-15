@@ -11,7 +11,13 @@ namespace Server.Clean;
 ///    可丢弃帧被丢弃时基线不前移，客户端不会永久缺失该分段内容；
 /// 4. 可丢弃推送持续丢帧达到阈值时按慢消费者主动关闭（4009），由客户端重连拉取全量快照。
 /// </summary>
-public sealed class WebSocketSession(Guid playerId, int capacity, Guid accountId = default, byte[]? authSessionTokenHash = null)
+public sealed class WebSocketSession(
+    Guid playerId,
+    int capacity,
+    Guid accountId = default,
+    byte[]? authSessionTokenHash = null,
+    bool isBot = false,
+    DateTimeOffset accountCreatedAt = default)
 {
     /// <summary>慢消费者阈值：连续丢弃帧数上限。有界队列满时实时推送逐帧丢弃，连续饱和视为无法消化。</summary>
     public const int SlowConsumerMaxDrops = 32;
@@ -51,6 +57,10 @@ public sealed class WebSocketSession(Guid playerId, int capacity, Guid accountId
     /// 避免误杀同账号在其他设备上仍有效的会话。未携带 Cookie 升级（理论不可达）时为 null。
     /// </summary>
     public byte[]? AuthSessionTokenHash { get; } = authSessionTokenHash;
+    /// <summary>是否为市场/系统机器人账号（群发传书通知与红点摘要推送强制屏蔽）。</summary>
+    public bool IsBot { get; } = isBot;
+    /// <summary>账号创建时刻（UTC），供全服群发历史角色门槛无库判定。</summary>
+    public DateTimeOffset AccountCreatedAt { get; } = accountCreatedAt;
     /// <summary>下行消息输出通道读取端</summary>
     public ChannelReader<byte[]> Outbound => _outbound.Reader;
     /// <summary>
@@ -242,6 +252,8 @@ public sealed class SessionRegistry
     public int Count => _sessions.Count;
     /// <summary>在线会话玩家 ID 快照（本地运维面板只读视图）。</summary>
     public IReadOnlyList<Guid> SnapshotPlayerIds() => _sessions.Keys.ToArray();
+    /// <summary>当前全部在线会话引用快照（用于全服传书单帧旁路广播，避免按玩家二次字典查表）。</summary>
+    public IReadOnlyList<WebSocketSession> SnapshotSessions() => _sessions.Values.ToArray();
     /// <summary>按玩家 ID 取出当前在线会话；不在线时返回 false（传音广播收件人解析）。</summary>
     /// <param name="playerId">玩家唯一标识。</param>
     /// <param name="session">命中的在线会话。</param>
@@ -380,13 +392,17 @@ public static class WebSocketEndpoint
         var riskContext = context.RequestServices.GetRequiredService<AccountAbuse.AccountRiskRequestContext>();
         var accountId = Guid.Parse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var isBot = string.Equals(context.User.FindFirstValue("is_bot"), "true", StringComparison.OrdinalIgnoreCase);
+        var accountCreatedAt = long.TryParse(context.User.FindFirstValue("account_created_at"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var createdAtMs)
+            && createdAtMs > 0
+            ? DateTimeOffset.FromUnixTimeMilliseconds(createdAtMs)
+            : DateTimeOffset.MinValue;
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         // 会话令牌哈希随会话登记：登出/改密吊销 HTTP 会话时按哈希精确踢线对应 WebSocket，
         // 避免被吊销的挂机连接继续持有可用的命令通道。
         byte[]? authSessionTokenHash = null;
         if (context.Request.Cookies.TryGetValue(SessionAuthenticationDefaults.CookieName, out var wsSessionToken))
             authSessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(wsSessionToken));
-        var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity, accountId, authSessionTokenHash);
+        var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity, accountId, authSessionTokenHash, isBot, accountCreatedAt);
         // 会话准入（单账号互踢/拒绝 + 设备配额）推迟到 Hello 处理时统一裁决：
         // 设备指纹只随 Hello 载荷到达，accept 阶段缺少裁决所需的全部输入。
 
@@ -723,6 +739,10 @@ public static class WebSocketEndpoint
                         var socialTask = social.BuildStateAsync(session.PlayerId, null, cancellationToken);
                         var worldChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.World), cancellationToken);
                         var nearbyChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.Nearby), cancellationToken);
+                        var mail = context.RequestServices.GetService<Social.MailRuntime>();
+                        var mailSummaryTask = mail is null
+                            ? ValueTask.FromResult(new MailSummaryDto(0, 0, false))
+                            : mail.GetSummaryAsync(session.PlayerId, isBot, session.AccountCreatedAt, cancellationToken);
                         // 在线存在感登记：世界/附近广播与好友在线状态都依赖它；登记是独立副作用，与上方读取并行。
                         // 迁地途中（EdgeId 非空）按「不在节点」登记，与 UpdateNodeAsync 口径一致。
                         var presenceTask = presence.RegisterAsync(session.PlayerId, displayName,
@@ -751,6 +771,9 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), worldHistory, cancellationToken);
                         if (await nearbyChatTask is { } nearbyHistory)
                             await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), nearbyHistory, cancellationToken);
+                        var mailSummary = await mailSummaryTask;
+                        if (mail is not null)
+                            await QueueJsonAsync(session, WireMessageType.MailSummary, Guid.NewGuid(), mailSummary, cancellationToken);
                         handshaken = true;
                         }
                         break;

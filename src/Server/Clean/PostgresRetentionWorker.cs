@@ -89,20 +89,20 @@ public sealed class PostgresRetentionRepository(
             SELECT t.transaction_id
             FROM economy.transactions t
             WHERE t.created_at < $1
-              AND t.transaction_type NOT IN ('market', 'shop.buy', 'player.unlock_avatar')
+              AND t.transaction_type NOT IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim')
               AND NOT EXISTS (SELECT 1 FROM social.party_session_inbox i WHERE i.consumed_transaction_id = t.transaction_id)
             ORDER BY t.created_at
             LIMIT $2
             """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
             now - TimeSpan.FromHours(2), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
 
-        // 2. 长期流水（保存 14 天）：仅限跨玩家订单撮合（market）、核心资产/功德消耗（shop.buy、player.unlock_avatar）；
+        // 2. 长期流水（保存 14 天）：仅限跨玩家订单撮合（market）、核心资产/功德消耗（shop.buy、player.unlock_avatar、mail.claim）；
         //    作为不可变金融账本保留 14 天供对账排查，超过 14 天自动滚动轮转清理，防磁盘无界累积。
         var deletedLongTerm = await DeleteBatchAsync(connection, transaction, """
             SELECT t.transaction_id
             FROM economy.transactions t
             WHERE t.created_at < $1
-              AND t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar')
+              AND t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim')
             ORDER BY t.created_at
             LIMIT $2
             """, "DELETE FROM economy.transactions t USING ({0}) doomed WHERE t.transaction_id = doomed.transaction_id",
@@ -122,13 +122,30 @@ public sealed class PostgresRetentionRepository(
             """,
             now - TimeSpan.FromHours(24), cancellationToken, batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
 
+        var deletedExpiredPlayerMails = await DeleteBatchAsync(connection, transaction, """
+            SELECT mail_id
+            FROM social.player_mails
+            WHERE expires_at < $1
+            ORDER BY expires_at
+            LIMIT $2
+            """, "DELETE FROM social.player_mails m USING ({0}) doomed WHERE m.mail_id = doomed.mail_id", now, cancellationToken);
+
+        var deletedExpiredBroadcastMails = await DeleteBatchAsync(connection, transaction, """
+            SELECT broadcast_id
+            FROM social.broadcast_mails
+            WHERE expires_at < $1
+            ORDER BY expires_at
+            LIMIT $2
+            """, "DELETE FROM social.broadcast_mails m USING ({0}) doomed WHERE m.broadcast_id = doomed.broadcast_id", now, cancellationToken);
+
+        var deletedExpiredMails = deletedExpiredPlayerMails + deletedExpiredBroadcastMails;
         var deletedEmptyTransactions = deletedShortTerm + deletedLongTerm;
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions, deletedTransientIdempotency);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk, deletedParticipationInboxes, deletedEmptyTransactions, deletedTransientIdempotency, deletedExpiredMails);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions} transientIdempotency={TransientIdempotency}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions, result.TransientIdempotency);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} emptyTransactions={EmptyTransactions} transientIdempotency={TransientIdempotency} expiredMails={ExpiredMails}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions, result.TransientIdempotency, result.ExpiredMails);
         return result;
     }
 
@@ -162,6 +179,7 @@ public sealed class PostgresRetentionRepository(
 /// <param name="ParticipationInboxes">已删除的终态会话已消费结算载荷行数。</param>
 /// <param name="EmptyTransactions">已删除的过期经济流水事务行数。</param>
 /// <param name="TransientIdempotency">已删除的过期瞬时经济幂等防重行数。</param>
+/// <param name="ExpiredMails">已删除的过期个人邮件与全服群发公告行数。</param>
 public sealed record RetentionResult(
     int Outbox,
     int Sessions,
@@ -172,10 +190,11 @@ public sealed record RetentionResult(
     int AccountRiskEvents,
     int ParticipationInboxes = 0,
     int EmptyTransactions = 0,
-    int TransientIdempotency = 0)
+    int TransientIdempotency = 0,
+    int ExpiredMails = 0)
 {
     /// <summary>本轮删除总行数。</summary>
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions + TransientIdempotency;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents + ParticipationInboxes + EmptyTransactions + TransientIdempotency + ExpiredMails;
 }
 
 /// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后按配置周期分批清理。</summary>

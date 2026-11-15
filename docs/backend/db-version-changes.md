@@ -99,3 +99,77 @@
      AND login_normalized LIKE 'bot\_%' ESCAPE '\';
   ```
 - 【离线脚本 / 人工步骤】：无（注意若 `prod` 存在前缀不是 `bot_` 的特殊测试/机器人账号，发版后按实际 `login_normalized` 清单补标 `is_bot = true` 并等待整点榜刷新或重启一次应用）。
+
+---
+
+## v55 -> v56
+
+- **提交/阶段**：邮件系统与双轨优化上线（`TASK-20261115-06`）
+- **玩家分段载荷版本**：`43 -> 43`（无变化：邮件完全旁路 `player_state_sections`，不侵入八分段载荷）
+
+### 1. 变了什么
+- 在 `PostgresSchema.Sql` 新增 3 张 `social.*` 邮件双轨表与对应索引，并在 `deploy/postgres-local-roles.sql` 向 `daohua_api`、`daohua_worker` 授予 `SELECT, INSERT, UPDATE, DELETE` 权限：
+  1. `social.broadcast_mails`（全服群发公告只存 1 行：`broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`、`title`、`body`、`sender_name`、`attachments jsonb`、`only_existing_players boolean`、`created_at`、`expires_at`、`revoked_at`）；
+  2. `social.player_mail_states`（按玩家稀疏建行：`player_id uuid PRIMARY KEY`、`read_ids bigint[]`、`claimed_ids bigint[]`、`deleted_ids bigint[]`、`updated_at`）；
+  3. `social.player_mails`（个人定向邮件：`mail_id uuid PRIMARY KEY`、`player_id uuid`、`title`、`body`、`sender_name`、`attachments jsonb`、`has_attachments boolean`、`is_read boolean`、`is_claimed boolean`、`created_at`、`expires_at`）。
+- 同步更新 `PostgresRetentionWorker`：`mail.claim` 归入 14 天长期保留流水白名单，并定期分批清理过期个人邮件与过期群发公告。
+
+### 2. 是否需要处理存量数据
+- **无需迁移存量玩家数据**：全服首次新增三张空表与索引，存量玩家存档（`player_state_heads` / `player_state_sections`）与既有账号数据零改动、零回填；唯一需确保应用连接角色对新增表持有完整 DML 权限（已在 DDL 内幂等建表，若环境为角色分离生产库则随迁移脚本补齐 `GRANT`）。
+
+### 3. 如果要处理，怎么处理
+- 【合入合并迁移脚本的 SQL 指引】：
+  ```sql
+  CREATE TABLE IF NOT EXISTS social.broadcast_mails (
+      broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      title text NOT NULL,
+      body text NOT NULL,
+      sender_name text NOT NULL,
+      attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+      only_existing_players boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL,
+      expires_at timestamptz NOT NULL,
+      revoked_at timestamptz NULL
+  );
+  CREATE INDEX IF NOT EXISTS ix_broadcast_mails_active
+      ON social.broadcast_mails(expires_at, created_at DESC)
+      WHERE revoked_at IS NULL;
+
+  CREATE TABLE IF NOT EXISTS social.player_mail_states (
+      player_id uuid PRIMARY KEY,
+      read_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+      claimed_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+      deleted_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+      updated_at timestamptz NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS social.player_mails (
+      mail_id uuid PRIMARY KEY,
+      player_id uuid NOT NULL,
+      title text NOT NULL,
+      body text NOT NULL,
+      sender_name text NOT NULL,
+      attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+      has_attachments boolean NOT NULL DEFAULT false,
+      is_read boolean NOT NULL DEFAULT false,
+      is_claimed boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL,
+      expires_at timestamptz NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS ix_player_mails_player_created
+      ON social.player_mails(player_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS ix_player_mails_expires
+      ON social.player_mails(expires_at);
+
+  DO $$
+  BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_api') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.broadcast_mails, social.player_mail_states, social.player_mails TO daohua_api';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_worker') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.broadcast_mails, social.player_mail_states, social.player_mails TO daohua_worker';
+      END IF;
+  END $$;
+  ```
+- 【离线脚本 / 人工步骤】：无。
+

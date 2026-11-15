@@ -78,7 +78,8 @@ public static class PostgresSchema
     /// game.player_projection 扩列（experience/lifetime_experience/duel_wins/duel_losses/avatar）；
     /// progression 增 duelWins/duelLosses、settings 增 publicLoadoutVisible（均可缺省解码），玩家载荷标签推进至 v43。
     /// v55：identity.accounts 增 is_bot boolean NOT NULL DEFAULT false（标记市场机器人账号，屏蔽附近玩家列表与全服排行榜）；玩家载荷标签保持 v43 不变。
-    public const int Version = 55;
+    /// v56：双轨邮件系统（social.broadcast_mails / social.player_mail_states / social.player_mails）；玩家载荷标签保持 v43 不变。
+    public const int Version = 56;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -716,6 +717,50 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_chat_messages_scope
         ON social.chat_messages(channel, scope_key, sent_at DESC, message_id DESC);
 
+    -- 全服群发邮件：全服只落 1 行不可变公告，由服务端共享不可变缓存零副本分发
+    CREATE TABLE IF NOT EXISTS social.broadcast_mails (
+        broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        title text NOT NULL,
+        body text NOT NULL,
+        sender_name text NOT NULL,
+        attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+        only_existing_players boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL,
+        expires_at timestamptz NOT NULL,
+        revoked_at timestamptz NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_broadcast_mails_active
+        ON social.broadcast_mails(expires_at, created_at DESC)
+        WHERE revoked_at IS NULL;
+
+    -- 群发邮件玩家个人交互位图（稀疏按需建行：零交互玩家不落行、不占内存）
+    CREATE TABLE IF NOT EXISTS social.player_mail_states (
+        player_id uuid PRIMARY KEY,
+        read_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+        claimed_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+        deleted_ids bigint[] NOT NULL DEFAULT '{}'::bigint[],
+        updated_at timestamptz NOT NULL
+    );
+
+    -- 个人定向邮件（单人上限 100 封，已读/已领状态内联行内）
+    CREATE TABLE IF NOT EXISTS social.player_mails (
+        mail_id uuid PRIMARY KEY,
+        player_id uuid NOT NULL,
+        title text NOT NULL,
+        body text NOT NULL,
+        sender_name text NOT NULL,
+        attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+        has_attachments boolean NOT NULL DEFAULT false,
+        is_read boolean NOT NULL DEFAULT false,
+        is_claimed boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL,
+        expires_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_mails_player_created
+        ON social.player_mails(player_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_player_mails_expires
+        ON social.player_mails(expires_at);
+
     CREATE TABLE IF NOT EXISTS platform.schema_version (
         version integer PRIMARY KEY,
         applied_at timestamptz NOT NULL
@@ -723,7 +768,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }
