@@ -2,9 +2,15 @@ import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from '
 import { Modal } from './Modal'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FloatingTooltip } from './FloatingPopover'
+import { HeavenGateGuideModal } from './HeavenGateGuideModal'
+import { Icon } from './Icon'
 import { PillBonusLabel } from './PillLabel'
 import { StatGlyph } from './StatGlyph'
 import { useT } from '../i18n'
+import {
+  consumeFirstOpenHeavenGateGuide,
+  markHeavenGateGuideSeen,
+} from '../game/heavenGateGuide'
 import {
   applyAxisDrag,
   getAllLinggenBonuses,
@@ -119,8 +125,34 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   const [roots, setRoots] = useState<LinggenPoints>(rolled ?? confirmed ?? emptyPoints())
   const [drag, setDrag] = useState<DragSession>({ active: false, pointerId: 0, axisIndex: -1, startValue: 0 })
   const [toast, setToast] = useState<string | null>(null)
+  const [portraitTab, setPortraitTab] = useState<'gate' | 'bonuses'>('gate')
+  const [guideOpen, setGuideOpen] = useState(false)
+  const wasOpenRef = useRef(false)
   const dragOriginRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const expectedPoints = useMemo(() => getHeavenGateExpectedPoints(rerollCount), [rerollCount])
+
+  // 每次打开开天门时复位竖屏焦点到「天门」，并在当前浏览器首次打开时自动弹出独立说明弹窗。
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setPortraitTab('gate')
+      if (consumeFirstOpenHeavenGateGuide()) {
+        setGuideOpen(true)
+      }
+    } else if (!open && wasOpenRef.current) {
+      setGuideOpen(false)
+    }
+    wasOpenRef.current = open
+  }, [open])
+
+  const handleOpenGuide = useCallback(() => {
+    markHeavenGateGuideSeen()
+    setGuideOpen(true)
+  }, [])
+
+  const handleCloseGuide = useCallback(() => {
+    markHeavenGateGuideSeen()
+    setGuideOpen(false)
+  }, [])
 
   // 判断是否存在改命待裁决候选灵根：已入天门且抽取值与已生效值不一致
   const isPendingReroll = useMemo(() => {
@@ -339,11 +371,62 @@ export const HeavenGateModal = memo(function HeavenGateModal({
   return (
     <>
     <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" className="heaven-gate-modal" initialFocusRef={confirmRef}>
-      <section className={boardClass} data-state={boardState} data-pending-reroll={isPendingReroll ? 'true' : 'false'}>
+      <section
+        className={boardClass}
+        data-state={boardState}
+        data-pending-reroll={isPendingReroll ? 'true' : 'false'}
+        data-portrait-tab={portraitTab}
+      >
+        {/* 竖屏顶部「天门 / 加成」双页签与规则说明按钮（横屏由 CSS 隐藏） */}
+        <div className="hg-portrait-bar">
+          <div
+            className="hg-portrait-tabs"
+            role="tablist"
+            aria-label={t('insight.heavenGate.portraitTabsAria')}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={portraitTab === 'gate'}
+              data-active={portraitTab === 'gate' ? 'true' : 'false'}
+              className="hg-portrait-tab"
+              onClick={() => setPortraitTab('gate')}
+            >
+              {t('insight.heavenGate.tabGate')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={portraitTab === 'bonuses'}
+              data-active={portraitTab === 'bonuses' ? 'true' : 'false'}
+              className="hg-portrait-tab"
+              onClick={() => setPortraitTab('bonuses')}
+            >
+              {t('insight.heavenGate.tabBonuses')}
+            </button>
+          </div>
+          <button
+            type="button"
+            className="hg-guide-trigger"
+            onClick={handleOpenGuide}
+          >
+            <Icon name="codex" size={13} />
+            <span>{t('insight.heavenGate.guideBtn')}</span>
+          </button>
+        </div>
+
         <div className="hg-panel__body">
           <div className="hg-panel__left">
         {/* A 判语区 */}
         <header className="hg-header">
+          <button
+            type="button"
+            className="hg-guide-trigger hg-guide-trigger--desktop"
+            onClick={handleOpenGuide}
+          >
+            <Icon name="codex" size={13} />
+            <span>{t('insight.heavenGate.guideBtn')}</span>
+          </button>
           <div className="hg-header__top">
             <h2 id={titleId} className="hg-header__title">{t('insight.heavenGate.title')}</h2>
             <p className="hg-header__subtitle">{t('insight.heavenGate.subtitle')}</p>
@@ -840,9 +923,19 @@ export const HeavenGateModal = memo(function HeavenGateModal({
             <div className="hg-bonuses-aside">
               <div className="hg-bonuses-aside__head">
                 <span className="hg-bonuses-aside__title">{t('insight.heavenGate.bonusesTitle')}</span>
-                {isPendingReroll && (
-                  <span className="hg-bonuses-aside__badge">{t('insight.heavenGate.pendingRerollBadge')}</span>
-                )}
+                <div className="hg-bonuses-aside__head-right">
+                  {hasRolled && (
+                    <span className="hg-bonuses-aside__meta">
+                      {t('insight.heavenGate.bonusesSummary', {
+                        total: currentTotal,
+                        multiplier: multiplier.toFixed(1),
+                      })}
+                    </span>
+                  )}
+                  {isPendingReroll && (
+                    <span className="hg-bonuses-aside__badge">{t('insight.heavenGate.pendingRerollBadge')}</span>
+                  )}
+                </div>
               </div>
               <div className="hg-bonuses-aside__list">
                 {fullBonuses.map(item => (
@@ -943,6 +1036,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
         onClose={() => setConfirmAction(null)}
       />
     )}
+    <HeavenGateGuideModal open={open && guideOpen} onClose={handleCloseGuide} />
   </>
   )
 })

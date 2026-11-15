@@ -178,12 +178,15 @@
 
 - **适用场景**：
   - **通用全屏居中遮罩弹窗**（基于 React Portal 顶层挂载、Focus 焦点锁定陷阱、ESC 键响应、三种标准尺寸 `small`/`medium`/`large`） -> `Modal`
+  - **开天门阵盘与独立规则说明叠层弹窗**（横屏左右双栏 / 竖屏 `orientation: portrait` 顶部「天门 / 加成」双页签切换；横竖屏均提供「说明」按钮弹出独立 `HeavenGateGuideModal`，首次打开当前浏览器自动叠层弹出并保持底层聚焦「天门」，文内 `逆命丹` 走 `RichTemplateText` 图标与悬浮详情，Esc/关闭仅退顶层，记忆状态由 `heavenGateGuide.ts` `localStorage` 持久化） -> `HeavenGateModal`, `HeavenGateGuideModal`
   - **二次确认 / 高危操作对话框**（重置、遗忘功法、摧毁物品、批量购买等，带取消/确认与高危危险样式） -> `ConfirmDialog`
   - 战斗技能触发条件编辑器弹窗 `CombatTriggerEditor` 见 §22，此处不再重复登记。
 - **组件源码**：
   - [`frontend/src/components/Modal.tsx`](../../frontend/src/components/Modal.tsx)
   - [`frontend/src/components/ConfirmDialog.tsx`](../../frontend/src/components/ConfirmDialog.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)
+  - [`frontend/src/components/HeavenGateModal.tsx`](../../frontend/src/components/HeavenGateModal.tsx)
+  - [`frontend/src/components/HeavenGateGuideModal.tsx`](../../frontend/src/components/HeavenGateGuideModal.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)、[`frontend/src/styles/heaven-gate-artifact.css`](../../frontend/src/styles/heaven-gate-artifact.css)
 
 ---
 
