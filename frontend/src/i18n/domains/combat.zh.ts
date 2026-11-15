@@ -309,6 +309,7 @@ export const combatZh = {
       edgeAria: '{from}至{to}，{distance}里',
       edgeDistance: '{distance}里',
       nodeAria: '{name}，{description}',
+      gatewayBadge: '交界',
       playerMarkerAria: '玩家当前位置：{name}',
       centerPlayer: '定位',
       zoomIn: '放大',

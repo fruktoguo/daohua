@@ -266,13 +266,33 @@ test('等比世界坐标投影：真实配表在不同系统 DPI/缩放比例下
   assert.ok(40 * firstFit.viewport.scale >= 34, `牌匾屏幕实显高度偏小: ${40 * firstFit.viewport.scale}`)
 })
 
-test('真实全量配表节点在基准像素空间（纯牌匾与全带图双模式）零碰撞重叠', () => {
+test('真实全量配表节点在基准像素空间（纯牌匾与全带图双模式，含三角标交界关口）零碰撞重叠', () => {
   const maps = loadRealMaps()
-  const allNodes = maps.flatMap(m => m.nodes.map(n => ({ ...n, mapId: m.id ?? m.mapId })))
+  const nodeOwner = new Map()
+  const allNodes = maps.flatMap(m => {
+    const mapId = m.id ?? m.mapId
+    return m.nodes.map(n => {
+      const nodeId = n.id ?? n.nodeId
+      nodeOwner.set(nodeId, mapId)
+      return { ...n, nodeId, mapId }
+    })
+  })
+  const gatewayIds = new Set()
+  for (const m of maps) {
+    for (const edge of m.edges ?? []) {
+      const fromOwner = nodeOwner.get(edge.fromNodeId)
+      const toOwner = nodeOwner.get(edge.toNodeId)
+      if (fromOwner && toOwner && fromOwner !== toOwner) {
+        gatewayIds.add(edge.fromNodeId)
+        gatewayIds.add(edge.toNodeId)
+      }
+    }
+  }
   assert.ok(allNodes.length >= 18)
+  assert.ok(gatewayIds.size >= 4)
 
-  // 模式 A：翻倍古风纯牌匾（--text-xl 楷体+双层金线+角标余量，4~5字名宽约 114~133px，高 50px）
-  // 模式 B：全节点带图+翻倍牌匾（96×68 图像框 + 40px 牌匾 + 间距 + 顶部角标，宽取 max(98, plaqueW)，总高 120px）
+  // 模式 A：翻倍古风纯牌匾（--text-xl 楷体+双层金线+角标余量，4~5字名宽约 114~133px，关口三标并排约 114px，高 50px）
+  // 模式 B：全节点带图+翻倍牌匾（96×68 图像框 + 40px 牌匾 + 间距 + 顶部角标，宽取 max(98, plaqueW, triBadgeW)，总高 120px）
   const modes = [
     { name: '纯翻倍牌匾', minW: 84, height: 50 },
     { name: '全节点带图+翻倍牌匾', minW: 98, height: 120 },
@@ -285,8 +305,8 @@ test('真实全量配表节点在基准像素空间（纯牌匾与全带图双�
         const b = allNodes[j]
         const aPx = toWorldPixel(a.x, a.y)
         const bPx = toWorldPixel(b.x, b.y)
-        const wA = Math.max(mode.minW, a.name.length * 19.5 + 36)
-        const wB = Math.max(mode.minW, b.name.length * 19.5 + 36)
+        const wA = Math.max(mode.minW, a.name.length * 19.5 + 36, gatewayIds.has(a.nodeId) ? 114 : 0)
+        const wB = Math.max(mode.minW, b.name.length * 19.5 + 36, gatewayIds.has(b.nodeId) ? 114 : 0)
         const overlapX = Math.abs(aPx.x - bPx.x) < (wA + wB) / 2
         const overlapY = Math.abs(aPx.y - bPx.y) < mode.height
         assert.equal(
@@ -348,9 +368,10 @@ test('buildNodeIconLookup & lookupNodeIconFromMap：格式优先级与宗门回�
   assert.equal(lookupNodeIconFromMap(iconMap, 'node.missing'), null)
 })
 
-test('静态代码契约：WorldMapPanel 与 expedition.css 强制保持等比画布、强 nodeId 透传、妖王/精英角标与 Design Token 字号规范', () => {
+test('静态代码契约：WorldMapPanel 与样式强制保持等比画布、强 nodeId 透传、交界/精英/妖王角标与 Design Token 字号规范', () => {
   const panelSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/components/WorldMapPanel.tsx'), 'utf-8')
   const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/expedition.css'), 'utf-8')
+  const themeSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/theme.css'), 'utf-8')
 
   // 严禁回退至非等比百分比拉伸 SVG 或固定死像素节点覆盖
   assert.equal(panelSource.includes('preserveAspectRatio="none"'), false)
@@ -359,11 +380,17 @@ test('静态代码契约：WorldMapPanel 与 expedition.css 强制保持等比�
   assert.match(panelSource, /const MapNodeButton = memo\(function MapNodeButton\(\{[\s\S]*?\bnodeId\b/)
   assert.match(panelSource, /resolveNodeIconUrl\(nodeId\)/)
   assert.match(panelSource, /data-node-id=\{nodeId\}/)
-  // 妖王与精英显式角标与修饰类契约
+  // 交界、精英与妖王显式角标、修饰类与驻留箭头避让契约
+  assert.match(panelSource, /world-map-node-badge is-gateway/)
+  assert.match(panelSource, /combat\.map\.gatewayBadge/)
+  assert.match(panelSource, /const onBadgedNode = Boolean\([\s\S]*?gatewayNodeIds\.has/)
   assert.match(panelSource, /has-elite/)
   assert.match(panelSource, /has-boss/)
   assert.match(panelSource, /combat\.nearby\.rankElite/)
   assert.match(panelSource, /combat\.nearby\.rankBoss/)
+  assert.match(cssSource, /\.world-map-node-badge\.is-gateway\s*\{/)
+  assert.equal(cssSource.includes('.world-map-node.is-gateway .world-map-node-plaque::before'), false)
+  assert.match(themeSource, /:root\[data-theme="light"\]\s+\.world-map-node-badge\.is-gateway\s*\{/)
   // canvas JSX style 不拥有 transform 属性，防高刷路径被 React 重渲染拉回
   assert.doesNotMatch(panelSource, /className="world-map-canvas"[\s\S]{0,160}transform:/)
   // 节点与角标字号使用标准 Design Token（禁止裸像素）

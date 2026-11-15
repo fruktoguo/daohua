@@ -638,7 +638,7 @@
 
 - **适用场景**：
   - **大世界等比基准像素画布与无畸变重投影**：统一采用 `WORLD_UNIT_X = 14`、`WORLD_UNIT_Y = 10`（`100 × 100` 世界单位恒定等于 `1400 × 1000` 基准像素，固定 7:5 比例）与舒适视野（`820 × 560`）自动拉近聚焦，通过外层画布单一 `translate(panX, panY) scale(fitScale * relativeZoom)` 变换保证全 DPI/浏览器缩放下的相对构图与节点净空一致，容器尺寸变化时通过 `reprojectViewportOnResize` 保持焦点与相对缩放比 -> `WorldMapPanel`, `worldMapVisibility.ts`
-  - **节点地标图像与翻倍修仙古匾**：采用翻倍尺寸（`--text-xl` 楷体字号、双层金线内衬）古风牌匾，支持无图纯牌匾与有图「上方折角灵境图像（`96 × 68`）+ 下方名称牌匾」双形态自动切换（基于 `frontend/src/assets/nodes/<nodeId>.{webp,png,svg}` 自动发现，`node.zongmen.*` 可回退 `node.zongmen`）；显式透传 `nodeId`，保留含妖王地点的朱红警示边框并在顶部 `.world-map-node-badges` 显式展示「精英 / 妖王」生态角标（`rankElite` / `rankBoss`） -> `MapNodeButton`, `resolveNodeIconUrl`
+  - **节点地标图像与翻倍修仙古匾**：采用翻倍尺寸（`--text-xl` 楷体字号、双层金线内衬）古风牌匾，支持无图纯牌匾与有图「上方折角灵境图像（`96 × 68`）+ 下方名称牌匾」双形态自动切换（基于 `frontend/src/assets/nodes/<nodeId>.{webp,png,svg}` 自动发现，`node.zongmen.*` 可回退 `node.zongmen`）；显式透传 `nodeId`，保留含妖王地点的朱红警示边框，并在顶部 `.world-map-node-badges` 按序显式展示「交界 / 精英 / 妖王」节点角标（`gatewayBadge` / `rankElite` / `rankBoss`），同时玩家驻留任一带角标节点时箭头自动抬升防遮挡 -> `MapNodeButton`, `resolveNodeIconUrl`
 - **组件源码**：
   - [`frontend/src/components/WorldMapPanel.tsx`](../../frontend/src/components/WorldMapPanel.tsx)
   - [`frontend/src/components/worldMapVisibility.ts`](../../frontend/src/components/worldMapVisibility.ts)

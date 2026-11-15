@@ -493,8 +493,11 @@ const MapNodeButton = memo(function MapNodeButton({
       style={{ left: `${xPx}px`, top: `${yPx}px` }}
       type="button"
     >
-      {(hasElite || hasBoss) && (
+      {(isGateway || hasElite || hasBoss) && (
         <span aria-hidden="true" className="world-map-node-badges">
+          {isGateway && (
+            <span className="world-map-node-badge is-gateway">{t('combat.map.gatewayBadge')}</span>
+          )}
           {hasElite && (
             <span className="world-map-node-badge is-elite">{t('combat.nearby.rankElite')}</span>
           )}
@@ -1279,7 +1282,9 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const currentNodeObj = world.nodeId ? worldIndex.nodes.find(n => n.nodeId === world.nodeId) : undefined
   const onImageNode = Boolean(world.nodeId && resolveNodeIconUrl(world.nodeId))
   const onBadgedNode = Boolean(
-    currentNodeObj && ((currentNodeObj.bossEnemies?.length ?? 0) > 0 || (currentNodeObj.eliteEnemies?.length ?? 0) > 0),
+    (world.nodeId && gatewayNodeIds.has(world.nodeId)) ||
+      (currentNodeObj &&
+        ((currentNodeObj.bossEnemies?.length ?? 0) > 0 || (currentNodeObj.eliteEnemies?.length ?? 0) > 0)),
   )
 
   return (

@@ -335,7 +335,7 @@
   z-index: 4;
 }
 
-/* 节点顶部生态角标条：显式区分「精英」「妖王」栖息地点 */
+/* 节点顶部状态角标条：显式区分「交界」「精英」「妖王」地点 */
 .world-map-node-badges {
   position: absolute;
   top: -10px;
@@ -361,6 +361,12 @@
   letter-spacing: 1px;
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.78);
+}
+
+.world-map-node-badge.is-gateway {
+  border: 1px solid rgba(134, 214, 178, 0.85);
+  background: linear-gradient(180deg, rgba(28, 92, 68, 0.96), rgba(16, 58, 43, 0.98));
+  color: #e2faef;
 }
 
 .world-map-node-badge.is-elite {
@@ -435,23 +441,18 @@
   pointer-events: none;
 }
 
-/* 关口节点：持有通往其他区域跨域边的节点，牌匾右上角界门菱标 */
-.world-map-node.is-gateway .world-map-node-plaque,
-.world-map-node.is-gateway .world-map-node-media {
+/* 跨区域交界关口节点：持有通往其他区域跨域边，无妖王/精英叠加时呈青玉界门框，配合顶部「交界」角标 */
+.world-map-node.is-gateway:not(.has-boss):not(.has-elite) .world-map-node-plaque,
+.world-map-node.is-gateway:not(.has-boss):not(.has-elite) .world-map-node-media {
   border-color: rgba(114, 169, 140, 0.85);
 }
 
-.world-map-node.is-gateway .world-map-node-plaque::before {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  width: 9px;
-  height: 9px;
-  background: #72a98c;
-  box-shadow: 0 0 8px rgba(114, 169, 140, 0.92);
-  content: "";
-  pointer-events: none;
-  transform: rotate(45deg);
+.world-map-node.is-gateway:not(.has-boss):not(.has-elite) .world-map-node-plaque {
+  box-shadow:
+    inset 0 0 0 2px rgba(8, 14, 11, 0.9),
+    inset 0 0 0 3px rgba(114, 169, 140, 0.3),
+    0 0 0 2px rgba(6, 7, 5, 0.78),
+    0 8px 20px rgba(0, 0, 0, 0.68);
 }
 
 /* 含精英怪地点（无妖王时）：灵紫警示边框与紫霄微光 */
