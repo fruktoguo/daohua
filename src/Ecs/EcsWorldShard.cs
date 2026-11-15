@@ -620,11 +620,17 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             {
             while (executions.Values.Any(e => !EcsActionSession.IsComplete(e)))
             {
-                if (++steps > SimulationEngine.MaxTransitionsPerAdvance)
+                if (++steps > SimulationEngine.MaxRequestStepsPerAdvance)
                 {
                     var diag = string.Join(";", executions.Where(pair => !EcsActionSession.IsComplete(pair.Value))
-                        .OrderBy(pair => EcsActionSession.NextBoundaryAt(pair.Value)).Take(8)
-                        .Select(pair => $"{pair.Key:N}:cursor={EcsActionSession.Current(pair.Value):o},next={EcsActionSession.NextBoundaryAt(pair.Value):o},[{EcsActionSession.DiagnosticState(pair.Value)}]"));
+                        .Select(pair =>
+                        {
+                            var hasBoundary = TryFormatNextBoundary(pair.Value, out var boundaryAt, out var boundaryText);
+                            return (pair.Key, Execution: pair.Value, SortKey: hasBoundary ? boundaryAt : DateTimeOffset.MaxValue, Boundary: boundaryText);
+                        })
+                        .OrderBy(item => item.SortKey)
+                        .Take(8)
+                        .Select(item => $"{item.Key:N}:cursor={EcsActionSession.Current(item.Execution):o},next={item.Boundary},[{EcsActionSession.DiagnosticState(item.Execution)}]"));
                     throw new DomainException(DomainErrorCode.InvariantViolation,
                         $"ECS 自然边界推进超过最大转换数。incomplete=[{diag}] " +
                         $"clock=[skip={_clock.SkipWorldUpdate},skipN={_clock.SkipWorldUpdateEntities},active={_clock.ActivePlayerId},prep={_clock.PreparationOnly}]");
@@ -642,9 +648,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     var diag = string.Join(";", executions.Select(pair =>
                     {
                         var execution = pair.Value;
-                        string boundary;
-                        try { boundary = EcsActionSession.NextBoundaryAt(execution).ToString("o"); }
-                        catch (Exception error) { boundary = $"error:{error.Message}"; }
+                        TryFormatNextBoundary(execution, out _, out var boundary);
                         return $"{pair.Key:N}:cursor={EcsActionSession.Current(execution):o},next={boundary}," +
                             $"window=[{execution.WindowStart:o}..{execution.WindowEnd:o}]," +
                             $"elapsed={execution.WindowElapsedSeconds:0.########},remaining={execution.RemainingSeconds:0.########}," +
@@ -761,6 +765,29 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 ownerHoldMeasurement.Dispose();
                 _ownerGate.Release();
             }
+        }
+    }
+
+    /// <summary>安全格式化下一边界用于诊断输出；未运行准备阶段或边界异常时不抛二次异常覆盖真实错误。</summary>
+    private static bool TryFormatNextBoundary(EcsActionExecutionComponent execution, out DateTimeOffset boundaryAt, out string text)
+    {
+        if (EcsActionSession.NeedsPreparation(execution))
+        {
+            boundaryAt = default;
+            text = "needs-preparation";
+            return false;
+        }
+        try
+        {
+            boundaryAt = EcsActionSession.NextBoundaryAt(execution);
+            text = boundaryAt.ToString("o");
+            return true;
+        }
+        catch (Exception error)
+        {
+            boundaryAt = default;
+            text = $"error:{error.Message}";
+            return false;
         }
     }
 

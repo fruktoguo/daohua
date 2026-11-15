@@ -71,43 +71,56 @@ internal static partial class ActionExecutionRules
         var waitsForSession = player.Actions.Count > 0 && player.Actions[0].Participation is not null
             && player is not PlayerAggregate { IsParticipationSessionContainer: true };
         var naturalStep = waitsForSession ? double.PositiveInfinity : 5 - player.Resources.RegenCarrySeconds;
-        if (double.IsFinite(nextBuffExpiry)) naturalStep = Math.Min(naturalStep, nextBuffExpiry - nowUnix);
+        if (double.IsFinite(nextBuffExpiry))
+            naturalStep = Math.Min(naturalStep, SecondsUntilUnixBoundary(now, nowUnix, nextBuffExpiry));
         var step = Math.Min((computeTarget - now).TotalSeconds, naturalStep);
         var slots = player.Settings.AutoUseSlots;
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
-            if (!slot.Enabled) continue;
-            var untilCooldown = slot.CooldownUntilUnixSeconds - nowUnix;
-            if (untilCooldown > 1e-9)
-            {
-                naturalStep = Math.Min(naturalStep, untilCooldown);
-                step = Math.Min(step, untilCooldown);
-            }
+            if (!slot.Enabled || slot.CooldownUntilUnixSeconds <= nowUnix) continue;
+            var untilCooldown = SecondsUntilUnixBoundary(now, nowUnix, slot.CooldownUntilUnixSeconds);
+            naturalStep = Math.Min(naturalStep, untilCooldown);
+            step = Math.Min(step, untilCooldown);
         }
         // 暂存区最早到期时刻并入自然边界：模拟窗口正好切在结算点，与 Buff 到期同一调度口径。
         if (player.Duel.ActiveDuelId is null && player.Duel.StagedItems.Count > 0)
         {
-            var untilStaged = player.Duel.StagedItems[0].AcquiredAtUnixSeconds
-                + gameData.Duel.StagedSettleSeconds - nowUnix;
-            if (untilStaged > 1e-9)
+            var settleAt = player.Duel.StagedItems[0].AcquiredAtUnixSeconds + gameData.Duel.StagedSettleSeconds;
+            if (settleAt > nowUnix)
             {
+                var untilStaged = SecondsUntilUnixBoundary(now, nowUnix, settleAt);
                 naturalStep = Math.Min(naturalStep, untilStaged);
                 step = Math.Min(step, untilStaged);
             }
         }
         // 参与会话权威散场时刻并入自然边界：模拟窗口正好切在散场点，参与行动移除由行动准入在下一拍执行。
         if (player.Actions.Count > 0 && player.Actions[0].Participation is { } session
-            && double.IsFinite(session.EndsAtUnixSeconds))
+            && double.IsFinite(session.EndsAtUnixSeconds)
+            && session.EndsAtUnixSeconds > nowUnix)
         {
-            var untilSessionEnd = session.EndsAtUnixSeconds - nowUnix;
-            if (untilSessionEnd > 1e-9)
-            {
-                naturalStep = Math.Min(naturalStep, untilSessionEnd);
-                step = Math.Min(step, untilSessionEnd);
-            }
+            var untilSessionEnd = SecondsUntilUnixBoundary(now, nowUnix, session.EndsAtUnixSeconds);
+            naturalStep = Math.Min(naturalStep, untilSessionEnd);
+            step = Math.Min(step, untilSessionEnd);
         }
         return new(step, naturalStep <= step + 1e-9, changed);
+    }
+
+    /// <summary>
+    /// 计算从 now 到目标 Unix 秒边界需要推进的最小正秒数。
+    /// 下游过期、冷却、暂存与散场均按 ToUnixTimeMilliseconds()/1000d 截断比较；
+    /// 若 AddSecondsExact 后毫秒截断值仍小于 targetUnix（double ULP 误差或亚毫秒起点），
+    /// 推进至首个不小于 targetUnix 的整毫秒，防止 0-tick 死循环或亚毫秒微步空转。
+    /// </summary>
+    private static double SecondsUntilUnixBoundary(DateTimeOffset now, double nowUnix, double targetUnix)
+    {
+        if (!double.IsFinite(targetUnix) || targetUnix <= nowUnix) return 0;
+        var maxUnix = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() / 1000d - 1;
+        if (targetUnix >= maxUnix) return double.PositiveInfinity;
+        var candidate = now.AddSecondsExact(targetUnix - nowUnix);
+        while (candidate <= now || candidate.ToUnixTimeMilliseconds() / 1000d < targetUnix)
+            candidate = DateTimeOffset.FromUnixTimeMilliseconds(candidate.ToUnixTimeMilliseconds() + 1);
+        return (candidate - now).TotalSeconds;
     }
 
     /// <summary>资源窗口收尾按暂存入账、技能时钟、行动资产、事件、回复的既有顺序执行。</summary>

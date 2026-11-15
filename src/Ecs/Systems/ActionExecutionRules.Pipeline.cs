@@ -13,7 +13,10 @@ namespace DaoHua.Ecs.Systems;
 /// <summary>行动 System 的阶段规则；普通 tick 与离线批量路径直接复用同一工作组件和执行顺序。</summary>
 internal static partial class ActionExecutionRules
 {
+    /// <summary>单资源窗口内的最大状态转换次数。</summary>
     internal const int MaxTransitionsPerAdvance = 100_000;
+    /// <summary>单次跨多窗口请求（最高覆盖 48h 离线补算）的推进步数保险丝。</summary>
+    internal const int MaxRequestStepsPerAdvance = 1_000_000;
 
     /// <summary>
     /// 在保持系统固定顺序的前提下合并无战斗自然窗口。
@@ -24,7 +27,7 @@ internal static partial class ActionExecutionRules
         while (!IsComplete(e))
         {
             if (!CanBulkAdvance(e)) return false;
-            if (++e.BulkStepCount > MaxTransitionsPerAdvance)
+            if (++e.BulkStepCount > MaxRequestStepsPerAdvance)
             {
                 var diag = DiagnosticState(e);
                 throw new DomainException(DomainErrorCode.InvariantViolation,

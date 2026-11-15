@@ -36,8 +36,10 @@ public static partial class SimulationEngine
 {
     /// <summary>当前模拟模式版本</summary>
     public const int CurrentSchemaVersion = 1;
-    /// <summary>单次快进计算的最大状态转移步数上限，防止异常输入或配置死循环卡死主服务</summary>
+    /// <summary>单资源窗口的最大状态转移步数上限，防止异常输入或配置死循环卡死主服务</summary>
     public const int MaxTransitionsPerAdvance = DaoHua.Ecs.Systems.ActionExecutionRules.MaxTransitionsPerAdvance;
+    /// <summary>单次跨多窗口请求（含 48 小时离线补算）的最大总步数上限</summary>
+    public const int MaxRequestStepsPerAdvance = DaoHua.Ecs.Systems.ActionExecutionRules.MaxRequestStepsPerAdvance;
 
     /// <summary>整秒量化的贴整容差：吸收 0.1 这类二进制无法精确表示的秒数在累加中的尾差。</summary>
     private const double SecondQuantizationEpsilon = 1e-9;

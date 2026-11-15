@@ -84,7 +84,7 @@ case "biz.someCommand":
 
 ### 4.2 不变量（违反即 `DomainException`，不得静默）
 
-- `NextBoundaryAt` 单调不退；批量推进 `BulkStepCount > MaxTransitionsPerAdvance` 即失败。
+- `NextBoundaryAt` 单调不退；单窗口队列转移超过 `MaxTransitionsPerAdvance`（`100,000`）或单次跨多窗口请求推进超过 `MaxRequestStepsPerAdvance`（`1,000,000`，含批量 `BulkStepCount`）即失败。
 - **亚 tick 残差**：`DateTimeOffset` 是 100ns 量化，`double` 余量转时间戳可能零进展——步长按 `min(remaining, needed)` 逻辑量消费，`frameTarget >= windowEnd` 时亚 tick 残差强制归零。新增推进路径必须遵守同一口径，禁止从量化时间戳反复反推剩余预算。
 - `RemainingRepeats == -1` 无限循环绝不出队。
 - 随机数顺序、快照导出顺序、脏段语义与聚合运行时逐位一致。
