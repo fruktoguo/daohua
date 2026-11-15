@@ -84,5 +84,12 @@ public sealed class MailEnvelopeTests
         Assert.NotNull(restored);
         Assert.Equal(detail.Body, restored!.Mail.Body);
         Assert.Equal(1, restored.Summary.ClaimableCount);
+
+        var permanentItem = listItem with { ExpiresAt = null, OnlyExistingPlayers = false };
+        var permJson = JsonSerializer.Serialize(permanentItem, ProtocolJson.Options);
+        var permRestored = JsonSerializer.Deserialize<MailListItemDto>(permJson, ProtocolJson.Options);
+        Assert.NotNull(permRestored);
+        Assert.Null(permRestored!.ExpiresAt);
+        Assert.False(permRestored.OnlyExistingPlayers);
     }
 }

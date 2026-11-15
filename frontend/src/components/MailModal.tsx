@@ -32,7 +32,8 @@ function formatMailTimestamp(iso: string): string {
     : `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`
 }
 
-function formatExpiryLabel(iso: string, t: TFunction): string {
+function formatExpiryLabel(iso: string | null, t: TFunction): string {
+  if (!iso) return t('app.mail.neverExpires')
   const target = new Date(iso).getTime()
   if (!Number.isFinite(target)) return iso
   const diffMs = target - Date.now()

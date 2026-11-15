@@ -1016,7 +1016,7 @@ export interface MailListItemDto {
   title: string
   senderName: string
   createdAt: string
-  expiresAt: string
+  expiresAt: string | null
   hasAttachments: boolean
   isRead: boolean
   isClaimed: boolean

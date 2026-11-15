@@ -82,12 +82,12 @@ public sealed record BroadcastMailRecord(
     IReadOnlyList<MailAttachmentDto> Attachments,
     bool OnlyExistingPlayers,
     DateTimeOffset CreatedAt,
-    DateTimeOffset ExpiresAt,
+    DateTimeOffset? ExpiresAt,
     DateTimeOffset? RevokedAt)
 {
     public string MailKey => MailKeyCodec.FormatBroadcast(BroadcastId);
     public bool HasAttachments => Attachments.Count > 0;
-    public bool IsExpired(DateTimeOffset now) => ExpiresAt <= now || RevokedAt is not null;
+    public bool IsExpired(DateTimeOffset now) => (ExpiresAt is { } exp && exp <= now) || RevokedAt is not null;
     public bool IsEligibleFor(DateTimeOffset accountCreatedAt, DateTimeOffset now)
         => !IsExpired(now) && (!OnlyExistingPlayers || accountCreatedAt <= CreatedAt);
 }
@@ -100,7 +100,7 @@ public sealed record OpsBroadcastMailDto(
     int AttachmentCount,
     bool OnlyExistingPlayers,
     DateTimeOffset CreatedAt,
-    DateTimeOffset ExpiresAt,
+    DateTimeOffset? ExpiresAt,
     DateTimeOffset? RevokedAt,
     bool IsActive);
 
@@ -112,7 +112,8 @@ public sealed record OpsSendPlayerMailRequest(
     string Body,
     string? SenderName,
     IReadOnlyList<MailAttachmentDto>? Attachments,
-    int? ExpireDays);
+    int? ExpireDays,
+    bool NeverExpire = false);
 
 /// <summary>运营后台发送全服群发邮件请求。</summary>
 public sealed record OpsSendBroadcastMailRequest(
@@ -121,7 +122,8 @@ public sealed record OpsSendBroadcastMailRequest(
     string? SenderName,
     IReadOnlyList<MailAttachmentDto>? Attachments,
     bool OnlyExistingPlayers = true,
-    int? ExpireDays = null);
+    int? ExpireDays = null,
+    bool NeverExpire = false);
 
 /// <summary>运营后台撤销全服群发公告请求。</summary>
 public sealed record OpsRevokeBroadcastMailRequest(long BroadcastId);

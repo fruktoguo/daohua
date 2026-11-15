@@ -989,6 +989,7 @@ export const appZh = {
       claimableBadge: '可领附件',
       claimedBadge: '已领取',
       expired: '已过期',
+      neverExpires: '永不过期',
       expiresInHours: '剩余 {hours} 小时到期',
       expiresInDays: '剩余 {days} 天到期',
       senderLabel: '发件人：{sender}',

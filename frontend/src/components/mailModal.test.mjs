@@ -134,6 +134,7 @@ test('MailModal 独立弹窗契约、Icon 显式尺寸及公共组件规范', as
   }
 
   assert.match(mailModalSource, /<RichTemplateText[\s\S]*?\btemplate=\{/, 'MailModal 必须向 RichTemplateText 传入 template 属性')
+  assert.match(mailModalSource, /app\.mail\.neverExpires/, 'MailModal 必须支持永不过期邮件文案显示')
   assert.match(appSource, /<MailModal\s+open=\{mailOpen\}\s+onClose=\{/, 'App.tsx 必须在顶层弹窗层挂载独立 MailModal')
   assert.doesNotMatch(appSource, /hidden=\{mailOpen \|\|/, '独立弹窗化后 App.tsx 不得用 mailOpen 隐藏底层主界面页签')
 })

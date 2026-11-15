@@ -362,11 +362,89 @@ public sealed class MailIntegrationTests
 
             var afterRevoke = await client.GetFromJsonAsync<MailListResponseDto>("/api/v1/mails/", ProtocolJson.Options);
             Assert.DoesNotContain(afterRevoke!.Mails, m => m.MailKey == mailKey);
+
+            // 6. 永不过期 + 面向含未来新号（onlyExistingPlayers=false, neverExpire=true）接口端到端校验
+            var permanentResp = await client.PostAsJsonAsync("/ops/api/actions/mail-send-broadcast", new
+            {
+                title = "永不过期全员功德",
+                body = "所有账号可领",
+                senderName = "道化司",
+                onlyExistingPlayers = false,
+                neverExpire = true,
+                attachments = new[] { new { itemId = "item.gongde-bound", quantity = 1000 } },
+            });
+            Assert.Equal(HttpStatusCode.OK, permanentResp.StatusCode);
+            var permJson = await permanentResp.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(JsonValueKind.Null, permJson.GetProperty("expiresAt").ValueKind);
+
+            var listWithPerm = await client.GetFromJsonAsync<MailListResponseDto>("/api/v1/mails/", ProtocolJson.Options);
+            var permItem = Assert.Single(listWithPerm!.Mails);
+            Assert.Null(permItem.ExpiresAt);
+            Assert.False(permItem.OnlyExistingPlayers);
         }
         finally
         {
             await app.StopAsync();
         }
+    }
+
+    /// <summary>
+    /// 永不过期邮件（NeverExpire=true, OnlyExistingPlayers=false）：
+    /// 1. 既对历史账号生效，也对邮件发出之后注册的新账号生效且均可领取 1000 绑定功德；
+    /// 2. 留存清理任务（PruneAsync）只清理有限过期邮件，绝不删除永不过期邮件。
+    /// </summary>
+    [Fact]
+    public async Task NeverExpireBroadcast_CoversFutureAccounts_AndSurvivesRetentionPrune()
+    {
+        await using var fixture = await MailFixture.CreateAsync();
+        var veteran = await fixture.CreatePlayerAsync("先行修士", createdAtOffset: TimeSpan.FromDays(-10), isBot: false);
+
+        var permBroadcast = await fixture.Runtime.SendBroadcastMailAsync(new OpsSendBroadcastMailRequest(
+            Title: "太初长存馈赠",
+            Body: "奉上 {{item:item.gongde-bound|功德·绑定}} ×1000。",
+            SenderName: "道化司",
+            Attachments: [new MailAttachmentDto("item.gongde-bound", 1000)],
+            OnlyExistingPlayers: false,
+            ExpireDays: null,
+            NeverExpire: true));
+        Assert.Null(permBroadcast.ExpiresAt);
+
+        await Task.Delay(30);
+        var futurePlayer = await fixture.CreatePlayerAsync("后起新秀", createdAtOffset: TimeSpan.Zero, isBot: false);
+
+        var retention = new PostgresRetentionRepository(
+            fixture.Source,
+            new ServerOptions(
+                "test",
+                "Host=unused;Database=unused",
+                128,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(30),
+                64,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromDays(30),
+                64 * 1024,
+                128,
+                1,
+                0,
+                EnableSchemaBootstrap: false),
+            NullLogger<PostgresRetentionRepository>.Instance);
+        await retention.PruneAsync(DateTimeOffset.UtcNow.AddYears(10));
+
+        await fixture.Runtime.ForceRefreshBroadcastCacheAsync();
+        var active = await fixture.Runtime.GetActiveBroadcastsAsync();
+        Assert.Contains(active, b => b.BroadcastId == permBroadcast.BroadcastId && b.ExpiresAt is null);
+
+        var veteranClaim = await fixture.Runtime.ClaimSingleAsync(veteran, permBroadcast.MailKey);
+        Assert.Equal([permBroadcast.MailKey], veteranClaim.ClaimedMailKeys);
+        Assert.Equal(1000d, await fixture.GetAssetBalanceAsync(veteran, "item.gongde-bound"));
+
+        var futureList = await fixture.Runtime.ListMailsAsync(futurePlayer);
+        var futureMail = Assert.Single(futureList.Mails);
+        Assert.Null(futureMail.ExpiresAt);
+        var futureClaim = await fixture.Runtime.ClaimAllAsync(futurePlayer);
+        Assert.Equal([permBroadcast.MailKey], futureClaim.ClaimedMailKeys);
+        Assert.Equal(1000d, await fixture.GetAssetBalanceAsync(futurePlayer, "item.gongde-bound"));
     }
 
     private sealed class MailFixture : IAsyncDisposable, IParticipationAssetBoundary, IPlayerRuntime

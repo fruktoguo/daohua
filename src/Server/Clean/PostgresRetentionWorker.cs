@@ -125,7 +125,7 @@ public sealed class PostgresRetentionRepository(
         var deletedExpiredPlayerMails = await DeleteBatchAsync(connection, transaction, """
             SELECT mail_id
             FROM social.player_mails
-            WHERE expires_at < $1
+            WHERE expires_at IS NOT NULL AND expires_at < $1
             ORDER BY expires_at
             LIMIT $2
             """, "DELETE FROM social.player_mails m USING ({0}) doomed WHERE m.mail_id = doomed.mail_id", now, cancellationToken);
@@ -133,7 +133,7 @@ public sealed class PostgresRetentionRepository(
         var deletedExpiredBroadcastMails = await DeleteBatchAsync(connection, transaction, """
             SELECT broadcast_id
             FROM social.broadcast_mails
-            WHERE expires_at < $1
+            WHERE expires_at IS NOT NULL AND expires_at < $1
             ORDER BY expires_at
             LIMIT $2
             """, "DELETE FROM social.broadcast_mails m USING ({0}) doomed WHERE m.broadcast_id = doomed.broadcast_id", now, cancellationToken);

@@ -104,21 +104,22 @@
 
 ## v55 -> v56
 
-- **提交/阶段**：邮件系统与双轨优化上线（`TASK-20261115-06`）
+- **提交/阶段**：邮件系统与双轨优化上线（`TASK-20261115-06`、`TASK-20261116-05` 永不过期支持）
 - **玩家分段载荷版本**：`43 -> 43`（无变化：邮件完全旁路 `player_state_sections`，不侵入八分段载荷）
+- **迁移脚本状态**：已有 `migrations/0056_v55_to_v56.sql`
 
 ### 1. 变了什么
 - 在 `PostgresSchema.Sql` 新增 3 张 `social.*` 邮件双轨表与对应索引，并在 `deploy/postgres-local-roles.sql` 向 `daohua_api`、`daohua_worker` 授予 `SELECT, INSERT, UPDATE, DELETE` 权限：
-  1. `social.broadcast_mails`（全服群发公告只存 1 行：`broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`、`title`、`body`、`sender_name`、`attachments jsonb`、`only_existing_players boolean`、`created_at`、`expires_at`、`revoked_at`）；
+  1. `social.broadcast_mails`（全服群发公告只存 1 行：`broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`、`title`、`body`、`sender_name`、`attachments jsonb`、`only_existing_players boolean`、`created_at`、`expires_at timestamptz NULL`、`revoked_at`）；
   2. `social.player_mail_states`（按玩家稀疏建行：`player_id uuid PRIMARY KEY`、`read_ids bigint[]`、`claimed_ids bigint[]`、`deleted_ids bigint[]`、`updated_at`）；
-  3. `social.player_mails`（个人定向邮件：`mail_id uuid PRIMARY KEY`、`player_id uuid`、`title`、`body`、`sender_name`、`attachments jsonb`、`has_attachments boolean`、`is_read boolean`、`is_claimed boolean`、`created_at`、`expires_at`）。
-- 同步更新 `PostgresRetentionWorker`：`mail.claim` 归入 14 天长期保留流水白名单，并定期分批清理过期个人邮件与过期群发公告。
+  3. `social.player_mails`（个人定向邮件：`mail_id uuid PRIMARY KEY`、`player_id uuid`、`title`、`body`、`sender_name`、`attachments jsonb`、`has_attachments boolean`、`is_read boolean`、`is_claimed boolean`、`created_at`、`expires_at timestamptz NULL`）。
+- 同步更新 `PostgresRetentionWorker`：`mail.claim` 归入 14 天长期保留流水白名单，并定期分批清理 `expires_at IS NOT NULL AND expires_at < now()` 的过期个人邮件与过期群发公告（`expires_at IS NULL` 表示永不过期，不自动清理）。
 
 ### 2. 是否需要处理存量数据
-- **无需迁移存量玩家数据**：全服首次新增三张空表与索引，存量玩家存档（`player_state_heads` / `player_state_sections`）与既有账号数据零改动、零回填；唯一需确保应用连接角色对新增表持有完整 DML 权限（已在 DDL 内幂等建表，若环境为角色分离生产库则随迁移脚本补齐 `GRANT`）。
+- **无需迁移存量玩家数据**：全服首次新增三张空表与索引，存量玩家存档（`player_state_heads` / `player_state_sections`）与既有账号数据零改动、零回填；唯一需确保应用连接角色对新增表持有完整 DML 与 `social` 序列权限（已固化在 `migrations/0056_v55_to_v56.sql`）。
 
 ### 3. 如果要处理，怎么处理
-- 【合入合并迁移脚本的 SQL 指引】：
+- 【合入合并迁移脚本的 SQL 指引】（已收拢至 `migrations/0056_v55_to_v56.sql`）：
   ```sql
   CREATE TABLE IF NOT EXISTS social.broadcast_mails (
       broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -128,7 +129,7 @@
       attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
       only_existing_players boolean NOT NULL DEFAULT true,
       created_at timestamptz NOT NULL,
-      expires_at timestamptz NOT NULL,
+      expires_at timestamptz NULL,
       revoked_at timestamptz NULL
   );
   CREATE INDEX IF NOT EXISTS ix_broadcast_mails_active
@@ -154,7 +155,7 @@
       is_read boolean NOT NULL DEFAULT false,
       is_claimed boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL,
-      expires_at timestamptz NOT NULL
+      expires_at timestamptz NULL
   );
   CREATE INDEX IF NOT EXISTS ix_player_mails_player_created
       ON social.player_mails(player_id, created_at DESC);
@@ -163,11 +164,18 @@
 
   DO $$
   BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_bootstrap') THEN
+          EXECUTE 'ALTER TABLE social.broadcast_mails OWNER TO daohua_bootstrap';
+          EXECUTE 'ALTER TABLE social.player_mail_states OWNER TO daohua_bootstrap';
+          EXECUTE 'ALTER TABLE social.player_mails OWNER TO daohua_bootstrap';
+      END IF;
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_api') THEN
           EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.broadcast_mails, social.player_mail_states, social.player_mails TO daohua_api';
+          EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA social TO daohua_api';
       END IF;
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_worker') THEN
           EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.broadcast_mails, social.player_mail_states, social.player_mails TO daohua_worker';
+          EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA social TO daohua_worker';
       END IF;
   END $$;
   ```

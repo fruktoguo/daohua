@@ -17,7 +17,7 @@ interface OpsBroadcastMailItem {
   attachmentCount: number
   onlyExistingPlayers: boolean
   createdAt: string
-  expiresAt: string
+  expiresAt: string | null
   revokedAt?: string | null
   isActive: boolean
 }
@@ -50,6 +50,7 @@ export function OpsActionsView(): React.JSX.Element {
   const [mailTitle, setMailTitle] = useState('')
   const [mailSender, setMailSender] = useState('仙门执事')
   const [mailExpireDays, setMailExpireDays] = useState('30')
+  const [mailNeverExpire, setMailNeverExpire] = useState(false)
   const [mailBody, setMailBody] = useState('')
   const [mailAttachments, setMailAttachments] = useState<MailAttachmentDraft[]>([])
   const [broadcasts, setBroadcasts] = useState<OpsBroadcastMailItem[]>([])
@@ -273,9 +274,18 @@ export function OpsActionsView(): React.JSX.Element {
               type="number"
               min={1}
               max={365}
+              disabled={mailNeverExpire}
               value={mailExpireDays}
               onChange={event => setMailExpireDays(event.target.value)}
             />
+          </label>
+          <label>
+            <input
+              checked={mailNeverExpire}
+              type="checkbox"
+              onChange={event => setMailNeverExpire(event.target.checked)}
+            />
+            永不过期
           </label>
         </div>
 
@@ -346,7 +356,7 @@ export function OpsActionsView(): React.JSX.Element {
                 parsedAttachments.push({ itemId, quantity: Math.floor(quantity) })
               }
               const expireNum = Number(mailExpireDays)
-              const expireDays = Number.isFinite(expireNum) && expireNum > 0 ? Math.floor(expireNum) : null
+              const expireDays = !mailNeverExpire && Number.isFinite(expireNum) && expireNum > 0 ? Math.floor(expireNum) : null
               const senderName = mailSender.trim() || null
 
               if (mailMode === 'personal') {
@@ -358,7 +368,7 @@ export function OpsActionsView(): React.JSX.Element {
                 }
                 setPending({
                   title: '确认发送个人传书',
-                  description: `即将向玩家 ${pId ?? dName} 发送「${title}」（附带 ${parsedAttachments.length} 种物品附件）。`,
+                  description: `即将向玩家 ${pId ?? dName} 发送「${title}」（${mailNeverExpire ? '永不过期，' : ''}附带 ${parsedAttachments.length} 种物品附件）。`,
                   danger: false,
                   run: () => opsPost('/actions/mail-send-player', {
                     targetPlayerId: pId,
@@ -368,6 +378,7 @@ export function OpsActionsView(): React.JSX.Element {
                     senderName,
                     attachments: parsedAttachments,
                     expireDays,
+                    neverExpire: mailNeverExpire,
                   }),
                 })
                 return
@@ -375,7 +386,7 @@ export function OpsActionsView(): React.JSX.Element {
 
               setPending({
                 title: '确认发布全服群发传书',
-                description: `即将向全服发布公告「${title}」（范围：${onlyExistingPlayers ? '仅当前已注册存量玩家' : '全员含未来新号'}，附带 ${parsedAttachments.length} 种附件）。`,
+                description: `即将向全服发布公告「${title}」（范围：${onlyExistingPlayers ? '仅当前已注册存量玩家' : '全员含未来新号'}，${mailNeverExpire ? '永不过期，' : ''}附带 ${parsedAttachments.length} 种附件）。`,
                 danger: true,
                 run: async () => {
                   const res = await opsPost('/actions/mail-send-broadcast', {
@@ -385,6 +396,7 @@ export function OpsActionsView(): React.JSX.Element {
                     attachments: parsedAttachments,
                     onlyExistingPlayers,
                     expireDays,
+                    neverExpire: mailNeverExpire,
                   })
                   await loadBroadcasts()
                   return res
@@ -433,7 +445,7 @@ export function OpsActionsView(): React.JSX.Element {
                     <td>{item.onlyExistingPlayers ? '仅存量老号' : '全服含新号'}</td>
                     <td className="ops-numeric">{item.attachmentCount}</td>
                     <td>{new Date(item.createdAt).toLocaleString()}</td>
-                    <td>{new Date(item.expiresAt).toLocaleString()}</td>
+                    <td>{item.expiresAt ? new Date(item.expiresAt).toLocaleString() : '永不过期'}</td>
                     <td>
                       <OpsPill tone={item.isActive ? 'jade' : item.revokedAt ? 'danger' : 'muted'}>
                         {item.isActive ? '生效中' : item.revokedAt ? '已撤销' : '已过期'}

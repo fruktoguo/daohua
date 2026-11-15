@@ -40,7 +40,7 @@ public sealed class PostgresMailRepository(
         await using var command = new NpgsqlCommand("""
             SELECT broadcast_id, title, body, sender_name, attachments::text, only_existing_players, created_at, expires_at, revoked_at
             FROM social.broadcast_mails
-            WHERE revoked_at IS NULL AND expires_at > $1
+            WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)
             ORDER BY created_at DESC, broadcast_id DESC
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -103,7 +103,7 @@ public sealed class PostgresMailRepository(
                 count(*) FILTER (WHERE NOT is_read)::integer,
                 count(*) FILTER (WHERE has_attachments AND NOT is_claimed)::integer
             FROM social.player_mails
-            WHERE player_id = $1 AND expires_at > $2
+            WHERE player_id = $1 AND (expires_at IS NULL OR expires_at > $2)
             """, connection);
         personalCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
         personalCommand.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -161,7 +161,7 @@ public sealed class PostgresMailRepository(
         await using (var command = new NpgsqlCommand("""
             SELECT mail_id, title, sender_name, attachments::text, has_attachments, is_read, is_claimed, created_at, expires_at
             FROM social.player_mails
-            WHERE player_id = $1 AND expires_at > $2
+            WHERE player_id = $1 AND (expires_at IS NULL OR expires_at > $2)
             ORDER BY created_at DESC, mail_id DESC
             LIMIT $3
             """, connection))
@@ -180,7 +180,7 @@ public sealed class PostgresMailRepository(
                 var isRead = reader.GetBoolean(5);
                 var isClaimed = reader.GetBoolean(6);
                 var createdAt = reader.GetFieldValue<DateTimeOffset>(7);
-                var expiresAt = reader.GetFieldValue<DateTimeOffset>(8);
+                var expiresAt = reader.IsDBNull(8) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(8);
                 if (!isRead) unreadCount++;
                 if (hasAttachments && !isClaimed) claimableCount++;
                 items.Add(new MailListItemDto(
@@ -266,7 +266,7 @@ public sealed class PostgresMailRepository(
             await using var command = new NpgsqlCommand("""
                 UPDATE social.player_mails
                    SET is_read = true
-                 WHERE mail_id = $1 AND player_id = $2 AND expires_at > $3
+                 WHERE mail_id = $1 AND player_id = $2 AND (expires_at IS NULL OR expires_at > $3)
                 RETURNING title, body, sender_name, attachments::text, has_attachments, is_claimed, created_at, expires_at
                 """, connection, tx);
             command.Parameters.Add(new NpgsqlParameter { Value = personalMailId });
@@ -285,7 +285,7 @@ public sealed class PostgresMailRepository(
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetFieldValue<DateTimeOffset>(6),
-                reader.GetFieldValue<DateTimeOffset>(7),
+                reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                 hasAttachments,
                 true,
                 !hasAttachments || reader.GetBoolean(5),
@@ -346,7 +346,7 @@ public sealed class PostgresMailRepository(
             await using var preCmd = new NpgsqlCommand("""
                 SELECT attachments::text, has_attachments, is_claimed
                 FROM social.player_mails
-                WHERE mail_id = $1 AND player_id = $2 AND expires_at > $3
+                WHERE mail_id = $1 AND player_id = $2 AND (expires_at IS NULL OR expires_at > $3)
                 LIMIT 1
                 """, preConn);
             preCmd.Parameters.Add(new NpgsqlParameter { Value = personalMailId });
@@ -422,7 +422,7 @@ public sealed class PostgresMailRepository(
             await using var cmd = new NpgsqlCommand("""
                 SELECT attachments::text
                 FROM social.player_mails
-                WHERE player_id = $1 AND expires_at > $2 AND has_attachments AND NOT is_claimed
+                WHERE player_id = $1 AND (expires_at IS NULL OR expires_at > $2) AND has_attachments AND NOT is_claimed
                 """, preConn);
             cmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
             cmd.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -576,7 +576,7 @@ public sealed class PostgresMailRepository(
         await using (var skipCmd = new NpgsqlCommand("""
             SELECT count(*)::integer
             FROM social.player_mails
-            WHERE player_id = $1 AND expires_at > $2 AND is_read AND has_attachments AND NOT is_claimed
+            WHERE player_id = $1 AND (expires_at IS NULL OR expires_at > $2) AND is_read AND has_attachments AND NOT is_claimed
             """, connection, tx))
         {
             skipCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
@@ -630,7 +630,7 @@ public sealed class PostgresMailRepository(
         string senderName,
         IReadOnlyList<MailAttachmentDto> attachments,
         DateTimeOffset createdAt,
-        DateTimeOffset expiresAt,
+        DateTimeOffset? expiresAt,
         ImmutableArray<BroadcastMailRecord> activeBroadcasts,
         CancellationToken ct = default)
     {
@@ -697,7 +697,7 @@ public sealed class PostgresMailRepository(
                 insertCmd.Parameters.Add(new NpgsqlParameter { Value = hasAttachments });
                 insertCmd.Parameters.Add(new NpgsqlParameter { Value = !hasAttachments });
                 insertCmd.Parameters.Add(new NpgsqlParameter { Value = createdAt });
-                insertCmd.Parameters.Add(new NpgsqlParameter { Value = expiresAt });
+                insertCmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.TimestampTz, Value = (object?)expiresAt ?? DBNull.Value });
                 await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -747,7 +747,7 @@ public sealed class PostgresMailRepository(
         IReadOnlyList<MailAttachmentDto> attachments,
         bool onlyExistingPlayers,
         DateTimeOffset createdAt,
-        DateTimeOffset expiresAt,
+        DateTimeOffset? expiresAt,
         CancellationToken ct = default)
     {
         var attachmentsJson = SerializeAttachments(attachments);
@@ -764,7 +764,7 @@ public sealed class PostgresMailRepository(
         cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = attachmentsJson });
         cmd.Parameters.Add(new NpgsqlParameter { Value = onlyExistingPlayers });
         cmd.Parameters.Add(new NpgsqlParameter { Value = createdAt });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = expiresAt });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.TimestampTz, Value = (object?)expiresAt ?? DBNull.Value });
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         await reader.ReadAsync(ct).ConfigureAwait(false);
         return ReadBroadcastRecord(reader);
@@ -800,7 +800,7 @@ public sealed class PostgresMailRepository(
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var createdAt = reader.GetFieldValue<DateTimeOffset>(5);
-            var expiresAt = reader.GetFieldValue<DateTimeOffset>(6);
+            var expiresAt = reader.IsDBNull(6) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(6);
             var revokedAt = reader.IsDBNull(7) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(7);
             list.Add(new OpsBroadcastMailDto(
                 reader.GetInt64(0),
@@ -811,7 +811,7 @@ public sealed class PostgresMailRepository(
                 createdAt,
                 expiresAt,
                 revokedAt,
-                revokedAt is null && expiresAt > now));
+                revokedAt is null && (expiresAt is null || expiresAt > now)));
         }
         return list;
     }
@@ -859,7 +859,7 @@ public sealed class PostgresMailRepository(
                     await using var lockCmd = new NpgsqlCommand("""
                         SELECT attachments::text, has_attachments, is_claimed
                         FROM social.player_mails
-                        WHERE mail_id = $1 AND player_id = $2 AND expires_at > $3
+                        WHERE mail_id = $1 AND player_id = $2 AND (expires_at IS NULL OR expires_at > $3)
                         FOR UPDATE
                         """, connection, transaction);
                     lockCmd.Parameters.Add(new NpgsqlParameter { Value = targetPersonalId });
@@ -894,7 +894,7 @@ public sealed class PostgresMailRepository(
                     await using (var bCmd = new NpgsqlCommand("""
                         SELECT broadcast_id, title, body, sender_name, attachments::text, only_existing_players, created_at, expires_at, revoked_at
                         FROM social.broadcast_mails
-                        WHERE broadcast_id = $1 AND revoked_at IS NULL AND expires_at > $2
+                        WHERE broadcast_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $2)
                         LIMIT 1
                         """, connection, transaction))
                     {
@@ -996,7 +996,7 @@ public sealed class PostgresMailRepository(
                 await using (var bCmd = new NpgsqlCommand("""
                     SELECT broadcast_id, title, body, sender_name, attachments::text, only_existing_players, created_at, expires_at, revoked_at
                     FROM social.broadcast_mails
-                    WHERE revoked_at IS NULL AND expires_at > $1
+                    WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)
                     ORDER BY broadcast_id ASC
                     """, connection, transaction))
                 {
@@ -1021,7 +1021,7 @@ public sealed class PostgresMailRepository(
                 await using (var pCmd = new NpgsqlCommand("""
                     SELECT mail_id, attachments::text
                     FROM social.player_mails
-                    WHERE player_id = $1 AND expires_at > $2 AND has_attachments AND NOT is_claimed
+                    WHERE player_id = $1 AND (expires_at IS NULL OR expires_at > $2) AND has_attachments AND NOT is_claimed
                     ORDER BY mail_id ASC
                     FOR UPDATE
                     """, connection, transaction))
@@ -1147,7 +1147,7 @@ public sealed class PostgresMailRepository(
         await using var cmd = new NpgsqlCommand("""
             SELECT broadcast_id
             FROM social.broadcast_mails
-            WHERE revoked_at IS NULL AND expires_at > $1
+            WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)
             """, connection, transaction);
         cmd.Parameters.Add(new NpgsqlParameter { Value = now });
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1229,7 +1229,7 @@ public sealed class PostgresMailRepository(
             DeserializeAttachments(reader.GetString(4)),
             reader.GetBoolean(5),
             reader.GetFieldValue<DateTimeOffset>(6),
-            reader.GetFieldValue<DateTimeOffset>(7),
+            reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
             reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8));
     }
 

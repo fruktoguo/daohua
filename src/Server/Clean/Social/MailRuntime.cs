@@ -139,10 +139,8 @@ public sealed class MailRuntime(
             parsedTargetId = targetGuid;
         }
 
-        var (title, body, sender, attachments, expireDays) = ValidateContent(
-            request.Title, request.Body, request.SenderName, request.Attachments, request.ExpireDays);
-        var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.AddDays(expireDays);
+        var (title, body, sender, attachments, expiresAt) = ValidateContent(
+            request.Title, request.Body, request.SenderName, request.Attachments, request.ExpireDays, request.NeverExpire, now: out var now);
         var broadcasts = await GetActiveBroadcastsAsync(ct).ConfigureAwait(false);
         var outcome = await repository.SendPersonalMailAsync(
             parsedTargetId,
@@ -165,10 +163,8 @@ public sealed class MailRuntime(
         OpsSendBroadcastMailRequest request,
         CancellationToken ct = default)
     {
-        var (title, body, sender, attachments, expireDays) = ValidateContent(
-            request.Title, request.Body, request.SenderName, request.Attachments, request.ExpireDays);
-        var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.AddDays(expireDays);
+        var (title, body, sender, attachments, expiresAt) = ValidateContent(
+            request.Title, request.Body, request.SenderName, request.Attachments, request.ExpireDays, request.NeverExpire, now: out var now);
 
         var created = await repository.InsertBroadcastMailAsync(
             title,
@@ -234,7 +230,7 @@ public sealed class MailRuntime(
         var nextExpiry = now.AddMinutes(5);
         foreach (var item in loaded)
         {
-            if (item.ExpiresAt < nextExpiry) nextExpiry = item.ExpiresAt;
+            if (item.ExpiresAt is { } exp && exp < nextExpiry) nextExpiry = exp;
         }
         Interlocked.Exchange(ref _cacheExpiresAtUtcTicks, nextExpiry.UtcTicks);
         Interlocked.Exchange(ref _cacheInitialized, 1);
@@ -248,13 +244,16 @@ public sealed class MailRuntime(
         session.TrySendDroppableEnvelope(WireMessageType.MailSummary, Guid.NewGuid(), bytes);
     }
 
-    private (string Title, string Body, string SenderName, IReadOnlyList<MailAttachmentDto> Attachments, int ExpireDays) ValidateContent(
+    private (string Title, string Body, string SenderName, IReadOnlyList<MailAttachmentDto> Attachments, DateTimeOffset? ExpiresAt) ValidateContent(
         string? rawTitle,
         string? rawBody,
         string? rawSender,
         IReadOnlyList<MailAttachmentDto>? rawAttachments,
-        int? rawExpireDays)
+        int? rawExpireDays,
+        bool neverExpire,
+        out DateTimeOffset now)
     {
+        now = DateTimeOffset.UtcNow;
         var title = (rawTitle ?? string.Empty).Trim();
         if (title.Length == 0 || title.Length > MailRules.MaxTitleLength)
             throw new MailOperationException(MailOperationFailure.InvalidArgument, $"邮件标题长度必须在 1~{MailRules.MaxTitleLength} 字之间。");
@@ -267,9 +266,14 @@ public sealed class MailRuntime(
         if (sender.Length > MailRules.MaxSenderLength)
             throw new MailOperationException(MailOperationFailure.InvalidArgument, $"发件署名长度不能超过 {MailRules.MaxSenderLength} 字。");
 
-        var expireDays = rawExpireDays ?? MailRules.DefaultExpireDays;
-        if (expireDays < 1 || expireDays > MailRules.MaxExpireDays)
-            throw new MailOperationException(MailOperationFailure.InvalidArgument, $"有效天数必须在 1~{MailRules.MaxExpireDays} 天之间。");
+        DateTimeOffset? expiresAt = null;
+        if (!neverExpire)
+        {
+            var expireDays = rawExpireDays ?? MailRules.DefaultExpireDays;
+            if (expireDays < 1 || expireDays > MailRules.MaxExpireDays)
+                throw new MailOperationException(MailOperationFailure.InvalidArgument, $"有效天数必须在 1~{MailRules.MaxExpireDays} 天之间。");
+            expiresAt = now.AddDays(expireDays);
+        }
 
         var merged = new Dictionary<string, double>(StringComparer.Ordinal);
         if (rawAttachments is { Count: > 0 })
@@ -299,6 +303,6 @@ public sealed class MailRuntime(
         var normalizedAttachments = merged
             .Select(pair => new MailAttachmentDto(pair.Key, pair.Value))
             .ToArray();
-        return (title, body, sender, normalizedAttachments, expireDays);
+        return (title, body, sender, normalizedAttachments, expiresAt);
     }
 }

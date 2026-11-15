@@ -717,7 +717,7 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_chat_messages_scope
         ON social.chat_messages(channel, scope_key, sent_at DESC, message_id DESC);
 
-    -- 全服群发邮件：全服只落 1 行不可变公告，由服务端共享不可变缓存零副本分发
+    -- 全服群发邮件：全服只落 1 行不可变公告，由服务端共享不可变缓存零副本分发（expires_at IS NULL 表示永不过期）
     CREATE TABLE IF NOT EXISTS social.broadcast_mails (
         broadcast_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         title text NOT NULL,
@@ -726,7 +726,7 @@ public static class PostgresSchema
         attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
         only_existing_players boolean NOT NULL DEFAULT true,
         created_at timestamptz NOT NULL,
-        expires_at timestamptz NOT NULL,
+        expires_at timestamptz NULL,
         revoked_at timestamptz NULL
     );
     CREATE INDEX IF NOT EXISTS ix_broadcast_mails_active
@@ -742,7 +742,7 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL
     );
 
-    -- 个人定向邮件（单人上限 100 封，已读/已领状态内联行内）
+    -- 个人定向邮件（单人上限 100 封，已读/已领状态内联行内；expires_at IS NULL 表示永不过期）
     CREATE TABLE IF NOT EXISTS social.player_mails (
         mail_id uuid PRIMARY KEY,
         player_id uuid NOT NULL,
@@ -754,7 +754,7 @@ public static class PostgresSchema
         is_read boolean NOT NULL DEFAULT false,
         is_claimed boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL,
-        expires_at timestamptz NOT NULL
+        expires_at timestamptz NULL
     );
     CREATE INDEX IF NOT EXISTS ix_player_mails_player_created
         ON social.player_mails(player_id, created_at DESC);
