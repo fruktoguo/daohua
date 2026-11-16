@@ -556,7 +556,7 @@ public static class ProtocolSnapshotMapper
                 completedRepeats = action.CompletedRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio, action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio, action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty, state?.Settings.AutoUseSlots),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -604,13 +604,18 @@ public static class ProtocolSnapshotMapper
     /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
     /// 威胁字段统一投影有效威胁值（基础实际值×(1+增幅点数/100)），与目标判定口径一致。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, int difficulty = 0)
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, int difficulty = 0, IReadOnlyList<AutoUseSlotState>? autoUseSlots = null)
     {
         var effectiveDifficulty = spec?.Difficulty ?? difficulty;
         // 敌怪展示面板削弱口径：会话取开打定格冻结值，单人取本机当前节点建筑投影。
         var effectiveMonsterWeaken = spec?.MonsterWeakenRatio ?? monsterWeakenRatio;
         var inspectedEnemyIndex = inspectedUnit is { Side: "enemy", Index: >= 0 } enemyTarget ? enemyTarget.Index.Value : (int?)null;
         var inspectedAllyIndex = inspectedUnit is { Side: "ally", Index: >= 0 } allyTarget ? allyTarget.Index.Value : (int?)null;
+        var playerBuffsDto = expedition.Phase == CombatExpeditionPhase.Combat
+            ? ToCombatBuffsDto(expedition.PlayerState?.Buffs)
+            : expedition.Phase == CombatExpeditionPhase.Duel
+                ? ToDuelPlayerBuffsDto(playerCarriedBuffs, autoUseSlots, gameData, expedition.BattleElapsedSeconds)
+                : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds);
         return new
         {
             expedition.EncounterId,
@@ -638,9 +643,7 @@ public static class ProtocolSnapshotMapper
             // 本机战内 Buff（含开战注入的消耗品副本）：战斗时钟到期时刻随快照下发，
             // 前端按 battleElapsedSeconds 反推剩余；非战斗相位改投跨波携带态
             // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。
-            playerBuffs = expedition.Phase == CombatExpeditionPhase.Combat
-                ? ToCombatBuffsDto(expedition.PlayerState?.Buffs)
-                : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds),
+            playerBuffs = playerBuffsDto,
             enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken, effectiveDifficulty)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
             recentEvents = expedition.RecentEvents is null || expedition.RecentEvents.Count == 0 ? null : expedition.RecentEvents.Select(e => new
@@ -850,6 +853,65 @@ public static class ProtocolSnapshotMapper
         }).ToArray();
     }
 
+    private static object[]? ToDuelPlayerBuffsDto(
+        PlayerCombatBuffState? carried,
+        IReadOnlyList<AutoUseSlotState>? autoUseSlots,
+        GameDataCatalog? gameData,
+        double battleElapsedSeconds)
+    {
+        List<object>? list = null;
+        if (carried is { Buffs.Count: > 0 })
+        {
+            list = [];
+            foreach (var carry in carried.Buffs)
+            {
+                list.Add(new
+                {
+                    carry.BuffId, carry.Name, carry.Stacks,
+                    expiresAtSeconds = double.IsFinite(battleElapsedSeconds + carry.RemainingSeconds)
+                        ? battleElapsedSeconds + carry.RemainingSeconds : double.MaxValue,
+                    effects = ToBuffEffectsDto(carry.Effects), carry.StatRatios
+                });
+            }
+        }
+        if (autoUseSlots is { Count: > 0 } && gameData is not null)
+        {
+            for (var i = 0; i < autoUseSlots.Count; i++)
+            {
+                var slot = autoUseSlots[i];
+                if (!slot.Enabled || slot.ItemId is null || slot.RemainingDurationSeconds <= 0
+                    || slot.Group != AutoUseSlotState.SlotGroupGeneral
+                    || slot.ActionType != Domain.GameData.AutoUseBar.Combat)
+                    continue;
+                if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item)
+                    || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false }
+                    || !gameData.RawItems.TryGetValue(item.Id.Value, out var rawItem)
+                    || !rawItem.TryGetProperty("consumable", out var raw)
+                    || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    continue;
+                list ??= [];
+                foreach (var buff in buffs.EnumerateArray())
+                {
+                    var buffId = buff.GetProperty("buffId").GetString()!;
+                    var effects = Domain.Combat.BuffEffectParser.Parse(buff, 1.0);
+                    var buffName = buff.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? nameEl.GetString()
+                        : null;
+                    list.Add(new
+                    {
+                        buffId,
+                        name = buffName ?? buffId,
+                        stacks = 1d,
+                        expiresAtSeconds = battleElapsedSeconds + slot.RemainingDurationSeconds,
+                        effects = ToBuffEffectsDto(effects),
+                        statRatios = (IReadOnlyDictionary<string, double>?)null
+                    });
+                }
+            }
+        }
+        return list is null || list.Count == 0 ? null : list.ToArray();
+    }
+
     /// <summary>斗法回放白名单投影：对手资源与事件级 MP 快照常驻下发；属性面板仅在观察目标命中镜像位（enemy:0）时投影。</summary>
     private static object ToDuelPlaybackDto(DuelPlaybackState duel, bool includeOpponentAttributes, Action? onAttributesProjected = null)
     {
@@ -875,7 +937,12 @@ public static class ProtocolSnapshotMapper
             viewerIsInitiator = duel.ViewerIsInitiator,
             duel.Resolved,
             duel.Forfeited,
-            events = duel.Events.Select(duelEvent => new
+            events = duel.Events
+                .Where(duelEvent => duelEvent.AbilityNameOverride != DuelScriptEvent.SustainedActivateMarker
+                    && !(duelEvent.AbilityId is null
+                        && duelEvent.AttackerIsInitiator == duelEvent.TargetIsInitiator
+                        && duelEvent.Damage == 0))
+                .Select(duelEvent => new
             {
                 duelEvent.AtSeconds,
                 duelEvent.AttackerIsInitiator,

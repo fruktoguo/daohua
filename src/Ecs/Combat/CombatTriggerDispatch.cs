@@ -101,7 +101,7 @@ public static class CombatTriggerSurface
         SyncMarker<ManaLeechComponent>(entity, unit.Stats.Effects.MpDrainPoints > 0);
         SyncMarker<ThornsComponent>(entity, unit.Stats.Effects.DamageReflectPoints > 0);
         SyncMarker<ThreatOnTakenComponent>(entity, unit.Stats.Effects.ThreatOnTakenPoints > 0);
-        SyncMarker<FormationReactiveStrikeComponent>(entity, !unit.IsPlayer);
+        SyncMarker<FormationReactiveStrikeComponent>(entity, true);
         SyncMarker<TraitReactionComponent>(entity,
             CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.XuyiTraitId)
             || CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.RanhunTraitId));

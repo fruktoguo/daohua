@@ -472,7 +472,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
   if (opponentManapoints < 0 || opponentManapoints > opponentMaxManapoints) {
     throw new Error(`行动 ${actionId} 的 duel 对手灵力无效。`)
   }
-  // 剧本事件只提取行动条/资源条所需字段（时刻、双方身份、功法与结算后灵力）；伤害文本由日志呈现。
+  // 剧本事件提取行动条、资源条与打击动画演出所需的完整结算字段。
   const events: ExpeditionDuelEvent[] = arrayValue(row.events)
     .map((entry, index) => {
       const duelEvent = object(entry)
@@ -482,8 +482,21 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
         attackerIsInitiator: booleanValue(duelEvent.attackerIsInitiator),
         targetIsInitiator: booleanValue(duelEvent.targetIsInitiator),
         abilityId: optionalString(duelEvent.abilityId, `${label}.abilityId`),
+        targetHitpointsAfter: duelEvent.targetHitpointsAfter === undefined || duelEvent.targetHitpointsAfter === null
+          ? undefined
+          : finiteNumber(duelEvent.targetHitpointsAfter, `${label}.targetHitpointsAfter`),
         attackerManapointsAfter: finiteNumber(duelEvent.attackerManapointsAfter, `${label}.attackerManapointsAfter`),
         targetManapointsAfter: finiteNumber(duelEvent.targetManapointsAfter, `${label}.targetManapointsAfter`),
+        hit: duelEvent.hit === undefined ? undefined : booleanValue(duelEvent.hit),
+        damage: duelEvent.damage === undefined || duelEvent.damage === null
+          ? undefined
+          : finiteNumber(duelEvent.damage, `${label}.damage`),
+        healing: duelEvent.healing === undefined || duelEvent.healing === null
+          ? undefined
+          : finiteNumber(duelEvent.healing, `${label}.healing`),
+        critical: duelEvent.critical === undefined ? undefined : booleanValue(duelEvent.critical),
+        broken: duelEvent.broken === undefined ? undefined : booleanValue(duelEvent.broken),
+        parried: duelEvent.parried === undefined ? undefined : booleanValue(duelEvent.parried),
       }
     })
   return {

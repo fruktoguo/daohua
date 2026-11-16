@@ -456,6 +456,217 @@ public sealed class PersistenceGovernanceRuntimeTests
         Assert.Equal(ActionQueueStatus.Blocked, afterHeal.State.Actions[0].Status);
     }
 
+    /// <summary>
+    /// 回归：同节点开启斗法的玩家在原地复活遭遇战倒地（Phase=Combat 且 PlayerRespawnAtSeconds!=null）时，
+    /// 即使持有遭遇计数也不得被 MatchDuelsOwnedAsync 选作应战方而拼出「Duel+PlayerRespawnAtSeconds」无效态。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsync_RespawningPvpDefenderIsNotMatchedIntoInvalidDuel()
+    {
+        var catalog = LoadIsolatedCatalog(playerRespawnSeconds: 60, onPartyWipe: "respawn", searchSeconds: 2);
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+
+        var seekerId = Guid.Parse("00000000-0000-4000-8000-0000000000c1");
+        var downedDefenderId = Guid.Parse("00000000-0000-4000-8000-0000000000c2");
+        sections.Seed(CreateDuelistBundle(seekerId, "寻战甲", catalog.Fingerprint, "item.peach-wood", 1, equipSkill: true));
+        sections.Seed(CreateDuelistBundle(downedDefenderId, "倒地乙", catalog.Fingerprint, "item.peach-wood", 1, equipSkill: false));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(600));
+
+        await adapter.AttachConnectionAsync(seekerId);
+        await adapter.AttachConnectionAsync(downedDefenderId);
+        await EnqueueCombatAsync(adapter, seekerId);
+        await EnqueueCombatAsync(adapter, downedDefenderId);
+
+        // 先走完 InitialSearch 入场建档；然后把应战方置入「战斗倒地等待原地复活」合法状态（与线上 66b188b2 事故前完全一致）。
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        ecs.MutatePlayer(downedDefenderId, aggregate =>
+        {
+            aggregate.Actions[0].Status = ActionQueueStatus.Running;
+            aggregate.Actions[0].ProgressSeconds = 0;
+            aggregate.Resources.Hitpoints = 0;
+            aggregate.Actions[0].Expedition = new CombatExpeditionState(
+                "encounter.test-qi-beast",
+                CombatExpeditionPhase.Combat,
+                0, 0, 123L,
+                BattleElapsedSeconds: 10,
+                PlayerHitpoints: 0,
+                PlayerManapoints: 100,
+                PlayerNextAttackAtSeconds: 12,
+                PlayerAttackCount: 1,
+                PlayerThreat: 1,
+                CombatOutcome.Running,
+                WaveNumber: 1,
+                [new ExpeditionEnemyState("enemy.test-beast", new CombatantSnapshot(100, 10, 2, 0, 0))])
+            {
+                PlayerState = new CombatantSnapshot(0, 100, 12, 1, 1, RespawnAtSeconds: 120),
+                PlayerRespawnAtSeconds = 120
+            };
+        });
+
+        // 连续推进跨越寻战甲 2s Search 边界进入 DuelPending：绝不能把倒地乙拉入无效斗法状态，全服稳定推进且无任何异常。
+        for (var step = 0; step < 6; step++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(2));
+            await adapter.AdvanceAllAsync(clock.UtcNow);
+            var defenderSnapshot = adapter.TryGetLoaded(downedDefenderId)!;
+            Assert.NotNull(PlayerAggregate.Restore(defenderSnapshot.State));
+            Assert.NotEqual(CombatExpeditionPhase.Duel, defenderSnapshot.State.Actions[0].Expedition?.Phase);
+        }
+
+        // 倒地乙此时仍未复活（总计推进 13s < 120s），双方均未报错且均在下次可见边界正常跟进。
+        Assert.Null(adapter.TryGetLoaded(seekerId)!.State.Duel.ActiveDuelId);
+        Assert.Null(adapter.TryGetLoaded(downedDefenderId)!.State.Duel.ActiveDuelId);
+        Assert.NotNull(PlayerAggregate.Restore(adapter.TryGetLoaded(downedDefenderId)!.State));
+    }
+
+    /// <summary>
+    /// 回归：若某玩家运行时快照在推进前已损坏、导致异常回滚时的 PlayerAggregate.Restore 一并抛出，
+    /// AdvanceAllAsync 必须将其强制逐出内存且不得拖累同批健康玩家回滚，也不得把调度边界钉死在过去触发 50ms 空转。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsync_EvictsCorruptedRollbackPlayerAndKeepsBoundaryHealthy()
+    {
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+
+        var healthyA = Guid.Parse("00000000-0000-4000-8000-0000000000d1");
+        var corruptB = Guid.Parse("00000000-0000-4000-8000-0000000000d2");
+        var healthyC = Guid.Parse("00000000-0000-4000-8000-0000000000d3");
+        foreach (var (id, name) in new[] { (healthyA, "健康甲"), (corruptB, "坏档乙"), (healthyC, "健康丙") })
+            sections.Seed(CreateOfflineBundle(id, name, catalog.Fingerprint, skipTutorial: true));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(600));
+
+        foreach (var id in new[] { healthyA, corruptB, healthyC })
+            await adapter.AttachConnectionAsync(id);
+        foreach (var id in new[] { healthyA, healthyC })
+        {
+            var enqReq = Guid.NewGuid();
+            var enq = await adapter.ExecuteAsync(id, "action.enqueue",
+                JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                    enqReq.ToString("D"), "explore.gather-ningxue-grass", -1), ProtocolJson.Options),
+                0, enqReq);
+            Assert.True(enq.Success, enq.Message);
+        }
+        await EnqueueCombatAsync(adapter, corruptB);
+
+        // 在内存组件直接制造与生产故障同型的坏态（Phase=Duel 且携带 PlayerRespawnAtSeconds）：
+        // RunPlayerOnceAsync 校验失败的同时，RestoreBufferingForRollback 触发 PlayerAggregate.Restore 亦将抛出。
+        ecs.MutatePlayer(corruptB, aggregate =>
+        {
+            aggregate.Actions[0].Status = ActionQueueStatus.Running;
+            aggregate.Actions[0].ProgressSeconds = 0;
+            aggregate.Actions[0].Expedition = new CombatExpeditionState(
+                "encounter.test-qi-beast",
+                CombatExpeditionPhase.Duel,
+                0, 0, 1L,
+                BattleElapsedSeconds: 0,
+                PlayerHitpoints: 100,
+                PlayerManapoints: 100,
+                PlayerNextAttackAtSeconds: 0,
+                PlayerAttackCount: 0,
+                PlayerThreat: 0,
+                CombatOutcome.Running,
+                WaveNumber: 1,
+                null)
+            {
+                PlayerRespawnAtSeconds = 204.79
+            };
+        });
+
+        clock.Advance(TimeSpan.FromSeconds(15));
+        var thrown = await Assert.ThrowsAsync<AggregateException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+        Assert.Contains(thrown.InnerExceptions, ex => ex is DomainException && ex.Message.Contains("战斗远征状态无效"));
+        Assert.Contains(thrown.InnerExceptions, ex => ex is DomainException && ex.Message.Contains("行动状态无效"));
+
+        // 坏档乙已被直接逐出内存；健康甲与健康丙本轮正常推进，且下一边界未钉死在过去。
+        Assert.Null(adapter.TryGetLoaded(corruptB));
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyA)!.LastSimulatedAt);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyC)!.LastSimulatedAt);
+        Assert.True(adapter.NextAdvanceBoundaryUtc is null || adapter.NextAdvanceBoundaryUtc >= clock.UtcNow);
+
+        clock.Advance(TimeSpan.FromSeconds(25));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyA)!.LastSimulatedAt);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyC)!.LastSimulatedAt);
+    }
+
+    /// <summary>
+    /// 回归：单玩家状态合法但持续推进/刷盘失败时，第 1 次失败仍允许下拍立即自愈重连，
+    /// 连续失败第 2 次起进入退避并从 NextAdvanceBoundaryUtc 剔除滞留边界，待退避到期并故障解除后自动恢复。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsync_BacksOffPersistentlyFailingPlayerAndUnblocksBoundary()
+    {
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var failingPlayerId = Guid.Parse("00000000-0000-4000-8000-0000000000e2");
+        var healthyPlayerId = Guid.Parse("00000000-0000-4000-8000-0000000000e1");
+        var economy = new RecordingEconomy(sections, assets) { FailCommitsForPlayerId = failingPlayerId };
+
+        sections.Seed(CreateOfflineBundle(healthyPlayerId, "正常甲", catalog.Fingerprint, skipTutorial: true));
+        sections.Seed(CreateOfflineBundle(failingPlayerId, "阻滞乙", catalog.Fingerprint, skipTutorial: true));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(1));
+
+        foreach (var id in new[] { healthyPlayerId, failingPlayerId })
+        {
+            await adapter.AttachConnectionAsync(id);
+            var req = Guid.NewGuid();
+            var enq = await adapter.ExecuteAsync(id, "action.enqueue",
+                JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                    req.ToString("D"), "explore.gather-ningxue-grass", -1), ProtocolJson.Options),
+                0, req);
+            Assert.True(enq.Success, enq.Message);
+        }
+
+        // 第 1 次刷盘失败（ConsecutiveFailures=1）：跨越 8s 采集完成边界，正常甲推进并落袋，阻滞乙回滚到 Epoch。
+        clock.Advance(TimeSpan.FromSeconds(8));
+        await Assert.ThrowsAsync<IOException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyPlayerId)!.LastSimulatedAt);
+        Assert.Equal(Epoch, adapter.TryGetLoaded(failingPlayerId)!.LastSimulatedAt);
+
+        // 第 2 次刷盘失败（ConsecutiveFailures=2）：1s 后仍触发即时重试并再次失败，阻滞乙进入 4 秒退避窗口，NextAdvanceBoundaryUtc 推后。
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await Assert.ThrowsAsync<IOException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+        Assert.Equal(Epoch, adapter.TryGetLoaded(failingPlayerId)!.LastSimulatedAt);
+        Assert.True(adapter.NextAdvanceBoundaryUtc > clock.UtcNow);
+
+        // 退避窗口内（+1s）再推进：阻滞乙被静默跳过，AdvanceAllAsync 无异常通过；+6s 跨越健康甲第二轮采集边界时健康甲正常推进。
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        Assert.Equal(Epoch, adapter.TryGetLoaded(failingPlayerId)!.LastSimulatedAt);
+
+        // 解除故障并跨越退避截止点（+6s，总计 Epoch+16s，同时覆盖健康甲第二轮 8s 采集与阻滞乙的 4s 退避），全员自动恢复对齐。
+        economy.FailCommitsForPlayerId = null;
+        clock.Advance(TimeSpan.FromSeconds(6));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyPlayerId)!.LastSimulatedAt);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(failingPlayerId)!.LastSimulatedAt);
+    }
+
     private static async Task EnqueueCombatAsync(EcsPlayerRuntimeAdapter adapter, Guid playerId)
     {
         var reqId = Guid.NewGuid();
@@ -515,7 +726,7 @@ public sealed class PersistenceGovernanceRuntimeTests
             head, map, []);
     }
 
-    private static GameDataCatalog LoadIsolatedCatalog()
+    private static GameDataCatalog LoadIsolatedCatalog(double playerRespawnSeconds = 0, string? onPartyWipe = null, double? searchSeconds = null)
     {
         string[] stablePaths =
         [
@@ -612,13 +823,17 @@ public sealed class PersistenceGovernanceRuntimeTests
           }
         ]
         """));
-        docs.Add(Encoding.UTF8.GetBytes("""
+        var respawnJson = onPartyWipe is null
+            ? ""
+            : $", \"playerRespawnSeconds\": {playerRespawnSeconds}, \"onPartyWipe\": \"{onPartyWipe}\"";
+        var searchJson = searchSeconds is { } ss ? $", \"searchSeconds\": {ss}" : "";
+        docs.Add(Encoding.UTF8.GetBytes($$"""
         [
           {
             "id": "encounter.test-qi-beast",
             "name": "测试遭遇",
             "minBudget": 10,
-            "maxBudget": 15,
+            "maxBudget": 15{{respawnJson}}{{searchJson}},
             "randomSpawns": [{ "enemyId": "enemy.test-beast", "weight": 1, "strength": 15 }]
           }
         ]
@@ -752,6 +967,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     {
         public List<EconomyTransactionRequest> Requests { get; } = [];
         public bool FailNextCommit { get; set; }
+        public Guid? FailCommitsForPlayerId { get; set; }
 
         public async ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
@@ -760,6 +976,8 @@ public sealed class PersistenceGovernanceRuntimeTests
                 FailNextCommit = false;
                 throw new IOException("模拟检查点刷盘瞬断");
             }
+            if (FailCommitsForPlayerId is { } failingId && request.ActorId == failingId)
+                throw new IOException("模拟指定玩家持续刷盘失败");
             Requests.Add(request);
             var updated = assets.Apply(request.Deltas);
             if (request.Sections is { Count: > 0 } || request.Receipts is { Count: > 0 })

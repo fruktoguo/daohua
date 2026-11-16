@@ -539,6 +539,244 @@ public sealed class DuelSimulationTests
         Assert.Equal("item.loot", restored.Duel.StagedItems[0].ItemId);
     }
 
+    /// <summary>
+    /// 原地复活倒地期、初搜、战败复活读条、暂停与组队会话玩家不得被匹配或挂载进斗法；
+    /// AttachDuel/DetachDuel/AbortDuelSeek 亦不得遗留 PlayerRespawnAtSeconds 等无效状态导致存档拒载。
+    /// </summary>
+    [Fact]
+    public void DownedOrInvalidPhaseExpedition_CannotJoinOrAttachDuel()
+    {
+        var catalog = CreateCatalog();
+        var nowUnix = NowUnix();
+
+        // 场景 A：Combat 相位正处于原地复活倒地期（PlayerHitpoints=0, PlayerRespawnAtSeconds!=null）
+        var downed = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "倒地甲", Baseline, catalog.Fingerprint);
+        downed.Duel.EncounterCharges = 2;
+        downed.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        downed.Actions[0].Status = ActionQueueStatus.Running;
+        downed.Resources.Hitpoints = 0;
+        downed.Actions[0].Expedition = new CombatExpeditionState(
+            "encounter.test",
+            CombatExpeditionPhase.Combat,
+            0, 0, 1L,
+            BattleElapsedSeconds: 10,
+            PlayerHitpoints: 0,
+            PlayerManapoints: 100,
+            PlayerNextAttackAtSeconds: 12,
+            PlayerAttackCount: 1,
+            PlayerThreat: 1,
+            CombatOutcome.Running,
+            WaveNumber: 1,
+            [new ExpeditionEnemyState("enemy.test", new CombatantSnapshot(10, 0, 2, 10, 10))])
+        {
+            PlayerState = new CombatantSnapshot(0, 100, 12, 1, 1, RespawnAtSeconds: 40),
+            PlayerRespawnAtSeconds = 40
+        };
+        downed.Actions[0].ProgressSeconds = 0;
+
+        Assert.True(downed.Actions[0].Expedition!.IsValid);
+        Assert.False(downed.CanJoinDuel(nowUnix));
+        var duelId = Guid.NewGuid();
+        Assert.False(downed.TryReserveDuel(duelId, nowUnix));
+
+        var (seeker, _) = PreparePendingSeeker(catalog, "发起乙");
+        var mirrorA = seeker.BuildDuelMirror(catalog);
+        var mirrorB = downed.BuildDuelMirror(catalog);
+        var script = DuelScriptEngine.Resolve(mirrorA, mirrorB, 1, catalog.Duel);
+        downed.Duel.ActiveDuelId = duelId.ToString("N");
+        Assert.Throws<DomainException>(() => downed.AttachDuel(
+            DuelPlaybackState.ForViewer(script, duelId.ToString("N"), mirrorA, mirrorB, viewerIsInitiator: false)));
+        Assert.Equal(CombatExpeditionPhase.Combat, downed.Actions[0].Expedition!.Phase);
+        Assert.Equal(40d, downed.Actions[0].Expedition!.PlayerRespawnAtSeconds);
+        Assert.NotNull(PlayerAggregate.Restore(downed.ExportState()));
+
+        // 场景 B：InitialSearch / Respawning / QueuePaused 均不得入场
+        var initialSearch = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "初搜丙", Baseline, catalog.Fingerprint);
+        initialSearch.Duel.EncounterCharges = 1;
+        initialSearch.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        initialSearch.Actions[0].Expedition = new CombatExpeditionState(
+            "encounter.test", CombatExpeditionPhase.InitialSearch, 0, 10, 1L, 0, 100, 100, 0, 0, 0, CombatOutcome.Running);
+        initialSearch.Actions[0].Status = ActionQueueStatus.Running;
+        Assert.False(initialSearch.CanJoinDuel(nowUnix));
+
+        initialSearch.Actions[0].Expedition = initialSearch.Actions[0].Expedition! with
+        { Phase = CombatExpeditionPhase.Respawning, PhaseElapsedSeconds = 0, PhaseDurationSeconds = 5 };
+        Assert.False(initialSearch.CanJoinDuel(nowUnix));
+
+        var (paused, _) = PreparePendingSeeker(catalog, "暂停丁");
+        paused.SetQueuePaused(true);
+        Assert.False(paused.CanJoinDuel(nowUnix));
+
+        // 场景 C：AbortDuelSeek 与 DetachDuel 同步维持 Expedition.IsValid 与 ProgressSeconds 一致性
+        var (seekerOnly, _) = PreparePendingSeeker(catalog, "回退戊");
+        seekerOnly.AbortDuelSeek();
+        Assert.Equal(CombatExpeditionPhase.Search, seekerOnly.Actions[0].Expedition!.Phase);
+        Assert.True(seekerOnly.Actions[0].Expedition!.IsValid);
+        Assert.NotNull(PlayerAggregate.Restore(seekerOnly.ExportState()));
+
+        Assert.True(seeker.TryReserveDuel(duelId, nowUnix));
+        seeker.AttachDuel(DuelPlaybackState.ForViewer(script, duelId.ToString("N"), mirrorA, mirrorB, viewerIsInitiator: true));
+        Assert.True(seeker.Actions[0].Expedition!.IsValid);
+        seeker.DetachDuel(duelId);
+        Assert.Equal(CombatExpeditionPhase.Search, seeker.Actions[0].Expedition!.Phase);
+        Assert.True(seeker.Actions[0].Expedition!.IsValid);
+        Assert.NotNull(PlayerAggregate.Restore(seeker.ExportState()));
+    }
+
+    /// <summary>处于新地图初期搜索（InitialSearch）与倒地重生（Respawning）阶段时，即使有遭遇计数也不得被拉入斗法。</summary>
+    [Fact]
+    public void CanJoinDuel_ExcludesInitialSearchAndRespawning()
+    {
+        var catalog = CreateCatalog();
+        var nowUnix = NowUnix();
+
+        var initial = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "初搜者", Baseline, "fp");
+        initial.Duel.EncounterCharges = 1;
+        initial.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        // 用 SearchSeconds=20 构造初始搜索阶段：推进 5s 仍停留在 InitialSearch
+        var longCatalog = CreateCatalog(searchSeconds: 20);
+        SimulationEngine.AdvanceTo(initial, Baseline.AddSeconds(5), longCatalog, duel: new DuelAdvanceOptions(true));
+        Assert.Equal(CombatExpeditionPhase.InitialSearch, initial.Actions[0].Expedition!.Phase);
+        Assert.False(initial.CanJoinDuel(nowUnix + 5));
+
+        var respawning = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "重生者", Baseline, "fp");
+        respawning.Duel.EncounterCharges = 1;
+        respawning.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        respawning.Actions[0].Status = ActionQueueStatus.Running;
+        respawning.Actions[0].Expedition = new CombatExpeditionState(
+            "encounter.test", CombatExpeditionPhase.Respawning, 0, 10, 1L, 0, 0, 100, 0, 0, 0, CombatOutcome.Running);
+        Assert.False(respawning.CanJoinDuel(nowUnix));
+
+        foreach (var eligiblePhase in new[] { CombatExpeditionPhase.Search, CombatExpeditionPhase.Combat, CombatExpeditionPhase.DuelPending })
+        {
+            var eligible = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "可战者", Baseline, "fp");
+            eligible.Duel.EncounterCharges = 1;
+            eligible.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+            eligible.Actions[0].Status = ActionQueueStatus.Running;
+            eligible.Actions[0].Expedition = new CombatExpeditionState(
+                "encounter.test", eligiblePhase, 0, 10, 1L, 0, 100, 100, 0, 0, 0, CombatOutcome.Running,
+                Enemies: eligiblePhase == CombatExpeditionPhase.Combat
+                    ? [new ExpeditionEnemyState("enemy.test", new CombatantSnapshot(10, 0, 2, 10, 10))]
+                    : null);
+            Assert.True(eligible.CanJoinDuel(nowUnix));
+        }
+    }
+
+    /// <summary>
+    /// 斗法消耗品完整接入（Option A）：
+    /// 1) 镜像敌人数为 1 时 `enemies.alive-count == 1` 的雷击符正确激活；
+    /// 2) 即时丹药与持续阵盘（天雷引雷反击）在剧本内生效并写入实际库存扣减/冷却/持续时长；
+    /// 3) 回放推进前的早退弃战（ApplyDuelForfeit）不会提前预扣尚未回放的消耗品。
+    /// </summary>
+    [Fact]
+    public void DuelConsumables_TalismanEnemyCountOneAndFormationAndEarlyForfeit()
+    {
+        var talismanId = new ItemId("item.leiji-talisman");
+        var pillId = new ItemId("item.zhixue-powder");
+        var formationId = new ItemId("item.tianlei-formation-disk");
+
+        static System.Text.Json.JsonElement ParseJson(string json)
+            => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+
+        var items = new Dictionary<ItemId, ItemDefinition>
+        {
+            [talismanId] = new(talismanId, "雷击符", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
+                "talisman"),
+            [pillId] = new(pillId, "止血散", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    CooldownSeconds: 60),
+                "consumable", SubCategory: "pill"),
+            [formationId] = new(formationId, "天雷阵盘", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    IsContinuous: true, DurationSeconds: 300),
+                "formation"),
+        };
+        var rawItems = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            [talismanId.Value] = ParseJson("""
+                {"id":"item.leiji-talisman","name":"雷击符","kind":"consumable","category":"talisman",
+                 "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+                 "strike":{"manaCostRatio":0.05,"manaDamageRatio":0.2,"spellAttackRatio":2.0,"element":"wood"}}}
+                """),
+            [pillId.Value] = ParseJson("""
+                {"id":"item.zhixue-powder","name":"止血散","kind":"consumable","category":"consumable","subCategory":"pill",
+                 "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+                 "buffs":[{"buffId":"buff.zhixue-powder-regeneration","name":"止血散·回春","durationSeconds":30,"hpRegen":20,"damageAbsorptionPoints":10}]}}
+                """),
+            [formationId.Value] = ParseJson("""
+                {"id":"item.tianlei-formation-disk","name":"天雷阵盘","kind":"consumable","category":"formation",
+                 "consumable":{"usableInActionTypes":["combat"],"isContinuous":true,"durationSeconds":300,
+                 "buffs":[{"buffId":"formation.tianlei","name":"天雷阵盘·引雷","durationSeconds":300}]}}
+                """),
+        };
+
+        var catalog = CreateCatalog(items: items, rawItems: rawItems);
+        var (initiator, _) = PreparePendingSeeker(catalog, "甲");
+        var (defender, _) = PreparePendingSeeker(catalog, "乙");
+        var matchAt = initiator.LastSimulatedAt;
+        var matchUnix = matchAt.ToUnixTimeMilliseconds() / 1000d;
+
+        initiator.Loadout.ConsumableTriggers[talismanId.Value] = [
+            ParseJson("""{"dependency":"enemies","condition":"alive-count","comparator":"equal","value":1}""")
+        ];
+        initiator.ConfigureAutoUse("combat", 0, talismanId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        initiator.ConfigureAutoUse("combat", 1, formationId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        initiator.ConfigureAutoUse("combat", 0, pillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion);
+
+        var initiatorWallet = new AssetWallet(initiator.PlayerId);
+        initiatorWallet.Restore([
+            new AssetBalance(initiator.PlayerId, new AssetKey(talismanId), 5, 0),
+            new AssetBalance(initiator.PlayerId, new AssetKey(pillId), 5, 0),
+            new AssetBalance(initiator.PlayerId, new AssetKey(formationId), 5, 0),
+        ]);
+
+        var duelId = Guid.NewGuid();
+        Assert.True(initiator.TryReserveDuel(duelId, matchUnix));
+        Assert.True(defender.TryReserveDuel(duelId, matchUnix));
+
+        var initiatorMirror = initiator.BuildDuelMirror(catalog, initiatorWallet, matchUnix) with
+        {
+            Stats = CombatantStats.Create(10_000, 100, 0, 1.5, accuracy: 10) with { MaxManapoints = 1_000, SpellAttack = 200 }
+        };
+        var defenderMirror = defender.BuildDuelMirror(catalog, nowUnixSeconds: matchUnix) with
+        {
+            Stats = CombatantStats.Create(3_000, 20, 0, 0.5, accuracy: 10) with { MaxManapoints = 500 }
+        };
+
+        var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, 42, catalog.Duel, catalog);
+        Assert.Equal(CombatOutcome.PlayerWon, script.Outcome);
+        Assert.Contains(script.Events, ev => ev.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker
+            && ev.AbilityId == formationId.Value);
+        Assert.Contains(script.Events, ev => ev.AbilityId == talismanId.Value && ev.AttackerIsInitiator && ev.Damage > 0);
+        Assert.Contains(script.Events, ev => ev.AbilityId == pillId.Value && ev.AttackerIsInitiator);
+        Assert.Contains(script.Events, ev => ev.AbilityId == formationId.Value && ev.AttackerIsInitiator && ev.Damage > 0);
+
+        var duelIdText = duelId.ToString("N");
+        initiator.AttachDuel(DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, true));
+        defender.AttachDuel(DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, false));
+
+        // 对照验证：未推进回放就直接弃战，不会预扣后续剧本消耗品。
+        var earlyForfeitInitiator = PlayerAggregate.Restore(initiator.ExportState());
+        Assert.NotNull(earlyForfeitInitiator.ApplyDuelForfeit(matchAt, catalog.Duel));
+        var forfeitResult = SimulationEngine.AdvanceTo(earlyForfeitInitiator, matchAt.AddSeconds(1), catalog, initiatorWallet, new DuelAdvanceOptions(true));
+        Assert.DoesNotContain(forfeitResult.AssetDeltas, d => d.QuantityDelta < 0);
+
+        // 完整回放推进：扣减 1 张雷击符、1 份止血散、1 枚天雷阵盘，并写入槽位冷却与阵盘余量。
+        var playResult = SimulationEngine.AdvanceTo(initiator, matchAt.AddSeconds(script.DurationSeconds + 1),
+            catalog, initiatorWallet, new DuelAdvanceOptions(true));
+        Assert.Contains(playResult.AssetDeltas, d => d.Asset.ItemId == talismanId && d.QuantityDelta == -1);
+        Assert.Contains(playResult.AssetDeltas, d => d.Asset.ItemId == pillId && d.QuantityDelta == -1);
+        Assert.Contains(playResult.AssetDeltas, d => d.Asset.ItemId == formationId && d.QuantityDelta == -1);
+        Assert.Contains(playResult.Events, e => e.Code == "auto-use.activated");
+        var talismanSlot = initiator.Settings.AutoUseSlots.Single(s => s.ActionType == "combat" && s.ItemId == talismanId.Value);
+        var formationSlot = initiator.Settings.AutoUseSlots.Single(s => s.ActionType == "combat" && s.ItemId == formationId.Value);
+        Assert.True(talismanSlot.CooldownUntilUnixSeconds > matchUnix);
+        Assert.True(formationSlot.RemainingDurationSeconds > 0 && formationSlot.RemainingDurationSeconds < 300);
+    }
+
     private static double NowUnix() => Baseline.ToUnixTimeMilliseconds() / 1000d;
 
     private static (PlayerAggregate Player, Guid PlayerId) PreparePendingSeeker(GameDataCatalog catalog, string name)
@@ -561,7 +799,9 @@ public sealed class DuelSimulationTests
         double experience = 0,
         BaseAttributeCatalog? baseAttributes = null,
         RealmProgressionCatalog? realmProgression = null,
-        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? rawEquipments = null)
+        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? rawEquipments = null,
+        IReadOnlyDictionary<ItemId, ItemDefinition>? items = null,
+        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? rawItems = null)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -605,6 +845,8 @@ public sealed class DuelSimulationTests
             "test-1",
             "test-fingerprint",
             actions,
+            items: items,
+            rawItems: rawItems,
             rawEquipments: rawEquipments,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
             combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },

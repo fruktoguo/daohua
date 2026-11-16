@@ -67,16 +67,17 @@ public static class CombatTriggerMath
     }
 
     /// <summary>
-    /// 阵盘受击反击反应：敌方单位受到有效伤害时，己方在场存活且持有天雷阵/血煞阵的单位
-    /// 各自独立判定 20% 概率触发天雷或血煞反击。
+    /// 阵盘受击反击反应：任意单位受到有效伤害时，敌对阵营在场存活且持有天雷阵/血煞阵的单位
+    /// 各自独立判定 20% 概率触发天雷或血煞反击（支持 PVE 友方与 PVP 斗法双侧对称触发）。
     /// </summary>
     public static void FormationReactiveStrike(CombatHitContext context)
     {
         if (!context.Hit || context.Damage <= 0 || !context.Target.IsAlive) return;
         var encounter = context.Encounter;
-        if (encounter.PlayerAllies.Contains(context.Target)) return;
+        var allies = encounter.PlayerAllies.Contains(context.Target)
+            ? encounter.Enemies
+            : encounter.PlayerAllies;
 
-        var allies = encounter.PlayerAllies;
         for (var i = 0; i < allies.Count; i++)
         {
             var ally = allies[i];
@@ -114,7 +115,9 @@ public static class CombatTriggerMath
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
                             actualDamage, true, CombatDamageKind.Spell, context.Target.Hitpoints)
                         {
-                            AbilityId = "item.tianlei-formation-disk"
+                            AbilityId = "item.tianlei-formation-disk",
+                            AttackerManapointsAfter = ally.Manapoints,
+                            TargetManapointsAfter = context.Target.Manapoints
                         });
                     }
                 }
@@ -161,7 +164,9 @@ public static class CombatTriggerMath
                             actualDamage, true, CombatDamageKind.Physical, context.Target.Hitpoints)
                         {
                             AbilityId = "item.xuesha-formation-disk",
-                            Healing = heal
+                            Healing = heal,
+                            AttackerManapointsAfter = ally.Manapoints,
+                            TargetManapointsAfter = context.Target.Manapoints
                         });
                     }
                 }

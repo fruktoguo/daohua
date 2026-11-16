@@ -34,15 +34,32 @@ public sealed class PlayerSimulationHostedService(IPlayerRuntime runtime, IPlaye
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var consecutiveErrors = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await runtime.AdvanceAllAsync(clock.UtcNow, stoppingToken); }
+            var hadError = false;
+            try
+            {
+                await runtime.AdvanceAllAsync(clock.UtcNow, stoppingToken);
+                consecutiveErrors = 0;
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。"); }
+            catch (Exception ex)
+            {
+                hadError = true;
+                consecutiveErrors++;
+                if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。");
+            }
             var boundary = runtime.NextAdvanceBoundaryUtc;
             var delay = boundary is { } next ? next - clock.UtcNow : TimeSpan.FromSeconds(1);
             if (delay < TimeSpan.FromMilliseconds(50)) delay = TimeSpan.FromMilliseconds(50);
             else if (delay > TimeSpan.FromSeconds(1)) delay = TimeSpan.FromSeconds(1);
+            if (hadError)
+            {
+                // 连续失败时注入指数退避下限，避免滞留玩家或短暂故障把推进循环打成 50ms 空转占满 CPU。
+                var errorFloor = TimeSpan.FromMilliseconds(Math.Min(5_000, 250 * (1 << Math.Min(4, consecutiveErrors - 1))));
+                if (delay < errorFloor) delay = errorFloor;
+            }
             try { await Task.Delay(delay, stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }

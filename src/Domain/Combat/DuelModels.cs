@@ -86,7 +86,11 @@ public sealed record DuelScriptEvent(
     double TargetManapointsAfter = 0,
     bool Break = false,
     bool Parried = false,
-    string? AbilityNameOverride = null);
+    string? AbilityNameOverride = null)
+{
+    /// <summary>持续消耗品（阵盘）充能事件标记：回放扣件并刷新槽位持续时间，不下发前端动作表现。</summary>
+    public const string SustainedActivateMarker = "@sustained-activate";
+}
 
 /// <summary>
 /// 斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。
@@ -209,7 +213,15 @@ public sealed record DuelPlaybackState(
     }
 }
 
-/// <summary>斗法剧本推演输入：一方开战瞬间的镜像快照（属性/技能/装备/暂存物在撮合时冻结）。</summary>
+/// <summary>斗法镜像冻结的战斗自动消耗品槽位快照（撮合推演专用运行时输入，不随剧本持久化）。</summary>
+public sealed record DuelConsumableSlotSnapshot(
+    int SlotIndex,
+    string Group,
+    string ItemId,
+    double InitialCooldownRemainingSeconds,
+    double InitialSustainedRemainingSeconds);
+
+/// <summary>斗法剧本推演输入：一方开战瞬间的镜像快照（属性/技能/装备/暂存物/战斗消耗品在撮合时冻结）。</summary>
 public sealed record DuelCombatant(
     PlayerId PlayerId,
     string DisplayName,
@@ -218,4 +230,9 @@ public sealed record DuelCombatant(
     IReadOnlyList<SkillSlot> Skills,
     IReadOnlyList<DuelStagedItem> StagedItems,
     IReadOnlyList<PlayerEquipmentSlot> Equipment,
-    string Avatar = "player");
+    string Avatar = "player",
+    IReadOnlyList<DuelConsumableSlotSnapshot>? ConsumableSlots = null,
+    IReadOnlyDictionary<string, JsonElement[]>? ConsumableTriggers = null,
+    IReadOnlyDictionary<string, double>? ItemBalances = null,
+    IReadOnlyList<ActiveBuff>? ExternalBuffs = null,
+    double SnapshotAtUnixSeconds = 0);

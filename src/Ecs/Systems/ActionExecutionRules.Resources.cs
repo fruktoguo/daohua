@@ -628,7 +628,7 @@ internal static partial class ActionExecutionRules
     /// 战外 Buff 层数求值（去重并可选过期过滤）：跳过已存在于战内单位 Buff 列表中的同名即时药水副本，
     /// 并在提供当前墙钟时忽略已到期的战外条目，防止 buff-stacks 在战内被双倍计入或到期后残留。
     /// </summary>
-    internal static double SumUnmergedActiveBuffStacks(CombatantState unit, VersionedList<ActiveBuff> actives,
+    internal static double SumUnmergedActiveBuffStacks(CombatantState unit, IReadOnlyList<ActiveBuff> actives,
         string? buffId, double? nowUnix = null)
     {
         var total = 0d;

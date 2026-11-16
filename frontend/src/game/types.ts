@@ -859,8 +859,10 @@ export interface ExpeditionDuelEvent {
   attackerIsInitiator: boolean
   /** 受击方是否为斗法发起方 */
   targetIsInitiator: boolean
-  /** 出手功法 ID（普攻为 null，用于行动条显示技能名） */
+  /** 出手功法/物品 ID（普攻为 null，用于行动条与 VFX 解析） */
   abilityId?: string | null
+  /** 受击方结算后剩余气血 */
+  targetHitpointsAfter?: number
   /** 出手方结算后剩余灵力 */
   attackerManapointsAfter: number
   /** 受击方结算后剩余灵力 */
@@ -869,6 +871,8 @@ export interface ExpeditionDuelEvent {
   hit?: boolean
   /** 结算伤害 */
   damage?: number
+  /** 本次治疗量 */
+  healing?: number
   /** 是否暴击 */
   critical?: boolean
   /** 是否破招 */

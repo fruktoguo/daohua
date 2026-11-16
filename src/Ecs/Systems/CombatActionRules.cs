@@ -147,7 +147,7 @@ internal static class CombatActionRules
         if (expedition.Phase == CombatExpeditionPhase.Duel)
         {
             var beforeDuel = remainingSeconds;
-            AdvanceDuelPlayback(player, action, definition, encounter, gameData, from, target,
+            AdvanceDuelPlayback(player, action, definition, encounter, gameData, assetBalances, from, target,
                 ref remainingSeconds, ref deltas, ref events);
             var duelStep = beforeDuel - remainingSeconds;
             if (duelStep > 0 && ActionExecutionRules.AdvanceIdleSkillResources(player, duelStep))
@@ -169,14 +169,19 @@ internal static class CombatActionRules
                 return null;
             }
             // 离线补算等无撮合路径：保留遭遇计数，回退为正常波次入口。
+            var fallbackElapsed = Math.Max(expedition.PhaseElapsedSeconds, 1e-9);
             expedition = expedition with
             {
                 Phase = CombatExpeditionPhase.Search,
-                PhaseElapsedSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
-                PhaseDurationSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
+                PhaseElapsedSeconds = fallbackElapsed,
+                PhaseDurationSeconds = fallbackElapsed,
+                Outcome = CombatOutcome.Running,
+                PlayerRespawnAtSeconds = null,
+                PlayerState = null,
                 DuelSeekFailed = true
             };
             action.Expedition = expedition;
+            action.ProgressSeconds = fallbackElapsed;
         }
 
         var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
@@ -237,13 +242,24 @@ internal static class CombatActionRules
                     }
                     // 计数大于 0 时进入匹配等待（以判定前计数为准，本波新增的计数留给下次入场）。
                     // 匹配等待静默进行：撮合结果未知前不写日志，无候选对手时由运行时回退为正常波次。
-                    if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true)
+                    if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true
+                        && action.Participation is null
+                        && !player.Settings.QueuePaused
+                        && updated.Allies is null
+                        && updated.PlayerRespawnAtSeconds is null
+                        && player.Resources.Hitpoints > 1e-9)
                     {
                         action.Expedition = updated with
                         {
                             Phase = CombatExpeditionPhase.DuelPending,
                             PhaseElapsedSeconds = 0,
                             PhaseDurationSeconds = 0,
+                            Outcome = CombatOutcome.Running,
+                            PlayerRespawnAtSeconds = null,
+                            PlayerState = null,
+                            Allies = null,
+                            Enemies = null,
+                            Duel = null,
                             DuelSeekFailed = false,
                             // 波间搜寻承载的上一波终局事件到此失效：斗法回放自带事件通道，
                             // 残留事件只会在镜像对手身上重放幽灵跳字。
@@ -1068,8 +1084,8 @@ internal static class CombatActionRules
 
 
     /// <summary>
-    /// 斗法剧本回放推进：结果在撮合时已确定性锁定，本相位只按时间轴回放事件并结算归属。
-    /// 战斗期间任何配置修改不影响剧本；玩家主动结束行动走 ApplyDuelForfeit 判负路径。
+    /// 斗法剧本回放推进：结果在撮合时已确定性锁定，本相位只按时间轴回放事件并结算归属与实际消耗品扣件。
+    /// 战斗期间任何配置修改不影响剧本；玩家主动结束行动走 ApplyDuelForfeit 判负路径，仅扣减已回放事件。
     /// </summary>
     private static void AdvanceDuelPlayback(
         IPlayerResourceContext player,
@@ -1077,6 +1093,7 @@ internal static class CombatActionRules
         ActionDefinition definition,
         CombatEncounterDefinition encounter,
         GameDataCatalog gameData,
+        AssetWallet? assetBalances,
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
@@ -1088,59 +1105,158 @@ internal static class CombatActionRules
         var elapsedBefore = (target - from).TotalSeconds - remainingSeconds;
         var step = playback.Resolved ? 0 : Math.Min(remainingSeconds, Math.Max(0, playback.DurationSeconds - expedition.BattleElapsedSeconds));
         remainingSeconds -= step;
-        var playbackTo = Math.Min(expedition.BattleElapsedSeconds + step, playback.DurationSeconds);
+        var playbackFrom = expedition.BattleElapsedSeconds;
+        var playbackTo = Math.Min(playbackFrom + step, playback.DurationSeconds);
         var cursor = (int)playback.EventCursor;
         var viewerHp = expedition.PlayerHitpoints;
         var opponentHp = playback.OpponentHitpoints;
         var viewerMp = expedition.PlayerManapoints;
         var opponentMp = playback.OpponentManapoints;
-        // 帧记账与日志合并分离：血蓝镜像与功法经验逐帧结算，战报按同次施放合并产出。
-        void ApplyDuelFrame(DuelScriptEvent frame)
+        var sustainedClock = playbackFrom;
+        var endAt = from.AddSecondsExact(elapsedBefore + Math.Max(0, playbackTo - playbackFrom));
+        var endUnix = endAt.ToUnixTimeMilliseconds() / 1000d;
+        List<CombatEvent>? tailCombatEvents = null;
+
+        DateTimeOffset WallAt(double battleSeconds)
+            => from.AddSecondsExact(elapsedBefore + Math.Max(0, battleSeconds - playbackFrom));
+
+        void ApplyDuelResources(DuelScriptEvent frame)
         {
             var frameTargetIsViewer = frame.TargetIsInitiator == playback.ViewerIsInitiator;
             var frameAttackerIsViewer = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
-            // 斗法本方施放同样计每次 1 点功法经验；镜像方施放不重复入账。
-            if (frameAttackerIsViewer && frame.AbilityId is { } frameAbility)
-                GrantAbilityUseExperience(player, action.Id, frameAbility,
-                    from.AddSecondsExact(elapsedBefore + Math.Max(0, frame.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
             if (frameTargetIsViewer) { viewerHp = frame.TargetHitpointsAfter; viewerMp = frame.TargetManapointsAfter; }
             else { opponentHp = frame.TargetHitpointsAfter; opponentMp = frame.TargetManapointsAfter; }
             if (frameAttackerIsViewer) viewerMp = frame.AttackerManapointsAfter;
             else opponentMp = frame.AttackerManapointsAfter;
         }
+
+        // 帧记账与日志合并分离：血蓝镜像与功法经验逐帧结算，战报按同次施放合并产出。
+        void ApplyDuelFrame(DuelScriptEvent frame)
+        {
+            var frameAttackerIsViewer = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
+            // 斗法本方施放功法计每次 1 点功法经验；消耗品与镜像施放不入账。
+            if (frameAttackerIsViewer && frame.AbilityId is { } frameAbility
+                && gameData.Abilities.ContainsKey(frameAbility))
+                GrantAbilityUseExperience(player, action.Id, frameAbility,
+                    WallAt(frame.AtSeconds).ToUnixTimeMilliseconds() / 1000d);
+            ApplyDuelResources(frame);
+        }
+
+        void RecordTailCombatEvent(DuelScriptEvent frame)
+        {
+            if (frame.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker) return;
+            if (frame.AbilityId is null && frame.AttackerIsInitiator == frame.TargetIsInitiator && frame.Damage == 0)
+                return;
+            (tailCombatEvents ??= []).Add(new CombatEvent(
+                frame.AtSeconds,
+                frame.AttackerIsInitiator == playback.ViewerIsInitiator ? "player" : "enemy:0",
+                frame.TargetIsInitiator == playback.ViewerIsInitiator ? "player" : "enemy:0",
+                frame.Damage,
+                frame.Hit,
+                CombatDamageKind.Physical,
+                frame.TargetHitpointsAfter)
+            {
+                Critical = frame.Critical,
+                Break = frame.Break,
+                Parried = frame.Parried,
+                AbilityId = frame.AbilityId,
+                AbilityNameOverride = frame.AbilityNameOverride,
+                Healing = frame.Healing,
+                AttackerManapointsAfter = frame.AttackerManapointsAfter,
+                TargetManapointsAfter = frame.TargetManapointsAfter
+            });
+        }
+
         string DuelLabel(bool initiatorSide) => initiatorSide == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
-        // 回放游标前的事件已全部应用过；游标到 playbackTo 之间的事件逐条应用并写日志。
+        // 回放游标前的事件已全部应用过；未裁决前游标到 playbackTo 之间的事件逐条应用并写日志（已弃战/对方弃战则直接结算终局，不再回放后续事件）。
         // 普攻帧不落日志；同一次施放的连续帧（同出手方+技能+时刻）合并为一条施放行。
-        for (var i = cursor; i < playback.Events.Count; i++)
+        for (var i = cursor; !playback.Resolved && i < playback.Events.Count; i++)
         {
             var duelEvent = playback.Events[i];
             if (duelEvent.AtSeconds > playbackTo + 1e-9) break;
+            var drainStep = Math.Max(0, duelEvent.AtSeconds - sustainedClock);
+            if (drainStep > 0)
+            {
+                DrainCombatSustainedSlots(player, gameData, drainStep, WallAt(duelEvent.AtSeconds), definition.Id, ref events);
+                sustainedClock += drainStep;
+            }
             cursor = i + 1;
+
+            if (duelEvent.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker)
+            {
+                ApplyDuelResources(duelEvent);
+                if (duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator
+                    && duelEvent.AbilityId is { } sustainedItemId
+                    && gameData.Items.TryGetValue(new ItemId(sustainedItemId), out var sustainedItem)
+                    && sustainedItem.Consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false } sustainedConsumable)
+                {
+                    var eventAt = WallAt(duelEvent.AtSeconds);
+                    ApplyViewerDuelSustainedActivation(player, action.Id, gameData, assetBalances,
+                        sustainedItem, sustainedConsumable, eventAt, eventAt.ToUnixTimeMilliseconds() / 1000d,
+                        ref deltas, ref events);
+                }
+                continue;
+            }
+
+            if (duelEvent.AbilityId is { } itemKey
+                && new ItemId(itemKey) is { IsValid: true } consumableItemId
+                && gameData.Items.TryGetValue(consumableItemId, out var instantItem)
+                && instantItem.Consumable is { IsContinuous: false, Durable: false } instantConsumable)
+            {
+                ApplyDuelResources(duelEvent);
+                RecordTailCombatEvent(duelEvent);
+                var eventAt = WallAt(duelEvent.AtSeconds);
+                if (duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator)
+                {
+                    ApplyViewerDuelInstantConsumable(player, action.Id, gameData, assetBalances,
+                        duelEvent, instantItem, instantConsumable, eventAt,
+                        eventAt.ToUnixTimeMilliseconds() / 1000d, endUnix, ref deltas, ref events);
+                }
+                else if (instantConsumable.Strike is not null)
+                {
+                    var clauses = new List<string>(1);
+                    AppendCastClause(clauses, DuelLabel(duelEvent.TargetIsInitiator), duelEvent.Hit,
+                        duelEvent.Damage, duelEvent.Healing, duelEvent.Critical, duelEvent.Break, duelEvent.Parried);
+                    var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), itemKey, gameData);
+                    AppendCastClauses(builder, clauses);
+                    AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
+                }
+                continue;
+            }
+
             ApplyDuelFrame(duelEvent);
+            RecordTailCombatEvent(duelEvent);
             if (duelEvent.AbilityId is null) continue;
             var castEnd = i + 1;
             while (castEnd < playback.Events.Count
                 && playback.Events[castEnd].AtSeconds == duelEvent.AtSeconds
                 && playback.Events[castEnd].AbilityId == duelEvent.AbilityId
-                && playback.Events[castEnd].AttackerIsInitiator == duelEvent.AttackerIsInitiator)
+                && playback.Events[castEnd].AttackerIsInitiator == duelEvent.AttackerIsInitiator
+                && playback.Events[castEnd].AbilityNameOverride == duelEvent.AbilityNameOverride)
             {
                 cursor = castEnd + 1;
-                ApplyDuelFrame(playback.Events[castEnd]);
+                var extraFrame = playback.Events[castEnd];
+                ApplyDuelFrame(extraFrame);
+                RecordTailCombatEvent(extraFrame);
                 castEnd++;
             }
-            var clauses = new List<string>(castEnd - i);
+            var abilityClauses = new List<string>(castEnd - i);
             for (var j = i; j < castEnd; j++)
             {
                 var member = playback.Events[j];
-                AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
+                AppendCastClause(abilityClauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
             }
-            var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData,
+            var abilityBuilder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData,
                 duelEvent.AbilityNameOverride);
-            AppendCastClauses(builder, clauses);
-            AddCombatEventAt(ref events, from.AddSecondsExact(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
-                "combat.skill", builder.Append('。').ToString(), definition.Id);
+            AppendCastClauses(abilityBuilder, abilityClauses);
+            AddCombatEventAt(ref events, WallAt(duelEvent.AtSeconds),
+                "combat.skill", abilityBuilder.Append('。').ToString(), definition.Id);
             i = castEnd - 1;
         }
+        var tailDrain = Math.Max(0, playbackTo - sustainedClock);
+        if (tailDrain > 0)
+            DrainCombatSustainedSlots(player, gameData, tailDrain, endAt, definition.Id, ref events);
+
         var updated = expedition with
         {
             BattleElapsedSeconds = playbackTo,
@@ -1155,11 +1271,11 @@ internal static class CombatActionRules
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         if (!playback.Resolved && playbackTo + 1e-9 < playback.DurationSeconds) return;
 
-        // 回放结束（或已裁决标记）：结算斗法归属。
-        var now = from.AddSecondsExact(elapsedBefore + Math.Max(0, playbackTo - expedition.BattleElapsedSeconds));
-        var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
+        // 回放结束（或已裁决标记）：结算斗法归属，并保留终局尾帧供客户端继续播完击杀表现。
+        var nowUnix = endUnix;
         var duelSettings = gameData.Duel;
         player.Duel.ActiveDuelId = null;
+        IReadOnlyList<CombatEvent>? recentTail = tailCombatEvents is { Count: > 0 } ? tailCombatEvents : null;
         switch (playback.ViewerOutcome)
         {
             case CombatOutcome.PlayerWon:
@@ -1180,7 +1296,8 @@ internal static class CombatActionRules
                         ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
                         : $"斗法获胜：击败 {playback.OpponentName}，缴获其暂存物品。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
+                { RecentEvents = recentTail };
                 break;
             case CombatOutcome.EnemyWon:
                 // 弃战路径（ApplyDuelForfeit）已即时记账暂存移除、冷却与败绩，回放落点不再重复结算。
@@ -1200,19 +1317,129 @@ internal static class CombatActionRules
                         : $"斗法落败：{playback.OpponentName} 取走了你的暂存物品，一小时内不再进入斗法。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
-                { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
+                {
+                    Phase = CombatExpeditionPhase.Respawning,
+                    PhaseDurationSeconds = encounter.PlayerRespawnSeconds,
+                    RecentEvents = recentTail
+                };
                 player.Resources.Hitpoints = 0;
                 break;
             default:
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.draw",
                     $"斗法平局：与 {playback.OpponentName} 战成平手。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
+                { RecentEvents = recentTail };
                 break;
         }
         player.MarkDirty(PlayerSectionKind.Duel);
         player.MarkDirty(PlayerSectionKind.Progression);
         action.ProgressSeconds = 0;
+    }
+
+    /// <summary>斗法回放命中持续阵盘启用帧时实扣背包 1 份，并点亮对应战斗自动使用槽位剩余时长。</summary>
+    private static void ApplyViewerDuelSustainedActivation(
+        IPlayerResourceContext player,
+        Guid actionId,
+        GameDataCatalog gameData,
+        AssetWallet? assetBalances,
+        ItemDefinition item,
+        ConsumableDefinition consumable,
+        DateTimeOffset eventAt,
+        double eventUnix,
+        ref Dictionary<AssetKey, double>? deltas,
+        ref SimulationEventTail? events)
+    {
+        var available = (assetBalances?.Get(new AssetKey(item.Id)) ?? 0d)
+            + (deltas?.GetValueOrDefault(new AssetKey(item.Id)) ?? 0d);
+        if (available < 1d) return;
+        AddDelta(deltas ??= new Dictionary<AssetKey, double>(), item.Id, -1d);
+        player.RecordStats(actionId, eventUnix, new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
+        var matchIndex = -1;
+        for (var s = 0; s < player.Settings.AutoUseSlots.Count; s++)
+        {
+            if (!TryGetCombatSustainedSlot(player, gameData, s, out var slot, out var slotItem, out _)
+                || slotItem.Id != item.Id) continue;
+            if (matchIndex < 0) matchIndex = s;
+            if (slot.RemainingDurationSeconds <= 1e-9) { matchIndex = s; break; }
+        }
+        if (matchIndex >= 0)
+        {
+            player.Settings.AutoUseSlots[matchIndex] = player.Settings.AutoUseSlots[matchIndex] with
+            {
+                RemainingDurationSeconds = consumable.DurationSeconds
+            };
+            player.MarkDirty(PlayerSectionKind.Settings);
+        }
+        events ??= new SimulationEventTail();
+        events.Add(new SimulationEvent(eventAt, "auto-use.activated",
+            $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。",
+            null, new Dictionary<ItemId, double> { [item.Id] = -1d }));
+    }
+
+    /// <summary>斗法回放命中本方一次性消耗品帧时实扣背包 1 份、写入冷却、并承接超出回放终点的剩余 Buff 时长。</summary>
+    private static void ApplyViewerDuelInstantConsumable(
+        IPlayerResourceContext player,
+        Guid actionId,
+        GameDataCatalog gameData,
+        AssetWallet? assetBalances,
+        DuelScriptEvent duelEvent,
+        ItemDefinition item,
+        ConsumableDefinition consumable,
+        DateTimeOffset eventAt,
+        double eventUnix,
+        double endUnix,
+        ref Dictionary<AssetKey, double>? deltas,
+        ref SimulationEventTail? events)
+    {
+        var available = (assetBalances?.Get(new AssetKey(item.Id)) ?? 0d)
+            + (deltas?.GetValueOrDefault(new AssetKey(item.Id)) ?? 0d);
+        if (available < 1d) return;
+        AddDelta(deltas ??= new Dictionary<AssetKey, double>(), item.Id, -1d);
+        player.RecordStats(actionId, eventUnix, new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
+        var matchIndex = -1;
+        for (var s = 0; s < player.Settings.AutoUseSlots.Count; s++)
+        {
+            var slot = player.Settings.AutoUseSlots[s];
+            if (!slot.Enabled || slot.ItemId != item.Id.Value
+                || !string.Equals(slot.ActionType, Domain.GameData.AutoUseBar.Combat, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (matchIndex < 0) matchIndex = s;
+            if (slot.CooldownUntilUnixSeconds <= eventUnix + 1e-9) { matchIndex = s; break; }
+        }
+        if (matchIndex >= 0)
+        {
+            player.Settings.AutoUseSlots[matchIndex] = player.Settings.AutoUseSlots[matchIndex] with
+            {
+                CooldownUntilUnixSeconds = eventUnix + consumable.CooldownSeconds
+            };
+            player.MarkDirty(PlayerSectionKind.Settings);
+        }
+        if (gameData.RawItems.TryGetValue(item.Id.Value, out var rawItem)
+            && rawItem.TryGetProperty("consumable", out var rawConsumable)
+            && rawConsumable.TryGetProperty("buffs", out var buffsEl)
+            && buffsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var buff in buffsEl.EnumerateArray())
+            {
+                var buffId = buff.GetProperty("buffId").GetString()!;
+                var duration = JsonRead.Number(buff, "durationSeconds");
+                player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
+                if (duration > 0 && eventUnix + duration > endUnix)
+                {
+                    player.Buffs.Active.Add(new(buffId, eventUnix + duration, 1,
+                        JsonRead.Text(buff, "name") ?? buffId, item.Id.Value,
+                        Effects: BuffEffectParser.Parse(buff, 1.0)));
+                }
+                player.MarkDirty(PlayerSectionKind.Buffs);
+            }
+        }
+        events ??= new SimulationEventTail();
+        var logText = consumable.Strike is not null
+            ? $"自动使用 {item.Name}，造成 {duelEvent.Damage:0.##} 点伤害。"
+            : $"自动使用 {item.Name}。";
+        events.Add(new SimulationEvent(eventAt, "auto-use.activated", logText,
+            null, new Dictionary<ItemId, double> { [item.Id] = -1d }));
     }
 
     /// <summary>
@@ -1543,20 +1770,32 @@ internal static class CombatActionRules
         return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
     }
 
-    /// <summary>功法显示名：配表缺失或无名时回退 ID 本体，保证日志引用标签不为空。</summary>
+    /// <summary>功法/特质/战斗消耗品显示名：配表缺失或无名时回退 ID 本体，保证日志引用标签不为空。</summary>
     private static string AbilityName(GameDataCatalog gameData, string abilityId)
         => gameData.Abilities.TryGetValue(abilityId, out var ability)
             ? DeterministicCombatEngine.AbilityText(ability, "name") ?? abilityId
-            : CombatTraitRules.AllTraits.TryGetValue(abilityId, out var trait) ? trait.Name : abilityId;
+            : CombatTraitRules.AllTraits.TryGetValue(abilityId, out var trait) ? trait.Name
+            : new ItemId(abilityId) is { IsValid: true } itemId && gameData.Items.TryGetValue(itemId, out var item)
+                ? item.Name
+                : abilityId;
 
-    /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」，功法名走引用标记供前端悬浮卡解析（切态时显示覆写名但仍锚定原功法 ID）。</summary>
+    /// <summary>施放行起手段：「{出手方}施放 {{ability:id|名称}}」或物品「{{item:id|名称}}」，供前端悬浮卡解析（切态时显示覆写名但仍锚定原 ID）。</summary>
     private static StringBuilder BeginCastMessage(string attackerLabel, string abilityId, GameDataCatalog gameData,
         string? abilityNameOverride = null)
-        => CombatTraitRules.AllTraits.ContainsKey(abilityId)
-            ? new StringBuilder(attackerLabel).Append("触发 ").Append(AbilityName(gameData, abilityId))
-            : new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
-                .Append(string.IsNullOrWhiteSpace(abilityNameOverride) ? AbilityName(gameData, abilityId) : abilityNameOverride)
-                .Append("}}");
+    {
+        if (CombatTraitRules.AllTraits.ContainsKey(abilityId))
+            return new StringBuilder(attackerLabel).Append("触发 ").Append(AbilityName(gameData, abilityId));
+        if (!gameData.Abilities.ContainsKey(abilityId)
+            && new ItemId(abilityId) is { IsValid: true } itemId
+            && gameData.Items.TryGetValue(itemId, out var item))
+        {
+            var itemName = string.IsNullOrWhiteSpace(abilityNameOverride) ? item.Name : abilityNameOverride;
+            return new StringBuilder(attackerLabel).Append("施放 {{item:").Append(abilityId).Append('|').Append(itemName).Append("}}");
+        }
+        return new StringBuilder(attackerLabel).Append("施放 {{ability:").Append(abilityId).Append('|')
+            .Append(string.IsNullOrWhiteSpace(abilityNameOverride) ? AbilityName(gameData, abilityId) : abilityNameOverride)
+            .Append("}}");
+    }
 
     /// <summary>施放合并行的单帧子句收集：未命中 / 伤害 / 治疗按帧序入列；零效果帧（纯增益起手）不产生子句。</summary>
     private static void AppendCastClause(List<string> clauses, string targetLabel, bool hit, double damage, double healing,
