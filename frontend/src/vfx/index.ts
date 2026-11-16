@@ -12,6 +12,7 @@ import {
   isActorIdMatchingDomKey,
   normalizeActorCanonicalKey,
   resolveRegisteredVfxId,
+  resolveZeroDamageSupportExpansion,
   type CombatEventBatch,
 } from './vfxRouting'
 
@@ -38,6 +39,7 @@ export interface CombatBatchPlaybackOptions {
   readonly selfIndex?: number | null
   readonly ability?: CombatAbilityDefinition | null
   readonly morphed: boolean
+  readonly lowestHpAllyId?: string | null
 }
 
 interface CastRingEntry {
@@ -83,7 +85,7 @@ function toSkillDescriptor(ability: CombatAbilityDefinition | null | undefined):
  * - 单位 DOM 锚点精确解析（单人/组队 3v3 九宫格/斗法镜像/竖屏重排/散尸瞬间）；
  * - `feedback.castRing` 吟唱光环生命周期（脉动、淡出与异常兜底回收）；
  * - 四种常驻阵盘（聚灵/迷踪/天雷/血煞）跟随单位与波次存亡，以及反击触发联动；
- * - 16 功法 17 态（含移形化态「斩玉→踏云」与同帧 AoE 批聚拢）、符箓与 6 种战斗丹药；
+ * - 21 主动功法 22 态（含移形化态「斩玉→踏云」与同帧 AoE 批聚拢）、10 内功心法入战护体、特质反应、符箓与 6 种战斗丹药；
  * - 战内复活（`feedback.revive`）与退场散尸（`feedback.defeat`）。
  */
 export class CombatVfxRuntime {
@@ -309,9 +311,14 @@ export class CombatVfxRuntime {
   /** 播放聚合后的单次攻击/技能/阵法反击演出批次 */
   playCombatBatch(batch: CombatEventBatch, options: CombatBatchPlaybackOptions): void {
     if (this.disposed) return
-    const { selfIndex, ability, morphed } = options
+    const { selfIndex, ability, morphed, lowestHpAllyId } = options
 
+    const side: 'ally' | 'enemy' = isEnemySideId(batch.attackerId) ? 'enemy' : 'ally'
     const casterEl = this.findActorEl(batch.attackerId, selfIndex)
+    const allyEls = this.collectSideEls('ally', true)
+    const livingEnemyEls = this.collectSideEls('enemy', true)
+    const enemyEls = livingEnemyEls.length > 0 ? livingEnemyEls : this.collectSideEls('enemy', false)
+
     const targetEls: HTMLElement[] = []
     const seenEls = new Set<HTMLElement>()
     for (const tid of batch.targetIds) {
@@ -321,14 +328,33 @@ export class CombatVfxRuntime {
         targetEls.push(el)
       }
     }
+
+    // 后端 CombatActSystem 对零伤害 `all-allies` / `lowest-hp-ally` 技能以施法者自身作为占位目标下发，
+    // 这里按功法 targetType 展开到同阵营全体存活单位或最低血比例友方，使山鬼谣等群辅可覆盖全队。
+    const supportExpansion = resolveZeroDamageSupportExpansion(batch, ability?.targetType, selfIndex)
+    if (supportExpansion === 'all-allies') {
+      const friendlyPool = side === 'enemy' ? livingEnemyEls : allyEls
+      if (friendlyPool.length > 0) {
+        targetEls.length = 0
+        seenEls.clear()
+        for (const el of friendlyPool) {
+          if (!seenEls.has(el)) {
+            seenEls.add(el)
+            targetEls.push(el)
+          }
+        }
+      }
+    } else if (supportExpansion === 'lowest-hp-ally' && lowestHpAllyId) {
+      const injuredEl = this.findActorEl(lowestHpAllyId, selfIndex)
+      if (injuredEl && !isActorDeadOrDormant(injuredEl)) {
+        targetEls.length = 0
+        targetEls.push(injuredEl)
+      }
+    }
+
     const primaryTargetEl = targetEls[0] ?? null
     if (!casterEl && targetEls.length === 0) return
 
-    const allyEls = this.collectSideEls('ally', true)
-    const livingEnemyEls = this.collectSideEls('enemy', true)
-    const enemyEls = livingEnemyEls.length > 0 ? livingEnemyEls : this.collectSideEls('enemy', false)
-
-    const side: 'ally' | 'enemy' = isEnemySideId(batch.attackerId) ? 'enemy' : 'ally'
     const abilityId = batch.abilityId
     const isFormationProc = Boolean(abilityId && FORMATION_ITEM_TO_BUFF[abilityId])
 
@@ -449,6 +475,34 @@ export class CombatVfxRuntime {
       targetEls: [casterEl],
       allyEls,
       enemyEls,
+    })
+  }
+
+  /** 播放入战/斗法首帧内功心法周天护体演出 */
+  playInternalArtIntro(
+    abilityId: string,
+    actorId: string,
+    selfIndex?: number | null,
+    ability?: CombatAbilityDefinition | null,
+  ): void {
+    if (this.disposed || !this.engine.has(abilityId)) return
+    const casterEl = this.findActorEl(actorId, selfIndex)
+    if (!casterEl || isActorDeadOrDormant(casterEl)) return
+    const side: 'ally' | 'enemy' = isEnemySideId(actorId) ? 'enemy' : 'ally'
+    const allyEls = this.collectSideEls('ally', true)
+    const livingEnemyEls = this.collectSideEls('enemy', true)
+    const enemyEls = livingEnemyEls.length > 0 ? livingEnemyEls : this.collectSideEls('enemy', false)
+
+    this.engine.play(abilityId, {
+      side,
+      casterEl,
+      targetEl: casterEl,
+      targetEls: [casterEl],
+      allyEls,
+      enemyEls,
+      ability: ability?.name ?? abilityId,
+      skill: toSkillDescriptor(ability),
+      element: ability?.element ?? 'none',
     })
   }
 

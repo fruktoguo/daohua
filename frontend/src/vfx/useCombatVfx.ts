@@ -21,6 +21,7 @@ import {
   groupCombatEventBatches,
   normalizeActorCanonicalKey,
   parseAutoUseActivatedItemId,
+  resolveZeroDamageSupportExpansion,
 } from './vfxRouting'
 
 const CONSUMABLE_DEDUP_WINDOW_MS = 1200
@@ -43,16 +44,61 @@ function resolveHighestThreatEnemyTargetId(expedition: ExpeditionProgress | null
   return bestIdx >= 0 ? `enemy:${bestIdx}` : null
 }
 
+function resolveLowestHpAllyId(
+  expedition: ExpeditionProgress | null,
+  state: ReturnType<typeof useGameStore.getState>,
+  side: 'ally' | 'enemy',
+  selfIndex: number | null,
+): string | null {
+  if (!expedition) return null
+  if (side === 'enemy') {
+    const enemies = expedition.enemies ?? []
+    let bestId: string | null = null
+    let bestRatio = Infinity
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i]
+      if (e.hitpoints <= 0) continue
+      const maxHp = Math.max(1, e.maxHitpoints ?? e.hitpoints)
+      const ratio = e.hitpoints / maxHp
+      if (ratio < bestRatio) {
+        bestRatio = ratio
+        bestId = `enemy:${i}`
+      }
+    }
+    return bestId
+  }
+
+  let bestId: string | null = null
+  let bestRatio = Infinity
+  const playerHp = expedition.playerHitpoints ?? state.combatResources?.hitpoints ?? 0
+  const playerMaxHp = Math.max(1, state.combatResources?.maxHitpoints ?? playerHp)
+  if (playerHp > 0) {
+    bestRatio = playerHp / playerMaxHp
+    bestId = 'player'
+  }
+  for (const ally of expedition.allies ?? []) {
+    if (selfIndex !== null && ally.memberIndex === selfIndex) continue
+    if (ally.hitpoints <= 0) continue
+    const maxHp = Math.max(1, ally.maxHitpoints ?? ally.hitpoints)
+    const ratio = ally.hitpoints / maxHp
+    if (ratio < bestRatio) {
+      bestRatio = ratio
+      bestId = `ally:${ally.memberIndex}`
+    }
+  }
+  return bestId
+}
+
 /**
  * 正式战斗页 Canvas V2 特效联动 Hook。
  *
  * 将 `useGameStore` 战斗/远征/斗法状态与 `gameLogService` 原始增量日志桥接到
- * `CombatVfxRuntime`，覆盖全部 38 个共享注册特效：
+ * `CombatVfxRuntime`，覆盖全部 55 个共享注册特效：
  * 1. `feedback.castRing`：本机 / 队友 / 敌方 / 斗法镜像的吟唱地面法阵同步；
  * 2. 4 种常驻阵盘（聚灵 / 迷踪 / 天雷 / 血煞）跟随战内存活状态自动启停 + 2 种反击触发态联动；
- * 3. 16 功法 17 态（含同帧 AoE 批聚拢与「斩玉 → 踏云」移形化态）及普攻 / 暴击 / 破拆招反馈；
- * 4. `item.leiji-talisman` + 6 种战斗丹药的双通道去重激活（槽位冷却跳升 / Buff 续期 / 原始日志）；
- * 5. 战内倒地复活（`feedback.revive`）与搜寻散尸退场（`feedback.defeat`）。
+ * 3. 21 主动功法 22 态（含同帧 AoE 批聚拢、吸血自疗排重、群辅全队展开与「斩玉 → 踏云」移形化态）及普攻 / 暴击 / 破拆招反馈；
+ * 4. 10 门内功心法入战/斗法首帧周天护体演出 + `trait.xuyi`/`trait.ranhun` 特质反应特效；
+ * 5. `item.leiji-talisman` + 6 种战斗丹药的双通道去重激活、战内倒地复活（`feedback.revive`）与搜寻散尸退场（`feedback.defeat`）。
  */
 export function useCombatVfx(
   shellRef: RefObject<HTMLDivElement | null>,
@@ -78,6 +124,7 @@ export function useCombatVfx(
     let prevWaveNumber: number | null = null
     let duelLastElapsed: number | null = null
     let lastTayunLogAtMs = -Infinity
+    let introPlayedScopeKey: string | null = null
 
     const handledEventKeys = new Set<string>()
     let prevSlotStates: Array<{ itemId: string | null; cdMs: number }> = []
@@ -143,6 +190,7 @@ export function useCombatVfx(
       lastConsumablePlayAt.clear()
       duelLastElapsed = null
       lastTayunLogAtMs = -Infinity
+      introPlayedScopeKey = null
       runtime.resetComboCounters()
     }
 
@@ -365,6 +413,48 @@ export function useCombatVfx(
         prevYixingStacks.clear()
       }
 
+      // 2.5 入战 / 进入斗法首帧内功心法护体运转演出（装配 0 号位心法的我方 / 队友 / 斗法镜像各演 1 次）
+      if (phase === 'combat' || phase === 'duel') {
+        const introScopeKey = `${entryId ?? 'none'}|${phase}|${waveNumber ?? 0}`
+        if (isInitialBaseline) {
+          introPlayedScopeKey = introScopeKey
+        } else if (
+          ((phase === 'combat' && prevPhase !== 'combat') || (phase === 'duel' && prevPhase !== 'duel')) &&
+          introPlayedScopeKey !== introScopeKey
+        ) {
+          introPlayedScopeKey = introScopeKey
+          const actors: Array<{ actorId: string; abilityId: string | null | undefined }> = []
+          const playerHpNow = expedition.playerHitpoints ?? state.combatResources?.hitpoints ?? 0
+          if (playerHpNow > 0) {
+            actors.push({ actorId: 'player', abilityId: state.combat?.abilitySlots?.[0]?.abilityId })
+          }
+          for (const ally of expedition.allies ?? []) {
+            if (selfIndex !== null && ally.memberIndex === selfIndex) continue
+            if (ally.hitpoints <= 0) continue
+            actors.push({ actorId: `ally:${ally.memberIndex}`, abilityId: ally.skills?.[0]?.abilityId })
+          }
+          if (phase === 'duel' && expedition.duel && expedition.duel.opponentHitpoints > 0) {
+            actors.push({
+              actorId: 'enemy:0',
+              abilityId: expedition.duel.opponentSkills?.[0]?.abilityId,
+            })
+          }
+          let staggerIdx = 0
+          for (const entry of actors) {
+            if (!entry.abilityId) continue
+            const internalAbility = abilityById.get(entry.abilityId)
+            if (internalAbility?.discipline !== 'internal') continue
+            if (!runtime.hasVfx(entry.abilityId)) continue
+            const actorId = entry.actorId
+            const abilityId = entry.abilityId
+            runtime.schedule(staggerIdx * 140, () => {
+              runtime.playInternalArtIntro(abilityId, actorId, selfIndex, internalAbility)
+            })
+            staggerIdx++
+          }
+        }
+      }
+
       // 3. 移形栈快照与远征最近事件处理（含结束一击尾帧，确保斩杀波不被吞）
       const currYixingStacks = snapshotCurrentYixing(expedition, selfIndex)
       const shouldConsumeRecentEvents =
@@ -407,8 +497,14 @@ export function useCombatVfx(
                   batch.canonicalAttackerKey === 'player' && nowMs - lastTayunLogAtMs <= TAYUN_LOG_WINDOW_MS,
               })
             }
+            const sideForTarget: 'ally' | 'enemy' =
+              batch.attackerId === 'enemy' || batch.attackerId.startsWith('enemy:') ? 'enemy' : 'ally'
+            const lowestHpAllyId =
+              resolveZeroDamageSupportExpansion(batch, ability?.targetType, selfIndex) === 'lowest-hp-ally'
+                ? resolveLowestHpAllyId(expedition, state, sideForTarget, selfIndex)
+                : null
             runtime.schedule(batch.delayMs, () => {
-              runtime.playCombatBatch(batch, { selfIndex, ability, morphed })
+              runtime.playCombatBatch(batch, { selfIndex, ability, morphed, lowestHpAllyId })
             })
           }
         }
@@ -464,8 +560,14 @@ export function useCombatVfx(
                 batch.abilityId === 'ability.zhanyu' && origIndex !== undefined
                   ? detectDuelZhanyuMorph(rawEvents, origIndex)
                   : false
+              const sideForTarget: 'ally' | 'enemy' =
+                batch.attackerId === 'enemy' || batch.attackerId.startsWith('enemy:') ? 'enemy' : 'ally'
+              const lowestHpAllyId =
+                resolveZeroDamageSupportExpansion(batch, ability?.targetType, selfIndex) === 'lowest-hp-ally'
+                  ? resolveLowestHpAllyId(expedition, state, sideForTarget, selfIndex)
+                  : null
               runtime.schedule(batch.delayMs, () => {
-                runtime.playCombatBatch(batch, { selfIndex, ability, morphed })
+                runtime.playCombatBatch(batch, { selfIndex, ability, morphed, lowestHpAllyId })
               })
             }
           }

@@ -186,6 +186,8 @@ interface MutableCombatEventBatch {
  * 将 `collectScheduledCombatEvents` 输出的事件流聚合为 VFX 播放批次：
  * - 同一出手方、同一战斗时刻（ms 精度）且同一技能 ID 打向多个不同目标时（如火焰风暴、甘露、跃迁、踏云），
  *   合并为单个群攻/群辅批次，确保 Canvas AoE 特效完整覆盖 `targetEls` 而不重复叠加全屏爆炸；
+ * - 若同一技能组内已存在非自身目标或伤害事件，则同组的自我回血/吸血（`targetId === attackerId` 且 `damage === 0`）
+ *   仅并入事件与去重键消耗，不污染 `targetIds`，避免吸血词条让技能特效误打向施法者自身；
  * - 普攻或同一目标同一时刻的多段连击保持拆批，以保留错峰打击节奏。
  */
 export function groupCombatEventBatches(
@@ -194,6 +196,17 @@ export function groupCombatEventBatches(
 ): CombatEventBatch[] {
   const batches: MutableCombatEventBatch[] = []
   const byGroupKey = new Map<string, MutableCombatEventBatch[]>()
+  const groupHasPrimaryTarget = new Set<string>()
+
+  for (const item of scheduled) {
+    const ev = item.event
+    if (!ev.abilityId) continue
+    const canonicalAttacker = normalizeActorCanonicalKey(ev.attackerId, selfIndex)
+    const canonicalTarget = normalizeActorCanonicalKey(ev.targetId, selfIndex)
+    if (canonicalTarget !== canonicalAttacker || ev.damage > 0) {
+      groupHasPrimaryTarget.add(`${Math.round(ev.at * 1000)}|${canonicalAttacker}|${ev.abilityId}`)
+    }
+  }
 
   for (const item of scheduled) {
     const ev = item.event
@@ -201,13 +214,21 @@ export function groupCombatEventBatches(
     const canonicalTarget = normalizeActorCanonicalKey(ev.targetId, selfIndex)
     const abilityId = ev.abilityId ?? null
     const atBucket = Math.round(ev.at * 1000)
+    const groupKey = abilityId ? `${atBucket}|${canonicalAttacker}|${abilityId}` : ''
+    const isSelfHealEcho = Boolean(
+      abilityId &&
+      groupHasPrimaryTarget.has(groupKey) &&
+      canonicalTarget === canonicalAttacker &&
+      ev.damage === 0,
+    )
 
     let targetBatch: MutableCombatEventBatch | undefined
     if (abilityId) {
-      const groupKey = `${atBucket}|${canonicalAttacker}|${abilityId}`
       const candidates = byGroupKey.get(groupKey)
       if (candidates) {
-        targetBatch = candidates.find(candidate => !candidate.canonicalTargets.has(canonicalTarget))
+        targetBatch = isSelfHealEcho
+          ? candidates[0]
+          : candidates.find(candidate => !candidate.canonicalTargets.has(canonicalTarget))
       }
       if (!targetBatch) {
         targetBatch = {
@@ -253,16 +274,18 @@ export function groupCombatEventBatches(
     }
 
     targetBatch.delayMs = Math.min(targetBatch.delayMs, item.delay)
-    if (!targetBatch.canonicalTargets.has(canonicalTarget)) {
+    if (!isSelfHealEcho && !targetBatch.canonicalTargets.has(canonicalTarget)) {
       targetBatch.canonicalTargets.add(canonicalTarget)
       targetBatch.targetIds.push(ev.targetId)
     }
     targetBatch.events.push(ev)
-    targetBatch.totalDamage += ev.damage
-    targetBatch.anyHit = targetBatch.anyHit || ev.hit
-    targetBatch.anyCrit = targetBatch.anyCrit || Boolean(ev.critical)
-    targetBatch.anyBroken = targetBatch.anyBroken || Boolean(ev.broken)
-    targetBatch.anyParried = targetBatch.anyParried || Boolean(ev.parried)
+    if (!isSelfHealEcho) {
+      targetBatch.totalDamage += ev.damage
+      targetBatch.anyHit = targetBatch.anyHit || ev.hit
+      targetBatch.anyCrit = targetBatch.anyCrit || Boolean(ev.critical)
+      targetBatch.anyBroken = targetBatch.anyBroken || Boolean(ev.broken)
+      targetBatch.anyParried = targetBatch.anyParried || Boolean(ev.parried)
+    }
     targetBatch.consumeKeys.push(item.key)
   }
 
@@ -388,4 +411,20 @@ export function resolveRegisteredVfxId(
   }
   if (hasVfx(abilityId)) return abilityId
   return hasVfx('feedback.burst') ? 'feedback.burst' : 'feedback.attack'
+}
+
+/**
+ * 判定零伤害单占位批（`targetId === attackerId` 且 `damage === 0`）是否需按技能
+ * `targetType`（兼容服务端 wire kebab-case 与配表 camelCase）展开为同侧全员或最低气血比例友方目标。
+ */
+export function resolveZeroDamageSupportExpansion(
+  batch: Pick<CombatEventBatch, 'totalDamage' | 'targetIds' | 'canonicalAttackerKey'>,
+  targetType: string | null | undefined,
+  selfIndex?: number | null,
+): 'all-allies' | 'lowest-hp-ally' | null {
+  if (batch.totalDamage !== 0 || batch.targetIds.length !== 1) return null
+  if (normalizeActorCanonicalKey(batch.targetIds[0], selfIndex) !== batch.canonicalAttackerKey) return null
+  if (targetType === 'all-allies' || targetType === 'allAllies') return 'all-allies'
+  if (targetType === 'lowest-hp-ally' || targetType === 'lowestHitpointsAlly') return 'lowest-hp-ally'
+  return null
 }

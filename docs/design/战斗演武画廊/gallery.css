@@ -634,8 +634,8 @@ body {
 }
 
 .catalog-card.is-passive {
-  cursor: default;
-  opacity: 0.88;
+  cursor: pointer;
+  opacity: 0.96;
 }
 
 .catalog-card-icon {

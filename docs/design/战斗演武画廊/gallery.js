@@ -99,6 +99,26 @@
       badge: '生死反馈',
       glyph: '生',
     },
+    {
+      id: 'trait.xuyi',
+      action: function () {
+        Sandbox.runShowcase('showcase.xuyi');
+      },
+      title: '特质 · 蓄意爆发（主爆 + 溅射）',
+      meta: '炽白鎏金螺旋真伤轰穿主目标并向其余敌人溅射物理冲击',
+      badge: '特质反应',
+      glyph: '蓄',
+    },
+    {
+      id: 'trait.ranhun',
+      action: function () {
+        Sandbox.runShowcase('showcase.ranhun');
+      },
+      title: '特质 · 燃烧（每秒业火灼烧）',
+      meta: '轻快不遮挡视线的每秒噬魂业火跳烧与心脉余烬',
+      badge: '持续火伤',
+      glyph: '燃',
+    },
   ];
 
   function createIconEl(item, sizeClass) {
@@ -368,8 +388,8 @@
       var info = document.createElement('div');
       info.className = 'catalog-card-info';
 
-      var tierLabel = item.tier === 2 ? '二阶' : item.tier === 1 ? '一阶' : '基础';
-      var tierCls = item.tier === 2 ? 'tier-chip is-t2' : 'tier-chip';
+      var tierLabel = item.tier === 3 ? '三阶' : item.tier === 2 ? '二阶' : item.tier === 1 ? '一阶' : '基础';
+      var tierCls = item.tier >= 2 ? 'tier-chip is-t2' : 'tier-chip';
       var elemName = item.element && Catalog.ELEMENT_META[item.element] ? Catalog.ELEMENT_META[item.element].label : '';
       var metaText = isPassive
         ? item.passiveSummary
@@ -383,7 +403,7 @@
         '</span><span class="' +
         tierCls +
         '">' +
-        (isPassive ? tierLabel + '·被动' : tierLabel) +
+        (isPassive ? tierLabel + '·心法' : tierLabel) +
         '</span></div>' +
         '<div class="catalog-card-meta"></div>';
       info.querySelector('.catalog-card-meta').textContent = metaText;
@@ -391,8 +411,8 @@
 
       card.addEventListener('click', function () {
         selectDetail(item.id);
-        if (isPassive) return;
-        if (item.consumableType) Sandbox.useConsumable(item.id);
+        if (isPassive) Sandbox.castInternalArt(item.id);
+        else if (item.consumableType) Sandbox.useConsumable(item.id);
         else Sandbox.castAbility(item.id);
       });
       grid.appendChild(card);
@@ -433,7 +453,7 @@
 
     var isTayun = id === 'ability.zhanyu.tayun';
     var hasVfx = VFX && VFX.has(id);
-    tag.textContent = item.kind === 'internal' ? '心法仅展示' : hasVfx ? 'VFX 已就绪' : '未注册';
+    tag.textContent = hasVfx ? 'VFX 已就绪' : '未注册';
 
     var kvHtml = '';
     if (item.consumableType) {
@@ -467,12 +487,13 @@
         ' 内力</strong></div>';
     } else {
       kvHtml =
-        '<div>定位：<strong>被动心法</strong></div>' +
+        '<div>定位：<strong>内功心法（入战护体）</strong></div>' +
         '<div>阶位：<strong>' +
-        (item.tier === 2 ? '二阶' : '一阶') +
+        (item.tier === 3 ? '三阶' : item.tier === 2 ? '二阶' : '一阶') +
         '</strong></div>';
     }
 
+    var canReplay = item.active !== false || item.kind === 'internal';
     body.innerHTML =
       '<div style="font-size:15px;font-weight:700;color:var(--gold-bright)">' +
       (isTayun ? '踏云（斩玉·移形变招）' : item.name) +
@@ -483,7 +504,7 @@
       kvHtml +
       '</div>' +
       '<p class="detail-desc"></p>' +
-      (item.active !== false
+      (canReplay
         ? '<div class="detail-actions"><button type="button" class="btn-ctl is-active" id="btnReplaySelected">立即重放演示</button></div>'
         : '');
 
@@ -492,7 +513,8 @@
     var replayBtn = $('btnReplaySelected');
     if (replayBtn) {
       replayBtn.addEventListener('click', function () {
-        if (item.consumableType) Sandbox.useConsumable(item.id);
+        if (item.kind === 'internal') Sandbox.castInternalArt(item.id);
+        else if (item.consumableType) Sandbox.useConsumable(item.id);
         else if (isTayun) Sandbox.runShowcase('showcase.tayun');
         else Sandbox.castAbility(item.id);
       });
@@ -532,7 +554,7 @@
       'feedback.revive',
       'feedback.regen',
       'feedback.burst',
-      // 7 外功 + 踏云 = 8
+      // 9 外功 + 踏云 = 10
       'ability.heavy-slash',
       'ability.chain-strike',
       'ability.taunt',
@@ -541,7 +563,9 @@
       'ability.sui-gang',
       'ability.zhanyu',
       'ability.zhanyu.tayun',
-      // 9 法术
+      'ability.shunshan',
+      'ability.pojun',
+      // 12 法术
       'ability.palm-lightning',
       'ability.blazing-blast',
       'ability.qingping-melody',
@@ -551,6 +575,23 @@
       'ability.tide',
       'ability.yueqian',
       'ability.huoyan-fengbao',
+      'ability.tianlei-po',
+      'ability.zhuoxin',
+      'ability.shangui-yao',
+      // 10 内功心法
+      'ability.tuna-gong',
+      'ability.manniu-jin',
+      'ability.tiebu-shan',
+      'ability.feiyan-gong',
+      'ability.qingxin-jue',
+      'ability.fenxue-gong',
+      'ability.xiaozhoutian-gong',
+      'ability.cunshen-jue',
+      'ability.lianjing-huaqi-jue',
+      'ability.xuanyuan-yiqi-gong',
+      // 2 特质反应
+      'trait.xuyi',
+      'trait.ranhun',
       // 6 丹药 + 1 符 + 4 阵盘 + 2 反击 = 13
       'item.zhixue-powder',
       'item.shunqi-pill',
@@ -574,7 +615,7 @@
     var groundCanvas = document.querySelector('#vfxGroundOverlay canvas');
     var skyCanvas = document.querySelector('#vfxOverlay canvas');
 
-    // 同步点播几组高亮视觉特效验证 Canvas 实体活动数量
+    // 同步点播多组核心技能、心法与特质特效验证 Canvas 实体活动数量
     var allyEl = document.querySelector('.arena-unit[data-unit-id="ally-0"]');
     var enemyEl = document.querySelector('.arena-unit[data-unit-id="enemy-1"]');
     var enemyEls = Array.prototype.slice.call(document.querySelectorAll('.arena-unit.is-enemy'));
@@ -583,6 +624,14 @@
     var sampleIds = [
       'ability.star-piercer',
       'ability.zhanyu.tayun',
+      'ability.shunshan',
+      'ability.pojun',
+      'ability.tianlei-po',
+      'ability.zhuoxin',
+      'ability.shangui-yao',
+      'ability.xuanyuan-yiqi-gong',
+      'trait.xuyi',
+      'trait.ranhun',
       'ability.huoyan-fengbao',
       'ability.tide',
       'item.huangya-pill',

@@ -426,6 +426,10 @@
         targets.forEach(function (t) {
           grantBuff(t, 'buff.ganlu', '甘露', 10000, { hpPerSec: 18 });
         });
+      } else if (skill.id === 'ability.shangui-yao') {
+        targets.forEach(function (t) {
+          grantBuff(t, 'buff.ganlu', '甘露', 15000, { hpPerSec: 22 });
+        });
       } else if (skill.id === 'ability.sui-gang') {
         grantBuff(caster, 'buff.sui-gang', '碎罡', 20000);
         grantBuff(caster, 'buff.sha-li', '煞力', 20000);
@@ -443,20 +447,42 @@
           tier: skill.tier,
         })
       );
-      addLog(caster.name + ' 施展【' + skill.name + '】，加持 ' + (skill.id === 'ability.sui-gang' ? '碎罡/煞力/罡锋 三重真意' : skill.buff ? skill.buff.name : '状态') + '！', 'normal');
+      addLog(
+        caster.name +
+          ' 施展【' +
+          skill.name +
+          '】，加持 ' +
+          (skill.id === 'ability.sui-gang'
+            ? '碎罡/煞力/罡锋 三重真意'
+            : skill.id === 'ability.shangui-yao'
+              ? '甘露（全队）'
+              : skill.buff
+                ? skill.buff.name
+                : '状态') +
+          '！',
+        'normal'
+      );
     } else {
-      // 伤害技能（如果是斩玉变招踏云或贯星演示击杀连星）
+      // 伤害或隐火挂印技能（如果是斩玉变招踏云或贯星演示击杀连星）
       var baseAtk = skill.kind === 'spell' ? caster.spellAtk : caster.physAtk;
-      var raw = baseAtk * (skill.dmgRatio || 1.0) + (skill.flat || 20);
+      var dmgRatio = skill.dmgRatio !== undefined ? skill.dmgRatio : 1.0;
+      var flatDmg = skill.flat !== undefined ? skill.flat : 20;
+      var raw = baseAtk * dmgRatio + flatDmg;
       if (useTayun) raw *= 1.35;
 
+      var hitTargets = skill.maxTargets && targets.length > skill.maxTargets ? targets.slice(0, skill.maxTargets) : targets;
       var critAny = false;
-      targets.forEach(function (t, idx) {
-        if (opts.forceKill && idx === 0) t.hp = Math.min(t.hp, 60);
-        var res = applyDamage(caster, t, raw, { forceCrit: opts.forceCrit });
-        totalDmg += res.damage;
-        if (res.crit) critAny = true;
-        if (res.killed) anyKilled = true;
+      hitTargets.forEach(function (t, idx) {
+        if (raw > 0) {
+          if (opts.forceKill && idx === 0) t.hp = Math.min(t.hp, 60);
+          var res = applyDamage(caster, t, raw, { forceCrit: opts.forceCrit });
+          totalDmg += res.damage;
+          if (res.crit) critAny = true;
+          if (res.killed) anyKilled = true;
+        }
+        if (skill.id === 'ability.tianlei-po') {
+          grantBuff(t, 'buff.mabi', '麻痹', 5000, { kind: 'mabi' });
+        }
         if (skill.ranhunBaseStacks) {
           var prevStacks = t.buffs['buff.ranhun'] ? t.buffs['buff.ranhun'].stacks : 0;
           grantBuff(t, 'buff.ranhun', '燃魂×' + Math.min(20, prevStacks + skill.ranhunBaseStacks), 10000, {
@@ -474,18 +500,27 @@
         }
       }
 
-      // 移形状态消耗 1 层（若是直接点演示踏云则保留体验提示）
+      // 移形状态流转：斩玉消耗移形；瞬闪无移形时得移形、有移形时耗之（击杀重置冷却）；破军赋予移形+势不可挡
       if (skill.id === 'ability.zhanyu' && hasYixing && !opts.preserveYixing) {
         delete caster.buffs['buff.yixing'];
+      } else if (skill.id === 'ability.shunshan') {
+        if (!hasYixing) {
+          grantBuff(caster, 'buff.yixing', '移形', 5000, { kind: 'yixing' });
+        } else if (!opts.preserveYixing) {
+          delete caster.buffs['buff.yixing'];
+        }
+      } else if (skill.id === 'ability.pojun') {
+        grantBuff(caster, 'buff.yixing', '移形', 5000, { kind: 'yixing' });
+        grantBuff(caster, 'buff.shibukedang', '势不可挡×5', 5000, { stacks: 5 });
       }
 
       VFX.play(
         effectId,
-        buildCtx(caster, targets, {
+        buildCtx(caster, hitTargets, {
           skill: skill,
           element: skill.element,
           damage: totalDmg,
-          perTargetDamage: Math.round(totalDmg / Math.max(1, targets.length)),
+          perTargetDamage: Math.round(totalDmg / Math.max(1, hitTargets.length)),
           crit: critAny,
           morphed: useTayun,
           kill: anyKilled || !!opts.forceKill,
@@ -494,18 +529,31 @@
       );
 
       var shownName = useTayun ? '踏云（移形·斩玉）' : skill.name;
-      addLog(
-        caster.name +
-          ' 施展【' +
-          shownName +
-          '】，命中 ' +
-          targets.length +
-          ' 名敌人造成共 ' +
-          totalDmg +
-          ' 伤害' +
-          (critAny ? '（暴击！）' : '。'),
-        critAny ? 'crit' : 'normal'
-      );
+      if (raw <= 0) {
+        addLog(
+          caster.name +
+            ' 施展【' +
+            shownName +
+            '】，隐火咒印透入 ' +
+            hitTargets.length +
+            ' 名敌人心脉并叠加【燃魂】。',
+          'normal'
+        );
+      } else {
+        addLog(
+          caster.name +
+            ' 施展【' +
+            shownName +
+            '】，命中 ' +
+            hitTargets.length +
+            ' 名敌人造成共 ' +
+            totalDmg +
+            ' 伤害' +
+            (critAny ? '（暴击！）' : '。') +
+            (skill.id === 'ability.shunshan' && hasYixing && anyKilled ? ' 触发击杀，瞬闪冷却重置！' : ''),
+          critAny ? 'crit' : 'normal'
+        );
+      }
 
       // 联动阵盘被动触发：天雷阵或血煞阵
       var personal = sandbox.activeFormations.personal;
@@ -584,6 +632,25 @@
       }, durMs),
     };
     emitChange('cast');
+  }
+
+  function castInternalArt(abilityId) {
+    var skill = global.DaohuaCatalog.byId(abilityId);
+    if (!skill || skill.kind !== 'internal') return;
+    ensureTeamAlive('ally');
+    var caster = getUnit(sandbox.selectedCasterId) || getLivingUnits('ally')[0];
+    var VFX = global.DaohuaVFX;
+    if (!caster || !VFX || !VFX.has(skill.id)) return;
+    VFX.play(
+      skill.id,
+      buildCtx(caster, [caster], {
+        skill: skill,
+        element: skill.element,
+        tier: skill.tier,
+      })
+    );
+    addLog(caster.name + ' 运转心法【' + skill.name + '】，周天真意护体显形！', 'heal');
+    emitChange('units');
   }
 
   function useConsumable(itemId, opts) {
@@ -776,6 +843,61 @@
       triggerFormationProc('xuesha');
     } else if (showcaseId === 'showcase.enemy-attack') {
       triggerEnemyAttack();
+    } else if (showcaseId === 'showcase.xuyi') {
+      var livingEnemies = getLivingUnits('enemy');
+      var primary = target && target.side === 'enemy' && target.hp > 0 ? target : livingEnemies[0];
+      if (!primary) return;
+      var splashTargets = [primary].concat(
+        livingEnemies.filter(function (e) { return e.id !== primary.id; })
+      );
+      var primaryDmg = 540;
+      var splashDmg = 310;
+      splashTargets.forEach(function (enemy, idx) {
+        applyDamage(caster, enemy, idx === 0 ? primaryDmg : splashDmg, { forceCrit: idx === 0 });
+      });
+      VFX.play(
+        'trait.xuyi',
+        buildCtx(caster, splashTargets, {
+          damage: primaryDmg,
+          perTargetDamage: splashDmg,
+          crit: true,
+          element: 'none',
+        })
+      );
+      addLog(
+        caster.name +
+          ' 触发特质【蓄意爆发】：轰穿 ' +
+          primary.name +
+          ' 真伤裂星' +
+          (splashTargets.length > 1 ? ' 并溅射其余目标！' : '！'),
+        'crit'
+      );
+      emitChange('units');
+    } else if (showcaseId === 'showcase.ranhun') {
+      var burnTargets = getLivingUnits('enemy').filter(function (e) { return !!e.buffs['buff.ranhun']; });
+      var burnList = burnTargets.length > 0 ? burnTargets : target ? [target] : getLivingUnits('enemy').slice(0, 1);
+      if (burnList.length === 0) return;
+      var tickDmg = 185;
+      burnList.forEach(function (enemy) {
+        applyDamage(caster, enemy, tickDmg, { forceCrit: false });
+      });
+      VFX.play(
+        'trait.ranhun',
+        buildCtx(caster, burnList, {
+          damage: tickDmg,
+          perTargetDamage: tickDmg,
+          element: 'fire',
+        })
+      );
+      addLog(
+        '特质【燃烧】：业火每秒灼烧 ' +
+          burnList.map(function (e) { return e.name; }).join('、') +
+          '（-' +
+          tickDmg +
+          '）。',
+        'crit'
+      );
+      emitChange('units');
     } else if (showcaseId === 'showcase.basic-combo') {
       if (!target) return;
       var comboNames = ['断岳斜劈', '惊鸿逆撩', '穿云疾刺', '残月横扫', '双绝交错'];
@@ -921,6 +1043,7 @@
     state: sandbox,
     reset: resetArena,
     castAbility: castAbility,
+    castInternalArt: castInternalArt,
     useConsumable: useConsumable,
     triggerFormationProc: triggerFormationProc,
     triggerEnemyAttack: triggerEnemyAttack,

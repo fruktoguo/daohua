@@ -18,6 +18,7 @@ import {
   normalizeActorCanonicalKey,
   parseAutoUseActivatedItemId,
   resolveRegisteredVfxId,
+  resolveZeroDamageSupportExpansion,
 } from './vfxRouting.ts'
 
 test('vfxRouting：实体 ID 归一化与 DOM actorKey 全形态精确匹配', () => {
@@ -572,6 +573,234 @@ test('雾梦泽 20 级五新技能：Canvas V2 特效注册与无头渲染零抛
     assert.ok(duration > 0, `${id} 应返回正数演出时长`)
     stepTimers(1500)
     stepRaf(64)
+  }
+
+  VFX.dispose()
+})
+
+test('vfxRouting：吸血自疗镜像不污染 targetIds 且零伤群辅/特质/心法路由准确', () => {
+  // 1. 同一技能同时伴随自身零伤吸血回声（无论自身回血在前或在后），都不应把施法者混入 targetIds
+  const withEchoAfter = groupCombatEventBatches([
+    {
+      key: 'hit1',
+      delay: 10,
+      comboIndex: 0,
+      event: { at: 8.4, attackerId: 'player', targetId: 'enemy:0', abilityId: 'ability.shunshan', damage: 240, hit: true },
+    },
+    {
+      key: 'drain1',
+      delay: 10,
+      comboIndex: 0,
+      event: { at: 8.4, attackerId: 'ally:0', targetId: 'player', abilityId: 'ability.shunshan', damage: 0, hit: true },
+    },
+  ], 0)
+  assert.equal(withEchoAfter.length, 1)
+  assert.deepEqual(withEchoAfter[0].targetIds, ['enemy:0'])
+  assert.deepEqual(withEchoAfter[0].consumeKeys, ['hit1', 'drain1'])
+  assert.equal(withEchoAfter[0].totalDamage, 240)
+
+  const withEchoBefore = groupCombatEventBatches([
+    {
+      key: 'drain0',
+      delay: 10,
+      comboIndex: 0,
+      event: { at: 9.2, attackerId: 'player', targetId: 'player', abilityId: 'ability.pojun', damage: 0, hit: true },
+    },
+    {
+      key: 'hit2a',
+      delay: 10,
+      comboIndex: 0,
+      event: { at: 9.2, attackerId: 'player', targetId: 'enemy:0', abilityId: 'ability.pojun', damage: 180, hit: true },
+    },
+    {
+      key: 'hit2b',
+      delay: 10,
+      comboIndex: 0,
+      event: { at: 9.2, attackerId: 'player', targetId: 'enemy:1', abilityId: 'ability.pojun', damage: 160, hit: true },
+    },
+  ], 0)
+  assert.equal(withEchoBefore.length, 1)
+  assert.deepEqual(withEchoBefore[0].targetIds, ['enemy:0', 'enemy:1'])
+  assert.deepEqual(withEchoBefore[0].consumeKeys, ['drain0', 'hit2a', 'hit2b'])
+  assert.equal(withEchoBefore[0].totalDamage, 340)
+
+  // 2. 纯零伤群辅/自增益（如山鬼谣/碎罡只发一条 targetId === attackerId）应保留自身占位并正确识别展开模式
+  const shanguiBatch = groupCombatEventBatches([
+    {
+      key: 'sg1',
+      delay: 15,
+      comboIndex: 0,
+      event: { at: 10.5, attackerId: 'ally:1', targetId: 'ally:1', abilityId: 'ability.shangui-yao', damage: 0, hit: true },
+    },
+  ], 0)
+  assert.equal(shanguiBatch.length, 1)
+  assert.deepEqual(shanguiBatch[0].targetIds, ['ally:1'])
+  assert.equal(resolveZeroDamageSupportExpansion(shanguiBatch[0], 'all-allies', 0), 'all-allies')
+  assert.equal(resolveZeroDamageSupportExpansion(shanguiBatch[0], 'allAllies', 0), 'all-allies')
+  assert.equal(resolveZeroDamageSupportExpansion(shanguiBatch[0], 'lowest-hp-ally', 0), 'lowest-hp-ally')
+  assert.equal(resolveZeroDamageSupportExpansion(shanguiBatch[0], 'lowestHitpointsAlly', 0), 'lowest-hp-ally')
+  assert.equal(resolveZeroDamageSupportExpansion(withEchoAfter[0], 'all-allies', 0), null)
+
+  // 3. 显式跨队友单疗不应再改写目标
+  const explicitAllyHeal = groupCombatEventBatches([
+    {
+      key: 'gl1',
+      delay: 12,
+      comboIndex: 0,
+      event: { at: 11.0, attackerId: 'player', targetId: 'ally:2', abilityId: 'ability.ganlu', damage: 0, hit: true },
+    },
+  ], 0)
+  assert.equal(resolveZeroDamageSupportExpansion(explicitAllyHeal[0], 'lowest-hp-ally', 0), null)
+
+  // 4. 特质反应与内功心法 ID 直通路由
+  const knownIds = new Set(['trait.xuyi', 'trait.ranhun', 'ability.xuanyuan-yiqi-gong', 'feedback.burst'])
+  const hasFn = id => knownIds.has(id)
+  assert.equal(resolveRegisteredVfxId('trait.xuyi', false, hasFn), 'trait.xuyi')
+  assert.equal(resolveRegisteredVfxId('trait.ranhun', false, hasFn), 'trait.ranhun')
+  assert.equal(resolveRegisteredVfxId('ability.xuanyuan-yiqi-gong', false, hasFn), 'ability.xuanyuan-yiqi-gong')
+})
+
+test('全量 55 项共享 VFX：完整注册覆盖与横竖屏无头渲染门禁', () => {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url))
+  const vfxDir = path.resolve(__dirname, '../../../docs/design/战斗演武画廊/vfx')
+  const moduleFiles = [
+    ...fs.readdirSync(path.join(vfxDir, 'abilities')).filter(f => f.endsWith('.js')).sort().map(f => `abilities/${f}`),
+    ...fs.readdirSync(path.join(vfxDir, 'consumables')).filter(f => f.endsWith('.js')).sort().map(f => `consumables/${f}`),
+  ]
+
+  const { VFX, allyEl, enemyEl, topEnemyEl, bottomAllyEl, stepTimers, stepRaf } = createHeadlessVfxSandbox(moduleFiles)
+
+  const ALL_55_VFX_IDS = [
+    // 8 通用反馈
+    'feedback.attack',
+    'feedback.impact',
+    'feedback.crit',
+    'feedback.castRing',
+    'feedback.defeat',
+    'feedback.revive',
+    'feedback.regen',
+    'feedback.burst',
+    // 9 外功 + 1 踏云变招 = 10
+    'ability.heavy-slash',
+    'ability.chain-strike',
+    'ability.taunt',
+    'ability.heavy-clouds',
+    'ability.star-piercer',
+    'ability.sui-gang',
+    'ability.zhanyu',
+    'ability.zhanyu.tayun',
+    'ability.shunshan',
+    'ability.pojun',
+    // 12 内功法术
+    'ability.palm-lightning',
+    'ability.blazing-blast',
+    'ability.qingping-melody',
+    'ability.lightning-attraction',
+    'ability.pozhen-melody',
+    'ability.ganlu',
+    'ability.tide',
+    'ability.yueqian',
+    'ability.huoyan-fengbao',
+    'ability.tianlei-po',
+    'ability.zhuoxin',
+    'ability.shangui-yao',
+    // 10 内功心法
+    'ability.tuna-gong',
+    'ability.manniu-jin',
+    'ability.tiebu-shan',
+    'ability.feiyan-gong',
+    'ability.qingxin-jue',
+    'ability.fenxue-gong',
+    'ability.xiaozhoutian-gong',
+    'ability.cunshen-jue',
+    'ability.lianjing-huaqi-jue',
+    'ability.xuanyuan-yiqi-gong',
+    // 2 特质反应
+    'trait.xuyi',
+    'trait.ranhun',
+    // 13 消耗品与阵盘反击
+    'item.zhixue-powder',
+    'item.shunqi-pill',
+    'item.shengji-balm',
+    'item.ningqi-powder',
+    'item.huangya-pill',
+    'item.heqi-pill',
+    'item.leiji-talisman',
+    'item.juling-formation-disk',
+    'item.mizong-formation-disk',
+    'item.tianlei-formation-disk',
+    'item.xuesha-formation-disk',
+    'item.tianlei-formation-disk.proc',
+    'item.xuesha-formation-disk.proc',
+  ]
+
+  assert.equal(VFX.listRegistered().length, 55, 'Canvas V2 应准确注册全部 55 项 VFX')
+  for (const id of ALL_55_VFX_IDS) {
+    assert.equal(VFX.has(id), true, `Canvas V2 缺失注册 ID: ${id}`)
+  }
+
+  const setups = [
+    {
+      label: '横屏',
+      casterEl: allyEl,
+      targetEl: enemyEl,
+      enemyEls: [enemyEl, topEnemyEl],
+      allyEls: [allyEl, bottomAllyEl],
+    },
+    {
+      label: '竖屏',
+      casterEl: bottomAllyEl,
+      targetEl: topEnemyEl,
+      enemyEls: [topEnemyEl, enemyEl],
+      allyEls: [bottomAllyEl, allyEl],
+    },
+  ]
+
+  for (const setup of setups) {
+    for (const id of ALL_55_VFX_IDS) {
+      VFX.clear()
+      const isFriendlyTarget =
+        id === 'ability.ganlu' ||
+        id === 'ability.shangui-yao' ||
+        id === 'ability.yueqian' ||
+        id === 'ability.pozhen-melody' ||
+        id === 'ability.sui-gang' ||
+        id === 'feedback.castRing' ||
+        id === 'feedback.revive' ||
+        id === 'feedback.regen' ||
+        id.endsWith('-pill') ||
+        id.endsWith('-powder') ||
+        id.endsWith('-balm') ||
+        id.endsWith('-formation-disk')
+
+      const res = VFX.play(id, {
+        side: 'ally',
+        casterEl: setup.casterEl,
+        targetEl: isFriendlyTarget ? setup.casterEl : setup.targetEl,
+        targetEls: isFriendlyTarget ? setup.allyEls : setup.enemyEls,
+        allyEls: setup.allyEls,
+        enemyEls: setup.enemyEls,
+        damage: 240,
+        perTargetDamage: 180,
+        heal: 150,
+        crit: true,
+        hit: true,
+        castMs: 1200,
+        durationMs: 1200,
+      })
+
+      assert.ok(
+        VFX.activeCount().total > 0,
+        `${setup.label} 下播放 ${id} 应激活至少 1 个特效或粒子节点`,
+      )
+      stepTimers(350)
+      stepRaf(32)
+      if (res && typeof res.stop === 'function') {
+        res.stop(100)
+      }
+      stepTimers(1500)
+      stepRaf(48)
+    }
   }
 
   VFX.dispose()
