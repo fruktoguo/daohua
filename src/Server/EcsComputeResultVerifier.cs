@@ -59,8 +59,7 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
                 replay.TargetStateVersion,
                 replay.LastSimulatedAt);
         }
-        catch (Exception exception) when (exception is FormatException or InvalidDataException or JsonException
-            or ArgumentException or DomainException or NotSupportedException)
+        catch (Exception exception) when (IsExpectedReplayRejection(exception))
         {
             return ComputeVerificationResult.Rejected($"独立重演拒绝：{exception.Message}");
         }
@@ -87,12 +86,15 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
                 replay.TargetStateVersion,
                 replay.LastSimulatedAt);
         }
-        catch (Exception exception) when (exception is FormatException or InvalidDataException or JsonException
-            or ArgumentException or DomainException or NotSupportedException)
+        catch (Exception exception) when (IsExpectedReplayRejection(exception))
         {
             return ComputeVerificationResult.Rejected($"本地执行重演拒绝：{exception.Message}");
         }
     }
+
+    private static bool IsExpectedReplayRejection(Exception exception) => exception is FormatException
+        or InvalidDataException or JsonException or ArgumentException or DomainException
+        or NotSupportedException or KeyNotFoundException or OverflowException;
 
     /// <summary>
     /// 独立重演公共路径：解码冻结 bundle + 还原钱包快照 + 在独立 ECS 世界推进到目标时刻。

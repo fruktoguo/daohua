@@ -12,12 +12,16 @@ public sealed class PlayerFlushHostedService(IPlayerRuntime runtime, ServerOptio
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await runtime.FlushAllAsync(false, stoppingToken); await Task.Delay(options.SectionFlushInterval, stoppingToken); }
+            try
+            {
+                await runtime.FlushAllAsync(false, stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(options.SectionFlushInterval, stoppingToken)) break;
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家 section 刷新失败。");
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(2), stoppingToken)) break;
             }
         }
     }
@@ -50,7 +54,20 @@ public sealed class PlayerSimulationHostedService(IPlayerRuntime runtime, IPlaye
                 consecutiveErrors++;
                 if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。");
             }
-            var boundary = runtime.NextAdvanceBoundaryUtc;
+            DateTimeOffset? boundary = null;
+            try
+            {
+                boundary = runtime.NextAdvanceBoundaryUtc;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                // 边界计算绝不允许在 try 外抛出把整个模拟循环打死；出错时记错误并走退避兜底间隔。
+                hadError = true;
+                consecutiveErrors++;
+                if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "计算下一次在线模拟边界失败，将使用退避间隔继续推进。");
+            }
+
             var delay = boundary is { } next ? next - clock.UtcNow : TimeSpan.FromSeconds(1);
             if (delay < TimeSpan.FromMilliseconds(50)) delay = TimeSpan.FromMilliseconds(50);
             else if (delay > TimeSpan.FromSeconds(1)) delay = TimeSpan.FromSeconds(1);
@@ -60,8 +77,7 @@ public sealed class PlayerSimulationHostedService(IPlayerRuntime runtime, IPlaye
                 var errorFloor = TimeSpan.FromMilliseconds(Math.Min(5_000, 250 * (1 << Math.Min(4, consecutiveErrors - 1))));
                 if (delay < errorFloor) delay = errorFloor;
             }
-            try { await Task.Delay(delay, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            if (!await HostedLoopSupport.DelayQuietlyAsync(delay, stoppingToken)) break;
         }
     }
 }

@@ -7,6 +7,7 @@ FROM ${NODE_IMAGE} AS frontend-build
 WORKDIR /src/frontend
 ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ARG BUILD_VERSION=dev
+ARG REQUIRE_PRIVATE_MODULES=0
 ENV VITE_APP_VERSION=${BUILD_VERSION}
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
@@ -16,12 +17,18 @@ COPY scripts/gen-simulator-catalog.mjs /src/scripts/gen-simulator-catalog.mjs
 COPY scripts/export-i18n-csv.mjs /src/scripts/export-i18n-csv.mjs
 COPY scripts/gen-asset-manifest.mjs /src/scripts/gen-asset-manifest.mjs
 COPY docs/design/战斗演武画廊/vfx/ /src/docs/design/战斗演武画廊/vfx/
-RUN npm run build \
+RUN if [ "${REQUIRE_PRIVATE_MODULES}" = "1" ]; then \
+      test -f /src/frontend/src/private-impl/index.ts \
+      && ./node_modules/.bin/tsc -p tsconfig.private-impl.json --noEmit; \
+    fi \
+    && test -n "$(find /src/docs/design/战斗演武画廊/vfx/abilities /src/docs/design/战斗演武画廊/vfx/consumables -maxdepth 1 -name '*.js' -print -quit)" \
+    && npm run build \
     && grep -rq "DaohuaVFX" /src/frontend/dist/assets/
 
 FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /src
 ARG BUILD_VERSION=dev
+ARG REQUIRE_PRIVATE_MODULES=0
 COPY global.json Directory.Build.props ./
 # 直接复制新基线源码；.dockerignore 排除 bin/obj、运行数据、旧文档和 secrets。
 COPY src/ ./src/
@@ -29,8 +36,8 @@ COPY config/game-data/ ./config/game-data/
 COPY vendor/YuoCore/src/ ./vendor/YuoCore/src/
 RUN dotnet restore src/Server/Server.csproj --nologo \
     && dotnet restore src/ComputeNode/ComputeNode.csproj --nologo
-# DaoHuaPrivateRoot 指向 staging 拼装的私有模块目录：存在则源码注入 Server.Clean（完整口径），
-# 开源自建上下文无该目录，MSBuild 通配零匹配自动降级为开源版（单一 Dockerfile 双口径）。
+# DaoHuaPrivateRoot 指向 staging 拼装的私有模块目录（内含 server/**/*.cs）；
+# 当 REQUIRE_PRIVATE_MODULES=1（生产镜像）时 MSBuild 强制校验至少编入一份私有服务端源码，禁止静默降级。
 RUN dotnet publish src/Server/Server.csproj \
     --configuration Release \
     --no-restore \
@@ -39,6 +46,8 @@ RUN dotnet publish src/Server/Server.csproj \
     -p:ContinuousIntegrationBuild=true \
     -p:DaoHuaObservability=false \
     -p:DaoHuaPrivateRoot=/src/src/Private \
+    -p:DaoHuaRequirePrivate="${REQUIRE_PRIVATE_MODULES}" \
+    -p:IncludeSourceRevisionInInformationalVersion=false \
     -p:InformationalVersion="${BUILD_VERSION}"
 RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --configuration Release \
@@ -47,6 +56,7 @@ RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
     -p:DaoHuaObservability=false \
+    -p:IncludeSourceRevisionInInformationalVersion=false \
     -p:InformationalVersion="${BUILD_VERSION}"
 
 FROM ${DOTNET_RUNTIME_IMAGE} AS runtime-base

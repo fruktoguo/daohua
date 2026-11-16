@@ -582,8 +582,22 @@ internal static class PlayerCommitGates
 
     public static async ValueTask AcquireAllAsync(int[] stripes, CancellationToken cancellationToken)
     {
-        foreach (var stripe in stripes)
-            await Gates[stripe].WaitAsync(cancellationToken);
+        var acquiredCount = 0;
+        try
+        {
+            foreach (var stripe in stripes)
+            {
+                await Gates[stripe].WaitAsync(cancellationToken).ConfigureAwait(false);
+                acquiredCount++;
+            }
+        }
+        catch
+        {
+            // 获取多条带中途被取消或失败时必须逆序释放已持锁条带，避免信号量永久泄漏卡死同条带后续事务。
+            for (var i = acquiredCount - 1; i >= 0; i--)
+                Gates[stripes[i]].Release();
+            throw;
+        }
     }
 
     public static void ReleaseAll(int[] stripes)

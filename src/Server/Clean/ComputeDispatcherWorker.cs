@@ -107,7 +107,7 @@ public sealed class ComputeDispatcherWorker(
                 {
                     if (_failureLog.TryAcquire())
                         logger.LogError(exception, "ComputeDispatcherWorker 循环失败，将在下个周期重试。");
-                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                    if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(2), stoppingToken)) break;
                 }
             }
         }
@@ -258,11 +258,20 @@ public sealed class ComputeDispatcherWorker(
             maxSimulatedMs);
         if (overflow.Count > 0)
         {
+            // 若该节点一条任务都装不下（fits 为空，说明其 MaxBatchBytes 小于全组最大值且当前无大节点消纳）：
+            // 为溢出任务注入短暂退避并稍候再释放当前节点槽位，彻底杜绝「退回→Notify→立刻同节点重领→再退回」0ms 死旋。
+            var retryDelay = fits.Count == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.Zero;
             var returned = await jobs.ReturnOverflowAsync(
                 overflow[0].Claim.LeaseToken,
                 overflow.Select(entry => entry.Claim.JobId).ToArray(),
+                retryDelay,
                 cancellationToken);
             metrics.RecordJobsReleased(returned);
+            if (fits.Count == 0)
+            {
+                await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
+                return;
+            }
         }
         if (fits.Count == 0) return;
 
@@ -355,11 +364,29 @@ public sealed class ComputeDispatcherWorker(
             return;
         }
 
-        // 结果回写按批并发（≤8，与单批任务数对齐）：不同玩家的提交头行锁天然不冲突；
-        // 同一 job 的 section 落库与 compute_jobs 完结并入同一事务。
+        // 结果回写按批并发（≤8，与单批任务数对齐）：单任务落库/取消异常在各分支内部消化，
+        // 避免拖死同批其余健康任务触发整批退回或取消扩散。
         await Parallel.ForEachAsync(fits,
             new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
-            (entry, ct) => ApplyJobResultAsync(node, entry, results.GetValueOrDefault(entry.Claim.JobId), ct));
+            async (entry, ct) =>
+            {
+                try
+                {
+                    await ApplyJobResultAsync(node, entry, results.GetValueOrDefault(entry.Claim.JobId), ct);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    metrics.RecordJobPersistFailed();
+                    if (_failureLog.TryAcquire())
+                        logger.LogError(ex, "冷挂机单个任务结果处理异常 job={JobId} player={PlayerId}", entry.Claim.JobId, entry.Claim.PlayerId);
+                    try { await ReleaseClaimsAsync([entry.Claim], ex.Message, CancellationToken.None); }
+                    catch { /* 释放失败由租约到期孤儿恢复 */ }
+                }
+            });
     }
 
     /// <summary>

@@ -160,8 +160,8 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   if ssh -o BatchMode=yes -o ConnectTimeout=8 "$ODIN_HOST" 'true' >/dev/null 2>&1; then
     printf '就绪\n'
   else
-    printf '警告: 无法免密连接 %s，将自动跳过 odin 节点更新。\n' "$ODIN_HOST"
-    SKIP_ODIN=1
+    printf '失败！无法免密连接 %s（如需仅更新主服请显式传入 --skip-odin）。\n' "$ODIN_HOST" >&2
+    exit 1
   fi
 fi
 
@@ -275,7 +275,8 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
     if command -v cygpath >/dev/null 2>&1; then
       ODIN_OUT="$(cygpath -w "$ODIN_PUBLISH_DIR")"
     fi
-    dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo > "$STREAM_C_LOG" 2>&1
+    dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo \
+      -p:ContinuousIntegrationBuild=true -p:DaoHuaObservability=false -p:IncludeSourceRevisionInInformationalVersion=false -p:InformationalVersion="${RELEASE_TAG}" > "$STREAM_C_LOG" 2>&1
     ssh -o BatchMode=yes "$ODIN_HOST" 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' >> "$STREAM_C_LOG" 2>&1
     tar -czf - -C "$ODIN_PUBLISH_DIR" . | ssh -o BatchMode=yes "$ODIN_HOST" 'tar -xzf - -C /root/daohua-compute.new/' >> "$STREAM_C_LOG" 2>&1
     echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
@@ -380,9 +381,11 @@ export SMOKE_REGISTER=1
 bash "$ROOT_DIR/scripts/deploy-prod.sh" "${DEPLOY_FLAGS[@]}"
 
 # 2. 若 odin 已准备完毕，执行原子目录切换与热重启
+OLD_ODIN_PID=""
 if [[ "$SKIP_ODIN" != "1" ]]; then
   printf '  - 原子切换 odin 目录并重启服务...\n'
-  ssh -o BatchMode=yes "$ODIN_HOST" '
+  OLD_ODIN_PID="$(ssh -n -o BatchMode=yes "$ODIN_HOST" "(pgrep -x DaoHua.ComputeNode 2>/dev/null || pgrep -x DaoHua.ComputeN 2>/dev/null || true) | head -n1" 2>/dev/null || true)"
+  ssh -n -o BatchMode=yes "$ODIN_HOST" '
     set -Eeuo pipefail
     rm -rf /root/daohua-compute.old
     [[ -d /root/daohua-compute ]] && mv /root/daohua-compute /root/daohua-compute.old
@@ -419,7 +422,7 @@ fi
 if [[ "$SKIP_HD_PACK" != "1" ]]; then
   # APK 未构建时独立重新生成画质包，避免复用 artifacts/ 残留的旧包造成降级
   if [[ "$WITH_APK" != "1" ]]; then
-    if ! node "$ROOT_DIR/scripts/gen-hd-pack.mjs" "$ROOT_DIR/artifacts/hd-pack" >/dev/null; then
+    if ! node scripts/gen-hd-pack.mjs artifacts/hd-pack >/dev/null; then
       printf '警告: HD 画质包生成失败，跳过上传（不影响主流程）。\n' >&2
     fi
   fi
@@ -438,17 +441,31 @@ fi
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 4/4] 双端状态核验与日志汇总...\n'
 
-# 1. 核对 odin 状态
+# 1. 核对 odin 进程 PID 替换、版本、配表指纹及上行连入状态
 if [[ "$SKIP_ODIN" != "1" ]]; then
+  MAIN_FP="$(curl -s -m 5 https://daohua.yuohira.com/api/v1/meta | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).gameDataFingerprint||'')}catch{}})" 2>/dev/null || true)"
   ODIN_STATUS='{"status":"offline"}'
-  for _ in {1..15}; do
-    ODIN_STATUS="$(ssh -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
-    if [[ "$ODIN_STATUS" == *'"status":"ok"'* ]]; then
+  NEW_ODIN_PID=""
+  ODIN_READY=0
+  for _ in {1..30}; do
+    NEW_ODIN_PID="$(ssh -n -o BatchMode=yes "$ODIN_HOST" "(pgrep -x DaoHua.ComputeNode 2>/dev/null || pgrep -x DaoHua.ComputeN 2>/dev/null || true) | head -n1" 2>/dev/null || true)"
+    ODIN_STATUS="$(ssh -n -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
+    if [[ -n "$NEW_ODIN_PID" && ( -z "$OLD_ODIN_PID" || "$NEW_ODIN_PID" != "$OLD_ODIN_PID" ) ]] \
+       && [[ "$ODIN_STATUS" == *'"status":"ok"'* && "$ODIN_STATUS" == *"\"version\":\"${RELEASE_TAG}\""* && "$ODIN_STATUS" == *'"upstreamConnected":true'* ]]; then
+      ODIN_READY=1
       break
     fi
-    sleep 1
+    sleep 2
   done
-  printf '  - odin 节点状态: %s\n' "$ODIN_STATUS"
+  printf '  - odin PID=%s (旧 %s) 状态: %s\n' "${NEW_ODIN_PID:-无}" "${OLD_ODIN_PID:-无}" "$ODIN_STATUS"
+  if [[ "$ODIN_READY" != "1" ]]; then
+    printf '错误: odin 未在 60 秒内完成重启并接入主服目标版本 %s！\n' "$RELEASE_TAG" >&2
+    exit 1
+  fi
+  if [[ -n "$MAIN_FP" && "$ODIN_STATUS" != *"\"gameDataFingerprint\":\"${MAIN_FP}\""* ]]; then
+    printf '错误: odin 配表指纹与主服不一致 (主服=%s)！\n' "$MAIN_FP" >&2
+    exit 1
+  fi
 fi
 
 # 2. 提取运维后台入口与接入日志

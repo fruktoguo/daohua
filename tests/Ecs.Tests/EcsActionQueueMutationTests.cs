@@ -369,6 +369,33 @@ public sealed class EcsActionQueueMutationTests
         AssertWorkReleased(runtime, id);
     }
 
+    [Fact]
+    public void MovingOrPriorityDisplacingDeadHeadExpedition_RecoversOneHitpoint()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerA = CreatePlayer(catalog);
+        var deadCombat = playerA.Enqueue(new(new ActionId("combat.hunt-qi-beast"), -1), From, catalog.Actions);
+        var gather = playerA.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
+        playerA.Resources.Hitpoints = 0;
+        deadCombat.Expedition = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Respawning, 0, 10, 1L, 0, 0, 100, 0, 0, 0, CombatOutcome.Running);
+        deadCombat.Status = ActionQueueStatus.Running;
+
+        // 场景 A：Move 上移槽位 1 挤掉零血队首远征 -> 脱战复苏 1 HP
+        Assert.True(playerA.MoveAction(gather.Id, -1));
+        Assert.Equal(1, playerA.Resources.Hitpoints);
+
+        // 场景 B：EnqueuePriority 非赶路行动挤掉零血队首远征 -> 脱战复苏 1 HP
+        var playerB = CreatePlayer(catalog);
+        var deadCombatB = playerB.Enqueue(new(new ActionId("combat.hunt-qi-beast"), -1), From, catalog.Actions);
+        playerB.Resources.Hitpoints = 0;
+        deadCombatB.Expedition = new CombatExpeditionState(
+            "encounter.qi-beast", CombatExpeditionPhase.Respawning, 0, 10, 1L, 0, 0, 100, 0, 0, 0, CombatOutcome.Running);
+        deadCombatB.Status = ActionQueueStatus.Running;
+        playerB.EnqueuePriority(new(new ActionId("cultivation.draw-qi"), 1), From.AddSeconds(1), catalog.Actions);
+        Assert.Equal(1, playerB.Resources.Hitpoints);
+    }
+
     private static ActionParticipationSpec CreateParticipationSpec(PlayerAggregate player, GameDataCatalog catalog)
         => new("session.capacity", "encounter.qi-beast", "node.test", 97, 0, From.ToUnixTimeSeconds(),
             [player.CaptureActionParticipantSnapshot(catalog)])

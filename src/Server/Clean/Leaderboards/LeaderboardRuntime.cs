@@ -439,24 +439,31 @@ public sealed class LeaderboardRuntime
             var sections = await _sections.LoadSectionsAsync(repairProgIds, PlayerSectionKinds.Progression, ct);
             foreach (var (pid, stored) in sections)
             {
-                var (realmRank, exp, lifetime, wins, losses) = PostgresSectionRepository.ReadProgressionProjection(stored);
-                if (realmRank is null && exp is null && lifetime is null && wins is null && losses is null) continue;
-                await using var up = new NpgsqlCommand("""
-                    UPDATE game.player_projection
-                    SET realm_rank = COALESCE($2, realm_rank),
-                        experience = COALESCE($3, experience),
-                        lifetime_experience = COALESCE($4, lifetime_experience),
-                        duel_wins = COALESCE($5, duel_wins),
-                        duel_losses = COALESCE($6, duel_losses)
-                    WHERE player_id = $1
-                    """, connection);
-                up.Parameters.Add(new NpgsqlParameter { Value = pid });
-                up.Parameters.Add(new NpgsqlParameter { Value = (object?)realmRank ?? DBNull.Value });
-                up.Parameters.Add(new NpgsqlParameter { Value = (object?)exp ?? DBNull.Value });
-                up.Parameters.Add(new NpgsqlParameter { Value = (object?)lifetime ?? DBNull.Value });
-                up.Parameters.Add(new NpgsqlParameter { Value = (object?)wins ?? DBNull.Value });
-                up.Parameters.Add(new NpgsqlParameter { Value = (object?)losses ?? DBNull.Value });
-                await up.ExecuteNonQueryAsync(ct);
+                try
+                {
+                    var (realmRank, exp, lifetime, wins, losses) = PostgresSectionRepository.ReadProgressionProjection(stored);
+                    if (realmRank is null && exp is null && lifetime is null && wins is null && losses is null) continue;
+                    await using var up = new NpgsqlCommand("""
+                        UPDATE game.player_projection
+                        SET realm_rank = COALESCE($2, realm_rank),
+                            experience = COALESCE($3, experience),
+                            lifetime_experience = COALESCE($4, lifetime_experience),
+                            duel_wins = COALESCE($5, duel_wins),
+                            duel_losses = COALESCE($6, duel_losses)
+                        WHERE player_id = $1
+                        """, connection);
+                    up.Parameters.Add(new NpgsqlParameter { Value = pid });
+                    up.Parameters.Add(new NpgsqlParameter { Value = (object?)realmRank ?? DBNull.Value });
+                    up.Parameters.Add(new NpgsqlParameter { Value = (object?)exp ?? DBNull.Value });
+                    up.Parameters.Add(new NpgsqlParameter { Value = (object?)lifetime ?? DBNull.Value });
+                    up.Parameters.Add(new NpgsqlParameter { Value = (object?)wins ?? DBNull.Value });
+                    up.Parameters.Add(new NpgsqlParameter { Value = (object?)losses ?? DBNull.Value });
+                    await up.ExecuteNonQueryAsync(ct);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or JsonException)
+                {
+                    _logger.LogWarning(ex, "排行榜启动补齐损坏的 br-json progression 分段失败，已跳过 player={PlayerId}", pid);
+                }
             }
         }
 
@@ -480,16 +487,23 @@ public sealed class LeaderboardRuntime
             var sections = await _sections.LoadSectionsAsync(repairSettingsIds, PlayerSectionKinds.Settings, ct);
             foreach (var (pid, stored) in sections)
             {
-                var (_, _, avatar) = PostgresSectionRepository.ReadSettingsProjection(stored);
-                if (string.IsNullOrWhiteSpace(avatar) || avatar == PlayerSettingsState.DefaultFemaleAvatar) continue;
-                await using var up = new NpgsqlCommand("""
-                    UPDATE game.player_projection
-                    SET avatar = $2
-                    WHERE player_id = $1
-                    """, connection);
-                up.Parameters.Add(new NpgsqlParameter { Value = pid });
-                up.Parameters.Add(new NpgsqlParameter { Value = avatar });
-                await up.ExecuteNonQueryAsync(ct);
+                try
+                {
+                    var (_, _, avatar) = PostgresSectionRepository.ReadSettingsProjection(stored);
+                    if (string.IsNullOrWhiteSpace(avatar) || avatar == PlayerSettingsState.DefaultFemaleAvatar) continue;
+                    await using var up = new NpgsqlCommand("""
+                        UPDATE game.player_projection
+                        SET avatar = $2
+                        WHERE player_id = $1
+                        """, connection);
+                    up.Parameters.Add(new NpgsqlParameter { Value = pid });
+                    up.Parameters.Add(new NpgsqlParameter { Value = avatar });
+                    await up.ExecuteNonQueryAsync(ct);
+                }
+                catch (Exception ex) when (ex is InvalidDataException or JsonException)
+                {
+                    _logger.LogWarning(ex, "排行榜启动补齐损坏的 br-json settings 分段失败，已跳过 player={PlayerId}", pid);
+                }
             }
         }
     }

@@ -37,21 +37,31 @@ function accountSignalObfuscation(): Plugin {
   }
 }
 
+/** 精确拦截 src/private/index.ts 中的 `./impl` 转发，将其定向到私有挂载入口（避免 alias 误劫持其它目录的 `./impl`）。 */
+function privateModuleRedirect(): Plugin {
+  return {
+    name: 'daohua-private-module-redirect',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (
+        privateModulesAvailable
+        && source === './impl'
+        && importer?.replace(/\\/g, '/').endsWith('/src/private/index.ts')
+      ) {
+        return privateImplEntry
+      }
+      return null
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), accountSignalObfuscation()],
-  // 完整版构建：把 src/private/impl.ts（stub 转发）重定向到私有实现入口。
-  // preserveSymlinks 保留 junction 挂载视图：私有文件的裸导入（react/zustand）沿挂载位置
-  // 向上解析到本仓库 node_modules，而不是 rollup realpath 后的私有仓库物理路径。
-  // 字符串 find 为全仓唯一说明符（src/private/index.ts 的 re-export './impl'），
-  // replacement 用正斜杠绝对路径以兼容 rollup 在 Windows 下的 id 规范化。
+  plugins: [privateModuleRedirect(), react(), accountSignalObfuscation()],
+  // 完整版构建：preserveSymlinks 保留 junction 挂载视图，使私有文件的裸导入（react/zustand）
+  // 沿挂载位置向上解析到本仓库 node_modules，而不是 rollup realpath 后的私有仓库物理路径。
   resolve: {
     dedupe: ['react', 'react-dom', 'zustand'],
-    ...(privateModulesAvailable
-      ? {
-          preserveSymlinks: true,
-          alias: [{ find: './impl', replacement: privateImplEntry.replace(/\\/g, '/') }],
-        }
-      : {}),
+    ...(privateModulesAvailable ? { preserveSymlinks: true } : {}),
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'zustand'],

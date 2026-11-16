@@ -101,12 +101,19 @@ deploy_pair() {
   return 0
 }
 
-docker pull "$APP_IMAGE" >/dev/null
-docker pull "$COMPUTE_IMAGE" >/dev/null
-candidate_app_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE")"
-candidate_compute_id="$(docker image inspect --format '{{.Id}}' "$COMPUTE_IMAGE")"
+# 不可变 @sha256 digest 引用若已在本地缓存且与运行容器镜像一致，直接跳过远程 docker pull 以节省带宽与 CCR 配额。
+candidate_app_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE" 2>/dev/null || true)"
+candidate_compute_id="$(docker image inspect --format '{{.Id}}' "$COMPUTE_IMAGE" 2>/dev/null || true)"
 running_app_id="$(docker inspect --format '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
 running_compute_id="$(docker inspect --format '{{.Image}}' "$COMPUTE_CONTAINER_NAME" 2>/dev/null || true)"
+if [[ -z "$candidate_app_id" ]]; then
+  docker pull "$APP_IMAGE" >/dev/null
+  candidate_app_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE")"
+fi
+if [[ -z "$candidate_compute_id" ]]; then
+  docker pull "$COMPUTE_IMAGE" >/dev/null
+  candidate_compute_id="$(docker image inspect --format '{{.Id}}' "$COMPUTE_IMAGE")"
+fi
 candidate_marker="${candidate_app_id}|${candidate_compute_id}"
 
 if [[ "$candidate_app_id" == "$running_app_id" && "$candidate_compute_id" == "$running_compute_id" ]]; then
@@ -160,6 +167,7 @@ fi
 
 if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
   rm -f "$FAILED_IMAGE_FILE"
+  docker container prune -f --filter "until=24h" >/dev/null 2>&1 || true
   docker image prune -f --filter "until=24h" >/dev/null 2>&1 || true
   printf '镜像更新成功: %s\n' "$candidate_marker"
   exit 0

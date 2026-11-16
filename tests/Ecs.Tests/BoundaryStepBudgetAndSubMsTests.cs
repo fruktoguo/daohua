@@ -105,4 +105,37 @@ public sealed class BoundaryStepBudgetAndSubMsTests
         Assert.Contains("ECS 自然边界推进超过最大转换数", ex.Message);
         Assert.Contains("next=needs-preparation", ex.Message);
     }
+
+    [Fact]
+    public void DurableMaxValueBuff_InNextVisibleBoundaryUtc_DoesNotOverflow()
+    {
+        var actions = new ActionCatalog([
+            new(new("test.cultivate"), "打坐", ActionKind.Cultivation, 4, new Dictionary<ItemId, double>(),
+                [new(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10)])
+        ]);
+        var catalog = new GameDataCatalog("test", "test", actions);
+
+        // 场景 A：空队列且仅有 double.MaxValue 的永驻 Buff，不应在 AddSecondsExact 溢出，应返回 null。
+        var idlePlayer = CreatePlayer(catalog, SeedTime);
+        idlePlayer.Buffs.Active.Add(new ActiveBuff("buff.durable-array", double.MaxValue, 1, "常驻阵法", "item.array"));
+        using (var runtimeIdle = new EcsGameRuntime(catalog, SeedTime))
+        {
+            var idIdle = runtimeIdle.CreatePlayer(idlePlayer.ExportState());
+            Assert.Null(runtimeIdle.NextAdvanceBoundary(idIdle));
+            Assert.Null(runtimeIdle.NextAdvanceBoundaryUtc);
+        }
+
+        // 场景 B：Running 队首行动下暂停队列且仅携带 double.MaxValue Buff，同样应返回 null。
+        var pausedPlayer = CreatePlayer(catalog, SeedTime);
+        var queued = pausedPlayer.Enqueue(new(new("test.cultivate"), -1), SeedTime, actions);
+        queued.Status = ActionQueueStatus.Running;
+        pausedPlayer.Buffs.Active.Add(new ActiveBuff("buff.durable-array", double.MaxValue, 1, "常驻阵法", "item.array"));
+        pausedPlayer.SetQueuePaused(true);
+        using (var runtimePaused = new EcsGameRuntime(catalog, SeedTime))
+        {
+            var idPaused = runtimePaused.CreatePlayer(pausedPlayer.ExportState());
+            Assert.Null(runtimePaused.NextAdvanceBoundary(idPaused));
+            Assert.Null(runtimePaused.NextAdvanceBoundaryUtc);
+        }
+    }
 }

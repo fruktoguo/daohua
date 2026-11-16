@@ -88,7 +88,7 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
                     FROM game.player_state_sections WHERE player_id=m.player_id AND section_kind='world'
                     UNION ALL
                     SELECT state_version, schema_version, codec, payload, raw_bytes, checksum, updated_at
-                    FROM platform.section_flush_queue WHERE player_id=m.player_id AND section_kind='world'
+                    FROM platform.section_flush_queue WHERE player_id=m.player_id AND section_kind='world' AND status = 'pending'
                 ) candidates ORDER BY state_version DESC LIMIT 1
             ) world ON true
             """, connection, transaction);
@@ -98,9 +98,17 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
         {
             if (worldReader.IsDBNull(1)) return "member-node-changed";
             var playerId = worldReader.GetGuid(0);
-            var world = SectionCodec.Decode<PlayerWorldStateDocument>(new StoredSection(playerId, PlayerSectionKinds.World,
-                worldReader.GetInt64(1), worldReader.GetInt32(2), worldReader.GetString(3), worldReader.GetFieldValue<byte[]>(4),
-                worldReader.GetInt32(5), worldReader.GetString(6), worldReader.GetFieldValue<DateTimeOffset>(7)));
+            PlayerWorldStateDocument world;
+            try
+            {
+                world = SectionCodec.Decode<PlayerWorldStateDocument>(new StoredSection(playerId, PlayerSectionKinds.World,
+                    worldReader.GetInt64(1), worldReader.GetInt32(2), worldReader.GetString(3), worldReader.GetFieldValue<byte[]>(4),
+                    worldReader.GetInt32(5), worldReader.GetString(6), worldReader.GetFieldValue<DateTimeOffset>(7)));
+            }
+            catch (Exception ex) when (ex is InvalidDataException or JsonException)
+            {
+                return "member-world-corrupted";
+            }
             var node = world.EdgeId is null ? world.NodeId : null;
             if (configuredNode is null && playerId == leaderId && node != targetNode) return "target-node-changed";
             if (node != targetNode) return "member-node-changed";

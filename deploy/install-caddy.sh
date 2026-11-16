@@ -82,19 +82,50 @@ if [[ "$resolved_token" =~ ^(daohua-backup-token|change-me|replace-me|verify-|se
 fi
 
 install -d -m 0755 /etc/caddy "$SITES_DIR" "$CADDY_DROPIN_DIR"
-install -m 0600 -o root -g root /dev/null "$CADDY_SECRETS_FILE"
-printf 'DAOHUA_BACKUP_TOKEN=%s\n' "$resolved_token" >"$CADDY_SECRETS_FILE"
-chmod 0600 "$CADDY_SECRETS_FILE"
+SECRETS_CHANGED=0
+TMP_SECRETS="$(mktemp)"
+printf 'DAOHUA_BACKUP_TOKEN=%s\n' "$resolved_token" >"$TMP_SECRETS"
+if [[ ! -f "$CADDY_SECRETS_FILE" ]] || ! cmp -s "$TMP_SECRETS" "$CADDY_SECRETS_FILE"; then
+  install -m 0600 -o root -g root "$TMP_SECRETS" "$CADDY_SECRETS_FILE"
+  SECRETS_CHANGED=1
+fi
+rm -f "$TMP_SECRETS"
 
-cat >"$CADDY_DROPIN_FILE" <<EOF
+DROPIN_CHANGED=0
+TMP_DROPIN="$(mktemp)"
+cat >"$TMP_DROPIN" <<EOF
 [Service]
 EnvironmentFile=${CADDY_SECRETS_FILE}
 ExecStart=
 ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
 EOF
-chmod 0644 "$CADDY_DROPIN_FILE"
-systemctl daemon-reload
+if [[ ! -f "$CADDY_DROPIN_FILE" ]] || ! cmp -s "$TMP_DROPIN" "$CADDY_DROPIN_FILE"; then
+  install -m 0644 -o root -g root "$TMP_DROPIN" "$CADDY_DROPIN_FILE"
+  systemctl daemon-reload
+  DROPIN_CHANGED=1
+fi
+rm -f "$TMP_DROPIN"
 export DAOHUA_BACKUP_TOKEN="$resolved_token"
+
+TMP_SITE="$(mktemp)"
+cp "$SOURCE_FILE" "$TMP_SITE"
+caddy fmt --overwrite "$TMP_SITE"
+
+SITE_CHANGED=0
+if [[ ! -f "$TARGET_FILE" ]] || ! cmp -s "$TMP_SITE" "$TARGET_FILE"; then
+  SITE_CHANGED=1
+fi
+MAIN_NEEDS_IMPORT=0
+if ! grep -Fqx "$IMPORT_LINE" "$CADDY_FILE"; then
+  MAIN_NEEDS_IMPORT=1
+fi
+
+if [[ "$SITE_CHANGED" == "0" && "$MAIN_NEEDS_IMPORT" == "0" && "$SECRETS_CHANGED" == "0" && "$DROPIN_CHANGED" == "0" ]] && systemctl is-active --quiet caddy; then
+  rm -f "$TMP_SITE"
+  caddy validate --config "$CADDY_FILE" >/dev/null
+  printf 'Caddy 配置无变更且服务运行正常，跳过备份与 reload。\n'
+  exit 0
+fi
 
 cp --preserve=mode,ownership,timestamps "$CADDY_FILE" "$MAIN_BACKUP"
 if [[ -f "$TARGET_FILE" ]]; then
@@ -111,9 +142,9 @@ rollback() {
   fi
 }
 
-install -m 0644 -o root -g root "$SOURCE_FILE" "$TARGET_FILE"
-caddy fmt --overwrite "$TARGET_FILE"
-if ! grep -Fqx "$IMPORT_LINE" "$CADDY_FILE"; then
+install -m 0644 -o root -g root "$TMP_SITE" "$TARGET_FILE"
+rm -f "$TMP_SITE"
+if [[ "$MAIN_NEEDS_IMPORT" == "1" ]]; then
   printf '\n%s\n' "$IMPORT_LINE" >>"$CADDY_FILE"
 fi
 

@@ -92,13 +92,13 @@ public static class OpsMarketActions
             var sideText = side == MarketSide.Buy ? "buy" : "sell";
             var batchId = Guid.NewGuid();
             var outcomes = new List<OpsItemOutcome>(targets.Count);
-            await EnsureSystemIdentityAsync(services.GetRequiredService<NpgsqlDataSource>(), cancellationToken);
+            await EnsureSystemIdentityAsync(services.GetRequiredService<NpgsqlDataSource>(), CancellationToken.None);
             foreach (var target in targets)
             {
                 var itemPrice = request.Price ?? target.Price;
                 var itemQuantity = request.Quantity ?? DefaultQuantity;
                 outcomes.Add(await PlaceSystemOrderAsync(
-                    market, economy, batchId, side, target, itemPrice, itemQuantity, cancellationToken));
+                    market, economy, batchId, side, target, itemPrice, itemQuantity, CancellationToken.None));
             }
             OpsPanel.Audit(services.GetRequiredService<ILoggerFactory>(), context, $"market-system-orders:{sideText}", null);
             return Results.Ok(new
@@ -144,7 +144,7 @@ public static class OpsMarketActions
                     try
                     {
                         await market.CancelAsync(order.OrderId, owner, order.Instrument,
-                            $"market-cancel:{SystemPlayerId:D}:{order.OrderId.Value:D}", cancellationToken);
+                            $"market-cancel:{SystemPlayerId:D}:{order.OrderId.Value:D}", CancellationToken.None);
                         outcomes.Add(new OpsItemOutcome(
                             order.Instrument.ItemId.Value, string.Empty, order.Price, order.RemainingQuantity,
                             "cancelled", order.OrderId.Value, 0, null));

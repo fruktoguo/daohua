@@ -29,14 +29,34 @@ public sealed class PostgresCommandReceiptRepository(NpgsqlDataSource dataSource
             : null;
     }
 
-    /// <summary>删除 expires_at 已过的回执行，返回删除行数。</summary>
+    /// <summary>分批删除 expires_at 已过的回执行（单批至多 5000 行，单轮最多 20 批），避免积压期长时间持表锁。</summary>
     public async ValueTask<int> PruneExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
+        const int batchSize = 5_000;
+        const int maxPasses = 20;
+        var totalDeleted = 0;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(
-            "DELETE FROM platform.command_receipts WHERE expires_at <= $1", connection);
-        command.Parameters.Add(new NpgsqlParameter { Value = now });
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        for (var pass = 0; pass < maxPasses; pass++)
+        {
+            await using var command = new NpgsqlCommand("""
+                WITH doomed AS (
+                    SELECT player_id, request_id
+                    FROM platform.command_receipts
+                    WHERE expires_at <= $1
+                    ORDER BY expires_at
+                    LIMIT $2
+                )
+                DELETE FROM platform.command_receipts r
+                USING doomed
+                WHERE r.player_id = doomed.player_id AND r.request_id = doomed.request_id
+                """, connection);
+            command.Parameters.Add(new NpgsqlParameter { Value = now });
+            command.Parameters.Add(new NpgsqlParameter { Value = batchSize });
+            var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+            totalDeleted += deleted;
+            if (deleted < batchSize) break;
+        }
+        return totalDeleted;
     }
 }
 
@@ -49,7 +69,7 @@ public sealed class CommandReceiptCleanupWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(10));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        while (await HostedLoopSupport.WaitNextTickQuietlyAsync(timer, stoppingToken))
         {
             try
             {

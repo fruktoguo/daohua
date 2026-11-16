@@ -37,7 +37,11 @@ public sealed class PartySessionWatchdog(
                 await social.ReconcileLoadedSessionBindingsAsync(stoppingToken);
                 await social.ReconcileResidentMembersAsync(stoppingToken);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
             {
                 if (_loopErrorLog.TryAcquire())
                     logger.LogError(exception, "组队讨伐看门狗周期失败，下个周期重试。");

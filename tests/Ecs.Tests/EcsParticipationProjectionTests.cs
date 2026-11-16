@@ -4,6 +4,7 @@ using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
+using Domain.Simulation;
 using Xunit;
 
 namespace Ecs.Tests;
@@ -75,5 +76,50 @@ public sealed class EcsParticipationProjectionTests
         var settled = Assert.Single(runtime.DrainSimulationResult(id)!.AssetDeltas);
         Assert.Equal("item.refined-copper", settled.Asset.ItemId.Value);
         Assert.Equal(7, settled.QuantityDelta);
+    }
+
+    [Fact]
+    public void ProjectExpeditionAndEndAt_HandlePlayerRespawnTimerConsistently()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var baseline = new DateTimeOffset(2026, 10, 9, 0, 0, 0, TimeSpan.Zero);
+        var leader = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "队长", baseline, catalog.Fingerprint);
+        var member = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "队员", baseline, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(leader, catalog);
+        PlayerAttributeResolver.Apply(member, catalog);
+        var spec = new ActionParticipationSpec("session.respawn-proj", "encounter.qi-beast", leader.World.NodeId,
+            92, 0, baseline.ToUnixTimeSeconds(),
+            [leader.CaptureActionParticipantSnapshot(catalog), member.CaptureActionParticipantSnapshot(catalog)])
+        {
+            ActionId = new("combat.hunt-qi-beast")
+        };
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog);
+        var exported = engine.Export();
+        var searchExp = exported.Expedition! with
+        {
+            Phase = CombatExpeditionPhase.Search,
+            PhaseDurationSeconds = 10,
+            PhaseElapsedSeconds = 1,
+            BattleElapsedSeconds = 5,
+            PlayerHitpoints = 0,
+            PlayerRespawnAtSeconds = 12,
+            Allies = [new ExpeditionAllyState(1, new CombatantSnapshot(0, 100, 0, 0, 0, RespawnAtSeconds: 18))]
+        };
+        var searchDoc = exported with { Expedition = searchExp };
+
+        var memberView = ActionParticipationSessionEngine.ProjectFor(searchDoc, member.PlayerId);
+        Assert.True(memberView.IsValid);
+        Assert.Equal(18d, memberView.PlayerRespawnAtSeconds);
+        Assert.Equal(12d, Assert.Single(memberView.Allies!).State.RespawnAtSeconds);
+
+        // 在 Search 相位（_battle == null）结束会话时，队长与盟友倒地计时均应归零且仍满足 IsValid
+        var restored = ActionParticipationSessionEngine.Restore(searchDoc, catalog);
+        var ended = restored.EndAt(baseline.AddSeconds(5));
+        Assert.All(ended, item =>
+        {
+            Assert.NotNull(item.Expedition);
+            Assert.Null(item.Expedition!.PlayerRespawnAtSeconds);
+            Assert.True(item.Expedition.IsValid);
+        });
     }
 }

@@ -236,9 +236,10 @@ public static class PlayerActionQueueRules
                     intent.Difficulty);
                 work.Action = new(instanceId, normalized, mutation.At)
                     { Travel = mutation.Travel, Participation = mutation.Participation };
-                // 插队顶替会移除同类远征行动：被顶替者携带远征且玩家气血归零时按脱战复苏 1 HP，
-                // 否则 hp=0 驻留会让新行动在入场判定卡进永久停泊（阵亡不回血口径下无自愈路径）。
-                if (work.Player.Resources.Hitpoints <= 0 && (isTravel || isReplacingExpedition))
+                // 插队顶替会移除同类远征行动（或将原队首远征压入次位）：若原先队首正处零血倒地，
+                // 切换后按脱战复苏 1 HP，否则 hp=0 驻留会让新行动在入场判定卡进永久停泊。
+                if (work.Player.Resources.Hitpoints <= 0
+                    && (isTravel || isReplacingExpedition || (actions.Count > 0 && actions[0].Expedition is not null)))
                     work.RecoverHitpoints = true;
                 work.ActivateHead = priority;
                 work.Changed = true;
@@ -269,6 +270,10 @@ public static class PlayerActionQueueRules
                 work.TargetIndex = work.Index + mutation.Direction;
                 work.Changed = work.TargetIndex >= 0 && work.TargetIndex < actions.Count;
                 work.ActivateHead = work.Changed;
+                // 把零血中的队首远征移离队首时同移除语义恢复 1 HP，防止 0 HP 卡死后续行动。
+                if (work.Changed && (work.Index == 0 || work.TargetIndex == 0)
+                    && actions[0].Expedition is not null && work.Player.Resources.Hitpoints <= 0)
+                    work.RecoverHitpoints = true;
                 break;
             case PlayerActionQueueMutationKind.Rotate:
                 work.Changed = actions.Count > 1;

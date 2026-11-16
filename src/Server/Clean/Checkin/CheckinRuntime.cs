@@ -30,7 +30,7 @@ public sealed class CheckinRuntime(
     {
         var result = await repository.ClaimAsync(playerId, Now, unitRandom: null, ct).ConfigureAwait(false);
         if (result.Claimed && playerRuntime is not null)
-            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, ct).ConfigureAwait(false);
+            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, CancellationToken.None).ConfigureAwait(false);
         return result;
     }
 }

@@ -83,12 +83,9 @@ daohua.yuohira.com {
 		error "SERVER_UPDATING" 503
 	}
 
+	# 单上游部署不挂 health_uri /readyz：停机、异常或维护期由 502/503/504 handle_errors 统一兜底展示状态页
 	handle {
-		reverse_proxy 127.0.0.1:15128 {
-			health_uri /readyz
-			health_interval 15s
-			health_timeout 5s
-		}
+		reverse_proxy 127.0.0.1:15128
 	}
 
 	# 统一维护/异常兜底：主动更新返回 updating.html / SERVER_UPDATING；意外宕机或重启触发 502/503/504 返回 unavailable.html / SERVER_UNAVAILABLE

@@ -49,6 +49,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private double _tradedGrossAmount;
     private readonly LogThrottle _persistenceErrorLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _recoveryLog = new(TimeSpan.FromMinutes(1));
+    // 坏到期单短期隔离冷却：避免单笔损坏订单在 ExpireBatchAsync 回滚后锁死 30s 恢复死循环。
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _quarantinedExpiredOrders = new();
+    private CancellationToken PartitionToken => _lifetime?.Token ?? CancellationToken.None;
 
     /// <summary>创建分片运行时实例；不触库，租约抢占与盘口恢复延迟到 <see cref="StartAsync"/>。</summary>
     /// <param name="store">市场账本仓储：订单、成交与分片租约的 PostgreSQL 适配。</param>
@@ -363,13 +366,16 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 }
             }
         }
+        cancellationToken.ThrowIfCancellationRequested();
         EnsureReady(request.Instrument);
         await _gate.WaitAsync(cancellationToken);
+        var bookMutated = false;
         try
         {
             // 等门闩期间可能已被其他失败降级：门闩内必须复检，防止写者持旧盘口跨过恢复点。
             if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
-            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
+            var partitionToken = PartitionToken;
+            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, partitionToken);
             OrderBook book;
             MarketOrder? existingOrder = null;
             lock (_booksGate)
@@ -391,19 +397,26 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 if (persistedOrder.OwnerId != request.OwnerId || persistedOrder.Instrument != request.Instrument || persistedOrder.Side != request.Side
                     || persistedOrder.Price != request.Price || persistedOrder.OriginalQuantity != request.Quantity)
                     throw new DomainException(DomainErrorCode.Conflict, "订单标识已绑定其他订单参数。");
+                if (persistedOrder.Status is MarketOrderStatus.Active or MarketOrderStatus.PartiallyFilled)
+                    await RestoreBookFromStoreAsync(book, request.Instrument, partitionToken);
                 return new PlacementResult(persistedOrder, [], book.Version);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             // 就地撮合：变更全程登记撤销日志；事务失败时逆序回放恢复干净盘口，
             // 不再为正演/回写各克隆一次整簿。撮合语义与克隆预演逐位等价。
             var journal = new OrderBookJournal();
             try
             {
                 PlacementResult result;
-                lock (_booksGate) result = book.Place(request, journal);
-                // 撮合后才知道全部 maker/taker；不持盘口读锁等待会话，失败由同一撤销日志恢复。
+                lock (_booksGate)
+                {
+                    result = book.Place(request, journal);
+                    bookMutated = true;
+                }
+                // 撮合后才知道全部 maker/taker；一旦改动内存盘口，后续共享提交与恢复脱离请求取消令牌，改由分片生命周期令牌约束。
                 using var participationScope = _participationAssets is null ? null
-                    : await _participationAssets.AcquireAsync(CollectPlacementAssetKeys(request, result), cancellationToken);
+                    : await _participationAssets.AcquireAsync(CollectPlacementAssetKeys(request, result), partitionToken);
                 var input = new MarketOrderInput(
                     request.OrderId.Value,
                     PartitionId,
@@ -427,26 +440,20 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     fill.Quantity,
                     Math.Ceiling(fill.Price * fill.Quantity * 0.02d),
                     fill.TradedAt)).ToArray();
-                var committed = await _store.CommitPlacementAsync(input, fills, _fenceToken, cancellationToken);
+                var committed = await _store.CommitPlacementAsync(input, fills, _fenceToken, partitionToken);
                 if (!committed.Applied)
                     throw new InvalidOperationException("市场挂单事务未提交。");
                 if (committed.AlreadyCommitted)
                 {
                     // 发生跨请求重试或进程内存与数据库短暂分叉时，数据库事实优先；
                     // 重新读取当前品种的活动订单，绝不把本地撮合结果当成权威事实。
-                    var durableOrders = await _store.LoadActiveOrdersAsync(request.Instrument, cancellationToken);
-                    var durableBook = new OrderBook(request.Instrument);
-                    var durableDomain = durableOrders
-                        .Select(stored => ToDomainOrder(stored, request.Instrument))
-                        .ToArray();
-                    durableBook.Restore(durableDomain, durableDomain.Length == 0 ? 0 : durableDomain.Max(order => order.Sequence));
-                    lock (_booksGate) book.Restore(durableBook.ExportActiveOrders(), durableBook.Version);
-                    var durableIncoming = durableDomain.FirstOrDefault(order => order.OrderId == request.OrderId)
-                        ?? (await _store.LoadOrderAsync(request.OrderId.Value, cancellationToken) is { } filled
+                    var durableVersion = await RestoreBookFromStoreAsync(book, request.Instrument, partitionToken);
+                    var durableIncoming = (book.TryGet(request.OrderId, out var refreshedOrder) ? refreshedOrder : null)
+                        ?? (await _store.LoadOrderAsync(request.OrderId.Value, partitionToken) is { } filled
                             ? ToDomainOrder(filled, request.Instrument)
                             : null)
                         ?? throw new InvalidOperationException("市场幂等订单已提交但无法读取持久化结果。");
-                    return new PlacementResult(durableIncoming, [], durableBook.Version);
+                    return new PlacementResult(durableIncoming, [], durableVersion);
                 }
                 Interlocked.Increment(ref _placementCount);
                 Interlocked.Add(ref _matchCount, fills.Length);
@@ -482,6 +489,11 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 lock (_booksGate) book.Undo(journal);
                 throw;
             }
+        }
+        catch (OperationCanceledException) when (!bookMutated && cancellationToken.IsCancellationRequested)
+        {
+            Interlocked.Increment(ref _rejectedCount);
+            throw;
         }
         catch (Exception exception) when (IsExpectedRequestFailure(exception))
         {
@@ -523,13 +535,16 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
     private async ValueTask<CancellationResult> CancelCoreAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         EnsureReady(instrument);
         await _gate.WaitAsync(cancellationToken);
+        var bookMutated = false;
         try
         {
             // 与挂单一致：门闩内复检就绪，防止写者持旧盘口跨过恢复点。
             if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
-            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
+            var partitionToken = PartitionToken;
+            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, partitionToken);
             OrderBook book;
             bool hasInMemory;
             lock (_booksGate)
@@ -544,18 +559,29 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 var persistedOrder = ToDomainOrder(persisted, instrument);
                 if (persistedOrder.OwnerId != ownerId) throw new DomainException(DomainErrorCode.Conflict, "只能撤销自己的订单。");
                 if (persistedOrder.Status == MarketOrderStatus.Cancelled) return new CancellationResult(persistedOrder, book.Version);
-                throw new DomainException(DomainErrorCode.InvalidTransition, "订单已处于终态。");
+                if (persistedOrder.Status is MarketOrderStatus.Active or MarketOrderStatus.PartiallyFilled)
+                {
+                    await RestoreBookFromStoreAsync(book, instrument, partitionToken);
+                    lock (_booksGate) hasInMemory = book.TryGet(orderId, out _);
+                }
+                if (!hasInMemory)
+                    throw new DomainException(DomainErrorCode.InvalidTransition, "订单已处于终态。");
             }
+            cancellationToken.ThrowIfCancellationRequested();
             // 就地撤单：撤销日志兜底，事务失败即回放，消除整簿双向克隆。
             var journal = new OrderBookJournal();
             CancellationResult result;
             try
             {
-                lock (_booksGate) result = book.Cancel(orderId, ownerId, journal);
+                lock (_booksGate)
+                {
+                    result = book.Cancel(orderId, ownerId, journal);
+                    bookMutated = true;
+                }
                 using var participationScope = _participationAssets is null ? null
                     : await _participationAssets.AcquireAsync(
-                        [new ParticipationAssetKey(ownerId.Value, instrument.ItemId.Value, instrument.Variant)], cancellationToken);
-                if (!await _store.CancelAsync(orderId.Value, ownerId.Value, PartitionId, _fenceToken, idempotencyKey, cancellationToken))
+                        [new ParticipationAssetKey(ownerId.Value, instrument.ItemId.Value, instrument.Variant)], partitionToken);
+                if (!await _store.CancelAsync(orderId.Value, ownerId.Value, PartitionId, _fenceToken, idempotencyKey, partitionToken))
                     throw new InvalidOperationException("市场撤单事务未提交。");
                 Interlocked.Increment(ref _cancelCount);
                 // 撤单退款已入账属主钱包：在线玩家的缓存余额需要失效重读。
@@ -567,6 +593,11 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 lock (_booksGate) book.Undo(journal);
                 throw;
             }
+        }
+        catch (OperationCanceledException) when (!bookMutated && cancellationToken.IsCancellationRequested)
+        {
+            Interlocked.Increment(ref _rejectedCount);
+            throw;
         }
         catch (Exception exception) when (IsExpectedRequestFailure(exception))
         {
@@ -610,7 +641,6 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
     private static bool IsExpectedRequestFailure(Exception exception) => exception switch
     {
-        OperationCanceledException => true,
         DomainException => true,
         EconomyInsufficientBalanceException => true,
         EconomyIdempotencyConflictException => true,
@@ -666,13 +696,36 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         return value is long token && token > 0 ? token : throw new InvalidOperationException("市场租约 fence token 无效。");
     }
 
+    private async ValueTask<long> RestoreBookFromStoreAsync(
+        OrderBook book,
+        MarketInstrument instrument,
+        CancellationToken cancellationToken)
+    {
+        var durableOrders = await _store.LoadActiveOrdersAsync(instrument, cancellationToken);
+        var durableDomain = durableOrders.Select(stored => ToDomainOrder(stored, instrument)).ToArray();
+        var maxSequence = durableDomain.Length == 0 ? 0 : durableDomain.Max(order => order.Sequence);
+        lock (_booksGate)
+        {
+            var nextVersion = Math.Max(book.Version, maxSequence);
+            book.Restore(durableDomain, nextVersion);
+            return book.Version;
+        }
+    }
+
     // 调用方持有写门闩；先提交退款事实，再下架内存盘口，失败时内存与账本保持一致。
     // 到期索引只处理队首：未到期簿首个索引项即终止枚举，不再全簿扫描；
-    // 逐笔退款合批为单个 Serializable 事务，集合顺序即原逐笔落库顺序（簿枚举序 + 簿内 Sequence 序）。
+    // 批量退款失败时降级为逐笔闭合，自愈幽灵分叉订单并隔离毒订单，阻断 30s 恢复死循环。
     private async Task ExpireOrdersCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        List<OrderBook>? dueBooks = null;
-        List<MarketExpiryOrder>? targets = null;
+        if (_quarantinedExpiredOrders.Count > 1024)
+        {
+            foreach (var pair in _quarantinedExpiredOrders)
+                if (pair.Value <= now) _quarantinedExpiredOrders.TryRemove(new KeyValuePair<Guid, DateTimeOffset>(pair.Key, pair.Value));
+        }
+        var dueBooks = new List<OrderBook>();
+        var booksWithQuarantined = new HashSet<OrderBook>();
+        var targets = new List<MarketExpiryOrder>();
+        var targetBooks = new Dictionary<Guid, OrderBook>();
         List<ParticipationAssetKey>? assetKeys = null;
         lock (_booksGate)
         {
@@ -680,28 +733,124 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             {
                 var due = book.GetExpiredOrders(now);
                 if (due.Count == 0) continue;
-                (dueBooks ??= []).Add(book);
-                targets ??= new List<MarketExpiryOrder>(due.Count);
+                var bookAdded = false;
                 foreach (var order in due)
                 {
+                    if (_quarantinedExpiredOrders.TryGetValue(order.OrderId.Value, out var qUntil) && now < qUntil)
+                    {
+                        booksWithQuarantined.Add(book);
+                        continue;
+                    }
+                    if (!bookAdded)
+                    {
+                        dueBooks.Add(book);
+                        bookAdded = true;
+                    }
                     targets.Add(new MarketExpiryOrder(order.OrderId.Value, order.OwnerId.Value));
+                    targetBooks[order.OrderId.Value] = book;
                     if (_participationAssets is not null)
                         (assetKeys ??= []).Add(new ParticipationAssetKey(order.OwnerId.Value,
                             order.Instrument.ItemId.Value, order.Instrument.Variant));
                 }
             }
         }
-        if (targets is null || dueBooks is null) return;
-        using var participationScope = _participationAssets is null ? null
-            : await _participationAssets.AcquireAsync(assetKeys!, cancellationToken);
-        if (!await _store.ExpireBatchAsync(targets, _fenceToken, now, cancellationToken))
-            throw new InvalidOperationException("市场到期退款事务未提交。");
-        lock (_booksGate)
+        if (targets.Count == 0) return;
+
+        var succeededIds = new HashSet<Guid>();
+        var creditedOwners = new HashSet<Guid>();
+        bool batchSucceeded;
+        try
         {
-            foreach (var book in dueBooks) book.Expire(now);
+            using var participationScope = _participationAssets is null ? null
+                : await _participationAssets.AcquireAsync(assetKeys!, cancellationToken);
+            batchSucceeded = await _store.ExpireBatchAsync(targets, _fenceToken, now, cancellationToken);
         }
-        // 到期退款已合批入账各属主钱包：通知在线玩家运行时重读余额并推送差额。
-        NotifyWalletsCredited(targets.Select(target => target.OwnerPlayerId));
+        catch (Exception ex) when (ex is not OperationCanceledException && !IsTransientDatabaseError(ex))
+        {
+            batchSucceeded = false;
+            _logger.LogWarning(ex, "市场到期批量退款遇到非瞬态故障 partition={PartitionId} count={Count}，降级逐笔结算隔离坏单",
+                PartitionId, targets.Count);
+        }
+
+        if (batchSucceeded)
+        {
+            foreach (var t in targets)
+            {
+                succeededIds.Add(t.OrderId);
+                creditedOwners.Add(t.OwnerPlayerId);
+            }
+            lock (_booksGate)
+            {
+                foreach (var book in dueBooks)
+                {
+                    if (!booksWithQuarantined.Contains(book))
+                        book.Expire(now);
+                    else
+                        book.Restore(book.ExportActiveOrders().Where(o => !succeededIds.Contains(o.OrderId.Value)), book.Version + 1);
+                }
+            }
+            NotifyWalletsCredited(creditedOwners);
+            return;
+        }
+
+        // 逐笔降级闭合：避免单笔损坏订单卡住整批正常到期订单与 30s 重获恢复。
+        var booksToHeal = new HashSet<OrderBook>();
+        foreach (var target in targets)
+        {
+            var book = targetBooks[target.OrderId];
+            bool ok;
+            Exception? singleEx = null;
+            try
+            {
+                var keys = _participationAssets is null ? null : new[]
+                {
+                    new ParticipationAssetKey(target.OwnerPlayerId, book.Instrument.ItemId.Value, book.Instrument.Variant)
+                };
+                using var participationScope = _participationAssets is null ? null
+                    : await _participationAssets.AcquireAsync(keys!, cancellationToken);
+                ok = await _store.ExpireBatchAsync([target], _fenceToken, now, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (IsTransientDatabaseError(ex)) throw;
+                ok = false;
+                singleEx = ex;
+            }
+            if (ok)
+            {
+                succeededIds.Add(target.OrderId);
+                creditedOwners.Add(target.OwnerPlayerId);
+                continue;
+            }
+            var stored = await _store.LoadOrderAsync(target.OrderId, cancellationToken);
+            if (stored is null || stored.Status is not ("active" or "partially_filled"))
+            {
+                booksToHeal.Add(book);
+                _logger.LogWarning("市场到期检测到内存幽灵挂单，将从账本自愈重建 order={OrderId} status={Status}",
+                    target.OrderId, stored?.Status ?? "missing");
+            }
+            else
+            {
+                _quarantinedExpiredOrders[target.OrderId] = now.AddMinutes(5);
+                _logger.LogCritical(singleEx, "市场到期单笔持久化闭合失败，已临时隔离 5 分钟避免拖死分片 order={OrderId} player={PlayerId}",
+                    target.OrderId, target.OwnerPlayerId);
+            }
+        }
+
+        if (succeededIds.Count > 0)
+        {
+            lock (_booksGate)
+            {
+                foreach (var book in dueBooks)
+                {
+                    if (booksToHeal.Contains(book)) continue;
+                    book.Restore(book.ExportActiveOrders().Where(o => !succeededIds.Contains(o.OrderId.Value)), book.Version + 1);
+                }
+            }
+            NotifyWalletsCredited(creditedOwners);
+        }
+        foreach (var book in booksToHeal)
+            await RestoreBookFromStoreAsync(book, book.Instrument, cancellationToken);
     }
 
     /// <summary>
@@ -858,10 +1007,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     {
         if (WalletCredited is null) return;
         foreach (var playerId in playerIds.Distinct())
-        {
-            try { WalletCredited.Invoke(playerId); }
-            catch (Exception exception) { _logger.LogError(exception, "市场入账通知处理失败 player={PlayerId}", playerId); }
-        }
+            AsyncEventDispatch.InvokeEach(WalletCredited, playerId, _logger, $"市场入账通知处理失败 player={playerId:D}");
     }
 
     /// <summary>按数据库活动订单全量重建内存盘口；调用方保证无并发写入（启动期单线程或持有写门闩）。</summary>

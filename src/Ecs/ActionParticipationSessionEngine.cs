@@ -522,6 +522,7 @@ public sealed class ActionParticipationSessionEngine
                 Action.Expedition = expedition with
                 {
                     PlayerHitpoints = Canonical.Resources.Hitpoints,
+                    PlayerRespawnAtSeconds = null,
                     Allies = expedition.Allies?.Select(ally => ally.State.Hitpoints > 0 ? ally : ally with
                     { State = ally.State with { Hitpoints = 1, RespawnAtSeconds = null } }).ToArray()
                 };
@@ -1257,7 +1258,7 @@ public sealed class ActionParticipationSessionEngine
         var self = canonical.Allies!.First(ally => ally.MemberIndex == memberIndex);
         var previousSelf = canonical.PlayerState ?? new CombatantSnapshot(canonical.PlayerHitpoints,
             canonical.PlayerManapoints, canonical.PlayerNextAttackAtSeconds, canonical.PlayerAttackCount,
-            canonical.PlayerThreat);
+            canonical.PlayerThreat, RespawnAtSeconds: canonical.PlayerRespawnAtSeconds);
         var others = canonical.Allies!
             .Where(ally => ally.MemberIndex != memberIndex)
             .Select(ally => ally with { State = ProjectSnapshot(ally.State, memberIndex) })
@@ -1273,7 +1274,10 @@ public sealed class ActionParticipationSessionEngine
             PlayerAttackCount = self.State.AttackCount,
             PlayerThreat = self.State.Threat,
             PlayerState = canonical.Phase == CombatExpeditionPhase.Combat ? ProjectSnapshot(self.State, memberIndex) : null,
-            PlayerRespawnAtSeconds = canonical.Phase == CombatExpeditionPhase.Combat ? self.State.RespawnAtSeconds : null,
+            PlayerRespawnAtSeconds = canonical.Phase is CombatExpeditionPhase.Combat
+                or CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
+                ? self.State.RespawnAtSeconds
+                : null,
             Allies = others,
             Enemies = canonical.Enemies?.Select(enemy => enemy with { State = ProjectSnapshot(enemy.State, memberIndex) }).ToArray()
         };

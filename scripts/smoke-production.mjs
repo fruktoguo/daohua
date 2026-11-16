@@ -48,9 +48,14 @@ async function main() {
   let firstPacket = null
   let authMode = null
   let warning = null
+  let privateEnforcement = 'skipped'
   if (runWebSocket) {
     const auth = await getWebSocketAuthHeaders()
     authMode = auth.mode
+    if (process.env.SMOKE_EXPECT_PRIVATE === '1') {
+      await smokePrivateEnforcement(auth.headers)
+      privateEnforcement = 'enforced-4010'
+    }
     firstPacket = await smokeWebSocket(meta.gameDataFingerprint || '', auth.headers)
   } else {
     warning = 'SMOKE_RUN_WEBSOCKET=0，已跳过 WebSocket。'
@@ -62,6 +67,7 @@ async function main() {
     gameDataFingerprint: meta.gameDataFingerprint || health.gameDataFingerprint || null,
     readyStatus,
     authMode,
+    privateEnforcement,
     webSocketFirstPacket: firstPacket?.type || null,
     webSocketProtocolVersion: firstPacket?.protocolVersion || null,
     warning,
@@ -165,6 +171,45 @@ function cookieHeader(headers) {
   const setCookie = headers['set-cookie']
   if (!setCookie || setCookie.length === 0) throw new Error('鉴权响应缺少会话 Cookie。')
   return setCookie.map(value => value.split(';', 1)[0]).join('; ')
+}
+
+async function smokePrivateEnforcement(authHeaders) {
+  const target = new URL('/ws', baseUrl)
+  const socket = await openWebSocket(target, authHeaders)
+  try {
+    socket.write(encodeClientFrame(encodeEnvelope(1, {
+      clientVersion: 'smoke',
+      deviceFingerprint: smokeDeviceConfig,
+      deviceConfigHash: smokeDeviceConfig,
+      deviceId: smokeDeviceId,
+      gameDataFingerprint: '',
+      moduleDeclaration: null,
+    })))
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const frame = await socket.nextFrame(deadline - Date.now())
+      if (frame.opcode === 0x9) {
+        socket.write(encodeClientFrame(frame.payload, 0xA))
+        continue
+      }
+      if (frame.opcode === 0x8) {
+        const closeCode = frame.payload.length >= 2 ? frame.payload.readUInt16BE(0) : 1000
+        if (closeCode !== 4010) {
+          throw new Error(`私有模块强校验期望关闭码 4010，实际收到: ${closeCode}`)
+        }
+        return
+      }
+      if (frame.opcode === 0x2) {
+        const packet = decodeEnvelope(frame.payload)
+        if (packet.type === 2) {
+          throw new Error('私有模块未生效：服务端放行了缺少模块声明的开源 Hello 握手！')
+        }
+      }
+    }
+    throw new Error('私有模块强校验等待 4010 关闭码超时。')
+  } finally {
+    socket.close()
+  }
 }
 
 async function smokeWebSocket(gameDataFingerprint, authHeaders) {

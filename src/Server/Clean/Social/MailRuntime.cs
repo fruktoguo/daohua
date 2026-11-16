@@ -86,7 +86,7 @@ public sealed class MailRuntime(
         var broadcasts = await GetActiveBroadcastsAsync(ct).ConfigureAwait(false);
         var result = await repository.ClaimSingleAsync(playerId, mailKey, broadcasts, now, ct).ConfigureAwait(false);
         if (result.ClaimedMailKeys.Count > 0 && playerRuntime is not null)
-            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, ct).ConfigureAwait(false);
+            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, CancellationToken.None).ConfigureAwait(false);
         PushSummaryToSession(playerId, result.Summary);
         return result;
     }
@@ -98,7 +98,7 @@ public sealed class MailRuntime(
         var broadcasts = await GetActiveBroadcastsAsync(ct).ConfigureAwait(false);
         var result = await repository.ClaimAllAsync(playerId, broadcasts, now, ct).ConfigureAwait(false);
         if (result.ClaimedMailKeys.Count > 0 && playerRuntime is not null)
-            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, ct).ConfigureAwait(false);
+            await playerRuntime.ReloadWalletAndNotifyAsync(playerId, CancellationToken.None).ConfigureAwait(false);
         PushSummaryToSession(playerId, result.Summary);
         return result;
     }
@@ -176,7 +176,7 @@ public sealed class MailRuntime(
             expiresAt,
             ct).ConfigureAwait(false);
 
-        await ForceRefreshBroadcastCacheAsync(ct).ConfigureAwait(false);
+        await ForceRefreshBroadcastCacheAsync(CancellationToken.None).ConfigureAwait(false);
 
         if (sessions is not null)
         {
@@ -187,7 +187,8 @@ public sealed class MailRuntime(
             {
                 if (session.IsBot) continue;
                 if (created.OnlyExistingPlayers && session.AccountCreatedAt > created.CreatedAt) continue;
-                session.TrySendDroppableEnvelope(WireMessageType.MailSummary, Guid.NewGuid(), frameBytes);
+                try { session.TrySendDroppableEnvelope(WireMessageType.MailSummary, Guid.NewGuid(), frameBytes); }
+                catch { /* 单会话通道异常或已关闭，忽略以防阻断其余在线连接 */ }
             }
         }
 
@@ -201,7 +202,7 @@ public sealed class MailRuntime(
             throw new MailOperationException(MailOperationFailure.InvalidArgument, "群发公告 ID 无效。");
         var revoked = await repository.RevokeBroadcastMailAsync(broadcastId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
         if (revoked)
-            await ForceRefreshBroadcastCacheAsync(ct).ConfigureAwait(false);
+            await ForceRefreshBroadcastCacheAsync(CancellationToken.None).ConfigureAwait(false);
         return revoked;
     }
 

@@ -1315,6 +1315,8 @@ internal static class CombatActionRules
                     playback.Forfeited
                         ? $"斗法弃战：你已结束斗法行动，暂存物品被 {playback.OpponentName} 取走。"
                         : $"斗法落败：{playback.OpponentName} 取走了你的暂存物品，一小时内不再进入斗法。", definition.Id);
+                // 先同步归零角色气血再构建复活搜寻态，避免 Respawning 期 PlayerHitpoints 虚高。
+                player.Resources.Hitpoints = 0;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
                 {

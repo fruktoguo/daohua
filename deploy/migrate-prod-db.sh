@@ -178,12 +178,17 @@ else
   mkdir -p "$BACKUP_DIR"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   dump_path="${BACKUP_DIR}/daohua-pre-migration-v${current}-${stamp}.dump"
-  log "全库备份 → ${dump_path}"
-  "$DOCKER" exec "$DB_CONTAINER" sh -c "pg_dump -U ${DB_USER} -d ${DB_NAME} -Fc -f /tmp/_pre_migration.dump" \
-    || die '备份失败，拒绝继续迁移。'
-  "$DOCKER" cp "${DB_CONTAINER}:/tmp/_pre_migration.dump" "$dump_path" >/dev/null \
-    || die '备份归档拷贝失败，拒绝继续迁移。'
-  "$DOCKER" exec "$DB_CONTAINER" rm -f /tmp/_pre_migration.dump >/dev/null 2>&1 || true
+  dump_partial="${dump_path}.partial"
+  log "全库流式备份 → ${dump_path}"
+  if ! "$DOCKER" exec -i "$DB_CONTAINER" sh -ceu "exec pg_dump -U '${DB_USER}' -d '${DB_NAME}' -Fc" > "$dump_partial"; then
+    rm -f "$dump_partial"
+    die '备份失败，拒绝继续迁移。'
+  fi
+  if ! "$DOCKER" exec -i "$DB_CONTAINER" pg_restore --list < "$dump_partial" >/dev/null; then
+    rm -f "$dump_partial"
+    die '迁移前备份完整性校验失败，拒绝继续迁移。'
+  fi
+  mv "$dump_partial" "$dump_path"
   [[ -s "$dump_path" ]] || die "备份文件为空：${dump_path}"
   printf '%s\n' "$dump_path" > "${BACKUP_DIR}/latest"
   log "备份完成（$(du -h "$dump_path" | cut -f1)）"

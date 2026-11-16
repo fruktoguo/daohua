@@ -5,6 +5,7 @@
 //      /internal/compute-link，进入动态节点组热插拔取任务，NAT 后免隧道；
 //   2. 独立 HTTP 调试口：/internal/v1/compute/advance-batch 仅凭 X-Compute-Token 鉴权，
 //      供手动/旁路验证批次执行（生产派发不走该口）。
+using System.Reflection;
 using DaoHua.ComputeNode;
 using YuoCore.Ecs;
 
@@ -70,6 +71,8 @@ builder.Services.AddSingleton(new SemaphoreSlim(maxConcurrentBatches, maxConcurr
 // 反向拨入模式：配置上游地址列表后节点主动拨出 compute-link 链路进入主服动态节点组。
 // ComputeNode:UpstreamUrls 支持配置节数组或分号分隔串（DAOHUA_COMPUTE_UPSTREAM_URLS 同口径）；
 // 列表未配置时回退旧单值键 ComputeNode:UpstreamUrl/DAOHUA_COMPUTE_UPSTREAM_URL。
+var linkState = new ComputeLinkState();
+builder.Services.AddSingleton(linkState);
 var upstreamUrls = ReadUpstreamUrls(builder.Configuration);
 if (upstreamUrls.Count > 0)
 {
@@ -84,7 +87,8 @@ if (upstreamUrls.Count > 0)
         sp.GetRequiredService<ComputeMetrics>(),
         sp.GetRequiredService<SemaphoreSlim>(),
         maxJobs, maxConcurrentBatches,
-        sp.GetRequiredService<ILoggerFactory>()));
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetRequiredService<ComputeLinkState>()));
 }
 
 // 内置备份归档服务：自适应激活——当配置了本地存储目录时自动启用，零手动配置脚本与定时器
@@ -124,9 +128,10 @@ var app = builder.Build();
 var gameData = app.Services.GetRequiredService<GameDataCatalog>();
 var metrics = app.Services.GetRequiredService<ComputeMetrics>();
 var engine = app.Services.GetRequiredService<DeterministicBatchEngine>();
+var releaseVersion = typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
 app.Logger.LogInformation(
-    "ComputeNode 已装配配表 fingerprint={Fingerprint} runtime={Runtime} contract={Contract}",
-    gameData.Fingerprint, NodeRuntime.Fingerprint, ComputeContract.Version);
+    "ComputeNode 已装配配表 version={Version} fingerprint={Fingerprint} runtime={Runtime} contract={Contract}",
+    releaseVersion, gameData.Fingerprint, NodeRuntime.Fingerprint, ComputeContract.Version);
 
 // 统一异常出口：对外只回通用 ProblemDetails + traceId，内部异常细节仅留在节点日志。
 app.UseExceptionHandler(errorApp =>
@@ -146,14 +151,18 @@ app.UseExceptionHandler(errorApp =>
     });
 });
 
-// 健康/就绪端点对运维可达，载荷只允许放契约版本、指纹与计数器，不得携带令牌或玩家数据。
+// 健康/就绪端点对运维可达，载荷只允许放版本、指纹、连入态与计数器，不得携带令牌或玩家数据。
 app.MapGet("/healthz", () => Results.Ok(new
 {
     status = "ok",
     service = "daohua-compute-node",
+    version = releaseVersion,
     contractVersion = ComputeContract.Version,
     gameDataFingerprint = gameData.Fingerprint,
     runtimeFingerprint = NodeRuntime.Fingerprint,
+    upstreamConfigured = upstreamUrls.Count > 0,
+    upstreamConnected = linkState.IsConnected,
+    activeUpstream = linkState.ActiveUpstream,
     maxJobsPerBatch = maxJobs,
     maxBatchBytes = ComputeContract.MaxBatchBytes,
     backupArchive = new
@@ -172,9 +181,11 @@ app.MapGet("/readyz", () => Results.Ok(new
 {
     status = "ready",
     service = "daohua-compute-node",
+    version = releaseVersion,
     contractVersion = ComputeContract.Version,
     gameDataFingerprint = gameData.Fingerprint,
     runtimeFingerprint = NodeRuntime.Fingerprint,
+    upstreamConnected = linkState.IsConnected,
     activeBatches = metrics.ActiveBatches,
     completedJobs = metrics.CompletedJobs,
     failedJobs = metrics.FailedJobs

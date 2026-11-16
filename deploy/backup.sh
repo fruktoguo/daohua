@@ -24,9 +24,9 @@ DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
-BACKUP_HOURLY_KEEP="${BACKUP_HOURLY_KEEP:-24}"
-BACKUP_DAILY_KEEP="${BACKUP_DAILY_KEEP:-7}"
-BACKUP_WEEKLY_KEEP="${BACKUP_WEEKLY_KEEP:-4}"
+BACKUP_HOURLY_KEEP="${BACKUP_HOURLY_KEEP:-6}"
+BACKUP_DAILY_KEEP="${BACKUP_DAILY_KEEP:-3}"
+BACKUP_WEEKLY_KEEP="${BACKUP_WEEKLY_KEEP:-1}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
 BACKUP_COMPRESS_LEVEL="${BACKUP_COMPRESS_LEVEL:-3}"
 LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-db-backup.lock}"
@@ -90,12 +90,12 @@ utc_hour="$(date -u +'%H')"
 utc_day="$(date -u +'%u')"
 if [[ "$utc_hour" == "00" ]]; then
   daily_archive="${BACKUP_DIR}/daily/daohua-postgres-daily-${timestamp}.dump"
-  cp -p "$hour_archive" "$daily_archive"
-  sha256sum "$daily_archive" >"${daily_archive}.sha256"
+  ln -f "$hour_archive" "$daily_archive" 2>/dev/null || cp -p "$hour_archive" "$daily_archive"
+  (cd "$(dirname "$daily_archive")" && sha256sum "$(basename "$daily_archive")" >"$(basename "$daily_archive").sha256")
   if [[ "$utc_day" == "1" ]]; then
     weekly_archive="${BACKUP_DIR}/weekly/daohua-postgres-weekly-${timestamp}.dump"
-    cp -p "$hour_archive" "$weekly_archive"
-    sha256sum "$weekly_archive" >"${weekly_archive}.sha256"
+    ln -f "$hour_archive" "$weekly_archive" 2>/dev/null || cp -p "$hour_archive" "$weekly_archive"
+    (cd "$(dirname "$weekly_archive")" && sha256sum "$(basename "$weekly_archive")" >"$(basename "$weekly_archive").sha256")
   fi
 fi
 
