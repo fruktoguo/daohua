@@ -11,17 +11,33 @@ daohua.yuohira.com {
 	}
 
 	@backup_unauth path /internal/backups/*
-	respond @backup_unauth 404
-
+	handle @backup_unauth {
+		respond 404
+	}
 
 	@blocked path_regexp blocked (?i)((^|/)[.]|[.](php|sql|sqlite|db|bak|zip|tar|gz|key|pem)$)
-	respond @blocked 404
+	handle @blocked {
+		respond 404
+	}
 
 	@probe path /actuator/* /wp-* /docker-compose* /config.xml
-	respond @probe 404
+	handle @probe {
+		respond 404
+	}
 
 	@private path /api/metrics /api/v1/metrics /api/v1/market/metrics /api/debug/* /readyz /ops /ops/*
-	respond @private 404
+	handle @private {
+		respond 404
+	}
+
+	# 宿主机维护/异常页静态资产（后端停机或维护窗口内仍可直接访问）
+	@status_assets path /_status/*
+	handle @status_assets {
+		uri strip_prefix /_status
+		root * /opt/daohua/static/status
+		file_server
+		header Cache-Control "no-cache"
+	}
 
 	# 静态文件直出（隐私政策与最新客户端安装包分离，避免 /daohua.apk 缺失时回退 privacy.html 返回 200）
 	@privacy path /privacy /privacy.html
@@ -52,13 +68,70 @@ daohua.yuohira.com {
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com https://img.yuohira.com https://daohua-emotes.fruktoyao.workers.dev; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com https:; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		-Server
 	}
 
-	reverse_proxy 127.0.0.1:15128 {
-		health_uri /readyz
-		health_interval 15s
-		health_timeout 5s
+	# 主动维护标记：部署或自动更新期间存在 /opt/daohua/maintenance.flag 时立即切换为更新维护响应
+	@maintenance {
+		file {
+			root /opt/daohua
+			try_files maintenance.flag
+		}
+	}
+	handle @maintenance {
+		error "SERVER_UPDATING" 503
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:15128 {
+			health_uri /readyz
+			health_interval 15s
+			health_timeout 5s
+		}
+	}
+
+	# 统一维护/异常兜底：主动更新返回 updating.html / SERVER_UPDATING；意外宕机或重启触发 502/503/504 返回 unavailable.html / SERVER_UNAVAILABLE
+	handle_errors {
+		@gateway_down expression {err.status_code} in [502, 503, 504]
+		handle @gateway_down {
+			@api_req path /api/* /ws
+			handle @api_req {
+				header Content-Type "application/json; charset=utf-8"
+				header Cache-Control "no-store, no-cache, must-revalidate"
+				header Retry-After "10"
+				@is_updating expression {err.message} == "SERVER_UPDATING"
+				handle @is_updating {
+					respond `{"code":"SERVER_UPDATING","title":"服务器更新维护中","detail":"服务器正在进行版本更新与数据迁移维护，请稍候片刻，完成后将自动恢复。"}` 503
+				}
+				handle {
+					respond `{"code":"SERVER_UNAVAILABLE","title":"服务器暂时不可用","detail":"服务器当前响应异常或正在重启恢复，请稍候片刻。"}` 503
+				}
+			}
+
+			handle {
+				header Content-Type "text/html; charset=utf-8"
+				header Cache-Control "no-store, no-cache, must-revalidate"
+				header Retry-After "10"
+				header X-Content-Type-Options "nosniff"
+				header X-Frame-Options "DENY"
+				header Referrer-Policy "strict-origin-when-cross-origin"
+				header Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com https:; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+				root * /opt/daohua/static/status
+				@is_updating_page expression {err.message} == "SERVER_UPDATING"
+				handle @is_updating_page {
+					rewrite * /updating.html
+					file_server {
+						status 503
+					}
+				}
+				handle {
+					rewrite * /unavailable.html
+					file_server {
+						status 503
+					}
+				}
+			}
+		}
 	}
 }

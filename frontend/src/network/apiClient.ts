@@ -93,7 +93,9 @@ async function parseError(response: Response): Promise<Error> {
     const body = await response.json() as ProblemDetailsLike
     detail = body.detail || body.message || body.title || body.code || detail
   } catch {
-    // 非 JSON 错误只保留状态码，避免把服务端 HTML 泄漏到 UI。
+    // 非 JSON 错误只保留状态码或明确网关提示，避免把服务端 HTML 泄漏到 UI。
+    if (response.status === 503) detail = '服务器正在维护或恢复中，请稍候重试。'
+    else if (response.status === 502 || response.status === 504) detail = '服务器当前响应异常或正在重启恢复，请稍候重试。'
   }
   return new Error(detail)
 }

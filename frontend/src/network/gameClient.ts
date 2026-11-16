@@ -114,6 +114,8 @@ export class GameClient {
   private consecutiveConnectFailures = 0
   /** 连续自动重连次数：超过熔断上限后停止后台无限空转重连，转入手动重试 */
   private reconnectAttempts = 0
+  /** 最近一次 HTTP 会话探测识别到的服务端更新/异常原因键（用于重连熔断展示精准状态） */
+  private lastOutageReasonKey: 'common.net.serverUpdating' | 'common.net.serverUnavailable' | null = null
   /** 坊市行情统计轮询计时器：仅在会话在线期间运行，连接断开即停。 */
   private marketStatsTimer: number | undefined
   /** 行情统计在途请求标记：上一轮未返回时跳过一次 tick，避免慢网叠加并发请求。 */
@@ -245,9 +247,10 @@ export class GameClient {
     this.reconnectAttempts += 1
     if (this.reconnectAttempts > GameClient.MAX_RECONNECT_ATTEMPTS) {
       this.stopHeartbeat()
+      const reasonKey = this.lastOutageReasonKey ?? 'common.net.reconnectCircuitBroken'
       useGameStore.getState().setConnection('offline')
-      useGameStore.getState().setDisconnectReason('common.net.reconnectCircuitBroken')
-      useGameStore.getState().setNotice(getT()('common.net.reconnectCircuitBroken'))
+      useGameStore.getState().setDisconnectReason(reasonKey)
+      useGameStore.getState().setNotice(getT()(reasonKey))
       return
     }
     useGameStore.getState().setConnection('reconnecting')
@@ -272,10 +275,28 @@ export class GameClient {
       })
       if (response.status === 401 && !this.disposed) {
         this.consecutiveConnectFailures = 0
+        this.lastOutageReasonKey = null
         useGameStore.getState().setConnection('offline')
         useGameStore.getState().setDisconnectReason('common.net.sessionExpired')
         useGameStore.getState().setNotice(getT()('common.net.sessionExpired'))
         return
+      }
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        let code: string | undefined
+        try {
+          const payload = await response.json() as { code?: unknown }
+          if (typeof payload?.code === 'string') code = payload.code
+        } catch {
+          // 非 JSON 网关错误按服务暂不可用处理。
+        }
+        const nextReason = code === 'SERVER_UPDATING' ? 'common.net.serverUpdating' : 'common.net.serverUnavailable'
+        const noticeKey = code === 'SERVER_UPDATING' ? 'common.net.serverUpdatingNotice' : 'common.net.serverUnavailableNotice'
+        if (this.lastOutageReasonKey !== nextReason) {
+          this.lastOutageReasonKey = nextReason
+          useGameStore.getState().setNotice(getT()(noticeKey))
+        }
+      } else if (response.ok) {
+        this.lastOutageReasonKey = null
       }
     } catch {
       // 探测请求自身失败按「服务不可达」处理，继续退避重连。
@@ -320,6 +341,7 @@ export class GameClient {
     this.reconnectDelay = 500
     this.consecutiveConnectFailures = 0
     this.reconnectAttempts = 0
+    this.lastOutageReasonKey = null
     this.outboundSequence = 0
     this.lastServerSequence = 0
     // 新会话起一条干净的入站串行链；旧链残留任务由 handleMessage 的 socket 一致性检查拦截。
@@ -736,6 +758,7 @@ export class GameClient {
           useGameStore.getState().setConnection('online')
           this.helloAckReceived = true
           this.consecutiveConnectFailures = 0
+          this.lastOutageReasonKey = null
           // 重连成功即清账：悬挂请求的超时提示已发出、其状态由随后的全量快照权威覆盖；
           // 集合只进不出会随断线次数缓慢泄漏。
           this.awaitingReconnectRequests.clear()

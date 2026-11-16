@@ -47,6 +47,8 @@ INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
 SMOKE_ENV_FILE=""
+MAINTENANCE_FLAG_SET=0
+MAINTENANCE_CLEARED=0
 
 usage() {
   printf '%s\n' \
@@ -120,6 +122,13 @@ fi
 
 
 cleanup() {
+  if [[ "$MAINTENANCE_FLAG_SET" == "1" && "$MAINTENANCE_CLEARED" == "0" ]]; then
+    ssh -o BatchMode=yes "$REMOTE_HOST" '
+      if [[ "$(sudo docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" daohua-app 2>/dev/null || true)" == healthy ]]; then
+        sudo rm -f /opt/daohua/maintenance.flag
+      fi
+    ' >/dev/null 2>&1 || true
+  fi
   if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daohua-deploy.* ]]; then
     ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1 || true
   fi
@@ -190,10 +199,11 @@ scp -q \
   "$ROOT_DIR/scripts/smoke-production.mjs" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
 
-# migrations/ 不在镜像内（可整体删除、不参与构建上下文），只能由部署链同步到生产目录。
-printf '==> 上传兼容性迁移脚本\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf '${REMOTE_TMP}/migrations' && mkdir -p '${REMOTE_TMP}/migrations'"
+# migrations/ 与 static/status/ 独立同步到生产目录（前者不入镜像，后者由宿主机 Caddy 在停服期直出）。
+printf '==> 上传兼容性迁移脚本与维护页静态资源\n'
+ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf '${REMOTE_TMP}/migrations' '${REMOTE_TMP}/status' && mkdir -p '${REMOTE_TMP}/migrations' '${REMOTE_TMP}/status'"
 scp -q "$ROOT_DIR"/migrations/*.sql "${REMOTE_HOST}:${REMOTE_TMP}/migrations/"
+scp -q "$ROOT_DIR"/deploy/static/status/* "${REMOTE_HOST}:${REMOTE_TMP}/status/"
 
 printf '==> 安装生产 Compose 与 systemd timer\n'
 printf '==> 校验生产环境变量\n'
@@ -219,11 +229,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "BACKUP_TOKEN 必须显式配置且长度不少于 32 位。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^CHAT_IMAGE_SECRET=[^[:space:]#]{32,}$" /opt/daohua/daohua.env; then
-    printf "CHAT_IMAGE_SECRET 必须显式配置且长度不少于 32 位。\n" >&2
-    exit 1
-  fi
-  if sudo grep -Eq "^(DB_BOOTSTRAP_PASSWORD|DB_APP_PASSWORD|DB_WORKER_PASSWORD|COMPUTE_TOKEN|BACKUP_TOKEN|CHAT_IMAGE_SECRET|TAPTAP_CLIENT_SECRET)=(change-me|replace-me|password|secret|verify-|daohua-backup-token|daohua-chat-image-secret)" /opt/daohua/daohua.env; then
+  if sudo grep -Eq "^(DB_BOOTSTRAP_PASSWORD|DB_APP_PASSWORD|DB_WORKER_PASSWORD|COMPUTE_TOKEN|BACKUP_TOKEN|TAPTAP_CLIENT_SECRET)=(change-me|replace-me|password|secret|verify-|daohua-backup-token)" /opt/daohua/daohua.env; then
     printf "生产环境变量仍使用明显占位值或已废弃默认值，拒绝部署。\n" >&2
     exit 1
   fi
@@ -234,8 +240,10 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -d -m 0755 /opt/daohua
   sudo install -d -m 0700 -o 70 -g 70 /opt/daohua/wal-archive
   sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daohua/compose.prod.yaml
-  sudo install -d -m 0755 /opt/daohua/static
+  sudo install -d -m 0755 /opt/daohua/static /opt/daohua/static/status
   sudo install -m 0644 '$REMOTE_TMP/privacy.html' /opt/daohua/static/privacy.html
+  sudo cp -f '$REMOTE_TMP'/status/* /opt/daohua/static/status/
+  sudo chmod 0644 /opt/daohua/static/status/*
   sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daohua/ccr-auto-update.sh
   sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daohua/backup.sh
   sudo install -m 0755 '$REMOTE_TMP/base-backup.sh' /opt/daohua/base-backup.sh
@@ -275,6 +283,23 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
       printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
   fi
+"
+
+if [[ "$INSTALL_CADDY" == "1" ]]; then
+  printf '==> 校验并安装 Caddy 站点（先于停写生效维护页路由）\n'
+  ssh -o BatchMode=yes "$REMOTE_HOST" "
+    set -Eeuo pipefail
+    sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daohua/install-caddy.sh
+    sudo install -m 0644 '$REMOTE_TMP/daohua.yuohira.com.caddy' /opt/daohua/daohua.yuohira.com.caddy
+    sudo /opt/daohua/install-caddy.sh /opt/daohua/daohua.yuohira.com.caddy
+  "
+fi
+
+printf '==> 开启更新维护态并执行停写迁移与容器替换\n'
+MAINTENANCE_FLAG_SET=1
+ssh -o BatchMode=yes "$REMOTE_HOST" "
+  set -Eeuo pipefail
+  sudo touch /opt/daohua/maintenance.flag
   expected_app_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$IMAGE')\"
   expected_compute_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$COMPUTE_IMAGE')\"
   # 迁移必须先于新镜像启动，且必须在旧写者停止之后执行：
@@ -333,16 +358,6 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo docker image prune -f --filter "until=24h" >/dev/null 2>&1 || true
 "
 
-if [[ "$INSTALL_CADDY" == "1" ]]; then
-  printf '==> 校验并安装 Caddy 站点\n'
-  ssh -o BatchMode=yes "$REMOTE_HOST" "
-    set -Eeuo pipefail
-    sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daohua/install-caddy.sh
-    sudo install -m 0644 '$REMOTE_TMP/daohua.yuohira.com.caddy' /opt/daohua/daohua.yuohira.com.caddy
-    sudo /opt/daohua/install-caddy.sh /opt/daohua/daohua.yuohira.com.caddy
-  "
-fi
-
 printf '==> 核对远端容器和回环健康端点\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
@@ -368,7 +383,13 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
 if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
   printf '==> 服务器回环全量烟测（信任边界内，含 /readyz）\n'
   ssh -o BatchMode=yes "$REMOTE_HOST" "set -Eeuo pipefail; set -a; . '$REMOTE_TMP/smoke.env'; set +a; node '$REMOTE_TMP/smoke-production.mjs' http://127.0.0.1:15128"
+fi
 
+printf '==> 解除更新维护态并开放公网访问\n'
+ssh -o BatchMode=yes "$REMOTE_HOST" "sudo rm -f /opt/daohua/maintenance.flag"
+MAINTENANCE_CLEARED=1
+
+if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
   printf '==> 公网 HTTPS 与 WebSocket 烟测（/readyz 应被拦截）\n'
   smoke_ok=0
   for attempt in {1..6}; do

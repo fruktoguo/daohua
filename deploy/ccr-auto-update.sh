@@ -12,7 +12,16 @@ COMPUTE_IMAGE="${COMPUTE_IMAGE:-}"
 CONTAINER_NAME="daohua-app"
 COMPUTE_CONTAINER_NAME="daohua-compute"
 FAILED_IMAGE_FILE="${FAILED_IMAGE_FILE:-${DEPLOY_DIR}/failed-image.id}"
+MAINTENANCE_FLAG_FILE="${MAINTENANCE_FLAG_FILE:-${DEPLOY_DIR}/maintenance.flag}"
 LOCK_FILE="${LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
+CREATED_MAINTENANCE_FLAG=0
+
+cleanup() {
+  if [[ "$CREATED_MAINTENANCE_FLAG" == "1" ]]; then
+    rm -f -- "$MAINTENANCE_FLAG_FILE"
+  fi
+}
+trap cleanup EXIT
 
 compose() {
   if [[ -f "$ENV_FILE" ]]; then
@@ -142,6 +151,11 @@ if [[ -f "$EXPECTED_SCHEMA_VERSION_FILE" ]]; then
       exit 0
     fi
   fi
+fi
+
+if [[ ! -f "$MAINTENANCE_FLAG_FILE" ]]; then
+  touch "$MAINTENANCE_FLAG_FILE"
+  CREATED_MAINTENANCE_FLAG=1
 fi
 
 if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
