@@ -97,13 +97,30 @@ public sealed class PostgresMarketRepository(
         await using (var insert = new NpgsqlCommand("""
             INSERT INTO market.settlement_claims(player_id, request_id, settled_trade_count, claimed_at)
             VALUES ($1, $2, $3, $4)
+            ON CONFLICT (player_id, request_id) DO NOTHING
+            RETURNING settled_trade_count
             """, connection, transaction))
         {
             insert.Parameters.Add(new NpgsqlParameter { Value = playerId });
             insert.Parameters.Add(new NpgsqlParameter { Value = requestId });
             insert.Parameters.Add(new NpgsqlParameter { Value = settlementCount });
             insert.Parameters.Add(new NpgsqlParameter { Value = now });
-            await insert.ExecuteNonQueryAsync(cancellationToken);
+            if (await insert.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                // ReadCommitted 并发竞态下若另一请求抢先写入 CLAIMS：回滚游标更新并读取已落库幂等记录，避免抛 23505。
+                await transaction.RollbackAsync(cancellationToken);
+                await using var replay = new NpgsqlCommand("""
+                    SELECT settled_trade_count, claimed_at
+                    FROM market.settlement_claims
+                    WHERE player_id = $1 AND request_id = $2
+                    """, connection);
+                replay.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                replay.Parameters.Add(new NpgsqlParameter { Value = requestId });
+                await using var replayReader = await replay.ExecuteReaderAsync(cancellationToken);
+                if (await replayReader.ReadAsync(cancellationToken))
+                    return new SettlementClaimResult(playerId, requestId, replayReader.GetInt32(0), replayReader.GetFieldValue<DateTimeOffset>(1), true);
+                throw new InvalidOperationException("市场结算领取幂等冲突但无法回查既有记录。");
+            }
         }
         await transaction.CommitAsync(cancellationToken);
         return new SettlementClaimResult(playerId, requestId, settlementCount, now, false);

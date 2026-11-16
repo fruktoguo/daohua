@@ -27,6 +27,8 @@ public sealed class ColdCatchUpWorker(
 
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _playerErrorLog = new(TimeSpan.FromMinutes(5));
+    /// <summary>损坏存档玩家短期冷却窗（避免同一名毒存档每 15s 重复触发全段读取与解码异常）。</summary>
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _badPlayerCooldowns = new();
     /// <summary>持有咨询锁的专用连接：锁是会话级状态，必须让这条连接活到进程退出才自动释放。</summary>
     private NpgsqlConnection? _lockConnection;
     /// <summary>本实例当前是否为生产 leader；仅用于持锁状态切换时打一条日志。</summary>
@@ -135,6 +137,9 @@ public sealed class ColdCatchUpWorker(
 
     private async ValueTask<bool> TryEnqueueAsync(ColdPlayerCandidate candidate, CancellationToken cancellationToken)
     {
+        var nowCheck = DateTimeOffset.UtcNow;
+        if (_badPlayerCooldowns.TryGetValue(candidate.PlayerId, out var cooldownUntil) && nowCheck < cooldownUntil)
+            return false;
         try
         {
             var frozen = await playerStates.LoadComputeInputAsync(candidate.PlayerId, cancellationToken);
@@ -188,14 +193,17 @@ public sealed class ColdCatchUpWorker(
             var payload = JsonSerializer.SerializeToUtf8Bytes(request, ServerJson.Options);
             var result = await jobs.EnqueueAsync(candidate.PlayerId, target, payload,
                 options.OfflineBatchInterval, cancellationToken);
+            _badPlayerCooldowns.TryRemove(candidate.PlayerId, out _);
             return result is ComputeEnqueueResult.Inserted or ComputeEnqueueResult.Refreshed
                 or ComputeEnqueueResult.Resurrected;
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or JsonException or NotSupportedException or DomainException)
         {
-            // 存档损坏的玩家长期跳过，节流保留证据，等待人工核查。
+            // 存档损坏或领域/序列化异常的玩家进入短期冷却并节流记日志，防止阻塞其余候选与占满扫描窗口。
+            if (_badPlayerCooldowns.Count > 4096) _badPlayerCooldowns.Clear();
+            _badPlayerCooldowns[candidate.PlayerId] = DateTimeOffset.UtcNow.AddMinutes(10);
             if (_playerErrorLog.TryAcquire())
-                logger.LogWarning("冷挂机候选玩家存档无效，已跳过 player={PlayerId} error={Error}", candidate.PlayerId, exception.Message);
+                logger.LogWarning("冷挂机候选玩家存档无效，已进入冷却 player={PlayerId} error={Error}", candidate.PlayerId, exception.Message);
             return false;
         }
     }

@@ -484,15 +484,17 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
 
     /// <summary>
     /// 将本地装批预算截断未实际下发的 leased 任务无损退回 pending：
-    /// 回退本次领取递增的 attempts、不写错误诊断、不设退避闸门，并唤醒下一轮领取，
-    /// 防止大跨度积压批次因预算切分而在未上链前耗尽 attempts 误判 dead。
+    /// 回退本次领取递增的 attempts、不写错误诊断；按 retryDelay 可选设置短暂退避窗口
+    /// 防止单节点装批全部溢出时 0ms 紧循环空转，并在无退避时唤醒其他可用节点。
     /// </summary>
     public async ValueTask<int> ReturnOverflowAsync(
         Guid leaseToken,
         IReadOnlyCollection<Guid> jobIds,
+        TimeSpan retryDelay = default,
         CancellationToken cancellationToken = default)
     {
         if (jobIds.Count == 0) return 0;
+        DateTimeOffset? nextAttemptAt = retryDelay > TimeSpan.Zero ? DateTimeOffset.UtcNow.Add(retryDelay) : null;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             UPDATE platform.compute_jobs
@@ -500,13 +502,19 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
                 attempts = GREATEST(0, attempts - 1),
                 lease_until = NULL,
                 lease_token = NULL,
+                next_attempt_at = COALESCE($3, next_attempt_at),
                 updated_at = now()
             WHERE lease_token = $1 AND status = 'leased' AND job_id = ANY($2)
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
         command.Parameters.Add(new NpgsqlParameter { Value = jobIds.ToArray() });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.TimestampTz,
+            Value = (object?)nextAttemptAt ?? DBNull.Value
+        });
         var returned = await command.ExecuteNonQueryAsync(cancellationToken);
-        if (returned > 0) NotifyJobAvailable();
+        if (returned > 0 && retryDelay <= TimeSpan.Zero) NotifyJobAvailable();
         return returned;
     }
 
@@ -563,6 +571,8 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             JOIN game.player_state_heads h ON h.player_id = p.player_id
             WHERE p.presence = 'offline'
               AND p.offline_since IS NOT NULL
+              AND h.state_version > 0
+              AND COALESCE(p.current_node_id, '') NOT LIKE 'node.zongmen.%'
               AND date_trunc('milliseconds', h.last_simulated_at) < LEAST(
                     date_trunc('milliseconds', $1),
                     date_trunc('milliseconds', p.offline_since + $2))
@@ -574,6 +584,12 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
               AND NOT EXISTS (
                   SELECT 1 FROM platform.compute_jobs j
                   WHERE j.player_id = p.player_id AND j.status IN ('pending', 'leased'))
+              AND NOT EXISTS (
+                  SELECT 1 FROM platform.compute_jobs s
+                  WHERE s.player_id = p.player_id
+                    AND s.status = 'succeeded'
+                    AND date_trunc('milliseconds', s.target_time) >= date_trunc('milliseconds', LEAST($1, p.offline_since + $2))
+                    AND p.offline_since + $2 <= $1)
               AND NOT EXISTS (
                   SELECT 1 FROM platform.compute_jobs d
                   WHERE d.player_id = p.player_id
