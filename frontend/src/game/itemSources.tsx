@@ -107,16 +107,16 @@ const STATIC_PACK_RULES: readonly StaticPackRule[] = [
   {
     packItemId: 'item.storage-bag.broken',
     targetItemId: 'item.gongde',
-    chance: 0.1,
-    chanceText: '10%',
-    quantityText: '5 ~ 10',
+    chance: 0.2,
+    chanceText: '20%',
+    quantityText: '10 - 20',
   },
   {
     packItemId: 'item.storage-bag.broken',
     targetItemId: 'item.gongde',
     chance: 0.01,
     chanceText: '1% 暴击',
-    quantityText: '50 ~ 100',
+    quantityText: '100 - 300',
   },
   {
     packItemId: 'item.storage-bag.broken',
@@ -310,6 +310,7 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
 
   const isGongde = itemId === 'item.gongde' || itemId === 'gongde'
   const isGongdeBound = itemId === 'item.gongde-bound'
+  const isStorageBagItem = itemId.startsWith('item.storage-bag.')
 
   const rawMonsters = monsterDropsIndex.get(itemId) ?? []
   const crafting = craftingYieldsIndex.get(itemId) ?? []
@@ -377,11 +378,17 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
       title: t('game.itemSources.gongdeBoundTitle'),
       desc: t('game.itemSources.gongdeBoundDesc'),
     })
+  } else if (isStorageBagItem) {
+    generals.push({
+      tag: t('game.itemSources.tagMonster'),
+      title: t('game.itemSources.storageBagMonsterTitle'),
+      desc: t('game.itemSources.storageBagMonsterDesc'),
+    })
   }
 
   // 常规物品怪物截断保护：最多展示前 5 只核心怪
   const totalMonstersCount = rawMonsters.length
-  const monsters = isSpiritStone ? [] : rawMonsters.slice(0, 5)
+  const monsters = isSpiritStone || isStorageBagItem ? [] : rawMonsters.slice(0, 5)
 
   return {
     itemId,
@@ -390,7 +397,7 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
     gatherings,
     packs: isSpiritStone || isGongde ? [] : packs, // 灵石和功德已收录进 generals，避免重复展示
     generals,
-    totalMonstersCount: isSpiritStone ? 0 : totalMonstersCount,
+    totalMonstersCount: isSpiritStone || isStorageBagItem ? 0 : totalMonstersCount,
   }
 }
 

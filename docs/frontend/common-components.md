@@ -26,7 +26,7 @@
   - **通用描述/说明独立副气泡窗口 (Description Aside Card)**：支持通过 `createDescriptionAsideCard`（入参 `id`, `mark`, `title`, `subtitle`, `description`, `lines`, `tone`），在主卡片旁并排挂载独立的机制/规则说明信息窗。样式类为 `.daohua-floating-aside-desc`，文本支持纯文本与 `ValueText` 自动高亮，并维持紧凑优雅的微光卡片排版。首发场景落地于**内功心法六维资质倾向说明**（`createInternalRootExpAsideCard` / `resolveAbilityAsideCards`）：在功法神通面板装配槽与已学列表、功法网格待选列表、主界面战斗面板槽位、战斗属性面板、万象图鉴及储物袋/坊市秘籍残卷等全链路，挂载徽记为「倾向」、标题为「六维倾向说明」的灵气青修仙副气泡，清晰提示战斗时获取的六维经验会按照内功标注的六维百分比去增幅入账。
   - **可交易物品与装备「市场价格」坊市行情副气泡联动**：针对所有可交易标的（`item.isTradable` 物品或装备类标的），自动通过 `resolveMarketStatsAsideCard` 命中 `gameStore.marketStats` 缓存（按 `itemId|强化等级` 索引），渲染「市场价格」副卡（金色调 `gold`、右上角标「坊市」）。**顶部 Header 右侧直接高亮呈现完整的公允市场参考价**（`formatExactNumber` 标准千分位精确数字 + 修仙金光微芒高亮，如 `参考价 16,590 灵石`；无成交记录时自动优雅标示 `保底价 5 灵石`；彻底消除主卡片已有的冗余物品名重复展示）。内部全面采用修仙微光胶囊徽章与数值高亮（`.daohua-market-aside-*`）：展示最低在售价（暖赤橙色调胶囊 `ask` 与单价/总量）、最高收购价（翡翠碧青色调胶囊 `bid` 与单价/总量）、系统回收价格（道金琥珀色调胶囊 `recycle` 与官价保底，装备不可回收清晰反馈）以及成交统计（灵气青色调胶囊 `volume`，徽章「成交」，舒展展示今日/本周成交量）。数据源由 `gameClient` 在线期间以 15s 周期后台静默拉取 `GET /api/v1/market/stats`（小表全量读），悬浮渲染零即时网络开销，页面切后台跳过 tick。
   - **全物品动态来源反查独立副气泡窗口 (Item Sources Aside Card)**：通过 `resolveItemSourcesAsideCard`（源码 `frontend/src/game/itemSources.tsx`）在所有物品悬浮详情中挂载「获取途径」独立副卡片（碧玉色调 `jade`、右上角标「来源」）。内部基于全局 `encounters`（遭遇战怪物掉落）、`actions`（生活技艺配方与天地采集）与静态福袋规则（破损储物袋开启）构建高效倒排索引缓存（单次查询 $O(1)$）：结构化呈现【妖兽掉落】（怪物名、生命层次色彩、掉率与数量区间，超过 5 只核心妖兽自动截断折叠）、【生活技艺】（配方名、技艺门类与等级、单次产出数量）、【天地采集】与【福袋开启】。针对全域流通通用货币（**灵石**、**功德**），特殊归纳为修仙四大核心产出通道（妖兽讨伐普遍掉落、破损储物袋固定与暴击区间、坊市全服流转商贾变现、宗门悬赏历练），彻底消灭全图怪物机械罗列导致的极度垂地溢出痛点。样式类 `.daohua-source-aside-*`（[`floating-popover.css`](../../frontend/src/styles/floating-popover.css)）。
-  - **储物袋开启可能产出与掉率独立副气泡窗口 (Storage Bag Loot Aside Card)**：通过 `createStorageBagLootAsideCard` 与 `describeStorageBagEffects`（源码 `frontend/src/game/storageBagLoot.ts` 与 `frontend/src/components/ItemDisplay.tsx`），在所有修仙储物袋/宝箱类手动物品（`item.storage-bag.*`）悬浮详情中挂载「开启可能获得」独立副卡片（金色调 `gold`、右上角标「开启」），并在主卡片直接平铺效果行。直观列出全部 5 项物品掉落（灵石基础 1~1,000 与 10% 额外暴击、功德基础与 1% 天道机缘暴击、0.1% 觉醒石）、数量区间与精确概率标签，支持条目内嵌物品图标展示。
+  - **储物袋开启可能产出与掉率主卡片内联展示 (Storage Bag Loot Effects)**：通过 `describeStorageBagEffects`（源码 `frontend/src/game/storageBagLoot.ts` 与 `frontend/src/components/ItemDisplay.tsx`），在所有修仙储物袋/宝箱类手动物品（`item.storage-bag.*`）主卡片效果区域直接平铺全部 5 项物品掉落（如 `灵石 1-1000 100%`、`灵石 1-10000 10%`、`功德 10-20 20%`、`功德 100-300 1%`、`觉醒石 1 0.1%`），支持条目内嵌物品图标展示（已移除冗余的右侧「开启可能获得」副卡片）。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - **多副气泡双列高度均衡自动堆叠 (`balanceAsideColumns`)**：针对道具同时携带数量、战技参悟、内功增益、倾向说明、市场价格等多个副卡片时右侧单列极度垂地（超 780px+）且左侧主卡下方严重空洞的失衡痛点，`FloatingPopover` 实装双列均衡分发——当副卡 $\ge 2$ 时，单行数量卡与坊市价格行情卡语义吸附于左列主卡下方（宽度撐满 300px 舒展对齐），右列承载技能参悟与资质倾向等重型面板，多卡片按估算高度贪心分发，左右高度从 300px:780px 均衡压缩为 500px:550px，彻底消除长条拖尾与溢出风险；副卡 $\le 1$ 时保持经典左右单排；$\le 768\text{px}$ 自适应退化为单列垂直堆叠。
   - **竖屏与高度受限视口自适应等比缩放与滚动兜底**：当悬浮窗携带多副卡片在竖屏（$\le 768\text{px}$）单列纵向堆叠导致总高度超出屏幕时，`computeSafeFloatingPosition` 自动测量未缩放尺寸并解算等比缩放因子 `scale = Math.min(1.0, availableHeight / naturalHeight)`，硬性下限最多缩小到 **50%**（`scale: 0.5`）；视口翻转、对齐与边界 Clamp 均以物理缩放包围盒运算，配合 `transform-origin: top left` 杜绝漂移；极端情况下缩小至 50% 仍超视口时，由浮层整体容器（`.daohua-floating-layer`）无缝衔接 `overflow-y: auto` 滚动兜底，彻底消灭卡片溢出屏幕外的痛点。
@@ -75,8 +75,8 @@
 
 ## 4.1 主导航结构（桌面侧边栏 & 竖屏底部两级导航）
 
-- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/排行榜/更新日志/帮助]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
-- **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。
+- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/签到/排行榜/更新日志/帮助]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
+- **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。每日可签到红点上提至「其他 / 更多」与「签到」子项。
 - **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
 - **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 与 `SocialSubTabs` 分别承载技艺与同道通用二级子行；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
 - **样式类名**：`.bottom-nav`, `.bottom-nav-row`, `.bottom-glyph`, `.bottom-glyph-badge`, `.bottom-sub-nav`, `.bottom-sub-nav--social`, `.bottom-sub-tabs`, `.bottom-sub-tabs--social`, `.bottom-sub-tab-btn`, `.bottom-sub-tab-glyph`, `.bottom-sub-tab-text`, `.bottom-sub-tab-badge`
@@ -179,6 +179,7 @@
 - **适用场景**：
   - **通用全屏居中遮罩弹窗**（基于 React Portal 顶层挂载、Focus 焦点锁定陷阱、ESC 键响应、三种标准尺寸 `small`/`medium`/`large`） -> `Modal`
   - **开天门阵盘与独立规则说明叠层弹窗**（横屏左右双栏 / 竖屏 `orientation: portrait` 顶部「天门 / 加成」双页签切换；横竖屏均提供「说明」按钮弹出独立 `HeavenGateGuideModal`，首次打开当前浏览器自动叠层弹出并保持底层聚焦「天门」，文内 `逆命丹` 走 `RichTemplateText` 图标与悬浮详情，Esc/关闭仅退顶层，记忆状态由 `heavenGateGuide.ts` `localStorage` 持久化） -> `HeavenGateModal`, `HeavenGateGuideModal`
+  - **每日签到独立高密度弹窗**（归属「其他/更多 → 签到」，复用 `Modal`、`ItemTile`/`ItemTooltipTarget`/`ItemIcon`；横屏双栏展示功德·绑定赏赐与持仓/领奖回执、今日气运与本周气运道劫签文、连续与累计签到、本周 7 日条与本月统计，竖屏单栏自适应；每日首次在线与在线跨 UTC+8 零点自动弹出且避让新手引导与公告弹窗） -> `CheckinModal`
   - **二次确认 / 高危操作对话框**（重置、遗忘功法、摧毁物品、批量购买等，带取消/确认与高危危险样式） -> `ConfirmDialog`
   - 战斗技能触发条件编辑器弹窗 `CombatTriggerEditor` 见 §22，此处不再重复登记。
 - **组件源码**：
@@ -186,7 +187,8 @@
   - [`frontend/src/components/ConfirmDialog.tsx`](../../frontend/src/components/ConfirmDialog.tsx)
   - [`frontend/src/components/HeavenGateModal.tsx`](../../frontend/src/components/HeavenGateModal.tsx)
   - [`frontend/src/components/HeavenGateGuideModal.tsx`](../../frontend/src/components/HeavenGateGuideModal.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)、[`frontend/src/styles/heaven-gate-artifact.css`](../../frontend/src/styles/heaven-gate-artifact.css)
+  - [`frontend/src/components/CheckinModal.tsx`](../../frontend/src/components/CheckinModal.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)、[`frontend/src/styles/heaven-gate-artifact.css`](../../frontend/src/styles/heaven-gate-artifact.css)、[`frontend/src/styles/checkin.css`](../../frontend/src/styles/checkin.css)
 
 ---
 
@@ -437,12 +439,12 @@
 ## 27. 战斗技能特效加载模块 (Combat VFX)
 
 - **适用场景**：
-  - 历练遭遇战/组队讨伐/斗法回放中功法出手（含 0ms 瞬发技与「斩玉→踏云」移形变招）、消耗品（雷击符/战斗丹药/常驻阵盘及反击 `.proc`）、普攻暴击、吟唱前摇、复活与尸体消散的双层 High-DPI Canvas 2D 流体粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
-  - **单一真源**：引擎内核（`core.js` v2.3.0）与全部特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（`feedback.js`、`abilities/*.js`、`consumables/*.js`，共 38 个注册 ID）；前端经 Vite 副作用导入与 `import.meta.glob(eager)` 直接执行并在 `mount(..., { mode: 'production' })` 挂载——改画廊脚本即同步改正式页面演出。
+  - 历练遭遇战/组队讨伐/斗法回放中功法出手（含 0ms 瞬发技与「斩玉→踏云」移形变招）、内功心法入战护体、战斗特质反应（`trait.xuyi` 蓄意爆发 / `trait.ranhun` 燃烧灼烧）、消耗品（雷击符/战斗丹药/常驻阵盘及反击 `.proc`）、普攻暴击、吟唱前摇、复活与尸体消散的双层 High-DPI Canvas 2D 流体粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
+  - **单一真源**：引擎内核（`core.js` v2.3.0）与全部特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（`feedback.js`、`abilities/*.js`、`consumables/*.js`，共 **55** 个注册 ID：8 反馈 + 21 主动功法 22 态 + 10 内功心法 + 2 特质反应 + 13 消耗品/反击）；前端经 Vite 副作用导入与 `import.meta.glob(eager)` 直接执行并在 `mount(..., { mode: 'production' })` 挂载——改画廊脚本即同步改正式页面演出。
   - **双层叠加架构**：底层地面画布 `.vfx-ground-overlay`（`z-index: 1`，位于 `.combat-arena-field` 下方）承接脚下法阵/阵盘/地裂/波纹；高层天幕画布 `.vfx-stage-overlay`（`z-index: 8`，位于角色上方、顶栏操作区 `.combat-arena-top-actions` 与弹窗下方）承接刀光/雷霆/流光飞弹/爆发粒子。
   - **模块化注册**：`vfx/abilities/*.js` 与 `vfx/consumables/*.js` 向 `window.DaohuaVFXModules` 推入注册函数 `VFX.register('id', handler)`；前端 glob 自动发现——新增技能只需在画廊目录新增文件并在画廊 `index.html` 加一行 script 标签，正式前端零改动。
   - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEl, targetEls, allyEls, enemyEls, ability, castMs, morphed, formationHandle, after}` 由桥接层在出手时刻结合 `data-actor-key` 解析（兼容 `.arena-actor-card` `--arena-scale` 与竖屏纵列坐标系），技能模块只做纯粒子演出，不写结算。
-  - **触发源**：玩家/盟友/敌方吟唱 `castingAbilityId`/`pendingAbilityId`（即播 `feedback.castRing`）；`recentCombatEvents` / `duel.events` 事件流驱动全部主动技（同拍多目标聚合）、变招踏云、天雷/血煞阵盘反击 `.proc` 及普攻/暴击/闪避；消耗品冷却跃迁与战内 Buff 同步驱动 6 种丹药、雷击符与 4 种常驻阵盘启停；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
+  - **触发源**：玩家/盟友/敌方吟唱 `castingAbilityId`/`pendingAbilityId`（即播 `feedback.castRing`）；开战/进入斗法首帧为 0 号位装配心法的单位触发一次内功心法周天护体演出（`playInternalArtIntro`）；`recentCombatEvents` / `duel.events` 事件流驱动全部主动技（同拍多目标聚合、吸血自疗排重、`allAllies`/`lowestHitpointsAlly` 零伤辅疗目标展开）、变招踏云、特质事件（`trait.xuyi`/`trait.ranhun`）、天雷/血煞阵盘反击 `.proc` 及普攻/暴击/闪避；消耗品冷却跃迁与战内 Buff 同步驱动 6 种丹药、雷击符与 4 种常驻阵盘启停；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
   - **结算边界**：伤害跳字/血条碎条/权威受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担；生产模式下引擎自动屏蔽演示性 `floatText`/`defeat`/`revive` 状态类突变，绝不篡改真实战斗状态。
   - **批次时序与击中帧锁步**：服务端按资源自然窗口（默认 5 秒）批量结算，一次快照可能携带窗口内多次出手。`frontend/src/game/combatFeedback.ts` 以稳定事件键（不随数组下标漂移）去重，并把同一批新事件压缩到 520ms 预算内按出手先后重放、同刻多段连击按 110ms 错峰；`ArenaActor` 的出手/受击/闪避与 `ArenaResource` 的浮字、血条落地共用该时间轴——有事件承接的掉血一律等击中帧（普攻 200ms / 施法 280ms）与数字同时落地，只有 DoT/反伤等无事件掉血才即时保底；浮字上限 24 条，伤害数字至少保留 1 点量级。灵力条只对消耗产浮字、不产切片，单位阵亡后冻结演出，尸体阵容保留战斗末值（`mp` 不再清零）。
   - **普攻与受击变体**：常态攻击/暴击/撞击复用共享 `vfx/feedback.js`；其中 `feedback.attack` 内置五式通用招式轮换（`0` 断岳斜劈 / `1` 惊鸿逆撩 / `2` 穿云疾刺 / `3` 残月横扫 / `4` 双绝交错，不区分武器与怪物，由 `CombatVfxRuntime` 按 `canonicalAttackerKey` 递增 `attackerKey`/`attackVariant` 独立推进连段，亦支持显式传入 `ctx.attackVariant`）；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`。逐项查看使用画廊演武控制台。

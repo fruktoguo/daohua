@@ -79,8 +79,8 @@ public sealed class StorageBagRulesTests
             // 基础 1-1000 灵石，额外 10% 概率触发 1-10000 灵石
             // 最小灵石必然 >= 1，最大不超过 1000 + 10000 = 11000
             Assert.InRange(result.SpiritStones, 1, 11000);
-            // 功德 0 或 5-10 或 50-100 或两者皆中
-            Assert.InRange(result.Gongde, 0, 110);
+            // 功德 0 或 10-20 或 100-300 或两者皆中
+            Assert.InRange(result.Gongde, 0, 320);
             // 觉醒石 0 或 1
             Assert.InRange(result.AwakeningStones, 0, 1);
         }
@@ -102,11 +102,11 @@ public sealed class StorageBagRulesTests
         Assert.InRange(avgStones, 960, 1040);
 
         // 2. 功德期望分析：
-        // 10% * 7.5 = 0.75
-        // 1% * 75 = 0.75
-        // 单袋综合期望功德 ≈ 1.50
+        // 20% * 15.0 = 3.00
+        // 1% * 200.0 = 2.00
+        // 单袋综合期望功德 ≈ 5.00
         var avgGongde = result.Gongde / count;
-        Assert.InRange(avgGongde, 1.40, 1.60);
+        Assert.InRange(avgGongde, 4.75, 5.25);
 
         // 3. 觉醒石期望分析：
         // 0.1% 概率 = 0.001

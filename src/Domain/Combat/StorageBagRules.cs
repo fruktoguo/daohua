@@ -102,8 +102,8 @@ public static class StorageBagOpenRules
     /// <list type="bullet">
     ///   <item><description>1-1000 灵石：100% 必出</description></item>
     ///   <item><description>1-10000 灵石：10% 概率额外产出</description></item>
-    ///   <item><description>5-10 功德：10% 概率产出</description></item>
-    ///   <item><description>50-100 功德：1% 概率产出</description></item>
+    ///   <item><description>10-20 功德：20% 概率产出</description></item>
+    ///   <item><description>100-300 功德：1% 概率产出</description></item>
     ///   <item><description>觉醒石：0.1% 概率产出 1 颗</description></item>
     /// </list>
     /// </summary>
@@ -127,16 +127,16 @@ public static class StorageBagOpenRules
                 totalStones += rng.Next(1, 10001);
             }
 
-            // 3. 5-10 功德 10%
-            if (rng.NextDouble() < 0.10)
+            // 3. 10-20 功德 20%
+            if (rng.NextDouble() < 0.20)
             {
-                totalGongde += rng.Next(5, 11);
+                totalGongde += rng.Next(10, 21);
             }
 
-            // 4. 50-100 功德 1%
+            // 4. 100-300 功德 1%
             if (rng.NextDouble() < 0.01)
             {
-                totalGongde += rng.Next(50, 101);
+                totalGongde += rng.Next(100, 301);
             }
 
             // 5. 觉醒石 0.1%

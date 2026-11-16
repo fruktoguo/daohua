@@ -342,11 +342,6 @@ export function resolveItemTooltipAsideCards(
     list.push(sourcesAside)
   }
 
-  // 6. 储物袋开启掉落专属副卡
-  const bagLootAside = createStorageBagLootAsideCard(itemId)
-  if (bagLootAside) {
-    list.push(bagLootAside)
-  }
   if (extraAsideCards && extraAsideCards.length > 0) {
     list.push(...extraAsideCards)
   }
@@ -726,41 +721,11 @@ export function describeStorageBagEffects(itemId: string): ReactNode[] {
       icon={<ItemIcon itemId={entry.itemId} />}
       key={`bag-loot-${entry.id}`}
       label={t(entry.nameKey)}
-      suffix={<span className="world-monster-drop-chance">（{formatStorageBagLootChance(entry.chance)}）</span>}
+      suffix={<span className="world-monster-drop-chance" style={{ marginLeft: '0.35em' }}>{formatStorageBagLootChance(entry.chance)}</span>}
       tone={entry.tone ?? 'gold'}
       value={formatStorageBagLootQuantity(entry)}
     />
   ))
-}
-
-/**
- * 构造储物袋开启产出的专属副卡片
- */
-export function createStorageBagLootAsideCard(itemId: string): FloatingAsideCard | undefined {
-  const loot = getStorageBagLoot(itemId)
-  if (loot.length === 0) return undefined
-  const t = getT()
-  return {
-    id: `aside-bag-loot-${itemId}`,
-    mark: t('game.storageBag.asideMark'),
-    title: t('game.storageBag.asideTitle'),
-    subtitle: t('game.storageBag.asideSubtitle'),
-    tone: 'gold',
-    content: (
-      <div className="daohua-bonus-aside-list">
-        {loot.map((entry) => (
-          <PillBonusLabel
-            icon={<ItemIcon itemId={entry.itemId} />}
-            key={`aside-loot-${entry.id}`}
-            label={t(entry.nameKey)}
-            suffix={<span className="world-monster-drop-chance">（{formatStorageBagLootChance(entry.chance)}）</span>}
-            tone={entry.tone ?? 'gold'}
-            value={formatStorageBagLootQuantity(entry)}
-          />
-        ))}
-      </div>
-    ),
-  }
 }
 
 /** statRatios 通用属性比率字典 key -> i18n 词条键；未登记的新属性回退原始 wire key */

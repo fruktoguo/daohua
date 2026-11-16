@@ -50,17 +50,17 @@ export const STORAGE_BAG_LOOT_TABLE: Record<string, readonly StorageBagLootEntry
       id: 'gongde-base',
       itemId: 'item.gongde',
       nameKey: 'game.storageBag.lootGongdeBase',
-      minQuantity: 5,
-      maxQuantity: 10,
-      chance: 0.1,
+      minQuantity: 10,
+      maxQuantity: 20,
+      chance: 0.2,
       tone: 'emerald',
     },
     {
       id: 'gongde-crit',
       itemId: 'item.gongde',
       nameKey: 'game.storageBag.lootGongdeCrit',
-      minQuantity: 50,
-      maxQuantity: 100,
+      minQuantity: 100,
+      maxQuantity: 300,
       chance: 0.01,
       isExtra: true,
       tone: 'emerald',
@@ -96,9 +96,9 @@ export function getStorageBagLoot(itemId: string): readonly StorageBagLootEntry[
  */
 export function formatStorageBagLootQuantity(entry: StorageBagLootEntry): string {
   if (entry.minQuantity === entry.maxQuantity) {
-    return `× ${entry.minQuantity.toLocaleString()}`
+    return `${entry.minQuantity}`
   }
-  return `${entry.minQuantity.toLocaleString()}~${entry.maxQuantity.toLocaleString()}`
+  return `${entry.minQuantity}-${entry.maxQuantity}`
 }
 
 /**
@@ -106,9 +106,9 @@ export function formatStorageBagLootQuantity(entry: StorageBagLootEntry): string
  */
 export function formatStorageBagLootChance(chance: number): string {
   if (chance >= 1.0 - 1e-9) {
-    return '100% 必得'
+    return '100%'
   }
   const pct = chance * 100
   const formattedPct = +(pct >= 0.1 ? pct.toFixed(2) : pct.toFixed(4))
-  return `${formattedPct}% 概率`
+  return `${formattedPct}%`
 }

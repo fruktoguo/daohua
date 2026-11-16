@@ -255,6 +255,12 @@ test('resolveItemSources: 通用货币（灵石、功德）特殊概括处理，
   assert.ok(awakeningResult.packs.length >= 1, '觉醒石应查出破损储物袋开启渠道')
   assert.equal(awakeningResult.packs[0].packItemId, 'item.storage-bag.broken')
   assert.equal(awakeningResult.packs[0].chanceText, '0.1%')
+
+  // 4. 破损的储物袋概括为「所有妖兽均有掉落」，不逐只列举妖兽
+  const bagResult = resolveItemSources('item.storage-bag.broken')
+  assert.equal(bagResult.monsters.length, 0, '储物袋不应逐只平铺怪物列表')
+  assert.equal(bagResult.totalMonstersCount, 0)
+  assert.ok(bagResult.generals.some(g => g.title.includes('所有妖兽均有掉落')), '应包含所有妖兽均有掉落概括')
 })
 
 test('resolveItemSourcesAsideCard: 无产出物品返回 null，有产出物品生成 jade AsideCard', () => {
