@@ -172,6 +172,10 @@ interface UiStore {
   checkinModalOpen: boolean
   /** 设置「每日签到」独立弹窗开启状态 */
   setCheckinModalOpen: (open: boolean) => void
+  /** 纯字符终端挂机伪装模式开启状态（仅接管前端显示层，不影响后台模拟与网络） */
+  idleModeOpen: boolean
+  /** 开启或退出纯字符终端挂机伪装模式 */
+  setIdleModeOpen: (open: boolean) => void
   /** 新手引导浮层当前是否处于可见状态（用于与更新日志等开局弹窗互斥避让） */
   tutorialOverlayActive: boolean
   /** 同步新手引导浮层当前可见状态 */
@@ -329,6 +333,8 @@ export const useUiStore = create<UiStore>(set => ({
   setHelpModalOpen: helpModalOpen => set({ helpModalOpen }),
   checkinModalOpen: false,
   setCheckinModalOpen: checkinModalOpen => set({ checkinModalOpen }),
+  idleModeOpen: false,
+  setIdleModeOpen: idleModeOpen => set({ idleModeOpen }),
   tutorialOverlayActive: false,
   setTutorialOverlayActive: tutorialOverlayActive => set({ tutorialOverlayActive }),
   tutorialExternalSkipSeq: 0,

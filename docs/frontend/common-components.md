@@ -700,3 +700,15 @@
   - [`frontend/src/components/HelpPromptModal.tsx`](../../frontend/src/components/HelpPromptModal.tsx)
   - [`frontend/src/data/helpGuide.ts`](../../frontend/src/data/helpGuide.ts)
 - **样式文件**：[`frontend/src/styles/help.css`](../../frontend/src/styles/help.css)（严格采用 `--text-*` 阶梯字号 Token，包含 `.help-modal.modal-shell` 外层零滚动锁定、`.help-content` 独立滚动容器、高密度分点卡片、内聚 `[data-theme="light"]` 明亮主题覆盖与 `<= 960px` 顶部横向目录响应式断点）
+
+---
+
+## 44. 纯字符终端挂机伪装模式遮罩 (`TerminalIdleOverlay`)
+
+- **适用场景**：
+  - 从「设置 → 显示」一键进入铺满整个视口的《Hacknet》/ Linux `tmux` + `btop` / CMD 服务器集群管理终端视图（由 `uiStore.idleModeOpen` 驱动，挂载于 `App.tsx` 最顶层）；
+  - 严格执行**零图像**（无 `<img>`/`<svg>`/`<canvas>`/Emoji）与**零中文/修仙语义暴露**约束，同步伪装浏览器标签标题与图标、压制 `Notice` 气泡与自动弹窗，并将玩家真实队列运行态/进度、气血灵力占比与 WebSocket 心跳延迟暗中映射为运维调度进度、内存缓冲池与集群链路状态；仅通过右上角纯字符按钮退出。
+- **组件与纯逻辑源码**：
+  - [`frontend/src/components/TerminalIdleOverlay.tsx`](../../frontend/src/components/TerminalIdleOverlay.tsx)
+  - [`frontend/src/game/terminalIdleTelemetry.ts`](../../frontend/src/game/terminalIdleTelemetry.ts)
+- **样式文件**：[`frontend/src/styles/terminal-idle.css`](../../frontend/src/styles/terminal-idle.css)

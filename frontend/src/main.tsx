@@ -22,6 +22,7 @@ import './styles/mail.css'
 import './styles/shop.css'
 import './styles/simulator.css'
 import './styles/wasm-simulator.css'
+import './styles/terminal-idle.css'
 import { installChunkLoadErrorWatcher, startVersionWatcher } from './network/versionManager'
 import { installInteractionGuard } from './network/interactionGuard'
 

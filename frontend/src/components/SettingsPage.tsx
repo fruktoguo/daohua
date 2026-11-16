@@ -140,6 +140,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
   const theme = useThemeStore(state => state.theme)
   const setTheme = useThemeStore(state => state.setTheme)
+  const setIdleModeOpen = useUiStore(state => state.setIdleModeOpen)
 
   const avatarId = useAvatarStore(state => state.avatarId)
   const setAvatarId = useAvatarStore(state => state.setAvatarId)
@@ -336,6 +337,20 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                     </button>
                   ))}
                 </div>
+              </section>
+              <section className="settings-group" aria-label={t('app.settings.idleModeHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.idleModeHeading')}</h3>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.idleModeLabel')}</span>
+                  <button
+                    type="button"
+                    className="inline-modify-btn"
+                    onClick={() => setIdleModeOpen(true)}
+                  >
+                    {t('app.settings.idleModeEnterBtn')}
+                  </button>
+                </div>
+                <p className="setting-desc">{t('app.settings.idleModeDesc')}</p>
               </section>
             </>
           )}

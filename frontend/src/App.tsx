@@ -82,6 +82,7 @@ const CheckinModal = lazy(() => import('./components/CheckinModal').then(module 
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
+const TerminalIdleOverlay = lazy(() => import('./components/TerminalIdleOverlay').then(module => ({ default: module.TerminalIdleOverlay })))
 
 /** 延迟模块的可见加载态；复用已有进度样式和页面名称，不吞掉模块加载异常。 */
 function PanelLoading({ label }: { label: string }): React.JSX.Element {
@@ -3020,6 +3021,8 @@ export default function App(): React.JSX.Element {
   const setHelpModalOpen = useUiStore(state => state.setHelpModalOpen)
   const checkinModalOpen = useUiStore(state => state.checkinModalOpen)
   const setCheckinModalOpen = useUiStore(state => state.setCheckinModalOpen)
+  const idleModeOpen = useUiStore(state => state.idleModeOpen)
+  const setIdleModeOpen = useUiStore(state => state.setIdleModeOpen)
   const checkinSummary = useCheckinStore(state => state.summary)
   const checkinStatus = useCheckinStore(state => state.status)
   const checkinDismissedDay = useCheckinStore(state => state.dismissedDayIndex)
@@ -3092,7 +3095,13 @@ export default function App(): React.JSX.Element {
   }, [catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount])
 
   useEffect(() => {
-    if (!catalogReady || !hasReceivedSnapshot || connection !== 'online' || tabBlocked || !currentAccount) {
+    if ((!currentAccount || tabBlocked) && idleModeOpen) {
+      setIdleModeOpen(false)
+    }
+  }, [currentAccount, tabBlocked, idleModeOpen, setIdleModeOpen])
+
+  useEffect(() => {
+    if (!catalogReady || !hasReceivedSnapshot || connection !== 'online' || tabBlocked || !currentAccount || idleModeOpen) {
       return
     }
     if (tutorialStep < TUTORIAL_DONE || tutorialOverlayActive || helpPromptOpen || helpModalOpen || awakenResults || changelogNoticeOpen) {
@@ -3115,6 +3124,7 @@ export default function App(): React.JSX.Element {
     connection,
     tabBlocked,
     currentAccount,
+    idleModeOpen,
     zongmenPlayerId,
     tutorialStep,
     tutorialOverlayActive,
@@ -3144,7 +3154,7 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const noticeId = latestNoticeEntry?.noticeId
     if (!noticeId) return
-    if (!catalogReady || !hasReceivedSnapshot || connection === 'offline' || tabBlocked || !currentAccount) {
+    if (!catalogReady || !hasReceivedSnapshot || connection === 'offline' || tabBlocked || !currentAccount || idleModeOpen) {
       setChangelogNoticeOpen(false)
       return
     }
@@ -3156,7 +3166,7 @@ export default function App(): React.JSX.Element {
     if (shouldShowChangelogNotice(latestNoticeEntry, readDismissedNoticeIds())) {
       setChangelogNoticeOpen(true)
     }
-  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, tutorialStep, tutorialOverlayActive, helpPromptOpen, helpModalOpen, awakenResults])
+  }, [latestNoticeEntry, catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount, idleModeOpen, tutorialStep, tutorialOverlayActive, helpPromptOpen, helpModalOpen, awakenResults])
 
   const handleDismissChangelogNotice = useCallback(() => {
     if (latestNoticeEntry?.noticeId) {
@@ -3348,10 +3358,17 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  const showIdleOverlay = Boolean(currentAccount && !tabBlocked && idleModeOpen)
+
   return (
     <>
       {content}
-      <Notice />
+      {!showIdleOverlay && <Notice />}
+      {showIdleOverlay && (
+        <Suspense fallback={<div className="term-idle-root" />}>
+          <TerminalIdleOverlay />
+        </Suspense>
+      )}
     </>
   )
 }
