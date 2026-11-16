@@ -579,7 +579,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             await _ownerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         var ownerHoldMeasurement = RuntimeInstrumentation.Measure("ecs.owner_hold");
         var clockBefore = _clock.Current;
-        var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty, KeyValuePair<PlayerSectionKind, long>[] DirtyMarks)>();
+        var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty, KeyValuePair<PlayerSectionKind, long>[] DirtyMarks, SimulationResult? PendingResult, SimulationEvent[]? PendingEvents)>();
         var executions = new Dictionary<Guid, EcsActionExecutionComponent>();
         try
         {
@@ -599,7 +599,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 var assets = entity.GetComponent<PlayerInventoryComponent>()!.Items
                     .Select(pair => new AssetBalance(new PlayerId(id), pair.Key, pair.Value, 0)).ToArray();
                 var identity = entity.GetComponent<PlayerIdentityComponent>()!;
-                backups[id] = (state, assets, identity.DirtySections.ToArray(), identity.DirtyMarks.ToArray());
+                var pendingResult = _simulationResults.TryGetValue(id, out var prevResult) ? prevResult : null;
+                var pendingEvents = _simulationEvents.TryGetValue(id, out var prevEvents) && prevEvents.Count > 0
+                    ? prevEvents.ToArray() : null;
+                backups[id] = (state, assets, identity.DirtySections.ToArray(), identity.DirtyMarks.ToArray(), pendingResult, pendingEvents);
                 executions[id] = EcsActionExecutionComponent.Attach(entity, GameData, target, _duelAdvance);
             }
             var cursor = executions.Count > 0 ? executions.Values.Min(EcsActionSession.Current) : target;
@@ -676,7 +679,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 foreach (var (id, execution) in executions)
                 {
                     var result = EcsActionSession.Commit(execution);
-                    _simulationResults[id] = result;
+                    // 若调用方在单次命令内分段推进却尚未提取上一笔结果，则合并差量与事件，严禁覆盖丢失。
+                    _simulationResults[id] = _simulationResults.TryGetValue(id, out var existing)
+                        ? MergeSimulationResults(existing, result)
+                        : result;
                     AppendSimulationEvents(id, result.Events);
                     if (execution.Entity is not null)
                         SyncNodeMembership(execution.Entity);
@@ -740,8 +746,14 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 identity.DirtyMarks.Clear();
                 foreach (var (section, mark) in backup.DirtyMarks)
                     identity.DirtyMarks[section] = mark;
-                _simulationEvents.Remove(id);
-                _simulationResults.Remove(id);
+                if (backup.PendingEvents is { } pendingEvents)
+                    _simulationEvents[id] = [.. pendingEvents];
+                else
+                    _simulationEvents.Remove(id);
+                if (backup.PendingResult is { } pendingResult)
+                    _simulationResults[id] = pendingResult;
+                else
+                    _simulationResults.Remove(id);
             }
             _clock.Current = _clock.Target = clockBefore;
             throw;
@@ -766,6 +778,53 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 _ownerGate.Release();
             }
         }
+    }
+
+    private static SimulationResult MergeSimulationResults(SimulationResult prev, SimulationResult next)
+    {
+        IReadOnlyList<AssetDelta> mergedDeltas;
+        if (prev.AssetDeltas.Count == 0) mergedDeltas = next.AssetDeltas;
+        else if (next.AssetDeltas.Count == 0) mergedDeltas = prev.AssetDeltas;
+        else
+        {
+            var summed = new Dictionary<(PlayerId PlayerId, AssetKey Asset), double>();
+            var order = new List<(PlayerId PlayerId, AssetKey Asset)>();
+            foreach (var delta in prev.AssetDeltas.Concat(next.AssetDeltas))
+            {
+                var key = (delta.PlayerId, delta.Asset);
+                if (!summed.ContainsKey(key)) order.Add(key);
+                summed[key] = summed.GetValueOrDefault(key) + delta.QuantityDelta;
+            }
+            var list = new List<AssetDelta>(order.Count);
+            foreach (var key in order)
+            {
+                var amount = summed[key];
+                if (Math.Abs(amount) > 1e-12)
+                    list.Add(new AssetDelta(key.PlayerId, key.Asset, amount, "simulation"));
+            }
+            mergedDeltas = list;
+        }
+
+        const int maxEvents = 512;
+        var totalEvents = prev.Events.Count + next.Events.Count;
+        var overflow = Math.Max(0, totalEvents - maxEvents);
+        var events = totalEvents == 0 ? Array.Empty<SimulationEvent>()
+            : prev.Events.Count == 0 ? next.Events
+            : next.Events.Count == 0 ? prev.Events
+            : prev.Events.Concat(next.Events).TakeLast(maxEvents).ToArray();
+
+        return new SimulationResult(
+            next.PlayerId,
+            prev.From,
+            next.To,
+            prev.ElapsedSeconds + next.ElapsedSeconds,
+            prev.CompletedActions + next.CompletedActions,
+            prev.CompletedRepeats + next.CompletedRepeats,
+            mergedDeltas,
+            events,
+            next.StateVersion,
+            prev.Changed || next.Changed,
+            prev.DroppedEventCount + next.DroppedEventCount + overflow);
     }
 
     /// <summary>安全格式化下一边界用于诊断输出；未运行准备阶段或边界异常时不抛二次异常覆盖真实错误。</summary>

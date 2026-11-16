@@ -7,6 +7,7 @@ using Domain.Player;
 using Domain.World;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Protocol;
 using Server.Clean;
 using Server.Clean.Social;
 using Xunit;
@@ -196,6 +197,88 @@ public sealed class ZongmenIntegrationTests
         var deltaBase = adapter.TryGetLoaded(baselineLeader)!.State.Progression.Experience - expBeforeOnlineBase;
         Assert.True(deltaBuilt > deltaBase,
             $"上线后已刷新建筑应当立即生效：deltaBuilt={deltaBuilt}, deltaBase={deltaBase}");
+    }
+
+    /// <summary>
+    /// 回归（2026-11-16 正式服卡死根因）：玩家在宗门驻地内执行消耗型炼丹/强化并跨边界触发 world.travel 离开驻地时，
+    /// ExitZongmenResidenceAsync 与 world.travel 必须共享同一时间锚点且不覆盖前段模拟资产差量，
+    /// 后续继续挂机并到达 10 分钟检查点刷盘时钱包与数据库余额必须完全一致且无负值。
+    /// </summary>
+    [Fact]
+    public async Task TravelOutOfResidence_PreservesResidenceSimulationDeltasAndKeepsWalletConsistent()
+    {
+        await using var fixture = await Fixture.CreateAsync(1);
+        var player = fixture.Players[0];
+        await fixture.Apply(player, "create",
+            new { name = "驻地出城" + Guid.NewGuid().ToString("N")[..8], prefix = "出", anchorNodeId = "node.yunxi-village" });
+        var own = (await fixture.Repository.FindForPlayerAsync(player))!;
+
+        // 注入强化所需灵石与 1 把 0 级断尘刀，精确复现驻地内增强+0/+1后立刻跨出驻地的路径
+        await fixture.Sql("""
+            INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at)
+            VALUES ($1,'currency.spirit-stone','',1000,1,now()),
+                   ($1,'equipment.duanchen-blade','',1,1,now())
+            ON CONFLICT (player_id,asset_id,variant) DO UPDATE SET quantity=EXCLUDED.quantity,version=economy.player_asset_balances.version+1
+            """, player);
+
+        var startAt = new DateTimeOffset(2026, 11, 16, 8, 0, 0, TimeSpan.Zero);
+        var clock = new Clock(startAt);
+        var sections = new PostgresSectionRepository(fixture.Source, NullLogger<PostgresSectionRepository>.Instance);
+        var aggregate = PlayerAggregate.Create(new(player), new(player), player.ToString("N"), startAt, fixture.Catalog.Fingerprint);
+        aggregate.SkipTutorial();
+        aggregate.TravelTo("node.yunxi-village", 20, 65);
+        await sections.EnqueueSectionsAsync(SectionCodec.EncodeAggregateFull(aggregate.ExportState(), startAt));
+
+        var assetRepo = new PostgresAssetRepository(fixture.Source);
+        var economyRepo = new PostgresEconomyRepository(fixture.Source, NullLogger<PostgresEconomyRepository>.Instance);
+        var buildings = new NodeBuildingRegistry(new PostgresNodeBuildingRepository(fixture.Source), fixture.Catalog,
+            NullLogger<NodeBuildingRegistry>.Instance);
+        using var ecs = new EcsGameRuntime(fixture.Catalog, startAt);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assetRepo, economyRepo, fixture.Catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            nodeBuildings: buildings, zongmen: fixture.Repository);
+
+        await adapter.AttachConnectionAsync(player);
+        // 进入驻地并入队无限强化（目标 +8，仅持有 1 把裸刀无额外保护件）
+        var enterRes = await adapter.ExecuteAsync(player, "world.travel",
+            JsonSerializer.SerializeToElement(new { targetNodeId = own.NodeId }), 0, Guid.NewGuid());
+        Assert.True(enterRes.Success, enterRes.Message);
+
+        var enqId = Guid.NewGuid();
+        var enqRes = await adapter.ExecuteAsync(player, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                enqId.ToString("D"), EnhancementRules.ActionId, -1,
+                Parameters: new Dictionary<string, double> { ["targetLevel"] = 8, ["initialLevel"] = 0, ["protectLevel"] = 0 },
+                TargetItemId: "equipment.duanchen-blade"), ProtocolJson.Options),
+            0, enqId);
+        Assert.True(enqRes.Success, enqRes.Message);
+
+        // 先在线推进若干秒，再在有未落盘强化完成的情况下从驻地发起 world.travel 前往邻近节点
+        clock.AdvanceTo(startAt.AddSeconds(20));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        clock.AdvanceTo(startAt.AddSeconds(45));
+        var destination = fixture.Catalog.WorldGraph.Nodes.First(n => !n.Hidden && n.Id != own.AnchorNodeId).Id;
+        var travelRes = await adapter.ExecuteAsync(player, "world.travel",
+            JsonSerializer.SerializeToElement(new { targetNodeId = destination }), 0, Guid.NewGuid());
+        Assert.True(travelRes.Success, travelRes.Message);
+
+        // 持续推进超过 10 分钟检查点并抵达目的节点继续强化：绝不能丢差量、出现负余额或刷盘失败
+        for (var i = 1; i <= 25; i++)
+        {
+            clock.AdvanceTo(clock.UtcNow.AddSeconds(30));
+            await adapter.AdvanceAllAsync(clock.UtcNow);
+        }
+
+        await adapter.FlushAsync(player, force: true);
+        var loaded = adapter.TryGetLoaded(player)!;
+        Assert.All(loaded.Assets, a => Assert.True(a.Quantity >= 0));
+        var dbBalances = await assetRepo.LoadBalancesAsync(player);
+        foreach (var dbRow in dbBalances)
+        {
+            var memRow = loaded.Assets.FirstOrDefault(a => a.AssetId == dbRow.AssetId && a.Variant == dbRow.Variant);
+            Assert.Equal(dbRow.Quantity, memRow?.Quantity ?? 0d);
+        }
     }
 
     private sealed class Clock(DateTimeOffset at) : IPlayerSimulationClock { public DateTimeOffset UtcNow { get; set; } = at; public bool IsDeterministic => true; public void AdvanceTo(DateTimeOffset target) => UtcNow = target; }

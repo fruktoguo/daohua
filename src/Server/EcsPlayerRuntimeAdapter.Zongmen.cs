@@ -7,7 +7,8 @@ namespace Server;
 public sealed partial class EcsPlayerRuntimeAdapter
 {
     /// <summary>动态驻地不加入全局路网；入口只接受当前成员从挂靠点进入。</summary>
-    private async ValueTask<(Guid DuelId, Guid PeerId)?> EnterZongmenResidenceAsync(Guid playerId, string nodeId, CancellationToken ct)
+    private async ValueTask<(Guid DuelId, Guid PeerId)?> EnterZongmenResidenceAsync(
+        Guid playerId, string nodeId, DateTimeOffset now, CancellationToken ct)
     {
         var own = zongmen is null ? null : await zongmen.FindForPlayerAsync(playerId, ct);
         if (own is null || own.Disbanded || own.NodeId != nodeId)
@@ -18,7 +19,7 @@ public sealed partial class EcsPlayerRuntimeAdapter
             throw new DomainException(DomainErrorCode.InvalidArgument, "请先前往宗门挂靠地点。");
         if (before.State.Actions.Any(action => action.Participation is not null))
             throw new DomainException(DomainErrorCode.Conflict, "请先结束组队行动。");
-        if (_simulationClock.UtcNow > before.LastSimulatedAt) await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, ct);
+        if (now > before.LastSimulatedAt) await ecs.RunPlayerOnceAsync(playerId, now, ct);
         var node = gameData.WorldGraph.GetNode(own.AnchorNodeId);
         var position = ZongmenRules.ResidenceCoordinates(node.X, node.Y);
         (Guid DuelId, Guid PeerId)? forfeit = null;
@@ -26,19 +27,22 @@ public sealed partial class EcsPlayerRuntimeAdapter
         {
             var staleTravel = aggregate.Actions.FirstOrDefault(action => action.Intent.ActionId.Value == "world.travel");
             if (staleTravel is not null) aggregate.RemoveAction(staleTravel.Id);
-            forfeit = aggregate.ApplyDuelForfeit(_simulationClock.UtcNow, gameData.Duel);
+            forfeit = aggregate.ApplyDuelForfeit(now, gameData.Duel);
             aggregate.TravelTo(nodeId, position.X, position.Y);
         });
         return forfeit;
     }
 
-    private async ValueTask ExitZongmenResidenceAsync(Guid playerId, CancellationToken ct)
+    /// <summary>
+    /// 离开宗门驻地前将模拟推进到统一的命令基准时刻 <paramref name="now"/>，确保驻地内建筑效果结算完整且不与后续步骤重复推进。
+    /// </summary>
+    private async ValueTask ExitZongmenResidenceAsync(Guid playerId, DateTimeOffset now, CancellationToken ct)
     {
         var before = ToSnapshot(ecs.ExportSnapshot(playerId));
         if (!ZongmenRules.TryResidenceId(before.State.World.NodeId, out var id)) return;
         var residence = await zongmen!.FindAsync(id, ct)
             ?? throw new InvalidOperationException("驻地缺少宗门权威行。");
-        if (_simulationClock.UtcNow > before.LastSimulatedAt) await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, ct);
+        if (now > before.LastSimulatedAt) await ecs.RunPlayerOnceAsync(playerId, now, ct);
         RelocateFromResidence(playerId, residence.AnchorNodeId);
     }
 

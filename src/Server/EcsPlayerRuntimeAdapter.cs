@@ -484,20 +484,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 before = ToSnapshot(ecs.ExportSnapshot(playerId));
             }
             var duelBeforeCommand = GetActiveDuelPlayback(before);
+            var dirtySectionsBefore = ecs.GetDirtySections(playerId);
+            var receiptAlreadyCommitted = false;
 
             try
             {
                 // 操作前分段脏流水号快照：命令结束后差集得出「本次操作触及分段」，
                 // 供网络增量窄化编码范围（不替代持久化脏集合语义；戳号不复用，差集不会漏报）。
                 var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
-                var dirtySectionsBefore = ecs.GetDirtySections(playerId);
                 IReadOnlySet<PlayerSectionKind>? touched = null;
                 (Guid DuelId, Guid PeerId)? forfeit = null;
                 IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>? invitationGrants = null;
                 List<LogEventDto>? tutorialSkipLogs = null;
                 object? customData = null;
                 string? customNotice = null;
-                var receiptAlreadyCommitted = false;
                 var wallet = WalletOf(playerId);
                 switch (command)
                 {
@@ -654,7 +654,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 forfeit = aggregate.ApplyDuelForfeit(_simulationClock.UtcNow, gameData.Duel);
                             moved = aggregate.MoveAction(actionInstanceId, direction);
                         });
-                        if (!moved) return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在或已在边界位置。", before);
+                        if (!moved)
+                        {
+                            // 若前置 RunPlayerOnceAsync 或 ApplyDuelForfeit 已改动内存态，拒绝移动时必须完整还原未提交状态。
+                            RestoreUncommittedPlayer(playerId, before, dirtySectionsBefore);
+                            return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在或已在边界位置。", before);
+                        }
                         break;
                     }
                     case "queue.clear":
@@ -730,7 +735,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var alreadyLearned = before.State.LearnedAbilities.Contains(abilityId);
                         if (!isTome && !alreadyLearned)
                             return new PlayerCommandResult(false, "ABILITY_NOT_LEARNED", "必须先习得对应功法才能研读残卷。", before);
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         // 重载后重建钱包视图：持有量校验必须读取刚同步的权威余额，不能用命令入口的旧快照。
                         wallet = WalletOf(playerId);
                         // 持有量前置校验：必须先于任何内存变更拒绝，否则会先跑完整批结算、再在事务提交时才发现余额不足。
@@ -1065,10 +1070,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (string.IsNullOrWhiteSpace(targetNodeId))
                             return new PlayerCommandResult(false, "INVALID_TARGET", "目标世界节点无效。", before);
                         targetNodeId = targetNodeId.Trim();
+                        var travelNow = _simulationClock.UtcNow;
                         if (ZongmenRules.TryResidenceId(targetNodeId, out _))
                         {
-                            forfeit = await EnterZongmenResidenceAsync(playerId, targetNodeId, cancellationToken);
-                            await RefreshNodeBuildingsAsync(playerId, ToSnapshot(ecs.ExportSnapshot(playerId)).State.World, _simulationClock.UtcNow, cancellationToken);
+                            forfeit = await EnterZongmenResidenceAsync(playerId, targetNodeId, travelNow, cancellationToken);
+                            await RefreshNodeBuildingsAsync(playerId, ToSnapshot(ecs.ExportSnapshot(playerId)).State.World, travelNow, cancellationToken);
                             break;
                         }
                         var worldGraph = gameData.WorldGraph;
@@ -1083,9 +1089,6 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     $"神识不足，无法感应并前往该地点（需神识大于 {targetNodeObj.RequiredConsciousness:0} 点）。", before);
                             }
                         }
-                        await ExitZongmenResidenceAsync(playerId, cancellationToken);
-                        before = ToSnapshot(ecs.ExportSnapshot(playerId));
-                        var travelNow = _simulationClock.UtcNow;
                         if ((!string.Equals(before.State.World.NodeId, targetNodeId, StringComparison.Ordinal)
                                 || before.State.World.EdgeId is not null)
                             && before.State.Actions.FirstOrDefault()?.Participation is { } travelParticipation)
@@ -1098,7 +1101,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             dirtySectionsBefore = ecs.GetDirtySections(playerId);
                             wallet = WalletOf(playerId);
                         }
-                        if (travelNow > before.State.LastSimulatedAt)
+                        // 使用统一的 travelNow 退出驻地并保持 before/dirtySectionsBefore 为最近已提交锚点；
+                        // 若驻地内已推进至 travelNow，下方不再二次调用 RunPlayerOnceAsync 覆盖模拟结果。
+                        await ExitZongmenResidenceAsync(playerId, travelNow, cancellationToken);
+                        var currentAfterExit = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        if (travelNow > currentAfterExit.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, travelNow, cancellationToken).ConfigureAwait(false);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
@@ -1204,7 +1211,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         if (requested.Count == 0)
                             return new PlayerCommandResult(false, "INVALID_MATERIALS", "提交材料为空。", before);
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
                         foreach (var (matId, matQuantity) in requested)
                         {
@@ -1248,7 +1255,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     {
                         if (marketRuntime is null)
                             return new PlayerCommandResult(false, "MARKET_UNAVAILABLE", "市场运行时未装配。", before);
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
                         if (!TryReadGuid(payload, "orderId", out var orderId))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单标识无效。", before);
@@ -1292,7 +1299,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     {
                         if (marketRuntime is null)
                             return new PlayerCommandResult(false, "MARKET_UNAVAILABLE", "市场运行时未装配。", before);
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         if (!TryReadGuid(payload, "orderId", out var orderId))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单标识无效。", before);
                         var order = await marketRuntime.GetOrderAsync(orderId, new PlayerId(playerId), cancellationToken).ConfigureAwait(false);
@@ -1350,7 +1357,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             variant = string.Empty;
                         }
 
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
                         var assetKey = new AssetKey(new ItemId(disposeItemId), variant);
                         var totalHeld = wallet.Get(assetKey);
@@ -1427,7 +1434,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (!double.IsFinite(totalPrice) || totalPrice <= 0)
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "商品价格无效。", before);
 
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
                         const string boundMeritItemId = "item.gongde-bound";
                         const string normalMeritItemId = "item.gongde";
@@ -1550,7 +1557,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         const string boundMeritItemId = "item.gongde-bound";
                         const string normalMeritItemId = "item.gongde";
 
-                        await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+                        before = await EnsureWalletFreshAndRefreshBeforeAsync(playerId, before, cancellationToken).ConfigureAwait(false);
                         wallet = WalletOf(playerId);
                         var boundBalance = wallet.Get(new AssetKey(new ItemId(boundMeritItemId)));
                         var normalBalance = wallet.Get(new AssetKey(new ItemId(normalMeritItemId)));
@@ -1751,10 +1758,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             }
             catch (DomainException exception)
             {
+                if (!receiptAlreadyCommitted)
+                    RestoreUncommittedPlayer(playerId, before, dirtySectionsBefore);
                 return new PlayerCommandResult(false, exception.Code.ToString().ToUpperInvariant(), exception.Message, before);
             }
             catch (Exception exception) when (exception is KeyNotFoundException or JsonException or FormatException)
             {
+                if (!receiptAlreadyCommitted)
+                    RestoreUncommittedPlayer(playerId, before, dirtySectionsBefore);
                 return new PlayerCommandResult(false, "INVALID_PAYLOAD", exception.Message, before);
             }
         }
@@ -1842,6 +1853,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         Dictionary<Guid, Dictionary<AssetKey, double>>? pendingBeforeBatch = null;
         Dictionary<Guid, DateTimeOffset?>? pendingFromBeforeBatch = null;
         var uncommitted = ids.ToHashSet();
+        var playerFailures = new List<Exception>();
         var acquired = 0;
         try
         {
@@ -1883,17 +1895,33 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             uncommitted.IntersectWith(ids);
             // 市场等外部来源的入账使缓存钱包失效：重读并收集余额真实变化的玩家，
             // 随后推进其版本让本轮推送把资产差量带给客户端（资产不属分段编码轴）。
+            // 单玩家钱包重载/建筑投影失败按玩家隔离，不得阻断其余健康玩家本轮推进。
             var walletsSynced = new HashSet<Guid>();
-            foreach (var playerId in ids)
-                if (await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false)) walletsSynced.Add(playerId);
             var buildingsChanged = new HashSet<Guid>();
+            var failedBeforeSim = new HashSet<Guid>();
             foreach (var playerId in ids)
             {
-                // 目标取样早于等待 gate；新命令已推进到更晚时刻时不能用过期时间更新建筑投影。
-                if (target > _loaded[playerId].LastSimulatedAt
-                    && await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false))
-                    buildingsChanged.Add(playerId);
-                TrackDirty(playerId);
+                try
+                {
+                    if (await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false))
+                        walletsSynced.Add(playerId);
+                    // 目标取样早于等待 gate；新命令已推进到更晚时刻时不能用过期时间更新建筑投影。
+                    if (target > _loaded[playerId].LastSimulatedAt
+                        && await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false))
+                        buildingsChanged.Add(playerId);
+                    TrackDirty(playerId);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failedBeforeSim.Add(playerId);
+                    playerFailures.Add(exception);
+                    _logger.LogError(exception, "在线玩家推进前置准备失败，已隔离 playerId={PlayerId}", playerId);
+                }
+            }
+            if (failedBeforeSim.Count > 0)
+            {
+                ids = ids.Where(id => !failedBeforeSim.Contains(id)).ToArray();
+                uncommitted.ExceptWith(failedBeforeSim);
             }
             var failedMembers = new HashSet<Guid>();
             foreach (var playerId in ids)
@@ -1919,6 +1947,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             // World 可能已有本批取样后刚创建、仍在装载中的实体；全世界 Tick 会越过其玩家 gate。
             // 正在读条的活跃玩家若无外部钱包/建筑投影变更且尚未到达下一个可见事件边界，跳过半途切片，避免每秒推送与整秒截断引发前端进度条抖动。
             var ran = new HashSet<Guid>();
+            var failedInSim = new HashSet<Guid>();
             foreach (var playerId in ids)
             {
                 if (target <= before[playerId].LastSimulatedAt) continue;
@@ -1932,77 +1961,93 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     && ecs.NextAdvanceBoundary(playerId) is { } nextBoundary
                     && target < nextBoundary)
                     continue;
-                ran.Add(playerId);
-                await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+                    ran.Add(playerId);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failedInSim.Add(playerId);
+                    uncommitted.Remove(playerId);
+                    RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore[playerId],
+                        walletsBeforeBatch[playerId], pendingBeforeBatch[playerId], pendingFromBeforeBatch[playerId]);
+                    if (walletsSynced.Contains(playerId))
+                        ecs.MarkExternalStateChanged(playerId);
+                    playerFailures.Add(exception);
+                    _logger.LogError(exception, "在线玩家单步模拟推进失败，已隔离并回滚 playerId={PlayerId}", playerId);
+                }
             }
+            if (failedInSim.Count > 0)
+                ids = ids.Where(id => !failedInSim.Contains(id)).ToArray();
             // 斗法撮合（总纲 §7.10.1）：推进完成后的同一 gate 窗口内配对等待者，
             // 预约/镜像/挂载全部落在本轮提交窗口，快照推送复用下方既有提交流程。
             MatchDuelsOwned(target, ids, notifications);
             foreach (var playerId in ids)
             {
-                // 无变化快判（与旧口径「版本+时钟相等」相比只会更保守）：变更仅可能来自三个通道——
-                // ① 本轮推进（唯一推进模拟时钟的路径）；② 脏标记差集（MutatePlayer 全部变更的持久化通道，
-                // 覆盖斗法撮合等门禁内变更）；③ 外部状态源（钱包重读仅推进版本不伪造分段脏）。
-                // 三者皆静则快照不可能变化，省去对空闲玩家的 after 全量导出（空闲挂机时每秒 2N 次全量状态树分配的主源）。
-                if (!ran.Contains(playerId) && !walletsSynced.Contains(playerId)
-                    && TouchedSectionsSince(marksBefore[playerId], ecs.GetDirtyMarks(playerId)).Count == 0)
-                {
-                    ecs.DrainSimulationResult(playerId);
-                    if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
-                        && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
-                    {
-                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
-                        _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
-                    }
-                    uncommitted.Remove(playerId);
-                    continue;
-                }
-                var after = ToSnapshot(ecs.ExportSnapshot(playerId));
-                if (after.StateVersion == before[playerId].StateVersion && after.LastSimulatedAt == before[playerId].LastSimulatedAt)
-                {
-                    ecs.DrainSimulationResult(playerId);
-                    if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
-                        && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
-                    {
-                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
-                        _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
-                    }
-                    uncommitted.Remove(playerId);
-                    continue;
-                }
-                // 在线模拟推进不再每 Tick 写 PostgreSQL：结果与脏段暂存内存并同步内存钱包/WS 推流，
-                // 仅当 10 分钟安全检查点到期或 PVP 斗法结束时才原子合批落库。
-                CommitOutcome outcome;
                 try
                 {
-                    outcome = await BufferOnlineSimulationOwned(
+                    // 无变化快判（与旧口径「版本+时钟相等」相比只会更保守）：变更仅可能来自三个通道——
+                    // ① 本轮推进（唯一推进模拟时钟的路径）；② 脏标记差集（MutatePlayer 全部变更的持久化通道，
+                    // 覆盖斗法撮合等门禁内变更）；③ 外部状态源（钱包重读仅推进版本不伪造分段脏）。
+                    // 三者皆静则快照不可能变化，省去对空闲玩家的 after 全量导出（空闲挂机时每秒 2N 次全量状态树分配的主源）。
+                    if (!ran.Contains(playerId) && !walletsSynced.Contains(playerId)
+                        && TouchedSectionsSince(marksBefore[playerId], ecs.GetDirtyMarks(playerId)).Count == 0)
+                    {
+                        ecs.DrainSimulationResult(playerId);
+                        if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
+                            && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
+                        {
+                            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                            _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        }
+                        uncommitted.Remove(playerId);
+                        continue;
+                    }
+                    var after = ToSnapshot(ecs.ExportSnapshot(playerId));
+                    if (after.StateVersion == before[playerId].StateVersion && after.LastSimulatedAt == before[playerId].LastSimulatedAt)
+                    {
+                        ecs.DrainSimulationResult(playerId);
+                        if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
+                            && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
+                        {
+                            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                            _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
+                        }
+                        uncommitted.Remove(playerId);
+                        continue;
+                    }
+                    // 在线模拟推进不再每 Tick 写 PostgreSQL：结果与脏段暂存内存并同步内存钱包/WS 推流，
+                    // 仅当 10 分钟安全检查点到期或 PVP 斗法结束时才原子合批落库。
+                    var outcome = await BufferOnlineSimulationOwned(
                         playerId, before[playerId], after, dirtyBefore[playerId], target, cancellationToken).ConfigureAwait(false);
+                    // 检查点刷盘、钱包同步或时钟补推可能推进状态版本/资产版本号：变更后重导出终态。
+                    if (outcome.Flushed || ecs.GetStateVersion(playerId) != after.StateVersion)
+                        after = ToSnapshot(ecs.ExportSnapshot(playerId));
+                    var advanceRevision = ecs.AttributeRevision(playerId);
+                    var advanceRevisionBefore = _attributeRevisions.GetValueOrDefault(playerId, advanceRevision);
+                    after = after with
+                    {
+                        WireAttributesChanged = advanceRevision != advanceRevisionBefore,
+                        TouchedSections = TouchedSectionsSince(marksBefore[playerId], ecs.GetDirtyMarks(playerId))
+                    };
+                    _attributeRevisions[playerId] = advanceRevision;
+                    _loaded[playerId] = after;
+                    uncommitted.Remove(playerId);
+                    // 行为基线（沿袭历史 OOP 运行时口径）：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
+                    // 空闲玩家仅时间前进不产生 ChangedSections，不得收到空增量。
+                    // 例外：外部入账（市场结算等）已重读钱包并推进版本——Changed=false 时也必须推送，
+                    // 否则余额差量无回执可携带，在线对手方要等重连才能看到入账。
+                    var snapshotChanged = outcome.Simulation is { Changed: true } || walletsSynced.Contains(playerId);
+                    if (outcome.Logs is { Count: > 0 } || snapshotChanged)
+                        notifications.Add(new RuntimeNotification(playerId, outcome.Logs, snapshotChanged ? after : null));
                 }
-                catch
+                catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     uncommitted.Remove(playerId);
-                    throw;
+                    playerFailures.Add(exception);
+                    _logger.LogError(exception, "在线玩家推进提交失败，已隔离 playerId={PlayerId}", playerId);
                 }
-                // 检查点刷盘、钱包同步或时钟补推可能推进状态版本/资产版本号：变更后重导出终态。
-                if (outcome.Flushed || ecs.GetStateVersion(playerId) != after.StateVersion)
-                    after = ToSnapshot(ecs.ExportSnapshot(playerId));
-                var advanceRevision = ecs.AttributeRevision(playerId);
-                var advanceRevisionBefore = _attributeRevisions.GetValueOrDefault(playerId, advanceRevision);
-                after = after with
-                {
-                    WireAttributesChanged = advanceRevision != advanceRevisionBefore,
-                    TouchedSections = TouchedSectionsSince(marksBefore[playerId], ecs.GetDirtyMarks(playerId))
-                };
-                _attributeRevisions[playerId] = advanceRevision;
-                _loaded[playerId] = after;
-                uncommitted.Remove(playerId);
-                // 行为基线（沿袭历史 OOP 运行时口径）：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
-                // 空闲玩家仅时间前进不产生 ChangedSections，不得收到空增量。
-                // 例外：外部入账（市场结算等）已重读钱包并推进版本——Changed=false 时也必须推送，
-                // 否则余额差量无回执可携带，在线对手方要等重连才能看到入账。
-                var snapshotChanged = outcome.Simulation is { Changed: true } || walletsSynced.Contains(playerId);
-                if (outcome.Logs is { Count: > 0 } || snapshotChanged)
-                    notifications.Add(new RuntimeNotification(playerId, outcome.Logs, snapshotChanged ? after : null));
             }
         }
         catch
@@ -2025,7 +2070,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             while (acquired > 0) gates[--acquired].Release();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
-        if (failures.Count > 0) throw new AggregateException("会话或成员结算失败，健康玩家已完成当批推进。", failures);
+        if (failures.Count == 0 && playerFailures.Count == 1)
+            ExceptionDispatchInfo.Capture(playerFailures[0]).Throw();
+        if (failures.Count > 0 || playerFailures.Count > 0)
+        {
+            failures.AddRange(playerFailures);
+            throw new AggregateException("会话或成员结算失败，健康玩家已完成当批推进。", failures);
+        }
     }
 
     /// <summary>
@@ -2850,6 +2901,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>在命令未改写任何非钱包状态前重读脏钱包，并在余额确有变化时同步更新回滚基线快照。</summary>
+    private async ValueTask<PlayerRuntimeSnapshot> EnsureWalletFreshAndRefreshBeforeAsync(
+        Guid playerId, PlayerRuntimeSnapshot before, CancellationToken cancellationToken)
+        => await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false)
+            ? ToSnapshot(ecs.ExportSnapshot(playerId))
+            : before;
+
     /// <summary>从存储权威重读钱包并同步 ECS 库存组件；重读前先提交在线缓冲差量，防止未落盘收益被覆盖。</summary>
     private async ValueTask<bool> ReloadWalletAsync(Guid playerId, CancellationToken cancellationToken)
     {
@@ -3092,38 +3150,58 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             : new Dictionary<AssetKey, double>();
 
         var simulation = ecs.DrainSimulationResult(playerId);
-        if (simulation is { AssetDeltas.Count: > 0 })
-        {
-            var pendingMap = _pendingSimulationDeltas.GetOrAdd(playerId, static _ => []);
-            if (!hadPendingFrom || pendingBackup.Count == 0)
-                _pendingSimulationFromAt[playerId] = beforeSnapshot.LastSimulatedAt;
-
-            var wallet = _wallets[playerId];
-            foreach (var delta in simulation.AssetDeltas)
-            {
-                var nextPending = pendingMap.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
-                if (Math.Abs(nextPending) <= 1e-12) pendingMap.Remove(delta.Asset);
-                else pendingMap[delta.Asset] = nextPending;
-
-                if (wallet.TryGetValue(delta.Asset, out var existing))
-                    wallet[delta.Asset] = existing with { Quantity = existing.Quantity + delta.QuantityDelta };
-                else
-                    wallet[delta.Asset] = new AssetBalanceRecord(
-                        playerId, delta.Asset.ItemId.Value, delta.Asset.Variant, delta.QuantityDelta, 0);
-            }
-            SyncEcsWallet(playerId);
-        }
-
-        TrackDirty(playerId);
-        var duelBefore = GetActiveDuelPlayback(beforeSnapshot);
-        var duelCompleted = duelBefore is not null && afterSnapshot.State.Duel.ActiveDuelId is null;
-        var lastSimCheckpoint = _lastCheckpointSimAt.GetValueOrDefault(playerId, beforeSnapshot.LastSimulatedAt);
-        var checkpointDue = target - lastSimCheckpoint >= _onlineCheckpointInterval;
-
         var flushed = false;
-        if (duelCompleted || checkpointDue)
+        try
         {
-            try
+            if (simulation is { AssetDeltas.Count: > 0 })
+            {
+                var pendingMap = _pendingSimulationDeltas.GetOrAdd(playerId, static _ => []);
+                if (!hadPendingFrom || pendingBackup.Count == 0)
+                    _pendingSimulationFromAt[playerId] = beforeSnapshot.LastSimulatedAt;
+
+                var wallet = _wallets[playerId];
+                foreach (var delta in simulation.AssetDeltas)
+                {
+                    if (!delta.Asset.ItemId.IsValid || !double.IsFinite(delta.QuantityDelta))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "模拟资产增量无效。");
+
+                    var nextPending = pendingMap.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
+                    if (Math.Abs(nextPending) <= 1e-12) pendingMap.Remove(delta.Asset);
+                    else pendingMap[delta.Asset] = nextPending;
+
+                    var currentQty = wallet.TryGetValue(delta.Asset, out var existing) ? existing.Quantity : 0d;
+                    var nextQty = currentQty + delta.QuantityDelta;
+                    if (!double.IsFinite(nextQty))
+                    {
+                        _walletReloadRequired[playerId] = 0;
+                        throw new DomainException(DomainErrorCode.InvariantViolation,
+                            $"在线模拟资产数量超出数值范围 player={playerId:D} asset={delta.Asset}。");
+                    }
+                    if (nextQty < -1e-12)
+                    {
+                        // 一旦检测到内存钱包与模拟扣减发生分叉，立即打标重读数据库并回滚，绝不允许负余额落入钱包、ECS 或下发给前端。
+                        _walletReloadRequired[playerId] = 0;
+                        throw new DomainException(DomainErrorCode.InsufficientBalance,
+                            $"在线模拟钱包余额不足 player={playerId:D} asset={delta.Asset} available={currentQty} delta={delta.QuantityDelta}。");
+                    }
+                    nextQty = Math.Abs(nextQty) < 1e-12 ? 0d : nextQty;
+
+                    if (existing is not null)
+                        wallet[delta.Asset] = existing with { Quantity = nextQty };
+                    else
+                        wallet[delta.Asset] = new AssetBalanceRecord(
+                            playerId, delta.Asset.ItemId.Value, delta.Asset.Variant, nextQty, 0);
+                }
+                SyncEcsWallet(playerId);
+            }
+
+            TrackDirty(playerId);
+            var duelBefore = GetActiveDuelPlayback(beforeSnapshot);
+            var duelCompleted = duelBefore is not null && afterSnapshot.State.Duel.ActiveDuelId is null;
+            var lastSimCheckpoint = _lastCheckpointSimAt.GetValueOrDefault(playerId, beforeSnapshot.LastSimulatedAt);
+            var checkpointDue = target - lastSimCheckpoint >= _onlineCheckpointInterval;
+
+            if (duelCompleted || checkpointDue)
             {
                 await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
                 flushed = true;
@@ -3131,16 +3209,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     await TryRecordDuelCompletionAsync(
                         playerId, beforeSnapshot, duelBefore!, forfeited: false, afterSnapshot.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
             }
-            catch (EconomyCommitOutcomeUnknownException)
-            {
-                throw;
-            }
-            catch
-            {
-                RestoreBufferingForRollback(playerId, beforeSnapshot, dirtySectionsBefore,
-                    walletBackup, pendingBackup, hadPendingFrom ? prevFrom : null);
-                throw;
-            }
+        }
+        catch (EconomyCommitOutcomeUnknownException)
+        {
+            throw;
+        }
+        catch
+        {
+            RestoreBufferingForRollback(playerId, beforeSnapshot, dirtySectionsBefore,
+                walletBackup, pendingBackup, hadPendingFrom ? prevFrom : null);
+            throw;
         }
 
         var events = ecs.DrainSimulationEvents(playerId);

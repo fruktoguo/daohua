@@ -945,6 +945,104 @@ public sealed class EcsAdapterBoundaryTests
         Assert.True(finalSnapshot.State.Actions[0].CompletedRepeats > 0);
     }
 
+    /// <summary>
+    /// 同一玩家在单次请求内连续两次 RunPlayerOnceAsync 且中间未提取结果时，
+    /// 必须累加合并 AssetDeltas 与事件，绝不能覆盖丢弃前段资产变更；
+    /// 且二次推进异常回滚时不得误清前段合法未提取结果。
+    /// </summary>
+    [Fact]
+    public async Task DoubleRunPlayerOnceWithoutDrain_MergesSimulationResultsAndPreservesFirstOnRollback()
+    {
+        var fixture = CreateFixtureCore(Epoch, "explore.gather-ningxue-grass");
+        await using var adapter = fixture.Adapter;
+        await adapter.LoadAsync(fixture.PlayerId);
+
+        var t1 = Epoch.AddSeconds(15);
+        var t2 = Epoch.AddSeconds(35);
+        await fixture.Ecs.RunPlayerOnceAsync(fixture.PlayerId, t1);
+        await fixture.Ecs.RunPlayerOnceAsync(fixture.PlayerId, t2);
+
+        // 在第二次结果之上注入一次非法倒退调用：回滚后应完整保留前两段已提交推进结果。
+        await Assert.ThrowsAsync<DomainException>(async () =>
+            await fixture.Ecs.RunPlayerOnceAsync(fixture.PlayerId, t1));
+
+        var merged = fixture.Ecs.DrainSimulationResult(fixture.PlayerId);
+        Assert.NotNull(merged);
+        Assert.Equal(Epoch, merged!.From);
+        Assert.Equal(t2, merged.To);
+        Assert.Equal(35d, merged.ElapsedSeconds);
+        Assert.True(merged.Changed);
+
+        var grassKey = new AssetKey(new ItemId("item.ningxue-grass"));
+        var ecsGrass = fixture.Ecs.ExportSnapshot(fixture.PlayerId).Assets[grassKey];
+        var deltaGrass = Assert.Single(merged.AssetDeltas, d => d.Asset == grassKey).QuantityDelta;
+        Assert.Equal(ecsGrass, deltaGrass);
+        Assert.True(merged.CompletedRepeats >= 2);
+        Assert.NotEmpty(fixture.Ecs.DrainSimulationEvents(fixture.PlayerId));
+    }
+
+    /// <summary>
+    /// ExecuteAsync 中部分命令先跑 RunPlayerOnceAsync 再校验/变更队列，
+    /// 若校验返回失败（如边界移动）或抛出 DomainException（如队列已满），
+    /// 必须回滚 ECS 状态并清理未提交 SimulationResult，防止内存与钱包分叉。
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_FailedCommandAfterRunPlayerOnce_RollsBackEcsAndSimulationResult()
+    {
+        var fixture = CreateFixtureCore(Epoch, "explore.gather-ningxue-grass");
+        await using var adapter = fixture.Adapter;
+        var loaded = await adapter.LoadAsync(fixture.PlayerId);
+        var actionId = loaded.State.Actions[0].Id;
+
+        var mutableClock = new MutableTestClock(Epoch);
+        using var ecs2 = new EcsGameRuntime(fixture.Catalog, Epoch);
+        var sections2 = new MemorySections(ToBundle(loaded.State));
+        var assets2 = new MemoryAssets([]);
+        var economy2 = new MemoryEconomy(sections2, assets2);
+        await using var adapter2 = new EcsPlayerRuntimeAdapter(
+            ecs2, sections2, assets2, economy2, fixture.Catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, mutableClock);
+
+        var before = await adapter2.LoadAsync(fixture.PlayerId);
+        // 推进模拟时钟后再发起必定失败的队首上移（direction = -1）：
+        // ExecuteOwnedAsync 内部会先跑 RunPlayerOnceAsync，随后在 !moved 分支触发回滚。
+        mutableClock.UtcNow = Epoch.AddSeconds(30);
+        var moveFail = await adapter2.ExecuteAsync(fixture.PlayerId, "queue.move",
+            JsonSerializer.SerializeToElement(new { actionInstanceId = actionId, direction = -1 }),
+            0, Guid.NewGuid());
+        Assert.False(moveFail.Success);
+        Assert.Equal("ACTION_NOT_FOUND", moveFail.Code);
+        Assert.Null(ecs2.DrainSimulationResult(fixture.PlayerId));
+        Assert.Equal(before.LastSimulatedAt, ecs2.ExportSnapshot(fixture.PlayerId).State.LastSimulatedAt);
+        Assert.Empty(ecs2.ExportSnapshot(fixture.PlayerId).Assets);
+
+        // 2. 填满队列后再在推进窗口发送 action.enqueue 抛出 DomainException（Conflict）：同样必须回滚
+        for (var i = 1; i < PlayerAggregate.MaxActionQueueLength; i++)
+        {
+            var req = Guid.NewGuid();
+            var enq = await adapter2.ExecuteAsync(fixture.PlayerId, "action.enqueue",
+                JsonSerializer.SerializeToElement(new ActionIntentRequest(req.ToString("D"), "cultivation.draw-qi", 1), ProtocolJson.Options),
+                0, req);
+            Assert.True(enq.Success, enq.Message);
+        }
+        var beforeOverflow = await adapter2.LoadAsync(fixture.PlayerId);
+        mutableClock.UtcNow = mutableClock.UtcNow.AddSeconds(30);
+        var overflowReq = Guid.NewGuid();
+        var overflow = await adapter2.ExecuteAsync(fixture.PlayerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(overflowReq.ToString("D"), "cultivation.draw-qi", 1), ProtocolJson.Options),
+            0, overflowReq);
+        Assert.False(overflow.Success);
+        Assert.Null(ecs2.DrainSimulationResult(fixture.PlayerId));
+        Assert.Equal(beforeOverflow.LastSimulatedAt, ecs2.ExportSnapshot(fixture.PlayerId).State.LastSimulatedAt);
+    }
+
+    private sealed class MutableTestClock(DateTimeOffset value) : IPlayerSimulationClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = value;
+        public bool IsDeterministic => true;
+        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
+    }
+
     private static async Task<PlayerRuntimeSnapshot> EnqueueGatheringAsync(Fixture fixture)
     {
         var requestId = Guid.Parse("10000000-0000-4000-8000-000000000025");

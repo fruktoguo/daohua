@@ -350,6 +350,112 @@ public sealed class PersistenceGovernanceRuntimeTests
         Assert.True(dPersistedDuel.Resolved);
     }
 
+    /// <summary>
+    /// 单玩家模拟或资产损坏抛出异常时，AdvanceAllAsync 必须按玩家隔离并保留异常上报，
+    /// 严禁因为一名坏玩家导致全服健康在线玩家停摆回滚。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsync_IsolatesBrokenPlayerAndAllowsHealthyPlayersToContinue()
+    {
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+
+        var healthyA = Guid.Parse("00000000-0000-4000-8000-000000000001");
+        var brokenB = Guid.Parse("00000000-0000-4000-8000-000000000002");
+        var healthyC = Guid.Parse("00000000-0000-4000-8000-000000000003");
+        foreach (var (id, name) in new[] { (healthyA, "健康甲"), (brokenB, "异常乙"), (healthyC, "健康丙") })
+            sections.Seed(CreateOfflineBundle(id, name, catalog.Fingerprint, skipTutorial: true));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(600));
+
+        foreach (var id in new[] { healthyA, brokenB, healthyC })
+        {
+            await adapter.AttachConnectionAsync(id);
+            var req = Guid.NewGuid();
+            var enq = await adapter.ExecuteAsync(id, "action.enqueue",
+                JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                    req.ToString("D"), "explore.gather-ningxue-grass", -1), ProtocolJson.Options),
+                0, req);
+            Assert.True(enq.Success, enq.Message);
+        }
+
+        // 在 ECS 库存中注入负余额以精确复现 AssetWallet.Restore("资产余额无效。") 的单人故障
+        ecs.SyncAssetBalances(brokenB,
+            [new Domain.Economy.AssetBalance(new Domain.Common.PlayerId(brokenB),
+                new Domain.Economy.AssetKey(new Domain.Common.ItemId("item.ningxue-grass")), -1d, 0)]);
+
+        clock.Advance(TimeSpan.FromSeconds(37));
+        await Assert.ThrowsAsync<DomainException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+
+        // 健康甲与健康丙（排序分别在异常乙前后）都必须正常推进并获得收益
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyA)!.LastSimulatedAt);
+        Assert.Equal(clock.UtcNow, adapter.TryGetLoaded(healthyC)!.LastSimulatedAt);
+        Assert.True(adapter.TryGetLoaded(healthyA)!.Assets.Single(a => a.AssetId == "item.ningxue-grass").Quantity > 0);
+        Assert.True(adapter.TryGetLoaded(healthyC)!.Assets.Single(a => a.AssetId == "item.ningxue-grass").Quantity > 0);
+        Assert.Equal(Epoch, adapter.TryGetLoaded(brokenB)!.LastSimulatedAt);
+    }
+
+    /// <summary>
+    /// 当 ECS 内存库存与宿主钱包发生分叉导致 BufferOnlineSimulationOwned 扣出负余额时，
+    /// 必须立即拒绝写入负余额、完整回滚并发起钱包重读自愈，防止负余额写回 ECS 或推给前端。
+    /// </summary>
+    [Fact]
+    public async Task BufferOnlineSimulationOwned_RejectsNegativeWalletDeltaAndSelfHealsOnNextTick()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+
+        var playerId = Guid.NewGuid();
+        sections.Seed(CreateOfflineBundle(playerId, "防负自愈", catalog.Fingerprint, skipTutorial: true));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(600));
+
+        await adapter.AttachConnectionAsync(playerId);
+        // 仅向 ECS 注入 1 份材料而持久层与 _wallets 为 0，模拟库存分叉后触发扣减
+        var enqReq = Guid.NewGuid();
+        var enq = await adapter.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                enqReq.ToString("D"), "alchemy.refine-zhixue-powder", -1), ProtocolJson.Options),
+            0, enqReq);
+        Assert.True(enq.Success, enq.Message);
+
+        ecs.SyncAssetBalances(playerId,
+            [new Domain.Economy.AssetBalance(new Domain.Common.PlayerId(playerId),
+                new Domain.Economy.AssetKey(new Domain.Common.ItemId("item.ningxue-grass")), 1d, 0),
+             new Domain.Economy.AssetBalance(new Domain.Common.PlayerId(playerId),
+                new Domain.Economy.AssetKey(new Domain.Common.ItemId("item.herb-essence")), 1d, 0)]);
+
+        clock.Advance(TimeSpan.FromSeconds(15));
+        await Assert.ThrowsAsync<DomainException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+
+        // 拒绝负余额后快照与钱包绝对不得出现 Quantity < 0，且时间回到推进前
+        var afterReject = adapter.TryGetLoaded(playerId)!;
+        Assert.Equal(Epoch, afterReject.LastSimulatedAt);
+        Assert.All(afterReject.Assets, asset => Assert.True(asset.Quantity >= 0));
+
+        // 下一轮推进触发 EnsureWalletFreshAsync 自动从存储重读权威余额（0），同步覆盖修复 ECS 库存并恢复阻塞推进
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        var afterHeal = adapter.TryGetLoaded(playerId)!;
+        Assert.Equal(clock.UtcNow, afterHeal.LastSimulatedAt);
+        Assert.All(afterHeal.Assets, asset => Assert.True(asset.Quantity >= 0));
+        Assert.Equal(ActionQueueStatus.Blocked, afterHeal.State.Actions[0].Status);
+    }
+
     private static async Task EnqueueCombatAsync(EcsPlayerRuntimeAdapter adapter, Guid playerId)
     {
         var reqId = Guid.NewGuid();
