@@ -93,6 +93,18 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     // 客户端 expected 命中窗口内任一已发布版本即放行——玩家门等待与门内对账期间的服务端推进
     // 都不构成过期证据；只有声称从未发布的更晚版本、或落后滑窗的真正过期请求才判冲突。
     private readonly ConcurrentDictionary<Guid, RecentPublished> _publishedVersions = new();
+    // 单玩家模拟推进连续失败退避：第 1 次失败仍允许下拍立即自愈重读，第 2 次起按指数退避隔离并从边界剔除，
+    // 防止单名异常玩家把全服推进循环卡死在 50ms 空转（命令成功或推演成功立即清零）。
+    private readonly ConcurrentDictionary<Guid, SimulationFailureBackoff> _simulationBackoffs = new();
+
+    private readonly record struct SimulationFailureBackoff(int ConsecutiveFailures, DateTimeOffset BackoffUntilUtc);
+
+    private sealed class RollbackFailedException(Exception originalException, Exception rollbackException)
+        : Exception(rollbackException.Message, rollbackException)
+    {
+        public Exception OriginalException { get; } = originalException;
+        public Exception RollbackException { get; } = rollbackException;
+    }
 
     /// <summary>单玩家近期已发布版本集合：单调记录 Latest，滑窗保留最近 Keep 条供命中判断。</summary>
     private sealed class RecentPublished
@@ -202,11 +214,33 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         get
         {
-            var playerBoundary = ecs.NextAdvanceBoundaryUtc;
+            var playerBoundary = (_simulationBackoffs.IsEmpty && _fencedCommits.IsEmpty)
+                ? ecs.NextAdvanceBoundaryUtc
+                : ComputeEffectivePlayerBoundaryUtc();
             var sessionBoundary = participationRuntime?.NextAdvanceBoundaryUtc;
             return playerBoundary is null ? sessionBoundary : sessionBoundary is null ? playerBoundary
                 : playerBoundary < sessionBoundary ? playerBoundary : sessionBoundary;
         }
+    }
+
+    private DateTimeOffset? ComputeEffectivePlayerBoundaryUtc()
+    {
+        HashSet<Guid>? excluded = null;
+        if (!_fencedCommits.IsEmpty)
+        {
+            excluded = [];
+            foreach (var id in _fencedCommits.Keys) excluded.Add(id);
+        }
+        Dictionary<Guid, DateTimeOffset>? overrides = null;
+        foreach (var (playerId, backoff) in _simulationBackoffs)
+        {
+            if (backoff.ConsecutiveFailures < 2) continue;
+            overrides ??= new Dictionary<Guid, DateTimeOffset>();
+            overrides[playerId] = backoff.BackoffUntilUtc;
+        }
+        if (excluded is null && overrides is null)
+            return ecs.NextAdvanceBoundaryUtc;
+        return ecs.NextAdvanceBoundaryUtcWithOverrides(excluded, overrides);
     }
 
     /// <summary>
@@ -1754,6 +1788,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     if (ecs.GetDirtySections(playerId).Length > 0 || HasPendingSimulationDeltas(playerId))
                         await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
                 }
+                _simulationBackoffs.TryRemove(playerId, out _);
                 return new PlayerCommandResult(true, "OK", customNotice ?? SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
             }
             catch (DomainException exception)
@@ -1890,7 +1925,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is not null)
                     fenced.Add(playerId);
             // 核实成功会丢弃陈旧内存状态：这些玩家本轮没有可推进实体，等下次装载重建。
-            ids = ids.Where(id => !fenced.Contains(id) && _loaded.ContainsKey(id)).ToArray();
+            // 连续失败退避中的玩家暂跳过推进与斗法撮合，避免单名异常玩家拖死全服 50ms 空转。
+            ids = ids.Where(id => !fenced.Contains(id) && _loaded.ContainsKey(id) && !IsSimulationBackedOff(id, target)).ToArray();
             uncommitted.ExceptWith(fenced);
             uncommitted.IntersectWith(ids);
             // 市场等外部来源的入账使缓存钱包失效：重读并收集余额真实变化的玩家，
@@ -1914,6 +1950,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     failedBeforeSim.Add(playerId);
+                    RecordSimulationFailureOwned(playerId, target);
                     playerFailures.Add(exception);
                     _logger.LogError(exception, "在线玩家推进前置准备失败，已隔离 playerId={PlayerId}", playerId);
                 }
@@ -1929,6 +1966,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     failedMembers.Add(playerId);
+                    RecordSimulationFailureOwned(playerId, target);
                     failures.Add(new InvalidOperationException($"成员会话结算失败 playerId={playerId:D}。", exception));
                 }
             ids = ids.Where(id => !failedMembers.Contains(id)).ToArray();
@@ -1970,19 +2008,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 {
                     failedInSim.Add(playerId);
                     uncommitted.Remove(playerId);
-                    RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore[playerId],
-                        walletsBeforeBatch[playerId], pendingBeforeBatch[playerId], pendingFromBeforeBatch[playerId]);
-                    if (walletsSynced.Contains(playerId))
-                        ecs.MarkExternalStateChanged(playerId);
                     playerFailures.Add(exception);
                     _logger.LogError(exception, "在线玩家单步模拟推进失败，已隔离并回滚 playerId={PlayerId}", playerId);
+                    await SafeRollbackOrEvictOwnedAsync(playerId, before[playerId], dirtyBefore[playerId],
+                        walletsBeforeBatch[playerId], pendingBeforeBatch[playerId], pendingFromBeforeBatch[playerId],
+                        target, walletsSynced.Contains(playerId)).ConfigureAwait(false);
                 }
             }
             if (failedInSim.Count > 0)
                 ids = ids.Where(id => !failedInSim.Contains(id)).ToArray();
             // 斗法撮合（总纲 §7.10.1）：推进完成后的同一 gate 窗口内配对等待者，
-            // 预约/镜像/挂载全部落在本轮提交窗口，快照推送复用下方既有提交流程。
-            MatchDuelsOwned(target, ids, notifications);
+            // 预约/镜像/挂载全部落在本轮提交窗口，异常按涉事双方隔离，绝不波及健康玩家。
+            ids = await MatchDuelsSafeOwnedAsync(target, ids, before, dirtyBefore,
+                walletsBeforeBatch, pendingBeforeBatch, pendingFromBeforeBatch,
+                walletsSynced, uncommitted, playerFailures, notifications).ConfigureAwait(false);
             foreach (var playerId in ids)
             {
                 try
@@ -2001,6 +2040,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
                             _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
                         }
+                        _simulationBackoffs.TryRemove(playerId, out _);
                         uncommitted.Remove(playerId);
                         continue;
                     }
@@ -2014,6 +2054,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
                             _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
                         }
+                        _simulationBackoffs.TryRemove(playerId, out _);
                         uncommitted.Remove(playerId);
                         continue;
                     }
@@ -2033,6 +2074,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     };
                     _attributeRevisions[playerId] = advanceRevision;
                     _loaded[playerId] = after;
+                    _simulationBackoffs.TryRemove(playerId, out _);
                     uncommitted.Remove(playerId);
                     // 行为基线（沿袭历史 OOP 运行时口径）：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
                     // 空闲玩家仅时间前进不产生 ChangedSections，不得收到空增量。
@@ -2042,9 +2084,24 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     if (outcome.Logs is { Count: > 0 } || snapshotChanged)
                         notifications.Add(new RuntimeNotification(playerId, outcome.Logs, snapshotChanged ? after : null));
                 }
+                catch (RollbackFailedException rollbackFailure)
+                {
+                    uncommitted.Remove(playerId);
+                    playerFailures.Add(rollbackFailure.OriginalException);
+                    _logger.LogCritical(rollbackFailure.RollbackException,
+                        "在线玩家提交回滚失败（运行时快照不变量已损坏），立即强制逐出 playerId={PlayerId}", playerId);
+                    await EvictCorruptedOwnedAsync(playerId).ConfigureAwait(false);
+                }
+                catch (EconomyCommitOutcomeUnknownException exception)
+                {
+                    uncommitted.Remove(playerId);
+                    playerFailures.Add(exception);
+                    _logger.LogError(exception, "在线玩家推进提交结局未知并已栅栏隔离 playerId={PlayerId}", playerId);
+                }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     uncommitted.Remove(playerId);
+                    RecordSimulationFailureOwned(playerId, target);
                     playerFailures.Add(exception);
                     _logger.LogError(exception, "在线玩家推进提交失败，已隔离 playerId={PlayerId}", playerId);
                 }
@@ -2052,16 +2109,26 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         catch
         {
-            // 本批已推进但尚未提交的玩家必须恢复，避免下一轮发送失败批次遗留的日志。
+            // 本批已推进但尚未提交的玩家必须逐一恢复，防止单名坏玩家阻断其余健康玩家回滚。
             if (before is not null)
                 foreach (var playerId in uncommitted)
                 {
                     // 已 durable 提交但随后的钱包读取取消时，Commit 已保留新时钟；不能重复回滚。
-                    if (_fencedCommits.ContainsKey(playerId)
+                    if (!_loaded.ContainsKey(playerId)
+                        || _fencedCommits.ContainsKey(playerId)
                         || (_walletReloadRequired.ContainsKey(playerId)
                             && _loaded[playerId].LastSimulatedAt > before[playerId].LastSimulatedAt)) continue;
-                    RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore![playerId],
-                        walletsBeforeBatch![playerId], pendingBeforeBatch![playerId], pendingFromBeforeBatch![playerId]);
+                    try
+                    {
+                        RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore![playerId],
+                            walletsBeforeBatch![playerId], pendingBeforeBatch![playerId], pendingFromBeforeBatch![playerId]);
+                    }
+                    catch (Exception rollbackException) when (rollbackException is not OperationCanceledException)
+                    {
+                        _logger.LogCritical(rollbackException,
+                            "整批异常回滚期间发现损坏玩家，立即强制逐出 playerId={PlayerId}", playerId);
+                        await EvictCorruptedOwnedAsync(playerId).ConfigureAwait(false);
+                    }
                 }
             throw;
         }
@@ -2080,11 +2147,22 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     }
 
     /// <summary>
-    /// 斗法撮合（总纲 §7.10.1）：在已加载玩家中给处于匹配等待相位的寻求者配同一有效地图节点（World.NodeId 相同且未赶路）
+    /// 斗法撮合安全外壳（总纲 §7.10.1）：在已加载玩家中给处于匹配等待相位的寻求者配同一有效地图节点（World.NodeId 相同且未赶路）
     /// 且实力 ±PowerBandRatio 带内的候选，双方先预约后冻结镜像、一次性推演确定性剧本并各自挂载回放；
-    /// 任一步失败全部回滚，无候选时退出等待静默转正常波次。仅在全体玩家 gate 持有的推进窗口内调用。
+    /// 任一步失败回滚且仅隔离涉事双方，绝不拖累同批健康玩家。仅在全体玩家 gate 持有的推进窗口内调用。
     /// </summary>
-    private void MatchDuelsOwned(DateTimeOffset target, IReadOnlyList<Guid> ids, List<RuntimeNotification> notifications)
+    private async ValueTask<Guid[]> MatchDuelsSafeOwnedAsync(
+        DateTimeOffset target,
+        Guid[] ids,
+        IReadOnlyDictionary<Guid, PlayerRuntimeSnapshot> before,
+        IReadOnlyDictionary<Guid, PlayerSectionKind[]> dirtyBefore,
+        IReadOnlyDictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>> walletsBeforeBatch,
+        IReadOnlyDictionary<Guid, Dictionary<AssetKey, double>> pendingBeforeBatch,
+        IReadOnlyDictionary<Guid, DateTimeOffset?> pendingFromBeforeBatch,
+        IReadOnlySet<Guid> walletsSynced,
+        HashSet<Guid> uncommitted,
+        List<Exception> playerFailures,
+        List<RuntimeNotification> notifications)
     {
         var nowUnix = target.ToUnixTimeMilliseconds() / 1000d;
         var band = gameData.Duel.PowerBandRatio;
@@ -2092,122 +2170,170 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         // 严格同节点约束：排除移动中（EdgeId 非空）或节点未知的候选人。
         var candidates = new List<(Guid PlayerId, double Power, string NodeId, int Bracket)>();
         var seekers = new List<Guid>();
+        var failedInDuel = new HashSet<Guid>();
+
+        async ValueTask IsolateDuelFailureAsync(Guid playerId, Exception exception, bool recordBackoff)
+        {
+            failedInDuel.Add(playerId);
+            uncommitted.Remove(playerId);
+            if (recordBackoff)
+            {
+                playerFailures.Add(exception);
+                _logger.LogError(exception, "斗法撮合阶段玩家状态异常，已隔离并回滚 playerId={PlayerId}", playerId);
+            }
+            await SafeRollbackOrEvictOwnedAsync(playerId, before[playerId], dirtyBefore[playerId],
+                walletsBeforeBatch[playerId], pendingBeforeBatch[playerId], pendingFromBeforeBatch[playerId],
+                target, walletsSynced.Contains(playerId), recordBackoff).ConfigureAwait(false);
+        }
+
         foreach (var id in ids)
         {
             (Guid PlayerId, double Power, string NodeId, int Bracket)? info = null;
             var isPending = false;
-            ecs.MutatePlayer(id, aggregate =>
+            try
             {
-                isPending = aggregate.IsDuelPending;
-                if (aggregate.CanJoinDuel(nowUnix)
-                    && aggregate.World.EdgeId is null
-                    && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                ecs.MutatePlayer(id, aggregate =>
                 {
-                    var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
-                    info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId, CombatDifficultyRules.GetBracket(difficulty));
-                }
-            });
+                    isPending = aggregate.IsDuelPending;
+                    if (aggregate.CanJoinDuel(nowUnix)
+                        && aggregate.World.EdgeId is null
+                        && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                    {
+                        var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
+                        info = (id, aggregate.DuelPower(gameData), aggregate.World.NodeId, CombatDifficultyRules.GetBracket(difficulty));
+                    }
+                });
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await IsolateDuelFailureAsync(id, exception, recordBackoff: true).ConfigureAwait(false);
+                continue;
+            }
             if (isPending) seekers.Add(id);
             if (info is { } entry) candidates.Add(entry);
         }
-        if (seekers.Count == 0) return;
+        if (seekers.Count == 0)
+            return failedInDuel.Count == 0 ? ids : ids.Where(id => !failedInDuel.Contains(id)).ToArray();
         if (candidates.Count == 0)
         {
             // 没有任何可撮合对手时，同样必须中止寻求者的 DuelPending 并回退为普通怪物波次，避免永久停滞。
-            foreach (var seekerId in seekers) AbortDuelSeekOwned(seekerId);
-            return;
+            foreach (var seekerId in seekers)
+            {
+                try { AbortDuelSeekOwned(seekerId); }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await IsolateDuelFailureAsync(seekerId, exception, recordBackoff: true).ConfigureAwait(false);
+                }
+            }
+            return failedInDuel.Count == 0 ? ids : ids.Where(id => !failedInDuel.Contains(id)).ToArray();
         }
         foreach (var seekerId in seekers)
         {
-            double seekerPower = 0;
-            string? seekerNodeId = null;
-            var seekerBracket = 0;
-            var pending = false;
-            ecs.MutatePlayer(seekerId, aggregate =>
+            if (failedInDuel.Contains(seekerId)) continue;
+            Guid? pickedId = null;
+            try
             {
-                if (aggregate.IsDuelPending
-                    && aggregate.World.EdgeId is null
-                    && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                double seekerPower = 0;
+                string? seekerNodeId = null;
+                var seekerBracket = 0;
+                var pending = false;
+                ecs.MutatePlayer(seekerId, aggregate =>
                 {
-                    pending = true;
-                    seekerPower = aggregate.DuelPower(gameData);
-                    seekerNodeId = aggregate.World.NodeId;
-                    var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
-                    seekerBracket = CombatDifficultyRules.GetBracket(difficulty);
+                    if (aggregate.IsDuelPending
+                        && aggregate.World.EdgeId is null
+                        && !string.IsNullOrEmpty(aggregate.World.NodeId))
+                    {
+                        pending = true;
+                        seekerPower = aggregate.DuelPower(gameData);
+                        seekerNodeId = aggregate.World.NodeId;
+                        var difficulty = aggregate.Actions.Count > 0 ? aggregate.Actions[0].Intent.Difficulty : 0;
+                        seekerBracket = CombatDifficultyRules.GetBracket(difficulty);
+                    }
+                });
+                if (!pending || seekerNodeId is null) continue;
+                var pool = candidates
+                    .Where(candidate => candidate.PlayerId != seekerId
+                        && !failedInDuel.Contains(candidate.PlayerId)
+                        && candidate.NodeId == seekerNodeId
+                        && candidate.Bracket == seekerBracket
+                        && candidate.Power >= seekerPower * (1 - band) && candidate.Power <= seekerPower * (1 + band))
+                    .ToList();
+                if (pool.Count == 0)
+                {
+                    AbortDuelSeekOwned(seekerId);
+                    continue;
                 }
-            });
-            if (!pending || seekerNodeId is null) continue;
-            var pool = candidates
-                .Where(candidate => candidate.PlayerId != seekerId
-                    && candidate.NodeId == seekerNodeId
-                    && candidate.Bracket == seekerBracket
-                    && candidate.Power >= seekerPower * (1 - band) && candidate.Power <= seekerPower * (1 + band))
-                .ToList();
-            if (pool.Count == 0)
-            {
-                AbortDuelSeekOwned(seekerId);
-                continue;
+                var picked = pool[Random.Shared.Next(pool.Count)];
+                pickedId = picked.PlayerId;
+                var duelId = Guid.NewGuid();
+                DuelCombatant? initiatorMirror = null;
+                ecs.MutatePlayer(seekerId, aggregate =>
+                {
+                    if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
+                        initiatorMirror = aggregate.BuildDuelMirror(gameData);
+                });
+                if (initiatorMirror is null)
+                {
+                    AbortDuelSeekOwned(seekerId);
+                    continue;
+                }
+                DuelCombatant? defenderMirror = null;
+                ecs.MutatePlayer(picked.PlayerId, aggregate =>
+                {
+                    if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
+                        defenderMirror = aggregate.BuildDuelMirror(gameData);
+                });
+                if (defenderMirror is null)
+                {
+                    ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                    AbortDuelSeekOwned(seekerId);
+                    continue;
+                }
+                var seed = BitConverter.ToInt64(SHA256.HashData(duelId.ToByteArray()));
+                var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, seed, gameData.Duel);
+                var duelIdText = duelId.ToString("N");
+                var initiatorAttached = AttachDuelOwned(seekerId, duelId,
+                    DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: true));
+                if (!initiatorAttached)
+                {
+                    ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                    ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                    AbortDuelSeekOwned(seekerId);
+                    continue;
+                }
+                var defenderAttached = AttachDuelOwned(picked.PlayerId, duelId,
+                    DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: false));
+                if (!defenderAttached)
+                {
+                    ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
+                    ecs.MutatePlayer(seekerId, aggregate => aggregate.DetachDuel(duelId));
+                    continue;
+                }
+                // 双方均挂载成功后同步退出候选池，防止同轮后续寻求者再次抽中已开战的发起方或应战方。
+                candidates.RemoveAll(candidate => candidate.PlayerId == seekerId || candidate.PlayerId == picked.PlayerId);
+                if (_activeDuels.Count > 4096) _activeDuels.Clear();
+                _activeDuels[duelIdText] = new ActiveDuelMetadata(
+                    duelIdText,
+                    seekerId, initiatorMirror.DisplayName, initiatorMirror.Power,
+                    picked.PlayerId, defenderMirror.DisplayName, defenderMirror.Power,
+                    seekerNodeId, script.DurationSeconds,
+                    script.InitiatorStagedItems, script.DefenderStagedItems);
+                // 撮合成立才补「斗法遭遇」日志：匹配等待与静默回退阶段不下发提示（总纲 §7.10.2）。
+                notifications.Add(new RuntimeNotification(seekerId,
+                    [AppendDuelMatchedLog(seekerId, defenderMirror.DisplayName)]));
+                notifications.Add(new RuntimeNotification(picked.PlayerId,
+                    [AppendDuelMatchedLog(picked.PlayerId, initiatorMirror.DisplayName)]));
             }
-            var picked = pool[Random.Shared.Next(pool.Count)];
-            var duelId = Guid.NewGuid();
-            DuelCombatant? initiatorMirror = null;
-            ecs.MutatePlayer(seekerId, aggregate =>
+            catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
-                    initiatorMirror = aggregate.BuildDuelMirror(gameData);
-            });
-            if (initiatorMirror is null)
-            {
-                AbortDuelSeekOwned(seekerId);
-                continue;
+                await IsolateDuelFailureAsync(seekerId, exception, recordBackoff: true).ConfigureAwait(false);
+                if (pickedId is { } peerId && _loaded.ContainsKey(peerId) && !failedInDuel.Contains(peerId))
+                    await IsolateDuelFailureAsync(peerId, exception, recordBackoff: false).ConfigureAwait(false);
+                candidates.RemoveAll(candidate => candidate.PlayerId == seekerId
+                    || (pickedId is { } targetId && candidate.PlayerId == targetId));
             }
-            DuelCombatant? defenderMirror = null;
-            ecs.MutatePlayer(picked.PlayerId, aggregate =>
-            {
-                if (aggregate.World.NodeId == seekerNodeId && aggregate.World.EdgeId is null && aggregate.TryReserveDuel(duelId, nowUnix))
-                    defenderMirror = aggregate.BuildDuelMirror(gameData);
-            });
-            if (defenderMirror is null)
-            {
-                ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
-                AbortDuelSeekOwned(seekerId);
-                continue;
-            }
-            var seed = BitConverter.ToInt64(SHA256.HashData(duelId.ToByteArray()));
-            var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, seed, gameData.Duel);
-            var duelIdText = duelId.ToString("N");
-            var initiatorAttached = AttachDuelOwned(seekerId, duelId,
-                DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: true));
-            if (!initiatorAttached)
-            {
-                ecs.MutatePlayer(seekerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
-                ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
-                AbortDuelSeekOwned(seekerId);
-                continue;
-            }
-            var defenderAttached = AttachDuelOwned(picked.PlayerId, duelId,
-                DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: false));
-            if (!defenderAttached)
-            {
-                ecs.MutatePlayer(picked.PlayerId, aggregate => aggregate.ReleaseDuelReservation(duelId));
-                ecs.MutatePlayer(seekerId, aggregate => aggregate.DetachDuel(duelId));
-                continue;
-            }
-            // 应战方挂载成功即退出候选池：斗法期间不能被第二场撮合重复拉走。
-            candidates.RemoveAll(candidate => candidate.PlayerId == picked.PlayerId);
-            if (_activeDuels.Count > 4096) _activeDuels.Clear();
-            _activeDuels[duelIdText] = new ActiveDuelMetadata(
-                duelIdText,
-                seekerId, initiatorMirror.DisplayName, initiatorMirror.Power,
-                picked.PlayerId, defenderMirror.DisplayName, defenderMirror.Power,
-                seekerNodeId, script.DurationSeconds,
-                script.InitiatorStagedItems, script.DefenderStagedItems);
-            // 撮合成立才补「斗法遭遇」日志：匹配等待与静默回退阶段不下发提示（总纲 §7.10.2）。
-            notifications.Add(new RuntimeNotification(seekerId,
-                [AppendDuelMatchedLog(seekerId, defenderMirror.DisplayName)]));
-            notifications.Add(new RuntimeNotification(picked.PlayerId,
-                [AppendDuelMatchedLog(picked.PlayerId, initiatorMirror.DisplayName)]));
         }
+        return failedInDuel.Count == 0 ? ids : ids.Where(id => !failedInDuel.Contains(id)).ToArray();
     }
 
     /// <summary>挂载斗法回放并推进版本（撮合挂载必须产生快照推送）；领域校验失败返回 false 供回滚。</summary>
@@ -2277,19 +2403,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 if (wasOnline)
                     await TryRecordLifecycleAuditAsync(playerId, snapshot, isOnline: false, offlineAt, cancellationToken).ConfigureAwait(false);
             }
-            if (!ecs.RemovePlayer(playerId)) throw new InvalidOperationException($"ECS 玩家实体不存在：{playerId:D}");
+            if (!ClearLoadedPlayerStateOwned(playerId)) throw new InvalidOperationException($"ECS 玩家实体不存在：{playerId:D}");
             RuntimeInstrumentation.Count("lifecycle.player_unloaded");
-            _loaded.TryRemove(playerId, out _);
-            _wallets.TryRemove(playerId, out _);
-            _logs.TryRemove(playerId, out _);
-            _recentRequests.TryRemove(playerId, out _);
-            _dirtyAt.TryRemove(playerId, out _);
-            _pendingReceipts.TryRemove(playerId, out _);
-            ClearBufferingState(playerId);
-            ClearBufferingState(playerId);
-            _walletReloadRequired.TryRemove(playerId, out _);
-            _attributeRevisions.TryRemove(playerId, out _);
-            _publishedVersions.TryRemove(playerId, out _);
             // 归还租约：仅当本实例确实持有时才释放，避免误删他实例租约。
             if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
                 await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false);
@@ -2563,13 +2678,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         finally { gate.Release(); }
     }
 
-    /// <summary>
-    /// 租约已被其他实例接管时逐出玩家：本实例内存状态不再权威——直接移除 ECS 实体与全部
-    /// 缓存，不刷盘（脏数据可能过期）、不归还租约（已非持有者）。调用方必须持有该玩家 gate。
-    /// </summary>
-    private void EvictOwnershipLostOwned(Guid playerId)
+    /// <summary>清理已加载玩家在本实例中的 ECS 实体与全部运行时缓存（不含租约释放）；调用方必须持有该玩家 gate。</summary>
+    private bool ClearLoadedPlayerStateOwned(Guid playerId)
     {
-        ecs.RemovePlayer(playerId);
+        var removedFromEcs = ecs.RemovePlayer(playerId);
         _loaded.TryRemove(playerId, out _);
         _wallets.TryRemove(playerId, out _);
         _dirtyAt.TryRemove(playerId, out _);
@@ -2580,6 +2692,85 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _recentRequests.TryRemove(playerId, out _);
         _attributeRevisions.TryRemove(playerId, out _);
         _publishedVersions.TryRemove(playerId, out _);
+        _simulationBackoffs.TryRemove(playerId, out _);
+        return removedFromEcs;
+    }
+
+    private bool IsSimulationBackedOff(Guid playerId, DateTimeOffset target)
+        => _simulationBackoffs.TryGetValue(playerId, out var entry)
+            && entry.ConsecutiveFailures >= 2
+            && target < entry.BackoffUntilUtc;
+
+    private void RecordSimulationFailureOwned(Guid playerId, DateTimeOffset now)
+    {
+        _simulationBackoffs.AddOrUpdate(
+            playerId,
+            _ => new SimulationFailureBackoff(1, now),
+            (_, existing) =>
+            {
+                var nextFailures = existing.ConsecutiveFailures + 1;
+                if (nextFailures < 2)
+                    return new SimulationFailureBackoff(nextFailures, now);
+                // 连续失败 2 次起进入指数退避（2s -> 4s -> 8s -> 16s -> 32s -> 60s），避免坏玩家拖死全服调度周期。
+                var seconds = Math.Min(60d, Math.Pow(2, Math.Min(6, nextFailures - 1)));
+                return new SimulationFailureBackoff(nextFailures, now.AddSeconds(seconds));
+            });
+    }
+
+    private async ValueTask SafeRollbackOrEvictOwnedAsync(
+        Guid playerId,
+        PlayerRuntimeSnapshot before,
+        PlayerSectionKind[] dirtyBefore,
+        Dictionary<AssetKey, AssetBalanceRecord> walletBackup,
+        Dictionary<AssetKey, double> pendingBackup,
+        DateTimeOffset? pendingFromBackup,
+        DateTimeOffset now,
+        bool walletReloadMarked,
+        bool recordBackoff = true)
+    {
+        try
+        {
+            RestoreBufferingForRollback(playerId, before, dirtyBefore,
+                walletBackup, pendingBackup, pendingFromBackup);
+            if (walletReloadMarked)
+                ecs.MarkExternalStateChanged(playerId);
+            if (recordBackoff)
+                RecordSimulationFailureOwned(playerId, now);
+        }
+        catch (Exception rollbackException) when (rollbackException is not OperationCanceledException)
+        {
+            _logger.LogCritical(rollbackException,
+                "玩家未提交状态回滚失败（运行时快照不变量已损坏），立即强制逐出以保护全服模拟 playerId={PlayerId}",
+                playerId);
+            await EvictCorruptedOwnedAsync(playerId).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 玩家内存快照已损坏且回滚恢复失败时的紧急逐出：不刷盘（禁止把无效状态覆写进数据库），
+    /// 直接卸除 ECS 实体并尽量归还租约，彻底阻断全服 20 Hz 空转并等待下一次连接按持久化基线重载。
+    /// 调用方必须持有该玩家 gate。
+    /// </summary>
+    private async ValueTask EvictCorruptedOwnedAsync(Guid playerId)
+    {
+        ClearLoadedPlayerStateOwned(playerId);
+        if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
+        {
+            try { await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "损坏玩家强制逐出后归还租约失败 player={PlayerId}", playerId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 租约已被其他实例接管时逐出玩家：本实例内存状态不再权威——直接移除 ECS 实体与全部
+    /// 缓存，不刷盘（脏数据可能过期）、不归还租约（已非持有者）。调用方必须持有该玩家 gate。
+    /// </summary>
+    private void EvictOwnershipLostOwned(Guid playerId)
+    {
+        ClearLoadedPlayerStateOwned(playerId);
         _leaseRenewedAt.TryRemove(playerId, out _);
         _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
@@ -3214,10 +3405,17 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         {
             throw;
         }
-        catch
+        catch (Exception originalException)
         {
-            RestoreBufferingForRollback(playerId, beforeSnapshot, dirtySectionsBefore,
-                walletBackup, pendingBackup, hadPendingFrom ? prevFrom : null);
+            try
+            {
+                RestoreBufferingForRollback(playerId, beforeSnapshot, dirtySectionsBefore,
+                    walletBackup, pendingBackup, hadPendingFrom ? prevFrom : null);
+            }
+            catch (Exception rollbackException) when (rollbackException is not OperationCanceledException)
+            {
+                throw new RollbackFailedException(originalException, rollbackException);
+            }
             throw;
         }
 

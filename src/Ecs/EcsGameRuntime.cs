@@ -190,6 +190,10 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public ValueTask RunPlayerOnceAsync(Guid playerId, DateTimeOffset target, CancellationToken cancellationToken = default)
         => GetShard(playerId).RunPlayerOnceAsync(playerId, target, cancellationToken);
 
+    /// <summary>导出玩家当前资产余额字典快照（只读，含本轮尚未提交宿主内存钱包的模拟增量）。</summary>
+    public Dictionary<AssetKey, double> GetAssetBalances(Guid playerId)
+        => GetShard(playerId).GetAssetBalances(playerId);
+
     /// <summary>导出玩家完整领域快照与资产余额（只读，不改状态）。</summary>
     public EcsPlayerSnapshot ExportSnapshot(Guid playerId)
         => GetShard(playerId).ExportSnapshot(playerId);
@@ -204,7 +208,22 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
 
     /// <summary>全部分片已加载玩家的最早可见边界；供宿主后台时钟动态休眠。</summary>
     public DateTimeOffset? NextAdvanceBoundaryUtc
-        => _shards.Select(shard => shard.NextAdvanceBoundaryUtc).Where(value => value is not null).Min();
+        => NextAdvanceBoundaryUtcWithOverrides(null, null);
+
+    /// <summary>查询全部分片已加载玩家的最早可见边界，支持跳过隔离玩家并覆写连续失败玩家的退避唤醒时刻。</summary>
+    public DateTimeOffset? NextAdvanceBoundaryUtcWithOverrides(
+        IReadOnlySet<Guid>? excludedPlayerIds,
+        IReadOnlyDictionary<Guid, DateTimeOffset>? overrideBoundariesUtc)
+    {
+        DateTimeOffset? earliest = null;
+        foreach (var shard in _shards)
+        {
+            var value = shard.NextAdvanceBoundaryUtcWithOverrides(excludedPlayerIds, overrideBoundariesUtc);
+            if (value is { } candidate && (earliest is null || candidate < earliest.Value))
+                earliest = candidate;
+        }
+        return earliest;
+    }
 
     /// <summary>卸载玩家实体及其运行中战斗实体；未加载返回 false。</summary>
     public bool RemovePlayer(Guid playerId)

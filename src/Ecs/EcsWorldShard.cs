@@ -354,16 +354,41 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     public EcsPlayerSnapshot[] ExportSnapshots()
         => ExecuteOwned(() => _players.Keys.OrderBy(id => id).Select(ExportSnapshotCore).ToArray());
 
+    /// <summary>导出玩家当前资产余额字典快照；仅在所有者门内读取。</summary>
+    public Dictionary<AssetKey, double> GetAssetBalances(Guid playerId)
+        => ExecuteOwned(() => new Dictionary<AssetKey, double>(
+            GetPlayer(playerId).GetComponent<PlayerInventoryComponent>()!.Items));
+
     /// <summary>查询指定玩家的下一个可见行动边界；只读，不创建临时运行时对象。</summary>
     public DateTimeOffset? NextAdvanceBoundary(Guid playerId)
         => ExecuteOwned(() => NextAdvanceBoundaryCore(playerId));
 
     /// <summary>所有已加载玩家的最早边界，供宿主后台时钟动态休眠。</summary>
     public DateTimeOffset? NextAdvanceBoundaryUtc
-        => ExecuteOwned(() => _players.Keys
-            .Select(id => NextAdvanceBoundaryCore(id))
-            .Where(value => value is not null)
-            .Min());
+        => NextAdvanceBoundaryUtcWithOverrides(null, null);
+
+    /// <summary>
+    /// 查询所有已加载玩家的最早可见边界，支持跳过栅栏隔离玩家并以退避截止点替代连续失败玩家。
+    /// 避免单玩家故障把全服模拟循环拖入 50ms 空转死循环。
+    /// </summary>
+    public DateTimeOffset? NextAdvanceBoundaryUtcWithOverrides(
+        IReadOnlySet<Guid>? excludedPlayerIds,
+        IReadOnlyDictionary<Guid, DateTimeOffset>? overrideBoundariesUtc)
+        => ExecuteOwned(() =>
+        {
+            DateTimeOffset? earliest = null;
+            foreach (var id in _players.Keys)
+            {
+                if (excludedPlayerIds is not null && excludedPlayerIds.Contains(id)) continue;
+                DateTimeOffset? value = overrideBoundariesUtc is not null
+                    && overrideBoundariesUtc.TryGetValue(id, out var overridden)
+                    ? overridden
+                    : NextAdvanceBoundaryCore(id);
+                if (value is { } candidate && (earliest is null || candidate < earliest.Value))
+                    earliest = candidate;
+            }
+            return earliest;
+        });
 
     private DateTimeOffset? NextAdvanceBoundaryCore(Guid playerId)
         => SimulationSchedule.NextVisibleBoundaryUtc(new EcsPlayerActionContext(GetPlayer(playerId)), GameData);
@@ -565,6 +590,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             player.RemoveComponent<ManaLeechComponent>();
             player.RemoveComponent<ThornsComponent>();
             player.RemoveComponent<ThreatOnTakenComponent>();
+            player.RemoveComponent<FormationReactiveStrikeComponent>();
             player.RemoveComponent<TraitReactionComponent>();
             player.RemoveComponent<CombatTriggerInboxComponent>();
             player.RemoveComponent<SkillStateComponent>();
@@ -731,31 +757,43 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 }
             }
         }
-        catch
+        catch (Exception primaryException)
         {
             foreach (var execution in executions.Values) execution.Detach();
+            List<Exception>? rollbackFailures = null;
             foreach (var (id, backup) in backups)
             {
                 if (!_players.ContainsKey(id)) continue;
-                var entity = GetPlayer(id);
-                DestroyPlayerEncounters(entity.ID);
-                ApplyAggregateState(entity, backup.State, backup.Assets);
-                var identity = entity.GetComponent<PlayerIdentityComponent>()!;
-                identity.DirtySections.Clear();
-                identity.DirtySections.UnionWith(backup.Dirty);
-                identity.DirtyMarks.Clear();
-                foreach (var (section, mark) in backup.DirtyMarks)
-                    identity.DirtyMarks[section] = mark;
-                if (backup.PendingEvents is { } pendingEvents)
-                    _simulationEvents[id] = [.. pendingEvents];
-                else
-                    _simulationEvents.Remove(id);
-                if (backup.PendingResult is { } pendingResult)
-                    _simulationResults[id] = pendingResult;
-                else
-                    _simulationResults.Remove(id);
+                try
+                {
+                    var entity = GetPlayer(id);
+                    DestroyPlayerEncounters(entity.ID);
+                    ApplyAggregateState(entity, backup.State, backup.Assets);
+                    var identity = entity.GetComponent<PlayerIdentityComponent>()!;
+                    identity.DirtySections.Clear();
+                    identity.DirtySections.UnionWith(backup.Dirty);
+                    identity.DirtyMarks.Clear();
+                    foreach (var (section, mark) in backup.DirtyMarks)
+                        identity.DirtyMarks[section] = mark;
+                    if (backup.PendingEvents is { } pendingEvents)
+                        _simulationEvents[id] = [.. pendingEvents];
+                    else
+                        _simulationEvents.Remove(id);
+                    if (backup.PendingResult is { } pendingResult)
+                        _simulationResults[id] = pendingResult;
+                    else
+                        _simulationResults.Remove(id);
+                }
+                catch (Exception rollbackException)
+                {
+                    rollbackFailures ??= [];
+                    rollbackFailures.Add(rollbackException);
+                }
             }
             _clock.Current = _clock.Target = clockBefore;
+            if (rollbackFailures is { Count: > 0 })
+                throw new AggregateException("模拟回滚恢复失败，玩家内存快照可能已损坏。",
+                    new[] { primaryException }.Concat(rollbackFailures));
             throw;
         }
         finally
