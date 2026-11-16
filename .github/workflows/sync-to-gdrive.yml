@@ -1,0 +1,103 @@
+name: Sync Repo Snapshot to Google Drive
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # 每天 UTC 02:30 运行（北京时间 10:30 / 东京时间 11:30），确保在 12:00 定时任务前完成同步
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: sync-to-gdrive
+  cancel-in-progress: true
+
+jobs:
+  pack-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出主仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: 检出子模块 vendor/YuoCore
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SUBMODULE_TOKEN }}
+        run: |
+          if [ -n "$SUBMODULE_TOKEN" ]; then
+            git config --global url."https://x-access-token:${SUBMODULE_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+          if ! git submodule update --init --recursive --depth 1; then
+            echo "::warning::未能拉取子模块 vendor/YuoCore（若该仓库为私有，请在 Secrets 中配置 SUBMODULE_TOKEN）。本次仅打包主仓库源码。"
+          fi
+
+      - name: 安装依赖工具并配置 rclone
+        env:
+          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          if [ -z "$RCLONE_CONF_DATA" ]; then
+            echo "::error::缺少 GitHub Secret: RCLONE_CONFIG（请将本机 rclone.conf 完整内容写入 Secrets）"
+            exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rclone zip >/dev/null
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF_DATA" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+
+      - name: 生成快照元数据并打包 daohua-latest.zip
+        run: |
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "ref=${GITHUB_REF_NAME}"
+            echo "sha=${GITHUB_SHA}"
+            echo "generated_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "generated_at_cst=$(TZ='Asia/Shanghai' date +'%Y-%m-%dT%H:%M:%S+08:00')"
+            echo "submodule_yuocore_present=$(test -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj && echo true || echo false)"
+          } > SNAPSHOT_META.txt
+
+          zip -r -9 /tmp/daohua-latest.zip . \
+            -x '.git/*' '*/.git/*' '*/.git' \
+               'art/*' '*/bin/*' '*/obj/*' '*/node_modules/*' '*/dist/*' \
+               'artifacts/*' '*/.vs/*' '*/.idea/*' '*/.vite/*' '*/coverage/*' \
+               'frontend/src/private-impl/*' 'data/*' '.env' '.env.local'
+          rm -f SNAPSHOT_META.txt
+          ls -lh /tmp/daohua-latest.zip
+
+      - name: 上传覆盖 daohua-latest.zip 到 Google Drive
+        env:
+          GDRIVE_REMOTE_OVERRIDE: ${{ vars.GDRIVE_REMOTE_NAME }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          GDRIVE_DEST_PATH: ${{ vars.GDRIVE_DEST_PATH }}
+        run: |
+          REMOTE_NAME="${GDRIVE_REMOTE_OVERRIDE:-}"
+          if [ -z "$REMOTE_NAME" ]; then
+            REMOTE_NAME="$(rclone listremotes | head -n 1 | tr -d ':')"
+          fi
+          if [ -z "$REMOTE_NAME" ]; then
+            echo "::error::RCLONE_CONFIG 中未检测到任何有效的 remote 配置节"
+            exit 1
+          fi
+
+          if [ -n "$GDRIVE_FOLDER_ID" ]; then
+            TARGET="${REMOTE_NAME}:daohua-latest.zip"
+            echo "正在上传覆盖至 Google Drive 目录 ID=${GDRIVE_FOLDER_ID} (${TARGET})"
+            rclone copyto /tmp/daohua-latest.zip "$TARGET" \
+              --drive-root-folder-id "$GDRIVE_FOLDER_ID" \
+              --stats-one-line -v
+          else
+            DEST_DIR="${GDRIVE_DEST_PATH:-daohua-sync}"
+            TARGET="${REMOTE_NAME}:${DEST_DIR}/daohua-latest.zip"
+            echo "正在上传覆盖至 ${TARGET}"
+            rclone copyto /tmp/daohua-latest.zip "$TARGET" \
+              --stats-one-line -v
+          fi
+
+      - name: 清理临时凭据与打包产物
+        if: always()
+        run: |
+          rm -rf ~/.config/rclone /tmp/daohua-latest.zip
