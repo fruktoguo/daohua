@@ -48,6 +48,8 @@ public sealed class PostgresRetentionRepository(
         var terminalOrdersTotal = 0;
         var terminalReservationsTotal = 0;
         var shopDailyPurchasesTotal = 0;
+        var stickerTombstonesTotal = 0;
+        var stickerTombstonesBeforeMs = ledgerBefore.ToUnixTimeMilliseconds();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         for (var pass = 0; pass < MaxPassesPerCycle; pass++)
@@ -254,6 +256,19 @@ public sealed class PostgresRetentionRepository(
                 """, "DELETE FROM social.broadcast_mails m USING ({0}) doomed WHERE m.broadcast_id = doomed.broadcast_id",
                 now, normalBatch, cancellationToken, tracker);
 
+            var deletedStickerTombstones = await DeleteBatchUnixMsAsync(connection, transaction, """
+                SELECT player_id, sticker_id
+                FROM social.player_stickers
+                WHERE deleted_at IS NOT NULL AND deleted_at < $1
+                ORDER BY deleted_at
+                LIMIT $2
+                """, """
+                DELETE FROM social.player_stickers s
+                USING ({0}) doomed
+                WHERE s.player_id = doomed.player_id AND s.sticker_id = doomed.sticker_id
+                """,
+                stickerTombstonesBeforeMs, normalBatch, cancellationToken, tracker);
+
             await transaction.CommitAsync(cancellationToken);
 
             outboxTotal += deletedOutbox;
@@ -272,6 +287,7 @@ public sealed class PostgresRetentionRepository(
             terminalOrdersTotal += deletedTerminalOrders;
             terminalReservationsTotal += deletedTerminalReservations;
             shopDailyPurchasesTotal += deletedShopPurchases;
+            stickerTombstonesTotal += deletedStickerTombstones;
 
             if (!tracker.HitCap) break;
         }
@@ -292,15 +308,16 @@ public sealed class PostgresRetentionRepository(
             marketTradesTotal,
             terminalOrdersTotal,
             terminalReservationsTotal,
-            shopDailyPurchasesTotal);
+            shopDailyPurchasesTotal,
+            stickerTombstonesTotal);
 
         if (result.Total > 0)
             logger.LogInformation(
-                "已完成运行与白名单流水清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} transactions={Transactions} transientIdempotency={TransientIdempotency} expiredMails={ExpiredMails} duelLogs={DuelLogs} marketTrades={MarketTrades} terminalOrders={TerminalOrders} terminalReservations={TerminalReservations} shopDailyPurchases={ShopDailyPurchases}",
+                "已完成运行与白名单流水清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents} participationInboxes={ParticipationInboxes} transactions={Transactions} transientIdempotency={TransientIdempotency} expiredMails={ExpiredMails} duelLogs={DuelLogs} marketTrades={MarketTrades} terminalOrders={TerminalOrders} terminalReservations={TerminalReservations} shopDailyPurchases={ShopDailyPurchases} stickerTombstones={StickerTombstones}",
                 result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys,
                 result.SettlementClaims, result.AccountRiskEvents, result.ParticipationInboxes, result.EmptyTransactions,
                 result.TransientIdempotency, result.ExpiredMails, result.DuelLogs, result.MarketTrades,
-                result.TerminalOrders, result.TerminalReservations, result.ShopDailyPurchases);
+                result.TerminalOrders, result.TerminalReservations, result.ShopDailyPurchases, result.StickerTombstones);
         return result;
     }
 
@@ -329,6 +346,27 @@ public sealed class PostgresRetentionRepository(
         if (affected >= batchSize) tracker.HitCap = true;
         return affected;
     }
+
+    private static async Task<int> DeleteBatchUnixMsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string selectorSql,
+        string deleteTemplate,
+        long beforeUnixMs,
+        int batchSize,
+        CancellationToken cancellationToken,
+        BatchCapTracker tracker)
+    {
+        await using var command = new NpgsqlCommand(string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            deleteTemplate,
+            selectorSql), connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = beforeUnixMs });
+        command.Parameters.Add(new NpgsqlParameter { Value = batchSize });
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected >= batchSize) tracker.HitCap = true;
+        return affected;
+    }
 }
 
 /// <summary>一轮清理的删除行数统计。</summary>
@@ -348,6 +386,7 @@ public sealed class PostgresRetentionRepository(
 /// <param name="TerminalOrders">已删除的超期无引用终态挂单行数。</param>
 /// <param name="TerminalReservations">已删除的超期终态冻结记录行数。</param>
 /// <param name="ShopDailyPurchases">已删除的超期系统商店每日限购记录行数。</param>
+/// <param name="StickerTombstones">已删除的超期表情包软删除墓碑行数。</param>
 public sealed record RetentionResult(
     int Outbox,
     int Sessions,
@@ -364,12 +403,13 @@ public sealed record RetentionResult(
     int MarketTrades = 0,
     int TerminalOrders = 0,
     int TerminalReservations = 0,
-    int ShopDailyPurchases = 0)
+    int ShopDailyPurchases = 0,
+    int StickerTombstones = 0)
 {
     /// <summary>本轮删除总行数。</summary>
     public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims
         + AccountRiskEvents + ParticipationInboxes + EmptyTransactions + TransientIdempotency + ExpiredMails
-        + DuelLogs + MarketTrades + TerminalOrders + TerminalReservations + ShopDailyPurchases;
+        + DuelLogs + MarketTrades + TerminalOrders + TerminalReservations + ShopDailyPurchases + StickerTombstones;
 }
 
 /// <summary>定期清理后台任务：启动 5 分钟后首次执行，之后按配置周期（默认 5 分钟）多批排空超期流水与日志。</summary>

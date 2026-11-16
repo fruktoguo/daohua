@@ -2952,8 +2952,8 @@ input[type="checkbox"] {
 .chat-emoji-picker {
   display: flex;
   flex-direction: column;
-  width: 280px;
-  max-height: 270px;
+  width: 288px;
+  max-height: 300px;
   background: #0d1217;
   border: 1px solid var(--gold-faint);
   border-radius: 6px;
@@ -3155,6 +3155,131 @@ input[type="checkbox"] {
 .chat-picker-upload-label:hover {
   border-color: var(--gold);
   background: rgba(201, 180, 109, 0.22);
+}
+
+.chat-picker-sticker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.16);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11px;
+}
+
+.chat-picker-sticker-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-picker-sticker-count.is-near {
+  color: var(--gold-bright);
+}
+
+.chat-picker-sticker-count.is-full {
+  color: #ff8c8c;
+  font-weight: var(--font-weight-bold, bold);
+}
+
+.chat-picker-sticker-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-picker-toolbar-btn {
+  padding: 2px 6px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  background: rgba(201, 180, 109, 0.08);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+
+.chat-picker-toolbar-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.18);
+}
+
+.chat-picker-toolbar-btn.is-active {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.16);
+}
+
+.chat-picker-toolbar-btn.is-danger {
+  border-color: rgba(220, 60, 75, 0.45);
+  color: #ff9c9c;
+  background: rgba(160, 24, 38, 0.22);
+}
+
+.chat-picker-toolbar-btn.is-danger:hover:not(:disabled) {
+  border-color: #ff6b7a;
+  background: rgba(200, 32, 48, 0.35);
+}
+
+.chat-picker-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-picker-sync-warning {
+  padding: 4px 8px;
+  background: rgba(160, 24, 38, 0.25);
+  border-bottom: 1px solid rgba(220, 60, 75, 0.35);
+  color: #ffb0b0;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.chat-picker-sticker-btn.is-manage.is-selected {
+  border-color: var(--gold-bright);
+  box-shadow: inset 0 0 0 1px var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+}
+
+.chat-picker-sticker-btn.is-busy {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.chat-picker-sticker-check {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(10, 14, 18, 0.78);
+  color: #0d1217;
+  font-size: 10px;
+  font-weight: bold;
+  z-index: 2;
+}
+
+.chat-picker-sticker-check.is-checked {
+  border-color: var(--gold-bright);
+  background: var(--gold-bright);
+}
+
+.chat-picker-sticker-badge {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(140, 30, 30, 0.85);
+  color: #ffd8d8;
+  font-size: 9px;
+  line-height: 1.35;
+  z-index: 2;
 }
 
 

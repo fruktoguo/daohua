@@ -3197,6 +3197,20 @@ export default function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    chatStickerService.setActivePlayer(currentAccount?.playerId ?? null)
+  }, [currentAccount?.playerId])
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && currentAccount?.playerId) {
+        void chatStickerService.syncWithServer()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [currentAccount?.playerId])
+
+  useEffect(() => {
     if (!sessionChecked || !currentAccount) return undefined
     const controller = new AbortController()
     setCatalogError(null)

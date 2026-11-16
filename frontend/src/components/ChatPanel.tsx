@@ -16,8 +16,8 @@ import { FeedList, mergeFeedItems, toChatFeedItems, toLogFeedItems, useStickyScr
 import { FloatingPopover } from './FloatingPopover'
 import { ChatEmojiPicker } from './ChatEmojiPicker'
 import { Icon } from './Icon'
-import { uploadChatImage } from '../game/chatImageUploadService'
-import { chatStickerService } from '../game/chatStickerService'
+import { computeBlobSha256, uploadChatImage } from '../game/chatImageUploadService'
+import { chatStickerService, MAX_CUSTOM_STICKERS } from '../game/chatStickerService'
 /** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
 const MAX_CHAT_BODY_LENGTH = 200
 
@@ -42,6 +42,7 @@ const ChatComposer = memo(function ChatComposer({
   const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [sending, setSending] = useState(false)
   const disabled = hint !== undefined
   useEffect(() => {
     return chatService.subscribeDraftInsert((text: string) => {
@@ -96,15 +97,40 @@ const ChatComposer = memo(function ChatComposer({
         setUploading(true)
         useGameStore.getState().setNotice(t('combat.chat.uploadingImage'))
         try {
-          const { url, cached } = await uploadChatImage(blob)
-          handleInsertText(url)
-          chatStickerService.addCustomSticker(url)
-          useGameStore.getState().setNotice(
-            cached ? t('combat.chat.uploadReused') : t('combat.chat.uploadSuccess')
-          )
+          const sha256 = await computeBlobSha256(blob).catch(() => '')
+          const existing = sha256 ? chatStickerService.findSticker(sha256) : undefined
+          if (existing) {
+            const ready = await chatStickerService.ensureStickerReadyForSend(existing.url, b => uploadChatImage(b))
+            await chatStickerService.saveImageBlob(ready.url, blob, sha256)
+            handleInsertText(ready.url)
+            useGameStore.getState().setNotice(
+              ready.healed ? t('combat.chat.stickerHealedInserted') : t('combat.chat.uploadReused')
+            )
+            return
+          }
+
+          const uploaded = await uploadChatImage(blob)
+          handleInsertText(uploaded.url)
+          const addRes = chatStickerService.addCustomStickerDetailed(uploaded.url, {
+            sha256: uploaded.sha256,
+            mime: uploaded.mime,
+            blob: uploaded.blob,
+            skipCacheFetch: true,
+          })
+          if (addRes.reason === 'limit') {
+            useGameStore.getState().setNotice(
+              t('combat.chat.stickerPasteLimitNotice', { max: MAX_CUSTOM_STICKERS })
+            )
+          } else {
+            useGameStore.getState().setNotice(
+              uploaded.transcodedFromGif ? t('combat.chat.stickerGifConverted') : t('combat.chat.uploadSuccess')
+            )
+          }
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : t('combat.chat.uploadFailed')
-          useGameStore.getState().setNotice(errMsg)
+          useGameStore.getState().setNotice(
+            errMsg === 'IMAGE_TOO_LARGE' ? t('combat.chat.uploadImageTooLarge') : t('combat.chat.uploadFailed')
+          )
         } finally {
           setUploading(false)
         }
@@ -114,12 +140,29 @@ const ChatComposer = memo(function ChatComposer({
   }
 
 
-  const submit = (): void => {
+  const submit = async (): Promise<void> => {
     const body = draft.trim()
-    if (body.length === 0) return
-    if (gameClient.sendChat(channel, body, targetPlayerId ?? undefined)) {
-      setDraft('')
-      setPickerOpen(false)
+    if (body.length === 0 || sending || uploading) return
+    setSending(true)
+    try {
+      const prepared = await chatStickerService.prepareDraftStickersForSend(body)
+      if (!prepared.ok) {
+        useGameStore.getState().setNotice(t('combat.chat.stickerMissingLocalBlob'))
+        return
+      }
+      if (prepared.healedCount > 0) {
+        useGameStore.getState().setNotice(t('combat.chat.stickerHealedInserted'))
+      }
+      if (prepared.body.length > MAX_CHAT_BODY_LENGTH) {
+        useGameStore.getState().setNotice(t('combat.chat.tooLong'))
+        return
+      }
+      if (gameClient.sendChat(channel, prepared.body, targetPlayerId ?? undefined)) {
+        setDraft('')
+        setPickerOpen(false)
+      }
+    } finally {
+      setSending(false)
     }
   }
   if (disabled) return <p className="chat-composer-hint">{hint}</p>
@@ -129,7 +172,7 @@ const ChatComposer = memo(function ChatComposer({
       className="chat-composer"
       onSubmit={event => {
         event.preventDefault()
-        submit()
+        void submit()
       }}
     >
       <FloatingPopover
@@ -162,7 +205,7 @@ const ChatComposer = memo(function ChatComposer({
       </FloatingPopover>
       <input
         aria-label={t('combat.chat.inputAria')}
-        disabled={uploading}
+        disabled={uploading || sending}
         maxLength={MAX_CHAT_BODY_LENGTH}
         onChange={event => setDraft(event.target.value)}
         onPaste={handlePaste}
@@ -170,7 +213,7 @@ const ChatComposer = memo(function ChatComposer({
         ref={inputRef}
         value={draft}
       />
-      <button disabled={draft.trim().length === 0} type="submit">{t('combat.chat.send')}</button>
+      <button disabled={draft.trim().length === 0 || uploading || sending} type="submit">{t('combat.chat.send')}</button>
     </form>
   )
 })

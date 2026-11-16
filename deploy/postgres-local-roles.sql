@@ -27,14 +27,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     social.friend_requests, social.friendships, social.parties, social.party_members,
     social.party_sessions, social.party_session_inbox, social.party_invitations, social.party_seekers, social.doudizhu_games,
     social.player_invitations, social.chat_messages,
-    social.broadcast_mails, social.player_mail_states, social.player_mails,
+    social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers,
     social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures TO daohua_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections, game.player_action_queue,
     game.player_projection, game.duel_logs, game.player_daily_checkins, platform.section_flush_queue, platform.integration_outbox,
     social.friend_requests, social.friendships, social.parties, social.party_members,
     social.party_sessions, social.party_invitations, social.party_seekers,
     social.player_invitations, social.chat_messages,
-    social.broadcast_mails, social.player_mail_states, social.player_mails TO daohua_worker;
+    social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers TO daohua_worker;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity, game, economy, market, platform, social TO daohua_api, daohua_worker;
 -- metrics 只读取 PostgreSQL 统计，不获得账号、密钥、玩家载荷或账本的 SELECT。
 GRANT pg_read_all_stats TO daohua_metrics;

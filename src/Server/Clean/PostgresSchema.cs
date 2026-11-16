@@ -81,7 +81,8 @@ public static class PostgresSchema
     /// v56：双轨邮件系统（social.broadcast_mails / social.player_mail_states / social.player_mails）；玩家载荷标签保持 v43 不变。
     /// v57：持久化白名单治理与高频落盘根治（新增 game.duel_logs 斗法完整收益日志表、ix_shop_daily_purchases_updated 留存清理索引、状态/队列/临时幂等表 fillfactor 与 autovacuum 调优）；玩家载荷标签保持 v43 不变。
     /// v58：每日签到系统（新增 game.player_daily_checkins 旁路签到状态表）；玩家载荷标签保持 v43 不变。
-    public const int Version = 58;
+    /// v59：传音表情包多端同步系统（新增 social.player_stickers 旁路表情包表及软删除墓碑索引，上限 100 个）；玩家载荷标签保持 v43 不变。
+    public const int Version = 59;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -810,6 +811,28 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_player_mails_expires
         ON social.player_mails(expires_at);
 
+    -- 传音自定义表情包多端同步旁路表（单角色活跃上限 100 个，deleted_at 为跨端离线删改墓碑，30 天由清理器回收）。
+    CREATE TABLE IF NOT EXISTS social.player_stickers (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+        sticker_id varchar(64) NOT NULL,
+        url varchar(200) NOT NULL CHECK (char_length(url) > 0),
+        sha256 char(64) NULL,
+        mime varchar(32) NOT NULL DEFAULT '',
+        use_count integer NOT NULL DEFAULT 0 CHECK (use_count >= 0),
+        last_used_at bigint NOT NULL DEFAULT 0 CHECK (last_used_at >= 0),
+        added_at bigint NOT NULL CHECK (added_at >= 0),
+        updated_at bigint NOT NULL CHECK (updated_at >= 0),
+        needs_reupload boolean NOT NULL DEFAULT false,
+        deleted_at bigint NULL CHECK (deleted_at IS NULL OR deleted_at >= 0),
+        PRIMARY KEY (player_id, sticker_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_stickers_player_active
+        ON social.player_stickers(player_id, use_count DESC, last_used_at DESC, added_at DESC)
+        WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_player_stickers_deleted_cleanup
+        ON social.player_stickers(deleted_at)
+        WHERE deleted_at IS NOT NULL;
+
     -- 高频状态覆盖表与瞬时防重队列调优 fillfactor 与 autovacuum，降低页面分裂与膨胀写放大。
     ALTER TABLE game.player_state_heads SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
     ALTER TABLE game.player_state_sections SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
@@ -823,7 +846,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

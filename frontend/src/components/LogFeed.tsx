@@ -4,6 +4,7 @@ import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { chatStickerService } from '../game/chatStickerService'
+import { isQqEmoji } from '../game/qqEmojis'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
@@ -155,12 +156,10 @@ const ChatRow = memo(function ChatRow({
     if (gameClient.sendChat(message.channel, message.body, targetPlayerId)) {
       const trimmed = message.body.trim()
       const emojiMatch = /^\[([^\[\]\s]+)\]$/.exec(trimmed)
-      if (emojiMatch) {
+      if (emojiMatch && isQqEmoji(emojiMatch[1])) {
         chatStickerService.recordEmojiUsage(emojiMatch[1])
-      } else if (chatStickerService.isStickerSaved(trimmed) || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      } else if (chatStickerService.isStickerSaved(trimmed)) {
         chatStickerService.recordStickerUsage(trimmed)
-      } else {
-        chatStickerService.recordEmojiUsage(trimmed)
       }
       useGameStore.getState().setNotice(t('combat.chat.repeatSuccessNotice'))
     }

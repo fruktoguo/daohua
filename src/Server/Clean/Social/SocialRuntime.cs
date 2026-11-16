@@ -1252,7 +1252,17 @@ public sealed class SocialRuntime
                         notification.NeedsRefresh = false;
                         subscribers = notification.Subscribers;
                     }
-                    foreach (Func<Guid, ValueTask> subscriber in subscribers) await subscriber(playerId);
+                    foreach (Func<Guid, ValueTask> subscriber in subscribers)
+                    {
+                        // 单条订阅者异常隔离：已断线的 WebSocket 会话（OperationCanceledException）或偶发推送异常
+                        // 不得中断同一批次剩余订阅者的推送，也不得将内部取消冒泡为 SocialRuntime 报错。
+                        try { await subscriber(playerId); }
+                        catch (OperationCanceledException) { }
+                        catch (Exception subscriberException)
+                        {
+                            _logger.LogDebug(subscriberException, "社交状态推送订阅者异常 playerId={PlayerId}", playerId);
+                        }
+                    }
                 }
                 finally { _notifyGate.Release(); }
                 lock (_pendingNotifyLock)

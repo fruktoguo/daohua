@@ -166,7 +166,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Checkin.CheckinRuntime>();
     builder.Services.AddSingleton<Server.Clean.Leaderboards.LeaderboardRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
-    builder.Services.AddSingleton<Server.Clean.Social.ChatImageUploadRegistry>();
+    builder.Services.AddSingleton<Server.Clean.Social.PostgresStickerRepository>();
     // 会话准入默认开放语义；构建期注入的私有准入模块（IHostModuleStartup 实现）随后发现并覆盖注册。
     builder.Services.AddSingleton<Server.Clean.Admission.OpenHelloAdmissionHook>();
     builder.Services.AddSingleton<Server.Clean.Admission.IHelloAdmissionHook>(sp => sp.GetRequiredService<Server.Clean.Admission.OpenHelloAdmissionHook>());
@@ -262,9 +262,6 @@ app.MapHealthChecks("/readyz", new HealthCheckOptions
 
 if (processRole == ServerProcessRole.Api)
 {
-    // 启动期即时解析图床签名注册表：生产环境缺少或弱配置 Chat:ImageSecret 时直接 fail-fast
-    _ = app.Services.GetRequiredService<Server.Clean.Social.ChatImageUploadRegistry>();
-
     // 市场入账事件 → 在线玩家钱包失效：成交对手方/退款属主的余额差量
     // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
     var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
@@ -781,38 +778,7 @@ if (processRole == ServerProcessRole.Api)
     Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     Server.Clean.Social.MailEndpoints.Map(app);
     Server.Clean.Checkin.CheckinEndpoints.Map(app);
-    // 传音图片上传凭据与哈希去重预检：单账号每日限 20 张新图，哈希命中复用已有直链且不扣额度
-    app.MapPost("/api/v1/chat/upload-ticket", (
-        ChatUploadTicketRequest request,
-        ClaimsPrincipal user,
-        Server.Clean.Social.ChatImageUploadRegistry uploadRegistry) =>
-    {
-        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
-            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
-
-        if (!uploadRegistry.TryAcquireUploadTicket(accountId, request.Sha256, request.Ext, out var result, out var errorMessage))
-        {
-            return Results.Json(Problem(429, "UPLOAD_QUOTA_EXCEEDED", errorMessage ?? "图片上传申请被拒绝。"), statusCode: 429);
-        }
-
-        return Results.Ok(result);
-    }).RequireAuthorization().RequireRateLimiting("upload");
-    // 传音图片上传成功回调登记（确认文件已落盘且凭据/白名单核验通过后才写入全服去重索引）
-    app.MapPost("/api/v1/chat/upload-confirm", (
-        ChatUploadConfirmRequest request,
-        ClaimsPrincipal user,
-        Server.Clean.Social.ChatImageUploadRegistry uploadRegistry) =>
-    {
-        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
-            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
-
-        if (!uploadRegistry.RegisterUploadedUrl(accountId, request.Sha256, request.Url, request.Ticket, out var errorMessage))
-        {
-            return Results.BadRequest(Problem(400, "INVALID_UPLOAD_CONFIRM", errorMessage ?? "图片上传确认无效。"));
-        }
-
-        return Results.Ok();
-    }).RequireAuthorization().RequireRateLimiting("upload");
+    Server.Clean.Social.StickerEndpoints.Map(app);
 
 
 
@@ -1139,14 +1105,5 @@ public sealed record NativeTapTapLoginRequest(
     string? Kid = null,
     string? MacKey = null,
     AccountRiskClientSignals? RiskSignals = null);
-/// <summary>传音图片上传 Ticket 申请体。</summary>
-/// <param name="Sha256">客户端计算的图片文件 SHA-256 小写十六进制摘要。</param>
-/// <param name="Ext">图片扩展名（png/gif/webp/jpg）。</param>
-public sealed record ChatUploadTicketRequest(string Sha256, string Ext);
-/// <summary>图片上传成功后落盘确认请求。</summary>
-/// <param name="Sha256">图片文件 SHA-256 小写十六进制摘要。</param>
-/// <param name="Url">上传后返回的 HTTPS 图片直链。</param>
-/// <param name="Ticket">服务端先前签发的一次性上传签名 Ticket。</param>
-public sealed record ChatUploadConfirmRequest(string Sha256, string Url, string Ticket);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

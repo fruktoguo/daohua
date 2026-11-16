@@ -315,4 +315,64 @@
   ```
 - 【离线脚本 / 人工步骤】：无。
 
+---
+
+## v58 -> v59
+
+- **变更日期**：2026-11-17 02:48:00
+- **关联任务**：`TASK-20261117-03`（表情包上限 100 个、多端同步与自动上传重传）
+- **数据库版本**：`PostgresSchema.Version` 58 -> 59
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 保持 `43`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0059_v58_to_v59.sql`（待本地校验）
+- **存量处理结论**：新增独立旁路空表与角色授权，存量玩家存档与账号数据无需回填
+
+### 1. 变了什么
+- 【库结构/权限】在 `PostgresSchema.Sql` 新增 `social.player_stickers`（`player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE`、`sticker_id varchar(64) NOT NULL`、`url varchar(200) NOT NULL`、`sha256 char(64) NULL`、`mime varchar(32) NOT NULL DEFAULT ''`、`use_count integer NOT NULL DEFAULT 0`、`last_used_at bigint NOT NULL DEFAULT 0`、`added_at bigint NOT NULL`、`updated_at bigint NOT NULL`、`needs_reupload boolean NOT NULL DEFAULT false`、`deleted_at bigint NULL`、`PRIMARY KEY (player_id, sticker_id)`）及索引 `ix_player_stickers_player_active` / `ix_player_stickers_deleted_cleanup`，并在 `deploy/postgres-local-roles.sql` 向 `daohua_api`、`daohua_worker` 授予 `SELECT, INSERT, UPDATE, DELETE` 权限。
+- 【清理策略】`PostgresRetentionWorker` 定期清理 `deleted_at IS NOT NULL` 超过 30 天的软删除墓碑行。
+- 【存档载荷】无变更（表情包同步完全旁路玩家八分段与 ECS，保持 `v43`）。
+- 【配表/持久化语义】单角色活跃表情包上限为 `100` 个（服务端按 `player_id` 事务建议锁串行校验）。
+
+### 2. 是否需要处理存量数据
+- **无需回填存量玩家数据**：首次上线新表为空表，存量玩家原存于浏览器本地的旧表情包会在首次登录同步时自动认领合并至云端。
+
+### 3. 如果要处理，怎么处理
+- 【合入合并迁移脚本的 SQL 指引】：
+  ```sql
+  CREATE TABLE IF NOT EXISTS social.player_stickers (
+      player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+      sticker_id varchar(64) NOT NULL,
+      url varchar(200) NOT NULL CHECK (char_length(url) > 0),
+      sha256 char(64) NULL,
+      mime varchar(32) NOT NULL DEFAULT '',
+      use_count integer NOT NULL DEFAULT 0 CHECK (use_count >= 0),
+      last_used_at bigint NOT NULL DEFAULT 0 CHECK (last_used_at >= 0),
+      added_at bigint NOT NULL CHECK (added_at >= 0),
+      updated_at bigint NOT NULL CHECK (updated_at >= 0),
+      needs_reupload boolean NOT NULL DEFAULT false,
+      deleted_at bigint NULL CHECK (deleted_at IS NULL OR deleted_at >= 0),
+      PRIMARY KEY (player_id, sticker_id)
+  );
+  CREATE INDEX IF NOT EXISTS ix_player_stickers_player_active
+      ON social.player_stickers(player_id, use_count DESC, last_used_at DESC, added_at DESC)
+      WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS ix_player_stickers_deleted_cleanup
+      ON social.player_stickers(deleted_at)
+      WHERE deleted_at IS NOT NULL;
+
+  DO $$
+  BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_bootstrap') THEN
+          EXECUTE 'ALTER TABLE social.player_stickers OWNER TO daohua_bootstrap';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_api') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.player_stickers TO daohua_api';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_worker') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON social.player_stickers TO daohua_worker';
+      END IF;
+  END $$;
+  ```
+- 【离线脚本 / 人工步骤】：无。
+
+
 
