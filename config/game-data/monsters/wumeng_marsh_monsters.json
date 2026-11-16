@@ -1,0 +1,462 @@
+[
+  {
+    "id": "enemy.marsh-water-puppet",
+    "name": "泽泥水傀",
+    "visual": {
+      "renderer": "text",
+      "source": "傀"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "water",
+    "level": 24,
+    "tier": 2,
+    "budgetCost": 35,
+    "weights": {
+      "hp": 1.0,
+      "mp": 1.35,
+      "ap": 1.85,
+      "armor": 0.9,
+      "mres": 1.0,
+      "hit": 0.95,
+      "eva": 0.85
+    },
+    "dropTable": [
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 3
+      },
+      {
+        "itemId": "item.tome.tide",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tide",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.ganlu",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.ganlu",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.tide",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.ganlu",
+        "level": 1,
+        "triggerHpRatio": 0.6
+      }
+    ]
+  },
+  {
+    "id": "enemy.venom-flame-toad",
+    "name": "毒火游泽蛙",
+    "visual": {
+      "renderer": "text",
+      "source": "蛙"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "fire",
+    "level": 25,
+    "tier": 2,
+    "budgetCost": 40,
+    "weights": {
+      "hp": 0.85,
+      "mp": 1.4,
+      "ap": 1.95,
+      "armor": 0.75,
+      "mres": 0.95,
+      "hit": 0.95,
+      "eva": 1.05
+    },
+    "dropTable": [
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 3
+      },
+      {
+        "itemId": "item.tome.zhuoxin",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.zhuoxin",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.zhuoxin",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ]
+  },
+  {
+    "id": "enemy.crimson-thorn-lizard",
+    "name": "赤鳞棘蜥",
+    "visual": {
+      "renderer": "text",
+      "source": "蜥"
+    },
+    "style": "blade",
+    "element": "fire",
+    "level": 26,
+    "tier": 2,
+    "budgetCost": 45,
+    "weights": {
+      "hp": 1.25,
+      "mp": 0.95,
+      "ad": 1.08,
+      "armor": 1.12,
+      "mres": 0.72,
+      "hit": 1.0,
+      "eva": 0.9,
+      "break": 1.1,
+      "parry": 1.0
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 3
+      },
+      {
+        "itemId": "item.tome.zhuoxin",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.zhuoxin",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.9
+      },
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
+    ]
+  },
+  {
+    "id": "enemy.abyss-black-croc",
+    "name": "寒潭玄鳄",
+    "visual": {
+      "renderer": "text",
+      "source": "鳄"
+    },
+    "style": "blade",
+    "element": "water",
+    "level": 27,
+    "tier": 2,
+    "rank": "elite",
+    "budgetCost": 95,
+    "weights": {
+      "hp": 1.25,
+      "mp": 1.3,
+      "ad": 1.1,
+      "armor": 1.15,
+      "mres": 0.85,
+      "hit": 1.0,
+      "eva": 0.85,
+      "break": 1.25,
+      "parry": 1.2
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 5,
+        "maxQuantity": 6
+      },
+      {
+        "itemId": "item.black-croc-scale",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.pojun",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.pojun",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.huoyan-fengbao",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.huoyan-fengbao",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.pojun",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.heavy-clouds",
+        "level": 1,
+        "triggerHpRatio": 0.75
+      },
+      {
+        "abilityId": "ability.taunt",
+        "level": 1,
+        "triggerHpRatio": 0.5
+      }
+    ]
+  },
+  {
+    "id": "enemy.nine-head-guiche",
+    "name": "九首鬼车",
+    "visual": {
+      "renderer": "text",
+      "source": "车"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "wood",
+    "level": 28,
+    "tier": 2,
+    "rank": "elite",
+    "budgetCost": 105,
+    "weights": {
+      "hp": 0.95,
+      "mp": 1.65,
+      "ap": 2.05,
+      "armor": 0.85,
+      "mres": 1.05,
+      "hit": 1.0,
+      "eva": 1.15
+    },
+    "dropTable": [
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 3,
+        "maxQuantity": 4
+      },
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 3,
+        "maxQuantity": 4
+      },
+      {
+        "itemId": "item.guiche-crimson-plume",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tianlei-po",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tianlei-po",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.shangui-yao",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.shangui-yao",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.yueqian",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.yueqian",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.yueqian",
+        "level": 1
+      },
+      {
+        "abilityId": "ability.tianlei-po",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.huoyan-fengbao",
+        "level": 1,
+        "triggerHpRatio": 0.75
+      },
+      {
+        "abilityId": "ability.shangui-yao",
+        "level": 1
+      }
+    ]
+  },
+  {
+    "id": "enemy.mist-sword-wraith",
+    "name": "雾隐剑魄",
+    "visual": {
+      "renderer": "text",
+      "source": "魄"
+    },
+    "style": "sword",
+    "element": "metal",
+    "level": 30,
+    "tier": 3,
+    "rank": "boss",
+    "budgetCost": 190,
+    "weights": {
+      "hp": 0.85,
+      "mp": 2.2,
+      "ad": 1.15,
+      "armor": 0.95,
+      "mres": 0.88,
+      "hit": 1.1,
+      "eva": 1.18,
+      "break": 1.28,
+      "parry": 1.22
+    },
+    "dropTable": [
+      {
+        "itemId": "currency.spirit-stone",
+        "dropChance": 1.0,
+        "minQuantity": 80,
+        "maxQuantity": 200
+      },
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 6,
+        "maxQuantity": 10
+      },
+      {
+        "itemId": "item.dragon-pearl",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.shunshan",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.shunshan",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.tome.zhanyu",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.zhanyu",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.tome.star-piercer",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.star-piercer",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.shunshan",
+        "level": 1
+      },
+      {
+        "abilityId": "ability.zhanyu",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.star-piercer",
+        "level": 1,
+        "triggerHpRatio": 0.7
+      },
+      {
+        "abilityId": "ability.pojun",
+        "level": 1,
+        "triggerHpRatio": 0.45
+      }
+    ]
+  }
+]

@@ -1347,6 +1347,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           <svg
             className="world-map-edges"
             height={worldCanvasSize.height}
+            style={{ overflow: 'visible' }}
             viewBox={`0 0 ${worldCanvasSize.width} ${worldCanvasSize.height}`}
             width={worldCanvasSize.width}
           >
@@ -1363,7 +1364,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               const fw = maxPx.x - minPx.x
               const fh = maxPx.y - minPx.y
               const cx = (minPx.x + maxPx.x) / 2
-              const labelY = Math.max(28, minPx.y + 28)
+              const labelY = minPx.y + 28
               return (
                 <g className="world-map-region" key={region.mapId}>
                   <rect

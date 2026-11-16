@@ -1405,6 +1405,7 @@ export interface AbilityBuffSpec {
   hpRegenPostRatio?: number
   mpRegenPostRatio?: number
   attackSpeedPoints?: number
+  actionSpeedPoints?: number
   threatPoints?: number
   damageBonusPoints?: number
   threatPerSecondMaxHpPoints?: number
@@ -1430,8 +1431,18 @@ export interface AbilityBuffSpec {
   spellAttackStackPercent?: number
   /** 终乘闪避比率（+1.0 即面板闪避 ×2，实例覆盖不叠加） */
   evasionPostRatio?: number
+  /** 化解后段乘区比率（-0.2 即最终化解 ×0.8，实例型不吃等级成长） */
+  parryPostRatio?: number
+  /** 每秒自动递减层数（如势不可挡每秒减 1 层，至 ≤0 时移除） */
+  decayStacksPerSecond?: number
+  /** 派生/初始基础层数（山鬼谣甘露为 5，势不可挡初始固定 5 层，缺省 1） */
+  baseStacks?: number
   /** 换波/新波次时是否清零（移形/燃魂等战内瞬时状态为 true） */
   resetOnWave?: boolean
+  /** 是否豁免技能等级与增幅成长放大 */
+  noLevelGrowth?: boolean
+  /** 起手已持有「移形」时跳过授予本自我增益 */
+  skipIfHasYixing?: boolean
   /** 层数上限（缺省 1） */
   maxStacks?: number
 }
@@ -1486,6 +1497,18 @@ export interface CombatAbilityDefinition {
   buff?: AbilityBuffSpec | null
   /** 支援类：一次施放授予的多个战内 Buff（碎罡同时授予碎罡与罡锋）；存在时优先于 buff */
   buffs?: AbilityBuffSpec[] | null
+  /** 群体技能至多抽取的敌方目标数（如天雷破至多 2 名，缺省全员） */
+  maxTargets?: number
+  /** 先导移形击杀重置：起手已持有移形且本次进攻击杀至少一名目标时清零冷却 */
+  resetCooldownOnYixingKill?: boolean
+  /** 命中敌方时额外施加的战内减益 Buff（天雷破施加麻痹） */
+  onHitBuff?: AbilityBuffSpec | null
+  /** 命中敌方时额外施加的战内减益 Buff 列表 */
+  onHitBuffs?: AbilityBuffSpec[] | null
+  /** 进攻类技能结算后附加给施法者自身的战内增益（瞬闪/破军） */
+  selfBuff?: AbilityBuffSpec | null
+  /** 进攻类技能结算后附加给施法者自身的战内增益列表 */
+  selfBuffs?: AbilityBuffSpec[] | null
   /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */

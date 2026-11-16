@@ -171,7 +171,7 @@ test('大地图跨界赶路：行进在跨区域边上时双显两端点所属�
 })
 
 function loadRealMaps() {
-  const mapFiles = ['qingyun_mountain.json', 'qingyun_trail.json', 'xingyun_realm.json']
+  const mapFiles = ['qingyun_mountain.json', 'qingyun_trail.json', 'xingyun_realm.json', 'wumeng_marsh.json']
   return mapFiles.flatMap(file =>
     JSON.parse(fs.readFileSync(path.join(repoRoot, 'config/game-data/maps', file), 'utf-8')),
   )

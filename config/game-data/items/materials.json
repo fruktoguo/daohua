@@ -209,6 +209,39 @@
     "level": 24
   },
   {
+    "id": "item.black-croc-scale",
+    "name": "玄鳄逆鳞",
+    "description": "寒潭镇水鳞，玄甲抗千锋。\n雾梦泽寒潭玄鳄颔下唯一倒生的玄黑护心逆鳞，水火难侵、坚胜精钢。",
+    "kind": "material",
+    "category": "material",
+    "tier": 3,
+    "sellPrice": 2500,
+    "subCategory": "exoticMaterial",
+    "level": 27
+  },
+  {
+    "id": "item.guiche-crimson-plume",
+    "name": "鬼车赤翎",
+    "description": "九首哀鸣散，赤羽带残雷。\n雾梦泽深处妖禽九首鬼车颈畔褪落的炽红长翎，隐带风雷毒炎灵韵。",
+    "kind": "material",
+    "category": "material",
+    "tier": 3,
+    "sellPrice": 2500,
+    "subCategory": "exoticMaterial",
+    "level": 28
+  },
+  {
+    "id": "item.dragon-pearl",
+    "name": "龙珠",
+    "description": "沉潭锁剑魄，蛟珠蕴真元。\n雾隐剑魄温养百年而生的苍青宝珠，珠内剑意与泽水龙气交融吐纳，乃筑基重宝胚料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 4,
+    "sellPrice": 12000,
+    "subCategory": "exoticMaterial",
+    "level": 30
+  },
+  {
     "id": "item.refined-iron",
     "name": "百炼铁",
     "description": "凡火千锤炼，精铁去浊尘。\n经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",

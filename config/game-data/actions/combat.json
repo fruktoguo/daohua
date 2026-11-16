@@ -54,5 +54,21 @@
       "node.rocky-gorge",
       "node.boundary-pass"
     ]
+  },
+  {
+    "id": "combat.sweep-wumeng-marsh",
+    "name": "讨伐 雾梦泽",
+    "description": "踏入畸木焦林以北的雾梦大泽——荒径水傀、浅沼玄鳄、泽心鬼车与沉潭剑魄，逐险征伐。",
+    "type": "combat",
+    "level": 24,
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.sword-abyss",
+    "availableNodeIds": [
+      "node.mist-edge",
+      "node.venom-fen",
+      "node.mist-heart",
+      "node.sword-abyss"
+    ]
   }
 ]

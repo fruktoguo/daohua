@@ -25,7 +25,7 @@ function resolveSafeZongmenPosition(
   for (const [dx, dy] of ZONGMEN_CANDIDATE_OFFSETS) {
     const cx = anchor.x + dx
     const cy = anchor.y + dy
-    if (cx < 0 || cy < 0) continue
+    if (cx < 0) continue
 
     let minDist = Infinity
     for (const node of existingNodes) {

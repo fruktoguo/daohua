@@ -79,7 +79,11 @@ public enum BuffEffectChannel : byte
     /// <summary>主动治疗与生命汲取的治疗增幅点数。</summary>
     HealingBonusPoints = 18,
     /// <summary>每层每秒火属性术法威力。</summary>
-    FireSpellDamagePerSecond = 19
+    FireSpellDamagePerSecond = 19,
+    /// <summary>化解后段乘区比率（Instance 型，正增负削，最终乘算 1+Σ 不随层数/技能等级放大）。</summary>
+    ParryPostRatio = 20,
+    /// <summary>每秒自动递减层数（Instance 型，Tick1s 结算后每 1 秒减去对应整数层，≤0 时移除）。</summary>
+    DecayStacksPerSecond = 21
 }
 
 /// <summary>Buff 效果载荷条目：通道 + 每层基础值（Instance 型通道为总值）。</summary>
@@ -152,6 +156,10 @@ public static class BuffEffectRegistry
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.FireSpellDamagePerSecond, "fireSpellDamagePerSecond",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.Tick1s, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.ParryPostRatio, "parryPostRatio",
+            BuffEffectStackMode.Instance, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.DecayStacksPerSecond, "decayStacksPerSecond",
+            BuffEffectStackMode.Instance, false, BuffEffectTickGroup.Tick1s, BuffOutOfCombatPanel.None),
     ];
 
     private static readonly BuffEffectChannelInfo[] ChannelIndex = BuildChannelIndex();

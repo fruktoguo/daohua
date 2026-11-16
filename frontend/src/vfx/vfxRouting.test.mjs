@@ -150,11 +150,15 @@ test('vfxRouting：消耗品自动使用日志解析与 13 项消耗品字典完
   assert.equal(INSTANT_CONSUMABLE_ITEM_IDS.size, 7)
 })
 
-function createHeadlessVfxSandbox() {
+function createHeadlessVfxSandbox(extraRelativePaths = []) {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   const vfxDir = path.resolve(__dirname, '../../../docs/design/战斗演武画廊/vfx')
   const coreSrc = fs.readFileSync(path.join(vfxDir, 'core.js'), 'utf8')
   const feedbackSrc = fs.readFileSync(path.join(vfxDir, 'feedback.js'), 'utf8')
+  const extraModules = extraRelativePaths.map(rel => ({
+    name: rel,
+    src: fs.readFileSync(path.join(vfxDir, rel), 'utf8'),
+  }))
 
   let nowMs = 1000
   let nextTimerId = 1
@@ -336,6 +340,9 @@ function createHeadlessVfxSandbox() {
 
   vm.runInNewContext(coreSrc, sandbox, { filename: 'core.js' })
   vm.runInNewContext(feedbackSrc, sandbox, { filename: 'feedback.js' })
+  for (const mod of extraModules) {
+    vm.runInNewContext(mod.src, sandbox, { filename: mod.name })
+  }
 
   const stage = new FakeElement('div', ['combat-arena-shell'], { left: 0, top: 0, width: 960, height: 460 })
   const sky = new FakeElement('div', ['vfx-stage-overlay'], { left: 0, top: 0, width: 960, height: 460 })
@@ -507,6 +514,65 @@ test('feedback.attack：五式通用普攻轮换（显式序号/别名/横竖屏
   })
   stepTimers(220)
   assert.equal(impactCalls.length, impactBeforeDodge)
+
+  VFX.dispose()
+})
+
+test('雾梦泽 20 级五新技能：Canvas V2 特效注册与无头渲染零抛错及斗法破军/瞬闪赋能踏云推断', () => {
+  // 1. 斗法推断：破军及首次无先导移形的瞬闪均应赋能紧接的斩玉化态为踏云；再连一次瞬闪会消耗移形，不误判踏云
+  const eventsPojun = [
+    { atSeconds: 1.5, attackerIsInitiator: true, abilityId: 'ability.pojun' },
+    { atSeconds: 2.0, attackerIsInitiator: true, abilityId: 'ability.zhanyu' },
+  ]
+  assert.equal(detectDuelZhanyuMorph(eventsPojun, 1), true)
+
+  const eventsShunshanGrant = [
+    { atSeconds: 0.5, attackerIsInitiator: true, abilityId: 'ability.shunshan' },
+    { atSeconds: 1.0, attackerIsInitiator: true, abilityId: 'ability.zhanyu' },
+  ]
+  assert.equal(detectDuelZhanyuMorph(eventsShunshanGrant, 1), true)
+
+  const eventsShunshanConsumed = [
+    { atSeconds: 0.5, attackerIsInitiator: true, abilityId: 'ability.shunshan' },
+    { atSeconds: 1.0, attackerIsInitiator: true, abilityId: 'ability.shunshan' },
+    { atSeconds: 1.5, attackerIsInitiator: true, abilityId: 'ability.zhanyu' },
+  ]
+  assert.equal(detectDuelZhanyuMorph(eventsShunshanConsumed, 2), false)
+
+  // 2. Canvas V2 无头沙盒加载并播放五门新技能特效（横屏下帧与定时器推进零异常）
+  const files = [
+    'abilities/tianlei-po.js',
+    'abilities/zhuoxin.js',
+    'abilities/shunshan.js',
+    'abilities/shangui-yao.js',
+    'abilities/pojun.js',
+  ]
+  const { VFX, allyEl, enemyEl, topEnemyEl, bottomAllyEl, stepTimers, stepRaf } = createHeadlessVfxSandbox(files)
+  const expected = [
+    'ability.tianlei-po',
+    'ability.zhuoxin',
+    'ability.shunshan',
+    'ability.shangui-yao',
+    'ability.pojun',
+  ]
+  for (const id of expected) {
+    assert.equal(VFX.has(id), true, `Canvas V2 应已注册 ${id}`)
+  }
+
+  for (const id of expected) {
+    const duration = VFX.play(id, {
+      casterEl: allyEl,
+      targetEl: enemyEl,
+      targetEls: id === 'ability.shangui-yao' ? [allyEl, bottomAllyEl] : [enemyEl, topEnemyEl],
+      enemyEls: [enemyEl, topEnemyEl],
+      allyEls: [allyEl, bottomAllyEl],
+      damage: 180,
+      crit: false,
+    })
+    assert.ok(duration > 0, `${id} 应返回正数演出时长`)
+    stepTimers(1500)
+    stepRaf(64)
+  }
 
   VFX.dispose()
 })

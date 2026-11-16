@@ -284,19 +284,22 @@ static void ValidateReferences(string directory)
     }
 
     // 技能 Buff 与消耗品 Buff 修饰键同样是授权词汇表；ratio 后缀旧键已废除。
+    string[] abilitySingleBuffProps = ["buff", "onHitBuff", "selfBuff"];
+    string[] abilityArrayBuffProps = ["buffs", "onHitBuffs", "selfBuffs"];
     foreach (var file in JsonFiles(directory, "abilities"))
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var ability in Elements(doc.RootElement))
         {
-            foreach (var key in ObjectKeys(Property(ability, "buff")))
-                Require(abilityBuffKeys.Contains(key),
-                    $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 buff.{key} 不在授权词汇表内。");
-            // 多 Buff 形态 buffs[]：逐条按同一词汇表校验。
-            foreach (var entry in Elements(Property(ability, "buffs")))
-                foreach (var key in ObjectKeys(entry))
+            foreach (var propName in abilitySingleBuffProps)
+                foreach (var key in ObjectKeys(Property(ability, propName)))
                     Require(abilityBuffKeys.Contains(key),
-                        $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 buffs[].{key} 不在授权词汇表内。");
+                        $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 {propName}.{key} 不在授权词汇表内。");
+            foreach (var propName in abilityArrayBuffProps)
+                foreach (var entry in Elements(Property(ability, propName)))
+                    foreach (var key in ObjectKeys(entry))
+                        Require(abilityBuffKeys.Contains(key),
+                            $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 {propName}[].{key} 不在授权词汇表内。");
         }
     }
 
@@ -531,10 +534,11 @@ static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
     "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "maxStacks",
     "hpRegenPostRatio", "mpRegenPostRatio", "threatPerSecondMaxHpPoints", "resetOnWave",
-    "stackPolicy", "spellAttackStackPercent",
+    "stackPolicy", "spellAttackStackPercent", "baseStacks", "noLevelGrowth", "skipIfHasYixing",
     "attackPower", "accuracy", "critical", "resistancePoints", "hpRegenPerSecond",
     "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio",
-    "evasion", "evasionPostRatio", "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond"
+    "evasion", "evasionPostRatio", "parryPostRatio", "decayStacksPerSecond",
+    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond"
 };
 
 /// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>
@@ -542,7 +546,8 @@ static HashSet<string> ConsumableBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
     "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "statRatios",
-    "hpRegenPostRatio", "mpRegenPostRatio", "evasion", "evasionPostRatio", "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond", "teamWide"
+    "hpRegenPostRatio", "mpRegenPostRatio", "evasion", "evasionPostRatio", "parryPostRatio", "decayStacksPerSecond",
+    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond", "teamWide"
 };
 
 /// <summary>消耗品顶层授权键（durable 阵盘与 strike 雷击符规格）。</summary>

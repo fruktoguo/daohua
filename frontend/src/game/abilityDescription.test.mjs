@@ -356,3 +356,117 @@ test('describeAbility：跃迁、斩玉(踏云)与火焰风暴按等级与机制
     `火焰风暴 Lv.2 主描述应随等级成长，实际为: ${huoyanLv2.description}`
   )
 })
+
+test('describeAbility：雾梦泽 20 级五新技能主描述与固定基底层数、不成长豁免精准对齐', () => {
+  const tianleiPo = {
+    abilityId: 'ability.tianlei-po',
+    name: '天雷破',
+    targetType: 'allEnemies',
+    maxTargets: 2,
+    category: 'spell',
+    element: 'wood',
+    damageRatio: 1.1,
+    flatDamage: 50,
+    onHitBuff: {
+      buffId: 'buff.mabi',
+      name: '麻痹',
+      durationSeconds: 5,
+      noLevelGrowth: true,
+      evasionPostRatio: -0.2,
+      parryPostRatio: -0.2,
+      actionSpeedPoints: -10,
+    },
+  }
+  const tianleiDesc = describeAbility(tianleiPo, 1)
+  assert.ok(
+    tianleiDesc.description.includes('对至多 2 名敌人造成[[110%术法攻击]] [[+50]] 木属性术法伤害；并对命中目标施加 [[麻痹]]，持续 5 秒。'),
+    `天雷破描述异常: ${tianleiDesc.description}`,
+  )
+
+  const zhuoxin = {
+    abilityId: 'ability.zhuoxin',
+    name: '灼心',
+    targetType: 'targetEnemy',
+    category: 'spell',
+    element: 'fire',
+    damageRatio: 0,
+    flatDamage: 0,
+    ranhunBaseStacks: 10,
+    ranhunSpellAttackRatio: 0.5,
+  }
+  const zhuoxinDesc = describeAbility(zhuoxin, 1)
+  assert.ok(
+    zhuoxinDesc.description.includes('对单个目标施加 [[50%术法攻击]] [[+10 层]] 的 [[燃烧]]，持续 5 秒。'),
+    `灼心描述异常: ${zhuoxinDesc.description}`,
+  )
+
+  const shunshan = {
+    abilityId: 'ability.shunshan',
+    name: '瞬闪',
+    targetType: 'targetEnemy',
+    category: 'physical',
+    element: 'metal',
+    damageRatio: 2.4,
+    flatDamage: 100,
+    resetCooldownOnYixingKill: true,
+    selfBuff: {
+      buffId: 'buff.yixing',
+      name: '移形',
+      durationSeconds: 5,
+      noLevelGrowth: true,
+      skipIfHasYixing: true,
+      evasionPostRatio: 1,
+    },
+  }
+  const shunshanDesc = describeAbility(shunshan, 1)
+  assert.ok(
+    shunshanDesc.description.includes('对单个目标造成[[240%物理攻击]] [[+100]] 金属性物理伤害；若起手未持有[[移形]]，则自身获得 [[移形]]，持续 5 秒；若起手已持有[[移形]]且本次击杀目标，则立即重置冷却且不再施加[[移形]]。'),
+    `瞬闪描述异常: ${shunshanDesc.description}`,
+  )
+
+  const shangui = {
+    abilityId: 'ability.shangui-yao',
+    name: '山鬼谣',
+    targetType: 'allAllies',
+    category: 'spell',
+    element: 'water',
+    damageRatio: 0,
+    buff: {
+      buffId: 'buff.ganlu',
+      name: '甘露',
+      durationSeconds: 10,
+      hpRegenPerSecond: 1,
+      baseStacks: 5,
+      spellAttackStackPercent: 0.12,
+    },
+  }
+  const shanguiLv1 = describeAbility(shangui, 1)
+  const shanguiLv2 = describeAbility(shangui, 2)
+  assert.ok(
+    shanguiLv1.description.includes('对己方全体施加 [[12%术法攻击]] [[+5 层]] 的 [[甘露]]，持续 10 秒。'),
+    `山鬼谣 Lv.1 描述异常: ${shanguiLv1.description}`,
+  )
+  assert.ok(
+    shanguiLv2.description.includes('对己方全体施加 [[12.2%术法攻击]] [[+5 层]] 的 [[甘露]]，持续 10 秒。'),
+    `山鬼谣 Lv.2 百分比应成长且 5 层基底保持固定，实际为: ${shanguiLv2.description}`,
+  )
+
+  const pojun = {
+    abilityId: 'ability.pojun',
+    name: '破军',
+    targetType: 'allEnemies',
+    category: 'physical',
+    element: 'metal',
+    damageRatio: 1.2,
+    flatDamage: 50,
+    selfBuffs: [
+      { buffId: 'buff.yixing', name: '移形', durationSeconds: 5, noLevelGrowth: true, evasionPostRatio: 1 },
+      { buffId: 'buff.shibukedang', name: '势不可挡', durationSeconds: 5, baseStacks: 5, noLevelGrowth: true, damageAbsorptionPoints: 20, decayStacksPerSecond: 1 },
+    ],
+  }
+  const pojunDesc = describeAbility(pojun, 1)
+  assert.ok(
+    pojunDesc.description.includes('对敌方全体造成[[120%物理攻击]] [[+50]] 金属性物理伤害；自身获得 [[移形]]、[[5 层]]的 [[势不可挡]]，持续 5 秒。'),
+    `破军描述异常: ${pojunDesc.description}`,
+  )
+})

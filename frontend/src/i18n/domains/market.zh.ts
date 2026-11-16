@@ -340,6 +340,8 @@ export const marketZh = {
       badgeGeneral: '效果',
       badgeEvasion: '闪避',
       badgeEvasionPostRatio: '闪避',
+      badgeParry: '化解',
+      badgeDecayStacksPerSecond: '每秒衰减层数',
       badgeYixingConsume: '触发消耗',
       yixingConsumeValue: '伤害型技能移除 1 层',
       badgeXuyiStackSource: '叠层来源',

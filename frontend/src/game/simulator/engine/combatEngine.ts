@@ -64,6 +64,10 @@ function abilityNumber(obj: Record<string, unknown>, key: string): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
 
+function abilityFlag(obj: Record<string, unknown>, key: string): boolean {
+  return obj[key] === true
+}
+
 function abilityElement(ability: AbilityJson): CombatElement {
   return parseCombatElement(typeof ability.element === 'string' ? ability.element : 'none')
 }
@@ -288,6 +292,15 @@ export function resolveHit(context: CombatHitContext): void {
 
   const hit =
     roll(encounter.seed, side, context.count, 1n) >= evasion / (evasion + accuracy + 100)
+  if (context.zeroDirectDamage) {
+    context.hit = hit
+    context.critical = false
+    context.broken = broken
+    context.parried = parried
+    context.rawDamage = 0
+    context.damage = 0
+    return
+  }
   const criticalPoints = attackEffective.critical * (broken ? 2 : 1)
   const critical =
     hit &&
@@ -915,12 +928,18 @@ function drainPendingTriggers(encounter: CombatEncounterState): void {
 
 // ---------- 出手系统（CombatActSystem） ----------
 
-function abilityBuffSpecs(ability: AbilityJson): AbilityBuffJson[] {
-  if (Array.isArray(ability.buffs)) {
-    return ability.buffs.filter((b): b is AbilityBuffJson => b !== null && typeof b === 'object')
+function abilityBuffSpecs(
+  ability: AbilityJson,
+  singleKey: 'buff' | 'onHitBuff' | 'selfBuff' = 'buff',
+  arrayKey: 'buffs' | 'onHitBuffs' | 'selfBuffs' = 'buffs',
+): AbilityBuffJson[] {
+  const arr = ability[arrayKey]
+  if (Array.isArray(arr)) {
+    return arr.filter((b): b is AbilityBuffJson => b !== null && typeof b === 'object')
   }
-  if (ability.buff && typeof ability.buff === 'object') {
-    return [ability.buff]
+  const single = ability[singleKey]
+  if (single && typeof single === 'object') {
+    return [single]
   }
   return []
 }
@@ -931,6 +950,10 @@ function initialBuffStacks(
   target: CombatantState,
   growth: number,
 ): number {
+  const baseStacks =
+    typeof buff.baseStacks === 'number' && Number.isFinite(buff.baseStacks)
+      ? Math.max(1, buff.baseStacks)
+      : 1.0
   const missingPerStack = abilityNumber(buff, 'missingHitpointsPerStack')
   if (missingPerStack > 0) {
     const missing = Math.max(0, target.stats.maxHitpoints - target.hitpoints)
@@ -943,16 +966,16 @@ function initialBuffStacks(
       caster.effectiveStats.effects.healingBonusPoints,
       PercentCurveMode.Linear,
     )
-    const totalStacks = (1 + extraStacks) * healingMult
+    const totalStacks = (baseStacks + extraStacks) * healingMult
     return Math.max(1, Math.floor(totalStacks + 1e-9))
   }
   const resistancePerStack = abilityNumber(buff, 'resistancePerStack')
   if (resistancePerStack > 0) {
     const resistance = caster.stats.defense + caster.stats.magicResistance
     const ratio = abilityNumber(buff, 'resistanceStackRatio')
-    return 1 + Math.floor((resistance * ratio * growth) / resistancePerStack + 1e-9)
+    return baseStacks + Math.floor((resistance * ratio * growth) / resistancePerStack + 1e-9)
   }
-  return 1.0
+  return baseStacks
 }
 
 function grantAbilityBuff(
@@ -970,10 +993,11 @@ function grantAbilityBuff(
   const spellStackPercent = abilityNumber(buff, 'spellAttackStackPercent')
   const resistancePerStack = abilityNumber(buff, 'resistancePerStack')
   const hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0
+  const effectiveLevelGrowth = abilityFlag(buff, 'noLevelGrowth') ? 1.0 : levelGrowth
 
   const growth =
-    levelGrowth * percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
-  const effectGrowth = hasStackDerivation ? 1.0 : levelGrowth
+    effectiveLevelGrowth * percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
+  const effectGrowth = hasStackDerivation ? 1.0 : effectiveLevelGrowth
   const initialStacks = initialBuffStacks(buff, caster, target, growth)
 
   const grant: CombatBuffState = {
@@ -1023,6 +1047,9 @@ function resolveAttack(
   doubleAccuracy = false,
   abilityNameOverride: string | null = null,
   extraRanhunStacks = 0,
+  zeroDirectDamage = false,
+  onHitBuffs: readonly AbilityBuffJson[] | null = null,
+  levelGrowth = 1,
 ): void {
   if (!attacker.isAlive || !target.isAlive) return
   const rawAttackStats = statsOverride ?? attacker.stats
@@ -1038,6 +1065,7 @@ function resolveAttack(
     attackStats,
     abilityId,
     doubleAccuracy,
+    zeroDirectDamage,
     side,
     count: countOverride ?? attacker.attackCount,
     atSeconds: at,
@@ -1089,6 +1117,11 @@ function resolveAttack(
   if (context.hit && extraRanhunStacks > 0) {
     addRanhunStacks(attacker, target, extraRanhunStacks, at)
   }
+  if (context.hit && target.isAlive && onHitBuffs && onHitBuffs.length > 0) {
+    for (let i = 0; i < onHitBuffs.length; i++) {
+      grantAbilityBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? '')
+    }
+  }
 }
 
 function castSkill(
@@ -1098,6 +1131,7 @@ function castSkill(
   opponents: readonly CombatantState[],
   target: CombatantState | null,
   slot: SkillSlotDefinition,
+  slotIndex: number,
   side: bigint,
   events: CombatEvent[],
 ): void {
@@ -1157,7 +1191,13 @@ function castSkill(
   }
 
   const hasDamage = abilityNumber(ability, 'damageRatio') + abilityNumber(ability, 'flatDamage') > 0
-  if (targetType === 'self' || (!hasDamage && targetType !== 'targetEnemy' && targetType !== 'allEnemies')) {
+  const ranhunBase = abilityNumber(ability, 'ranhunBaseStacks')
+  const ranhunRatio = abilityNumber(ability, 'ranhunSpellAttackRatio')
+  const onHitBuffSpecs = abilityBuffSpecs(ability, 'onHitBuff', 'onHitBuffs')
+  const selfBuffSpecs = abilityBuffSpecs(ability, 'selfBuff', 'selfBuffs')
+  const hasOffensivePayload =
+    hasDamage || ranhunBase > 0 || ranhunRatio > 0 || onHitBuffSpecs.length > 0
+  if (targetType === 'self' || (!hasOffensivePayload && targetType !== 'targetEnemy' && targetType !== 'allEnemies')) {
     const buffSpecs = abilityBuffSpecs(ability)
     if (buffSpecs.length > 0) {
       if (targetType === 'lowestHitpointsAlly') {
@@ -1227,8 +1267,6 @@ function castSkill(
     : targetType
   const ignorePrimaryThreat =
     hasYixing && containsTrait(caster.stats.traits, TraitIds.Jianyuxin)
-  const ranhunBase = abilityNumber(ability, 'ranhunBaseStacks')
-  const ranhunRatio = abilityNumber(ability, 'ranhunSpellAttackRatio')
   const extraRanhunStacks =
     ranhunBase > 0 || ranhunRatio > 0
       ? Math.max(
@@ -1248,6 +1286,30 @@ function castSkill(
     typeof rawMaxTargets === 'number' && Number.isFinite(rawMaxTargets)
       ? Math.trunc(rawMaxTargets)
       : 0
+  const zeroDirectDamage = !hasDamage
+  let killedAnyTarget = false
+  const strike = (foe: CombatantState, rollCountOverride: number | null) => {
+    const wasAlive = foe.isAlive
+    resolveAttack(
+      encounter,
+      caster,
+      foe,
+      side,
+      encounter.elapsedSeconds,
+      events,
+      stats,
+      rollCountOverride,
+      id,
+      hasYixing,
+      abilityNameOverride,
+      extraRanhunStacks,
+      zeroDirectDamage,
+      onHitBuffSpecs,
+      levelGrowth,
+    )
+    if (wasAlive && !foe.isAlive) killedAnyTarget = true
+  }
+
   if (effectiveTargetType === 'allEnemies') {
     const picked = selectTargets(
       opponents,
@@ -1258,93 +1320,55 @@ function castSkill(
       17n,
       ignorePrimaryThreat,
     )
+    if (picked.length === 0) return
     for (let i = 0; i < picked.length; i++) {
-      resolveAttack(
-        encounter,
-        caster,
-        picked[i],
+      strike(picked[i], count)
+    }
+  } else {
+    let single =
+      !ignorePrimaryThreat && target && target.isAlive
+        ? target
+        : selectTarget(opponents, encounter.seed, side, count, 16n, ignorePrimaryThreat)
+    if (single === null) return
+    strike(single, count)
+
+    const hitCount = Math.max(1, Math.trunc(abilityNumber(ability, 'hitCount')))
+    for (let hitIndex = 1; hitIndex < hitCount && single.isAlive; hitIndex++) {
+      strike(single, null)
+    }
+
+    const chainMax = Math.trunc(abilityNumber(ability, 'chainOnKillCount'))
+    for (let chainIndex = 0; chainIndex < chainMax && !single.isAlive; chainIndex++) {
+      single = selectTarget(
+        opponents,
+        encounter.seed,
         side,
-        encounter.elapsedSeconds,
-        events,
-        stats,
         count,
-        id,
-        hasYixing,
-        abilityNameOverride,
-        extraRanhunStacks,
+        20n + BigInt(chainIndex),
       )
+      if (single === null) break
+      strike(single, count)
     }
-    if (hasYixing && picked.length > 0) {
-      caster.consumeOneBuffStack(BuffIds.Yixing)
-    }
-    return
-  }
-
-  let single =
-    !ignorePrimaryThreat && target && target.isAlive
-      ? target
-      : selectTarget(opponents, encounter.seed, side, count, 16n, ignorePrimaryThreat)
-  if (single === null) return
-  resolveAttack(
-    encounter,
-    caster,
-    single,
-    side,
-    encounter.elapsedSeconds,
-    events,
-    stats,
-    count,
-    id,
-    hasYixing,
-    abilityNameOverride,
-    extraRanhunStacks,
-  )
-
-  const hitCount = Math.max(1, Math.trunc(abilityNumber(ability, 'hitCount')))
-  for (let hitIndex = 1; hitIndex < hitCount && single.isAlive; hitIndex++) {
-    resolveAttack(
-      encounter,
-      caster,
-      single,
-      side,
-      encounter.elapsedSeconds,
-      events,
-      stats,
-      null,
-      id,
-      hasYixing,
-      abilityNameOverride,
-      extraRanhunStacks,
-    )
-  }
-
-  const chainMax = Math.trunc(abilityNumber(ability, 'chainOnKillCount'))
-  for (let chainIndex = 0; chainIndex < chainMax && !single.isAlive; chainIndex++) {
-    single = selectTarget(
-      opponents,
-      encounter.seed,
-      side,
-      count,
-      20n + BigInt(chainIndex),
-    )
-    if (single === null) break
-    resolveAttack(
-      encounter,
-      caster,
-      single,
-      side,
-      encounter.elapsedSeconds,
-      events,
-      stats,
-      count,
-      id,
-      hasYixing,
-      abilityNameOverride,
-      extraRanhunStacks,
-    )
   }
   if (hasYixing) {
     caster.consumeOneBuffStack(BuffIds.Yixing)
+  }
+  if (
+    hasYixing &&
+    killedAnyTarget &&
+    abilityFlag(ability, 'resetCooldownOnYixingKill') &&
+    caster.skillCooldownUntil &&
+    slotIndex >= 0 &&
+    slotIndex < caster.skillCooldownUntil.length
+  ) {
+    caster.skillCooldownUntil[slotIndex] = 0
+  }
+  if (caster.isAlive && selfBuffSpecs.length > 0) {
+    for (let i = 0; i < selfBuffSpecs.length; i++) {
+      const spec = selfBuffSpecs[i]
+      if (abilityFlag(spec, 'skipIfHasYixing') && hasYixing) continue
+      grantAbilityBuff(spec, caster, caster, encounter.elapsedSeconds, levelGrowth, id)
+    }
   }
 }
 
@@ -1367,6 +1391,7 @@ function resolvePending(
       opponents,
       target,
       unit.skills[pending],
+      pending,
       side + SKILL_SIDE_OFFSET,
       events,
     )
@@ -1603,14 +1628,20 @@ function applyBuffTickPhase(encounter: CombatEncounterState, effectAt: number, e
       const aliveBefore = unit.isAlive
       tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
       if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
-      if (secondTick) tickRanhun(encounter, unit, effectAt, events)
+      if (secondTick) {
+        tickRanhun(encounter, unit, effectAt, events)
+        if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+      }
     }
     for (let i = 0; i < encounter.enemies.length; i++) {
       const unit = encounter.enemies[i]
       const aliveBefore = unit.isAlive
       tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
       if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
-      if (secondTick) tickRanhun(encounter, unit, effectAt, events)
+      if (secondTick) {
+        tickRanhun(encounter, unit, effectAt, events)
+        if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+      }
     }
   }
   for (let i = 0; i < encounter.playerAllies.length; i++) {

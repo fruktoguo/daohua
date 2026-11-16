@@ -567,7 +567,8 @@ public sealed class CombatantState
                 Effects = Stats.Effects with { HealingBonusPoints = Stats.Effects.HealingBonusPoints + totals[(int)BuffEffectChannel.HealingBonusPoints] },
                 Defense = Math.Max(0, Stats.Defense * resistance),
                 MagicResistance = Math.Max(0, Stats.MagicResistance * resistance),
-                Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * (1 + totals[(int)BuffEffectChannel.EvasionPostRatio]))
+                Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * (1 + totals[(int)BuffEffectChannel.EvasionPostRatio])),
+                ParryResolve = Math.Max(0, Stats.ParryResolve * (1 + totals[(int)BuffEffectChannel.ParryPostRatio]))
             };
         }
     }
@@ -630,6 +631,27 @@ public sealed class CombatantState
             return true;
         }
         return false;
+    }
+
+    /// <summary>每秒自动递减层数通道结算：将携带 <see cref="BuffEffectChannel.DecayStacksPerSecond"/> 的 Buff 扣减对应层数，降至 ≤0 时移除。</summary>
+    internal bool DecayBuffStacksPerSecond()
+    {
+        if (_buffs.Count == 0) return false;
+        var changed = false;
+        for (var i = _buffs.Count - 1; i >= 0; i--)
+        {
+            var current = _buffs[i];
+            var decay = current.EffectValue(BuffEffectChannel.DecayStacksPerSecond);
+            if (decay <= 0) continue;
+            var nextStacks = current.Stacks - decay;
+            if (nextStacks <= 1e-12)
+                _buffs.RemoveAt(i);
+            else
+                _buffs[i] = current with { Stacks = nextStacks };
+            changed = true;
+        }
+        if (changed) InvalidateBuffAggregates();
+        return changed;
     }
 
     /// <summary>

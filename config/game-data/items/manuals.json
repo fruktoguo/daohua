@@ -549,5 +549,115 @@
     "sellPrice": 25,
     "subCategory": "manualFragment",
     "level": 18
+  },
+  {
+    "id": "item.tome.tianlei-po",
+    "name": "《天雷破秘籍》",
+    "description": "乙木隐霹雳，双雷震四方。\n记载引动木系神雷并附带麻痹之力的古雷法全本，雷纹在纸面游走不绝。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 20
+  },
+  {
+    "id": "item.fragment.tianlei-po",
+    "name": "《天雷破·残卷》",
+    "description": "乙木隐霹雳，双雷震四方。\n古雷法秘籍散落一角，指尖轻触犹能感到微微电弧酥麻。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 20
+  },
+  {
+    "id": "item.tome.zhuoxin",
+    "name": "《灼心秘籍》",
+    "description": "无火自燃肺，暗焰烙灵台。\n毒火道门绝学总纲，舍弃表皮灼伤转而直击心脉种下深重燃烧业火。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 20
+  },
+  {
+    "id": "item.fragment.zhuoxin",
+    "name": "《灼心·残卷》",
+    "description": "无火自燃肺，暗焰烙灵台。\n火咒秘卷残片，纸页中央焦黑却丝毫不损墨字。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 20
+  },
+  {
+    "id": "item.tome.shunshan",
+    "name": "《瞬闪秘籍》",
+    "description": "电光火石间，步随剑影灭。\n剑修上乘刺杀剑诀，善借「移形」之势一剑定乾坤、破敌即再起。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 20
+  },
+  {
+    "id": "item.fragment.shunshan",
+    "name": "《瞬闪·残卷》",
+    "description": "电光火石间，步随剑影灭。\n剑诀残叶，仅余一道凌厉至极的斜劈轨迹图。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 20
+  },
+  {
+    "id": "item.tome.shangui-yao",
+    "name": "《山鬼谣秘籍》",
+    "description": "山鬼含睇笑，芳草降神膏。\n符箓派古传群疗祝由典籍，以长歌引众泽甘露齐润四野众修。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 20
+  },
+  {
+    "id": "item.fragment.shangui-yao",
+    "name": "《山鬼谣·残卷》",
+    "description": "山鬼含睇笑，芳草降神膏。\n泛潮水痕浸润的古谱散章，墨色化作幽幽碧翠山林景。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 20
+  },
+  {
+    "id": "item.tome.pojun",
+    "name": "《破军秘籍》",
+    "description": "一往破千军，重甲无可当。\n战阵悍刀大开大阖真义，教人在纵刀横扫之余蓄起护体霸罡。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 20
+  },
+  {
+    "id": "item.fragment.pojun",
+    "name": "《破军·残卷》",
+    "description": "一往破千军，重甲无可当。\n残损金箔刀谱，刀意刚猛几欲割裂掌纹。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 20
   }
 ]

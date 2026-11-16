@@ -252,5 +252,105 @@
     "manaCost": 30.0,
     "rootAttribute": "consciousness",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.tianlei-po",
+    "name": "天雷破",
+    "description": "引动枯木神雷劈落，随机击中至多两名敌方并令其周身麻痹，迟滞身法步履。",
+    "style": "fiveElements",
+    "tier": 2,
+    "category": "spell",
+    "element": "wood",
+    "cooldownMilliseconds": 18000,
+    "castMilliseconds": 2000,
+    "targetType": "allEnemies",
+    "maxTargets": 2,
+    "damageRatio": 1.1,
+    "flatDamage": 50,
+    "onHitBuff": {
+      "buffId": "buff.mabi",
+      "name": "麻痹",
+      "durationSeconds": 5.0,
+      "maxStacks": 1,
+      "resetOnWave": true,
+      "noLevelGrowth": true,
+      "evasionPostRatio": -0.2,
+      "parryPostRatio": -0.2,
+      "actionSpeedPoints": -10.0
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "consciousness",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.zhuoxin",
+    "name": "灼心",
+    "description": "隔空种下无形毒炎咒印，不造成直接破体伤害，命中后于敌方肺腑间引燃大量业火余烬。",
+    "style": "fiveElements",
+    "tier": 2,
+    "category": "spell",
+    "element": "fire",
+    "cooldownMilliseconds": 20000,
+    "castMilliseconds": 2000,
+    "targetType": "targetEnemy",
+    "damageRatio": 0.0,
+    "flatDamage": 0.0,
+    "ranhunBaseStacks": 10,
+    "ranhunSpellAttackRatio": 0.5,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "consciousness",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.shangui-yao",
+    "name": "山鬼谣",
+    "description": "轻吟楚辞山鬼灵祝，降下漫天碧水灵露滋养全体友方，持续疗愈周身气血。",
+    "style": "talisman",
+    "tier": 2,
+    "category": "spell",
+    "element": "water",
+    "cooldownMilliseconds": 35000,
+    "castMilliseconds": 3000,
+    "targetType": "allAllies",
+    "damageRatio": 0.0,
+    "buff": {
+      "buffId": "buff.ganlu",
+      "name": "甘露",
+      "durationSeconds": 10.0,
+      "hpRegenPerSecond": 1.0,
+      "baseStacks": 5,
+      "spellAttackStackPercent": 0.12,
+      "stackPolicy": "maxKeep"
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "allies",
+        "condition": "lowest-hp-percentage",
+        "comparator": "less-than",
+        "value": 80.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 40.0,
+    "rootAttribute": "meridians",
+    "discipline": "spell"
   }
 ]

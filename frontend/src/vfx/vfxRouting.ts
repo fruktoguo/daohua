@@ -303,7 +303,22 @@ export function detectZhanyuTayunMorph(ctx: ZhanyuMorphContext): boolean {
     || ctx.hasRecentYueqian
 }
 
-/** 斗法剧本中推断 `ability.zhanyu` 是否处于前置「跃迁」5 秒「移形」窗内化态为「踏云」 */
+const YIXING_CONSUME_DAMAGE_ABILITIES = new Set([
+  'ability.zhanyu',
+  'ability.heavy-slash',
+  'ability.chain-strike',
+  'ability.heavy-clouds',
+  'ability.star-piercer',
+  'ability.palm-lightning',
+  'ability.blazing-blast',
+  'ability.lightning-attraction',
+  'ability.tide',
+  'ability.huoyan-fengbao',
+  'ability.tianlei-po',
+  'ability.zhuoxin',
+])
+
+/** 斗法剧本中推断 `ability.zhanyu` 是否处于前置「移形」5 秒窗内化态为「踏云」 */
 export function detectDuelZhanyuMorph(
   events: readonly ExpeditionDuelEvent[],
   targetIndex: number,
@@ -324,21 +339,39 @@ export function detectDuelZhanyuMorph(
   if (sameTickCount > 1) return true
 
   const side = ev.attackerIsInitiator
-  let lastYueqianAt = -Infinity
-  let zhanyuAfterYueqian = 0
+  let stacks = 0
+  let lastYixingAt = -Infinity
+  let startIndex = targetIndex
   for (let i = targetIndex - 1; i >= 0; i--) {
+    if (ev.atSeconds - events[i].atSeconds > 30) break
+    startIndex = i
+  }
+  for (let i = startIndex; i < targetIndex; i++) {
     const prev = events[i]
-    if (ev.atSeconds - prev.atSeconds > 5.05) break
     if (prev.attackerIsInitiator !== side) continue
-    if (prev.abilityId === 'ability.yueqian') {
-      lastYueqianAt = prev.atSeconds
-      break
+    if (stacks > 0 && prev.atSeconds - lastYixingAt > 5.05) {
+      stacks = 0
     }
-    if (prev.abilityId === 'ability.zhanyu') {
-      zhanyuAfterYueqian += 1
+    const id = prev.abilityId
+    if (id === 'ability.yueqian') {
+      stacks = Math.min(99, stacks + 1)
+      lastYixingAt = prev.atSeconds
+    } else if (id === 'ability.pojun') {
+      if (stacks > 0) stacks -= 1
+      stacks = Math.min(99, stacks + 1)
+      lastYixingAt = prev.atSeconds
+    } else if (id === 'ability.shunshan') {
+      if (stacks > 0) {
+        stacks -= 1
+      } else {
+        stacks = 1
+        lastYixingAt = prev.atSeconds
+      }
+    } else if (id && YIXING_CONSUME_DAMAGE_ABILITIES.has(id)) {
+      if (stacks > 0) stacks -= 1
     }
   }
-  return lastYueqianAt > -Infinity && zhanyuAfterYueqian === 0
+  return stacks > 0 && ev.atSeconds - lastYixingAt <= 5.05
 }
 
 /** 将服务端 abilityId（含阵盘反击与斩玉化形）解析为注册在 `DaohuaVFX` 中的最终特效 ID */

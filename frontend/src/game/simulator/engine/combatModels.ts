@@ -321,6 +321,10 @@ export class CombatantState {
         (this.stats.evasion + totals[BuffEffectChannel.Evasion]) *
           (1 + totals[BuffEffectChannel.EvasionPostRatio]),
       ),
+      parryResolve: Math.max(
+        0,
+        this.stats.parryResolve * (1 + totals[BuffEffectChannel.ParryPostRatio]),
+      ),
     }
     this._effectiveStatsCache = next
     return next
@@ -376,6 +380,33 @@ export class CombatantState {
       return true
     }
     return false
+  }
+
+  /** 每秒自动递减层数通道结算（如势不可挡每秒减 1 层，归零后移除） */
+  decayBuffStacksPerSecond(): boolean {
+    if (this._buffs.length === 0) return false
+    let changed = false
+    for (let i = this._buffs.length - 1; i >= 0; i--) {
+      const current = this._buffs[i]
+      let decay = 0
+      if (current.effects) {
+        for (let j = 0; j < current.effects.length; j++) {
+          if (current.effects[j].channel === BuffEffectChannel.DecayStacksPerSecond) {
+            decay += current.effects[j].value
+          }
+        }
+      }
+      if (decay <= 0) continue
+      const nextStacks = current.stacks - decay
+      if (nextStacks <= 1e-12) {
+        this._buffs.splice(i, 1)
+      } else {
+        this._buffs[i] = { ...current, stacks: nextStacks }
+      }
+      changed = true
+    }
+    if (changed) this.invalidateBuffAggregates()
+    return changed
   }
 
   syncDerivedStacks(): void {
@@ -854,6 +885,7 @@ export interface CombatHitContext {
   attackStats: CombatantStats
   abilityId: string | null
   doubleAccuracy?: boolean
+  zeroDirectDamage?: boolean
   side: bigint
   count: number
   atSeconds: number

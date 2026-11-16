@@ -448,8 +448,14 @@ export interface AbilityJson {
   passiveEfficiencyPerLevel?: number;
   passive?: Record<string, number>;
   defaultTriggers?: TriggerConditionJson[];
+  maxTargets?: number;
+  resetCooldownOnYixingKill?: boolean;
   buff?: Record<string, unknown>;
   buffs?: Record<string, unknown>[];
+  onHitBuff?: Record<string, unknown>;
+  onHitBuffs?: Record<string, unknown>[];
+  selfBuff?: Record<string, unknown>;
+  selfBuffs?: Record<string, unknown>[];
   [key: string]: unknown;
 }
 

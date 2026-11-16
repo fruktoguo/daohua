@@ -163,6 +163,7 @@ function validateAbilityBuff(buffElement: Record<string, unknown>): void {
     }
   }
   for (const k of [
+    'baseStacks',
     'missingHitpointsPerStack',
     'resistancePerStack',
     'resistanceStackRatio',
@@ -183,12 +184,34 @@ function validateAbilityBuff(buffElement: Record<string, unknown>): void {
   ) {
     throw new SimulatorValidationError('技能 Buff 的 stackPolicy 无效。');
   }
-  if (buffElement.resetOnWave !== undefined && typeof buffElement.resetOnWave !== 'boolean') {
-    throw new SimulatorValidationError('技能 Buff 的 resetOnWave 必须为布尔值。');
+  for (const boolKey of ['resetOnWave', 'noLevelGrowth', 'skipIfHasYixing'] as const) {
+    if (buffElement[boolKey] !== undefined && typeof buffElement[boolKey] !== 'boolean') {
+      throw new SimulatorValidationError(`技能 Buff 的 ${boolKey} 必须为布尔值。`);
+    }
   }
   if (!Number.isFinite(duration) || duration <= 0) {
     throw new SimulatorValidationError('技能 Buff 必须配置正持续时长。');
   }
+}
+
+function collectAbilityBuffElements(
+  ability: AbilityJson,
+  singleKey: string,
+  arrayKey: string,
+): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  const arr = ability[arrayKey];
+  if (Array.isArray(arr)) {
+    for (const entry of arr) {
+      if (!entry || typeof entry !== 'object') {
+        throw new SimulatorValidationError(`技能 ${arrayKey} 列表元素必须为对象。`);
+      }
+      result.push(entry as Record<string, unknown>);
+    }
+  } else if (ability[singleKey] && typeof ability[singleKey] === 'object') {
+    result.push(ability[singleKey] as Record<string, unknown>);
+  }
+  return result;
 }
 
 export function validateAbility(ability: AbilityJson): void {
@@ -230,25 +253,31 @@ export function validateAbility(ability: AbilityJson): void {
   const target = typeof ability.targetType === 'string' ? ability.targetType : null;
   const supportive =
     target === 'self' || target === 'lowestHitpointsAlly' || target === 'allAllies';
-  const buffElements: Record<string, unknown>[] = [];
-  if (Array.isArray(ability.buffs)) {
-    for (const entry of ability.buffs) {
-      if (!entry || typeof entry !== 'object') {
-        throw new SimulatorValidationError('技能 buffs 列表元素必须为对象。');
-      }
-      buffElements.push(entry);
-    }
-  } else if (ability.buff && typeof ability.buff === 'object') {
-    buffElements.push(ability.buff);
-  }
+  const buffElements = collectAbilityBuffElements(ability, 'buff', 'buffs');
+  const onHitBuffElements = collectAbilityBuffElements(ability, 'onHitBuff', 'onHitBuffs');
+  const selfBuffElements = collectAbilityBuffElements(ability, 'selfBuff', 'selfBuffs');
   const threatGain = typeof ability.threatGain === 'number' ? ability.threatGain : 0;
   const threatPoints = typeof ability.threatPoints === 'number' ? ability.threatPoints : 0;
+  const ranhunBase = typeof ability.ranhunBaseStacks === 'number' ? ability.ranhunBaseStacks : 0;
+  const ranhunRatio =
+    typeof ability.ranhunSpellAttackRatio === 'number' ? ability.ranhunSpellAttackRatio : 0;
   const hasEffect =
     ratio + flat > 0 ||
     healing ||
+    (!supportive && (ranhunBase > 0 || ranhunRatio > 0 || onHitBuffElements.length > 0)) ||
     (supportive && (threatGain > 0 || threatPoints > 0 || buffElements.length > 0));
   const manaCost = typeof ability.manaCost === 'number' ? ability.manaCost : 0;
-  if (ratio < 0 || flat < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0 || manaCost < 0) {
+  if (
+    ratio < 0 ||
+    flat < 0 ||
+    ranhunBase < 0 ||
+    ranhunRatio < 0 ||
+    !hasEffect ||
+    cast < 0 ||
+    cooldown < 0 ||
+    cast + cooldown <= 0 ||
+    manaCost < 0
+  ) {
     throw new SimulatorValidationError('技能未配置可执行效果或有效施放周期。');
   }
   if (ability.category !== 'physical' && ability.category !== 'spell') {
@@ -260,6 +289,8 @@ export function validateAbility(ability: AbilityJson): void {
     throw new SimulatorValidationError('技能伤害类别或五行属性无效。');
   }
   for (const spec of buffElements) validateAbilityBuff(spec);
+  for (const spec of onHitBuffElements) validateAbilityBuff(spec);
+  for (const spec of selfBuffElements) validateAbilityBuff(spec);
   if (Array.isArray(ability.defaultTriggers)) {
     for (const trigger of ability.defaultTriggers) validateTrigger(trigger);
   }

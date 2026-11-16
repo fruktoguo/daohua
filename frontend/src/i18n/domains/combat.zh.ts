@@ -540,6 +540,10 @@ export const combatZh = {
         'buff.yixing': '移形',
         ranhun: '燃烧',
         'buff.ranhun': '燃烧',
+        mabi: '麻痹',
+        'buff.mabi': '麻痹',
+        shibukedang: '势不可挡',
+        'buff.shibukedang': '势不可挡',
       },
     },
     simulator: {

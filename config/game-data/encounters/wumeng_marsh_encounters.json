@@ -1,0 +1,100 @@
+[
+  {
+    "id": "encounter.mist-edge",
+    "name": "荒径水影",
+    "minBudget": 55,
+    "maxBudget": 115,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.marsh-water-puppet",
+        "weight": 3,
+        "strength": 35
+      },
+      {
+        "enemyId": "enemy.venom-flame-toad",
+        "weight": 1,
+        "strength": 40
+      }
+    ],
+    "maxTotalStrength": 115
+  },
+  {
+    "id": "encounter.venom-fen",
+    "name": "浅沼毒火",
+    "minBudget": 65,
+    "maxBudget": 130,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.venom-flame-toad",
+        "weight": 2,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.crimson-thorn-lizard",
+        "weight": 1,
+        "strength": 45
+      }
+    ],
+    "maxTotalStrength": 130,
+    "eliteEnemyIds": [
+      "enemy.abyss-black-croc"
+    ],
+    "battlesPerElite": 5
+  },
+  {
+    "id": "encounter.mist-heart",
+    "name": "泽心诡啼",
+    "minBudget": 75,
+    "maxBudget": 145,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.marsh-water-puppet",
+        "weight": 1,
+        "strength": 35
+      },
+      {
+        "enemyId": "enemy.venom-flame-toad",
+        "weight": 1,
+        "strength": 40
+      },
+      {
+        "enemyId": "enemy.crimson-thorn-lizard",
+        "weight": 2,
+        "strength": 45
+      }
+    ],
+    "maxTotalStrength": 145,
+    "eliteEnemyIds": [
+      "enemy.nine-head-guiche"
+    ],
+    "battlesPerElite": 5
+  },
+  {
+    "id": "encounter.sword-abyss",
+    "name": "沉潭剑鸣",
+    "minBudget": 85,
+    "maxBudget": 160,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.crimson-thorn-lizard",
+        "weight": 2,
+        "strength": 45
+      },
+      {
+        "enemyId": "enemy.marsh-water-puppet",
+        "weight": 1,
+        "strength": 35
+      }
+    ],
+    "maxTotalStrength": 160,
+    "eliteEnemyIds": [
+      "enemy.abyss-black-croc",
+      "enemy.nine-head-guiche"
+    ],
+    "bossEnemyIds": [
+      "enemy.mist-sword-wraith"
+    ],
+    "battlesPerElite": 5,
+    "battlesPerBoss": 20
+  }
+]

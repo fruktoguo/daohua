@@ -25,6 +25,8 @@ export type BuffEffectChannel =
   | 'criticalDamagePoints'
   | 'healingBonusPoints'
   | 'fireSpellDamagePerSecond'
+  | 'parryPostRatio'
+  | 'decayStacksPerSecond'
 
 /** 单条效果载荷：通道 + 每层基础值（resistancePoints 实例型通道为总值）。 */
 export interface BuffEffectEntry {
@@ -81,6 +83,8 @@ export const BUFF_CHANNELS: Record<BuffEffectChannel, BuffChannelDisplay> = {
   criticalDamagePoints: { labelKey: 'market.effect.badgeCriticalDamage', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   healingBonusPoints: { labelKey: 'market.effect.badgeHealingBonus', glyph: 'hp-regen', positiveTone: 'emerald', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   fireSpellDamagePerSecond: { labelKey: 'market.effect.badgeFireDamagePerSecond', glyph: 'element-fire', positiveTone: 'crimson', negativeTone: 'crimson', format: 'flat', perStack: true },
+  parryPostRatio: { labelKey: 'market.effect.badgeParry', glyph: 'parry-resolve', positiveTone: 'jade', negativeTone: 'crimson', format: 'percentRaw', perStack: false },
+  decayStacksPerSecond: { labelKey: 'market.effect.badgeDecayStacksPerSecond', glyph: 'lifespan', positiveTone: 'amber', negativeTone: 'crimson', format: 'flat', perStack: false },
 }
 
 /** wire 通道名 → 是否已登记（未登记通道不参与展示渲染）。 */
@@ -132,11 +136,19 @@ export function specToBuffEffects(
   spec: object,
   growth: number,
 ): BuffEffectEntry[] {
+  const noGrowth = (spec as { noLevelGrowth?: boolean }).noLevelGrowth === true
   const effects: BuffEffectEntry[] = []
   for (const [key, raw] of Object.entries(spec)) {
     if (raw === undefined || raw === 0 || !isBuffEffectChannel(key)) continue
-    // 双抗破防比率与终乘闪避实例效果不吃成长（与服务端 GrowsWithLevel 豁免同式）。
-    const value = key === 'resistancePoints' || key === 'evasionPostRatio' ? raw : raw * growth
+    // 双抗破防、终乘闪避/化解后段乘区、每秒减层及显式 noLevelGrowth 豁免等级成长（与服务端同式）。
+    const value =
+      noGrowth ||
+      key === 'resistancePoints' ||
+      key === 'evasionPostRatio' ||
+      key === 'parryPostRatio' ||
+      key === 'decayStacksPerSecond'
+        ? raw
+        : raw * growth
     effects.push({ channel: key, value })
   }
   return effects

@@ -47,9 +47,12 @@ const TARGET_KEY_ALIASES: Record<string, string> = {
  * 功法施法目标枚举（支持 camelCase 与 wire kebab-case）解析为本地化显示名称，
  * 供 describeAbility 主描述与 EffectTooltip 变招副卡共享。
  */
-export function resolveAbilityTargetLabel(rawTargetType = 'enemy'): string {
+export function resolveAbilityTargetLabel(rawTargetType = 'enemy', maxTargets?: number): string {
   const t = getT()
   const normalizedTargetKey = TARGET_KEY_ALIASES[rawTargetType] ?? rawTargetType
+  if (normalizedTargetKey === 'all-enemies' && maxTargets && maxTargets > 0) {
+    return t('game.abilityTarget.upToEnemies', { n: formatNumber(maxTargets) })
+  }
   return t(`game.abilityTarget.${normalizedTargetKey}`)
 }
 
@@ -158,7 +161,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const healingRatio = (ability.healingRatio ?? 0) * levelGrowth
   const flatHealing = (ability.flatHealing ?? 0) * levelGrowth
   // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally），同时兼容原始配表 camelCase。
-  const target = resolveAbilityTargetLabel(ability.targetType ?? 'enemy')
+  const target = resolveAbilityTargetLabel(ability.targetType ?? 'enemy', ability.maxTargets)
   const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
   const elementWord = ability.element && ability.element !== 'none'
     ? t(`game.abilityDesc.elementWord.${ability.element}`)
@@ -188,72 +191,124 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const threatPoints = (ability.threatPoints ?? 0) * levelGrowth
   const buff = ability.buff
   const buffSpecs = ability.buffs && ability.buffs.length > 0 ? ability.buffs : buff ? [buff] : []
+  const onHitSpecs = ability.onHitBuffs && ability.onHitBuffs.length > 0
+    ? ability.onHitBuffs
+    : ability.onHitBuff
+    ? [ability.onHitBuff]
+    : []
+  const selfSpecs = ability.selfBuffs && ability.selfBuffs.length > 0
+    ? ability.selfBuffs
+    : ability.selfBuff
+    ? [ability.selfBuff]
+    : []
 
   /**
-   * 层数派生构成：与服务端优先级一致（已损气血 > 法攻百分比 > 双抗百分比）。
-   * 等级成长只放大百分比/层数，不改变每层效果量；展示值随技能等级即时变化。
+   * 层数派生构成：与服务端优先级一致（已损气血 > 法攻百分比 > 双抗百分比 > 固定初始层数）。
+   * 未标 noLevelGrowth 时等级成长放大百分比/层数，不改变每层效果量；展示值随技能等级即时变化。
    */
   const stackComposition = (spec: NonNullable<typeof ability.buff>): string | null => {
+    const effGrowth = spec.noLevelGrowth ? 1 : levelGrowth
+    const base = spec.baseStacks ?? 1
     const missingPerStack = spec.missingHitpointsPerStack ?? 0
     if (missingPerStack > 0) {
-      const effective = +(missingPerStack / levelGrowth).toFixed(1)
+      const effective = +(missingPerStack / effGrowth).toFixed(1)
       return t('game.abilityDesc.buffStackMissingComposition', { n: formatNumber(effective) })
     }
     const spellStackPercent = spec.spellAttackStackPercent ?? 0
     if (spellStackPercent > 0) {
+      const scaledRatio = abilityRatioPercent(spellStackPercent * effGrowth)
+      if (base !== 1) {
+        return t('game.abilityDesc.buffStackFormulaPair', {
+          ratio: scaledRatio,
+          stat: t('game.abilityDesc.attackStat.spell'),
+          base: formatNumber(base),
+        })
+      }
       return t('game.abilityDesc.buffStackSpellFormula', {
-        ratio: abilityRatioPercent(spellStackPercent * levelGrowth),
+        ratio: scaledRatio,
       })
     }
     const resistancePerStack = spec.resistancePerStack ?? 0
     if (resistancePerStack > 0) {
       return t('game.abilityDesc.buffStackResistanceComposition', {
-        ratio: abilityRatioPercent((spec.resistanceStackRatio ?? 1) * levelGrowth),
+        ratio: abilityRatioPercent((spec.resistanceStackRatio ?? 1) * effGrowth),
       })
+    }
+    if (base > 1) {
+      return t('game.abilityDesc.buffStackFixed', { n: formatNumber(base) })
     }
     return null
   }
 
-  const buffLabel = (spec: NonNullable<typeof ability.buff>, index: number): string =>
-    `[[${spec.name || (buffSpecs.length === 1 ? t('game.abilityAside.buffTitle') : `状态${index + 1}`)}]]`
+  const buffLabel = (spec: NonNullable<typeof ability.buff>, index: number, totalCount: number): string =>
+    `[[${spec.name || (totalCount === 1 ? t('game.abilityAside.buffTitle') : t('game.abilityAside.buffFallback', { index: index + 1 }))}]]`
 
-  /** 统一施加句：交代目标、Buff 名与可选层数构成及持续时间；内部效果交给独立 Buff 悬浮窗。 */
-  const buffApplicationClause = (): string => {
+  /** 统一施加句：支持指定施加对象、单/多 Buff 展开、层数构成与最大持续时间。 */
+  const formatBuffSpecsClause = (
+    specs: NonNullable<typeof ability.buff>[],
+    targetLabel: string,
+    templateKeys: { single: string; simple: string; multi: string }
+  ): string => {
     let body: string
-    if (buffSpecs.length === 1) {
-      const spec = buffSpecs[0]
+    if (specs.length === 1) {
+      const spec = specs[0]
       const composition = stackComposition(spec)
       body = composition
-        ? t('game.abilityDesc.buffApplySingle', {
-          target,
+        ? t(templateKeys.single, {
+          target: targetLabel,
           composition,
-          buff: buffLabel(spec, 0),
+          buff: buffLabel(spec, 0, 1),
         })
-        : t('game.abilityDesc.buffApplySimple', { target, buff: buffLabel(spec, 0) })
+        : t(templateKeys.simple, { target: targetLabel, buff: buffLabel(spec, 0, 1) })
     } else {
-      const tokens = buffSpecs.map((spec, index) => {
+      const tokens = specs.map((spec, index) => {
         const composition = stackComposition(spec)
-        const label = buffLabel(spec, index)
+        const label = buffLabel(spec, index, specs.length)
         return composition ? `${composition}的 ${label}` : label
       })
-      body = t('game.abilityDesc.buffApplyMulti', {
-        target,
+      body = t(templateKeys.multi, {
+        target: targetLabel,
         buffs: tokens.join('、'),
       })
     }
-    const maxDuration = Math.max(0, ...buffSpecs.map(spec => spec.durationSeconds ?? 0))
+    const maxDuration = Math.max(0, ...specs.map(spec => spec.durationSeconds ?? 0))
     return maxDuration > 0
       ? `${body}，${t('game.abilityDesc.buffDuration', { n: formatNumber(maxDuration) })}`
       : body
   }
 
+  const buffApplicationClause = (): string =>
+    formatBuffSpecsClause(buffSpecs, target, {
+      single: 'game.abilityDesc.buffApplySingle',
+      simple: 'game.abilityDesc.buffApplySimple',
+      multi: 'game.abilityDesc.buffApplyMulti',
+    })
+
+  const hasRanhunAttach = (ability.ranhunBaseStacks ?? 0) > 0 || (ability.ranhunSpellAttackRatio ?? 0) > 0
+  const buildRanhunComp = () =>
+    t('game.abilityDesc.buffStackFormulaPair', {
+      ratio: abilityRatioPercent((ability.ranhunSpellAttackRatio ?? 0) * levelGrowth),
+      stat: t('game.abilityDesc.attackStat.spell'),
+      base: formatNumber((ability.ranhunBaseStacks ?? 0) * levelGrowth),
+    })
+
   const clauses: string[] = []
+  let ranhunHandledAsPrimary = false
   if (healing) {
     clauses.push(t('game.abilityDesc.effectHeal', { target, expr: healExpr }))
   } else if (damageExpr) {
     clauses.push(hitCount > 1
       ? t('game.abilityDesc.effectMultiHit', { target, count: hitCount, expr: damageExpr, damageKind })
       : t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind }))
+  } else if (hasRanhunAttach) {
+    clauses.push(
+      `${t('game.abilityDesc.buffApplySingle', {
+        target,
+        composition: buildRanhunComp(),
+        buff: `[[${t('combat.trigger.buff.ranhun')}]]`,
+      })}，${t('game.abilityDesc.buffDuration', { n: '5' })}`
+    )
+    ranhunHandledAsPrimary = true
   } else if (threatGain > 0 || threatPoints > 0) {
     let clause = threatGain > 0
       ? t('game.abilityDesc.effectThreatGain', { n: formatNumber(threatGain) })
@@ -285,20 +340,42 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       name: `[[${ability.yixingMorphName}]]`,
     }))
   }
-  const hasRanhunAttach = (ability.ranhunBaseStacks ?? 0) > 0 || (ability.ranhunSpellAttackRatio ?? 0) > 0
-  if (hasRanhunAttach) {
-    const ranhunRatio = (ability.ranhunSpellAttackRatio ?? 0) * levelGrowth
-    const ranhunBase = (ability.ranhunBaseStacks ?? 0) * levelGrowth
-    const ranhunComp = t('game.abilityDesc.buffStackFormulaPair', {
-      ratio: abilityRatioPercent(ranhunRatio),
-      stat: t('game.abilityDesc.attackStat.spell'),
-      base: formatNumber(ranhunBase),
-    })
+  if (hasRanhunAttach && !ranhunHandledAsPrimary) {
     const ranhunApply = t('game.abilityDesc.ranhunApplyClause', {
-      composition: ranhunComp,
+      composition: buildRanhunComp(),
       buff: `[[${t('combat.trigger.buff.ranhun')}]]`,
     })
     clauses.push(`${ranhunApply}，${t('game.abilityDesc.buffDuration', { n: '5' })}`)
+  }
+  if (onHitSpecs.length > 0) {
+    clauses.push(formatBuffSpecsClause(onHitSpecs, t('game.abilityDesc.hitTargetRef'), {
+      single: 'game.abilityDesc.onHitBuffSingle',
+      simple: 'game.abilityDesc.onHitBuffSimple',
+      multi: 'game.abilityDesc.onHitBuffMulti',
+    }))
+  }
+  if (selfSpecs.length > 0) {
+    const conditionalSpecs = selfSpecs.filter(s => s.skipIfHasYixing)
+    const unconditionalSpecs = selfSpecs.filter(s => !s.skipIfHasYixing)
+    if (unconditionalSpecs.length > 0) {
+      clauses.push(formatBuffSpecsClause(unconditionalSpecs, t('game.abilityTarget.self'), {
+        single: 'game.abilityDesc.selfBuffSingle',
+        simple: 'game.abilityDesc.selfBuffSimple',
+        multi: 'game.abilityDesc.selfBuffMulti',
+      }))
+    }
+    for (const condSpec of conditionalSpecs) {
+      const condDuration = condSpec.durationSeconds ?? 0
+      const baseCond = t('game.abilityDesc.selfBuffIfNoYixing', {
+        buff: buffLabel(condSpec, 0, 1),
+      })
+      clauses.push(condDuration > 0
+        ? `${baseCond}，${t('game.abilityDesc.buffDuration', { n: formatNumber(condDuration) })}`
+        : baseCond)
+    }
+  }
+  if (ability.resetCooldownOnYixingKill) {
+    clauses.push(t('game.abilityDesc.resetCooldownOnYixingKillClause'))
   }
   const effectSentence = `${clauses.join('；')}。`
   const description = ability.description ? `${ability.description}\n${effectSentence}` : effectSentence

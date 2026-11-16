@@ -57,7 +57,11 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                 var alive = unit.IsAlive;
                 Tick(unit, statsBook, regenTick, secondTick);
                 if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
-                if (secondTick) CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                if (secondTick)
+                {
+                    CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                    if (at > 1e-9) unit.DecayBuffStacksPerSecond();
+                }
             }
             for (var i = 0; i < encounter.Enemies.Count; i++)
             {
@@ -65,7 +69,11 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                 var alive = unit.IsAlive;
                 Tick(unit, statsBook, regenTick, secondTick);
                 if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
-                if (secondTick) CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                if (secondTick)
+                {
+                    CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                    if (at > 1e-9) unit.DecayBuffStacksPerSecond();
+                }
             }
         }
         // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。

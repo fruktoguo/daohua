@@ -784,4 +784,133 @@ public sealed class CombatMechanicTraitTests
         Assert.Equal("enemy:1", splashBurst.TargetId);
         Assert.Equal((200.0 * 200.0 / 201.0) * 1.1 / 2.0, splashBurst.Damage, 8);
     }
+
+    [Fact]
+    public void WumengSkills_AllFiveMechanicsAndMonsterInvariantsBehaveAsDesigned()
+    {
+        var catalog = Domain.GameData.GameDataCatalog.LoadEmbedded();
+        var tianleiPo = catalog.Abilities["ability.tianlei-po"];
+        var zhuoxin = catalog.Abilities["ability.zhuoxin"];
+        var shunshan = catalog.Abilities["ability.shunshan"];
+        var shanguiYao = catalog.Abilities["ability.shangui-yao"];
+        var pojun = catalog.Abilities["ability.pojun"];
+
+        // 1. 天雷破：至多命中 2 名存活敌人并施加 5s 麻痹（闪避/化解 ×0.8，行动速度 -10，且均不吃技能等级成长）
+        var spellCaster = Stats(hp: 2000, attack: 10, interval: 100) with
+        {
+            SpellAttack = 100,
+            Accuracy = 1_000_000,
+            MaxManapoints = 500
+        };
+        var mabiTargetStats = Stats(hp: 10_000, interval: 100) with { Evasion = 50, ParryResolve = 50 };
+        var tianleiBattle = CombatEventAdvanceSystem.Start("tianlei-po", 11,
+            new CombatantTemplate(spellCaster, [new SkillSlot(tianleiPo, Level: 5, Triggers: [])]),
+            [new(mabiTargetStats), new(mabiTargetStats), new(mabiTargetStats)]);
+        var tianleiEvents = CombatEventAdvanceSystem.AdvanceTo(tianleiBattle, 2.1).Events;
+        Assert.Equal(2, tianleiEvents.Count);
+        var paralysed = tianleiBattle.Enemies.Where(e => e.BuffStacks("buff.mabi") > 0).ToArray();
+        Assert.Equal(2, paralysed.Length);
+        foreach (var e in paralysed)
+        {
+            Assert.Equal(40.0, e.EffectiveStats.Evasion, 12);
+            Assert.Equal(40.0, e.EffectiveStats.ParryResolve, 12);
+            Assert.Equal(-10.0, e.EffectiveStats.ActionSpeedPoints, 12);
+        }
+
+        // 2. 灼心：零直伤命中检定，即使身上携带固定加伤/物攻 Buff 也绝不打出直伤，仅叠加 50% AP + 10 层燃烧
+        var zhuoxinCaster = spellCaster with { FixedSpellDamageBonus = 999, FixedDamageBonus = 999 };
+        var zhuoxinBattle = CombatEventAdvanceSystem.Start("zhuoxin", 12,
+            new CombatantTemplate(zhuoxinCaster, [new SkillSlot(zhuoxin, Level: 1, Triggers: [])]),
+            [new(Stats(hp: 10_000, interval: 100))]);
+        zhuoxinBattle.Player.AddBuff(new CombatBuffState("buff.atk", 30, 10, "加攻",
+            Effects: [new(BuffEffectChannel.AttackPower, 50)]));
+        var zhuoxinHit = Assert.Single(CombatEventAdvanceSystem.AdvanceTo(zhuoxinBattle, 2.1).Events);
+        Assert.True(zhuoxinHit.Hit);
+        Assert.Equal(0.0, zhuoxinHit.Damage, 12);
+        Assert.Equal(10_000.0, zhuoxinBattle.Enemies[0].Hitpoints, 12);
+        Assert.Equal(60.0, zhuoxinBattle.Enemies[0].BuffStacks(CombatTraitRules.RanhunBuffId), 12);
+
+        // 3. 瞬闪：起手无移形时打完赋 1 层移形；若起手有移形且击杀目标，消耗移形、立即重置 CD 且不再赋移形，连续出手绝不连环重置
+        var swordCaster = Stats(hp: 2000, attack: 100, interval: 100) with
+        {
+            Accuracy = 1_000_000,
+            MaxManapoints = 500
+        };
+        var fragileEnemy = Stats(hp: 150, interval: 100);
+        // 3a. 无移形开局打死首怪 -> 赋 1 层移形且进入 24s CD
+        var shunshanNoYixing = CombatEventAdvanceSystem.Start("shunshan-no-yixing", 13,
+            new CombatantTemplate(swordCaster, [new SkillSlot(shunshan, Level: 1, Triggers: [])]),
+            [new(fragileEnemy), new(fragileEnemy)]);
+        shunshanNoYixing.Enemies[0].Threat = 1000;
+        CombatEventAdvanceSystem.AdvanceTo(shunshanNoYixing, 0.6);
+        Assert.Equal(1, shunshanNoYixing.Enemies.Count(e => !e.IsAlive));
+        Assert.Equal(1.0, shunshanNoYixing.Player.BuffStacks(CombatTraitRules.YixingBuffId), 12);
+        Assert.True(shunshanNoYixing.Player.SkillCooldownUntil![0] > 20.0);
+
+        // 3b. 有移形开局连斩两怪：第一击（0.5s）有移形击杀脆皮怪 -> 移形消耗归 0、CD 重置立刻接第二发吟唱；
+        //     第二击（1.0s）已无先导移形，击杀第二只脆皮怪后进入 24s 正常冷却并重新获得 1 层移形（彻底防连刷）。
+        var shunshanWithYixing = CombatEventAdvanceSystem.Start("shunshan-reset", 14,
+            new CombatantTemplate(swordCaster, [new SkillSlot(shunshan, Level: 1, Triggers: [])]),
+            [new(fragileEnemy), new(fragileEnemy), new(Stats(hp: 10_000, interval: 100))]);
+        shunshanWithYixing.Enemies[0].Threat = 1000;
+        shunshanWithYixing.Enemies[1].Threat = 1000;
+        shunshanWithYixing.Enemies[2].Threat = 0;
+        shunshanWithYixing.Player.AddBuff(new CombatBuffState(CombatTraitRules.YixingBuffId, 5.0, 1, "移形",
+            ResetOnWave: true, Effects: [new(BuffEffectChannel.EvasionPostRatio, 1.0)]));
+        CombatEventAdvanceSystem.AdvanceTo(shunshanWithYixing, 0.6);
+        Assert.Equal(1, shunshanWithYixing.Enemies.Count(e => !e.IsAlive));
+        Assert.Equal(0.0, shunshanWithYixing.Player.BuffStacks(CombatTraitRules.YixingBuffId), 12);
+        Assert.Equal(0, shunshanWithYixing.Player.PendingSkillIndex);
+
+        CombatEventAdvanceSystem.AdvanceTo(shunshanWithYixing, 1.1);
+        Assert.Equal(2, shunshanWithYixing.Enemies.Count(e => !e.IsAlive));
+        Assert.Equal(1.0, shunshanWithYixing.Player.BuffStacks(CombatTraitRules.YixingBuffId), 12);
+        Assert.True(shunshanWithYixing.Player.SkillCooldownUntil![0] > 20.0);
+
+        // 4. 山鬼谣：为全体存活友方施加 floor(5 + AP * 0.12) 层甘露（AP=100 -> 17 层）
+        var allyTemplate = new CombatantTemplate(spellCaster with { MaxHitpoints = 2000 });
+        var shanguiBattle = CombatEventAdvanceSystem.StartAllied("shangui-yao", 15,
+            [new CombatantTemplate(spellCaster, [new SkillSlot(shanguiYao, Level: 1, Triggers: [])]), allyTemplate],
+            selfIndex: 0,
+            [new(Stats(hp: 10_000, interval: 100))]);
+        shanguiBattle.PlayerAllies[1].Hitpoints = 1000;
+        CombatEventAdvanceSystem.AdvanceTo(shanguiBattle, 3.1);
+        Assert.All(shanguiBattle.PlayerAllies, ally => Assert.Equal(17.0, ally.BuffStacks("buff.ganlu"), 12));
+
+        // 5. 破军：1.5s 吟唱落地，赋予 1 层移形与 5 层势不可挡（100 免伤即 50%），并在 2/3/4/5/6s 整秒每秒掉 1 层
+        var pojunBattle = CombatEventAdvanceSystem.Start("pojun-decay", 16,
+            new CombatantTemplate(swordCaster, [new SkillSlot(pojun, Level: 10, Triggers: [])]),
+            [new(Stats(hp: 10_000, interval: 100)), new(Stats(hp: 10_000, interval: 100))]);
+        CombatEventAdvanceSystem.AdvanceTo(pojunBattle, 1.6);
+        Assert.Equal(1.0, pojunBattle.Player.BuffStacks(CombatTraitRules.YixingBuffId), 12);
+        Assert.Equal(5.0, pojunBattle.Player.BuffStacks("buff.shibukedang"), 12);
+        Assert.Equal(100.0, pojunBattle.Player.BuffTotal(BuffEffectChannel.DamageAbsorptionPoints), 12);
+
+        CombatEventAdvanceSystem.AdvanceTo(pojunBattle, 2.1);
+        Assert.Equal(4.0, pojunBattle.Player.BuffStacks("buff.shibukedang"), 12);
+        CombatEventAdvanceSystem.AdvanceTo(pojunBattle, 3.1);
+        Assert.Equal(3.0, pojunBattle.Player.BuffStacks("buff.shibukedang"), 12);
+        CombatEventAdvanceSystem.AdvanceTo(pojunBattle, 5.1);
+        Assert.Equal(1.0, pojunBattle.Player.BuffStacks("buff.shibukedang"), 12);
+        CombatEventAdvanceSystem.AdvanceTo(pojunBattle, 6.1);
+        Assert.Equal(0.0, pojunBattle.Player.BuffStacks("buff.shibukedang"), 12);
+
+        // 6. 雾梦泽地图与怪物硬约束门禁
+        Assert.Contains(catalog.Maps, m => JsonRead.Text(m, "id") == "map.wumeng-marsh");
+        Assert.True(catalog.Actions.TryGet(new ActionId("combat.sweep-wumeng-marsh"), out _));
+        Assert.True(catalog.Items.ContainsKey(new ItemId("item.dragon-pearl")));
+        Assert.Equal(4, JsonRead.Integer(catalog.RawItems["item.dragon-pearl"], "tier"));
+        foreach (var enemy in catalog.CombatMonsters.Values.Where(m => m.Rank == Domain.GameData.CombatMonsterRank.Minion))
+        {
+            Assert.DoesNotContain(enemy.Skills, s => JsonRead.Text(s.Ability, "id") == "ability.zhanyu");
+        }
+        var boss = catalog.CombatMonsters["enemy.mist-sword-wraith"];
+        Assert.Equal(Domain.GameData.CombatMonsterRank.Boss, boss.Rank);
+        Assert.Equal(30, boss.Level);
+        Assert.Equal(3, catalog.BaseAttributes!.TierAt(boss.Level));
+        Assert.Equal(CombatDamageKind.Physical, boss.Stats.DamageKind);
+        Assert.DoesNotContain(boss.Skills, s => JsonRead.Text(s.Ability, "id") == "ability.yueqian");
+        Assert.DoesNotContain(boss.DropTable, d => d.ItemId.Value is "item.tome.yueqian" or "item.fragment.yueqian");
+        Assert.Contains(boss.DropTable, d => d.ItemId.Value == "item.dragon-pearl");
+    }
 }

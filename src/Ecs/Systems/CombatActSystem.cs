@@ -55,7 +55,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         unit.PendingSkillIndex = -1;
         if (pending >= 0 && pending < unit.Skills.Count)
         {
-            CastSkill(encounter, unit, allies, opponents, target, unit.Skills[pending], side + SkillSideOffset, ref events);
+            CastSkill(encounter, unit, allies, opponents, target, unit.Skills[pending], pending, side + SkillSideOffset, ref events);
             unit.SkillCastCount += 1;
             return;
         }
@@ -160,7 +160,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// </summary>
     private static void CastSkill(CombatEncounterState encounter, CombatantState caster,
         IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents,
-        CombatantState? target, SkillSlot slot, ulong side, ref List<CombatEvent>? events)
+        CombatantState? target, SkillSlot slot, int slotIndex, ulong side, ref List<CombatEvent>? events)
     {
         var ability = slot.Ability;
         var spell = AbilityText(ability, "category") == "spell";
@@ -214,7 +214,12 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             return;
         }
         var hasDamage = AbilityNumber(ability, "damageRatio") + AbilityNumber(ability, "flatDamage") > 0;
-        if (targetType == "self" || !hasDamage && targetType is not ("targetEnemy" or "allEnemies"))
+        var ranhunBase = AbilityNumber(ability, "ranhunBaseStacks");
+        var ranhunRatio = AbilityNumber(ability, "ranhunSpellAttackRatio");
+        var onHitBuffSpecs = AbilityBuffSpecs(ability, "onHitBuff", "onHitBuffs");
+        var selfBuffSpecs = AbilityBuffSpecs(ability, "selfBuff", "selfBuffs");
+        var hasOffensivePayload = hasDamage || ranhunBase > 0 || ranhunRatio > 0 || onHitBuffSpecs.Count > 0;
+        if (targetType == "self" || !hasOffensivePayload && targetType is not ("targetEnemy" or "allEnemies"))
         {
             // 支援技：以自身/友方为目标的零伤害技能；战内 Buff 授予友方并按战斗时钟到期。
             // 配表支持 buffs[] 多 Buff（如碎罡同时授予碎罡与罡锋），单 Buff 的旧 buff 对象仍兼容解析。
@@ -265,54 +270,74 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var abilityNameOverride = hasYixing ? AbilityText(ability, "yixingMorphName") : null;
         var effectiveTargetType = hasYixing ? (AbilityText(ability, "yixingMorphTargetType") ?? targetType) : targetType;
         var ignorePrimaryThreat = hasYixing && CombatTraitRules.ContainsTrait(caster.Stats.Traits, CombatTraitRules.JianyuxinTraitId);
-        var ranhunBase = AbilityNumber(ability, "ranhunBaseStacks");
-        var ranhunRatio = AbilityNumber(ability, "ranhunSpellAttackRatio");
         var extraRanhunStacks = ranhunBase > 0 || ranhunRatio > 0
             ? Math.Max(1, Math.Floor((Math.Max(0, attackBase) * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear) * ranhunRatio + ranhunBase) * levelGrowth + 1e-9))
             : 0;
         var maxTargets = ability.TryGetProperty("maxTargets", out var maxTargetsProperty)
             && maxTargetsProperty.TryGetInt32(out var parsed) ? parsed : 0;
+        var zeroDirectDamage = !hasDamage;
+        var killedAnyTarget = false;
+        void Strike(CombatantState foe, double? rollCountOverride, ref List<CombatEvent>? ev)
+        {
+            var wasAlive = foe.IsAlive;
+            ResolveAttack(encounter, caster, foe, side, encounter.ElapsedSeconds, ref ev, stats, rollCountOverride, id,
+                doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride,
+                extraRanhunStacks: extraRanhunStacks, zeroDirectDamage: zeroDirectDamage,
+                onHitBuffs: onHitBuffSpecs, levelGrowth: levelGrowth);
+            if (wasAlive && !foe.IsAlive) killedAnyTarget = true;
+        }
         if (effectiveTargetType == "allEnemies")
         {
             // AoE 对一切施放单位通用：按威胁顺序（剑与心+移形时主目标无视仇恨随机）不可重复抽取至多 maxTargets 个敌方目标。
             var pickedList = SelectTargets(opponents, maxTargets > 0 ? maxTargets : int.MaxValue,
                 encounter.Seed, side, count, 17, ignorePrimaryThreat);
+            if (pickedList.Count == 0) return;
             for (var i = 0; i < pickedList.Count; i++)
-                ResolveAttack(encounter, caster, pickedList[i], side, encounter.ElapsedSeconds, ref events, stats, count, id,
-                    doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
-            if (hasYixing && pickedList.Count > 0)
-                caster.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId);
-            return;
+                Strike(pickedList[i], count, ref events);
         }
-        // 触发剑与心+移形时必须跳过外层按仇恨预选的 target，强制等概率重新抽取主要目标。
-        var single = !ignorePrimaryThreat && target is { IsAlive: true }
-            ? target
-            : SelectTarget(opponents, encounter.Seed, side, count, 16, ignorePrimaryThreat);
-        if (single is null) return;
-        ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id,
-            doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
-        // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害——后续段沿用
-        // 普攻计数随机流（countOverride=null → 取 attacker.AttackCount 自增序列），各段命中/
-        // 暴击独立掷点；目标中途死亡即终止剩余连段，不转火不空掷。
-        var hitCount = Math.Max(1, (int)AbilityNumber(ability, "hitCount"));
-        for (var hitIndex = 1; hitIndex < hitCount && single.IsAlive; hitIndex++)
-            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, null, id,
-                doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
-        // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能
-        // 伤害，至多追加 chainOnKillCount 次；连锁未致死即终止。被击杀目标已离存活池，
-        // 连锁命中未死者时循环结束，故天然不重复命中、总目标数 ≤ 1 + chainOnKillCount。
-        // 连锁帧沿用同一次施放的抽样计数，命中/暴击掷点继承本次出手运气（贯穿语义）。
-        var chainMax = (int)AbilityNumber(ability, "chainOnKillCount");
-        for (var chainIndex = 0; chainIndex < chainMax && !single.IsAlive; chainIndex++)
+        else
         {
-            single = SelectTarget(opponents, encounter.Seed, side, count, 20 + (ulong)chainIndex);
-            if (single is null) break;
-            ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id,
-                doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride, extraRanhunStacks: extraRanhunStacks);
+            // 触发剑与心+移形时必须跳过外层按仇恨预选的 target，强制等概率重新抽取主要目标。
+            var single = !ignorePrimaryThreat && target is { IsAlive: true }
+                ? target
+                : SelectTarget(opponents, encounter.Seed, side, count, 16, ignorePrimaryThreat);
+            if (single is null) return;
+            Strike(single, count, ref events);
+            // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害——后续段沿用
+            // 普攻计数随机流（countOverride=null → 取 attacker.AttackCount 自增序列），各段命中/
+            // 暴击独立掷点；目标中途死亡即终止剩余连段，不转火不空掷。
+            var hitCount = Math.Max(1, (int)AbilityNumber(ability, "hitCount"));
+            for (var hitIndex = 1; hitIndex < hitCount && single.IsAlive; hitIndex++)
+                Strike(single, null, ref events);
+            // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能
+            // 伤害，至多追加 chainOnKillCount 次；连锁未致死即终止。被击杀目标已离存活池，
+            // 连锁命中未死者时循环结束，故天然不重复命中、总目标数 ≤ 1 + chainOnKillCount。
+            // 连锁帧沿用同一次施放的抽样计数，命中/暴击掷点继承本次出手运气（贯穿语义）。
+            var chainMax = (int)AbilityNumber(ability, "chainOnKillCount");
+            for (var chainIndex = 0; chainIndex < chainMax && !single.IsAlive; chainIndex++)
+            {
+                single = SelectTarget(opponents, encounter.Seed, side, count, 20 + (ulong)chainIndex);
+                if (single is null) break;
+                Strike(single, count, ref events);
+            }
         }
-        // 移形按伤害型技能施放次数固定消耗 1 层（不论命中几次或几个目标）。
+        // 移形按伤害/进攻型技能施放次数固定消耗 1 层（不论命中几次或几个目标）。
         if (hasYixing)
             caster.ConsumeOneBuffStack(CombatTraitRules.YixingBuffId);
+        // 先导移形击杀刷新：起手已持有「移形」且本次进攻击杀至少一名目标时，立即清零当前技能冷却。
+        if (hasYixing && killedAnyTarget && AbilityFlag(ability, "resetCooldownOnYixingKill")
+            && caster.SkillCooldownUntil is { } cooldowns && (uint)slotIndex < (uint)cooldowns.Length)
+            cooldowns[slotIndex] = 0;
+        // 进攻技能附加自我增益（如瞬闪仅在起手无移形时获 1 层移形；破军恒获 1 层移形与 5 层势不可挡）。
+        if (caster.IsAlive && selfBuffSpecs.Count > 0)
+        {
+            for (var i = 0; i < selfBuffSpecs.Count; i++)
+            {
+                var spec = selfBuffSpecs[i];
+                if (AbilityFlag(spec, "skipIfHasYixing") && hasYixing) continue;
+                GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id);
+            }
+        }
     }
 
     /// <summary>按破招化解、闪避、暴击顺序判定后，沿「大类抗性穿甲 → 攻方分类增伤 → 守方分类减伤 → 暴击 → 总免伤收口」结算链结算；
@@ -320,7 +345,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     private static void ResolveAttack(CombatEncounterState encounter, CombatantState attacker, CombatantState target,
         ulong side, double at, ref List<CombatEvent>? events,
         CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null,
-        bool doubleAccuracy = false, string? abilityNameOverride = null, double extraRanhunStacks = 0)
+        bool doubleAccuracy = false, string? abilityNameOverride = null, double extraRanhunStacks = 0,
+        bool zeroDirectDamage = false, IReadOnlyList<JsonElement>? onHitBuffs = null, double levelGrowth = 1)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
         var rawAttackStats = statsOverride ?? attacker.Stats;
@@ -336,6 +362,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             AttackStats = attackStats,
             AbilityId = abilityId,
             DoubleAccuracy = doubleAccuracy,
+            ZeroDirectDamage = zeroDirectDamage,
             Side = side,
             Count = countOverride ?? attacker.AttackCount,
             AtSeconds = at
@@ -358,29 +385,31 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         EmitHitTriggers(encounter, context, events, mainEventIndex);
         if (context.Hit && extraRanhunStacks > 0)
             CombatTraitReactions.AddRanhunStacks(attacker, target, extraRanhunStacks, at);
+        if (context.Hit && target.IsAlive && onHitBuffs is { Count: > 0 })
+            for (var i = 0; i < onHitBuffs.Count; i++)
+                GrantBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? string.Empty);
     }
 
     /// <summary>
-    /// 解析技能授予的战内 Buff 规格列表：优先 <c>buffs[]</c> 多 Buff，回落单 <c>buff</c> 对象。
-    /// 单 Buff 回落使既有技能配表无需改动即可继续工作。
+    /// 解析技能授予的战内 Buff 规格列表：优先指定数组键（如 <c>buffs[]</c>/<c>onHitBuffs[]</c>），回落对应单对象键（<c>buff</c>/<c>onHitBuff</c>）。
     /// </summary>
-    private static List<JsonElement> AbilityBuffSpecs(JsonElement ability)
+    private static List<JsonElement> AbilityBuffSpecs(JsonElement ability, string singleKey = "buff", string arrayKey = "buffs")
     {
-        if (ability.TryGetProperty("buffs", out var array) && array.ValueKind == JsonValueKind.Array)
+        if (ability.TryGetProperty(arrayKey, out var array) && array.ValueKind == JsonValueKind.Array)
         {
             var specs = new List<JsonElement>(array.GetArrayLength());
             foreach (var entry in array.EnumerateArray())
                 if (entry.ValueKind == JsonValueKind.Object) specs.Add(entry);
             return specs;
         }
-        return ability.TryGetProperty("buff", out var single) && single.ValueKind == JsonValueKind.Object
+        return ability.TryGetProperty(singleKey, out var single) && single.ValueKind == JsonValueKind.Object
             ? [single]
             : [];
     }
 
     /// <summary>
     /// 授予单条 Buff 规格：层数由施法者属性（法攻百分比 / 双抗总和按比例）与目标状态
-    /// （每损失 N 点气血 1 层）派生。层数承载数值——Buff 只存每层基础量，结算时统一按层数线性放大。
+    /// （每损失 N 点气血 1 层）或固定 <c>baseStacks</c> 派生；标记 <c>noLevelGrowth</c> 者数值与派生层数均豁免技能等级放大。
     /// </summary>
     private static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
         double grantedAtSeconds, double levelGrowth, string abilityId)
@@ -392,12 +421,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var spellStackPercent = AbilityNumber(buff, "spellAttackStackPercent");
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
         var hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0;
+        var effectiveLevelGrowth = AbilityFlag(buff, "noLevelGrowth") ? 1.0 : levelGrowth;
         // 层数派生通道把等级成长与技能增幅折入层数，效果量保持每层基础值，防止等级被二次放大；
-        // 无层数派生的 Buff 仍按等级成长放大全部数值项。时长/叠层上限不成长。
-        var growth = levelGrowth * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
-        var effectGrowth = hasStackDerivation ? 1.0 : levelGrowth;
+        // 无层数派生的 Buff 若未豁免，仍按等级成长放大全部数值项。时长/叠层上限不成长。
+        var growth = effectiveLevelGrowth * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
+        var effectGrowth = hasStackDerivation ? 1.0 : effectiveLevelGrowth;
         var initialStacks = InitialStacks(buff, caster, target, growth);
-        // 数值效果键按注册表解析（GrowsWithLevel 通道自动乘成长，双抗破防比率豁免）；生命周期键保持直读。
+        // 数值效果键按注册表解析（GrowsWithLevel 通道自动乘成长，双抗破防/化解后段乘区等豁免）；生命周期键保持直读。
         var grant = new CombatBuffState(buffId,
             grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
             AbilityText(buff, "name") ?? baseBuffId,
@@ -429,14 +459,15 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// <summary>
     /// 派生授予层数：<c>missingHitpointsPerStack</c> &gt; 0 时层数由目标已损气血与
     /// <paramref name="growth"/> 折算（每 N 点已损 1 层，满血 0 层）；否则
-    /// <c>spellAttackStackPercent</c> 按「(基础 1 层 + 施法者术法攻击百分比) × 施法者治疗增幅向下取整（保底 1 层）」；
-    /// 否则 <c>resistancePerStack</c> 按「基础 1 层 + 施法者双抗总和比例向下取整」；
-    /// 均未配置时为基础 1 层。
+    /// <c>spellAttackStackPercent</c> 按「(基础层数 + 施法者术法攻击百分比) × 施法者治疗增幅向下取整（保底 1 层）」；
+    /// 否则 <c>resistancePerStack</c> 按「基础层数 + 施法者双抗总和比例向下取整」；
+    /// 均未配置时取 <c>baseStacks</c>（缺省 1.0）。
     /// </summary>
     /// <param name="growth">等级成长 × 技能增幅；已损气血阈值与层数百分比共用同一成长乘区。</param>
     private static double InitialStacks(JsonElement buff, CombatantState caster, CombatantState target,
         double growth)
     {
+        var baseStacks = buff.TryGetProperty("baseStacks", out _) ? Math.Max(1, AbilityNumber(buff, "baseStacks")) : 1.0;
         var missingPerStack = AbilityNumber(buff, "missingHitpointsPerStack");
         if (missingPerStack > 0)
         {
@@ -446,12 +477,12 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var spellAttackPercent = AbilityNumber(buff, "spellAttackStackPercent");
         if (spellAttackPercent > 0)
         {
-            // 基础 1 层 + 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量；
+            // 基础层数（缺省 1，山鬼谣为 5）+ 百分比额外层数；等级与技能增幅只提升百分比，不改变每层回血量；
             // 施法者实时治疗增幅（Linear）作为独立乘区放大总基础层数，严格向下取整并保底 1 层。
             // epsilon 吸收二进制浮点在整数边界上的下偏。
             var extraStacks = Math.Max(0, caster.Stats.SpellAttack) * spellAttackPercent * growth;
             var healingMult = PercentValue.Multiplier(caster.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
-            var totalStacks = (1 + extraStacks) * healingMult;
+            var totalStacks = (baseStacks + extraStacks) * healingMult;
             return Math.Max(1, Math.Floor(totalStacks + 1e-9));
         }
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
@@ -461,9 +492,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             // EffectiveStats 会把该技能自身的碎罡破防折叠进来，语义上不再等于「自身双抗」。
             var resistance = caster.Stats.Defense + caster.Stats.MagicResistance;
             var ratio = AbilityNumber(buff, "resistanceStackRatio");
-            return 1 + Math.Floor(resistance * ratio * growth / resistancePerStack + 1e-9);
+            return baseStacks + Math.Floor(resistance * ratio * growth / resistancePerStack + 1e-9);
         }
-        return 1.0;
+        return baseStacks;
     }
 
     private static void EmitHitTriggers(CombatEncounterState encounter, CombatHitContext context,

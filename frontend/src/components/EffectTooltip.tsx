@@ -161,14 +161,15 @@ export function extractSingleBuffSpecBonusItems(
 ): BonusAsideItem[] {
   // Buff 效果量随功法等级成长（与服务端 CastSkill 同式：每级 +2% 线性成长）。
   // 有层数派生的 Buff 把成长折入层数，每层效果量保持配置基础值，不再二次放大。
-  const levelGrowth = 1 + (Math.max(1, level) - 1) * 0.02
+  const levelGrowth = buff.noLevelGrowth ? 1 : 1 + (Math.max(1, level) - 1) * 0.02
   const isStacked = Boolean(
     (buff.resistancePerStack && buff.resistancePerStack > 0) ||
     (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) ||
-    (buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0)
+    (buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0) ||
+    ((buff.baseStacks ?? 1) > 1 && (buff.decayStacksPerSecond ?? 0) > 0)
   )
-  const effectGrowth = isStacked ? 1 : levelGrowth
-  // 配表平铺规格 → 通道载荷（GrowsWithLevel 通道乘成长，双抗破防比率豁免——与服务端同式）。
+  const effectGrowth = isStacked || buff.noLevelGrowth ? 1 : levelGrowth
+  // 配表平铺规格 → 通道载荷（GrowsWithLevel 通道乘成长，双抗破防/豁免成长通道保持基础值）。
   const effects = specToBuffEffects(buff as Record<string, number | undefined>, effectGrowth)
   return extractBuffBonusItems({ buffId: buff.buffId, name: buff.name, effects, stacks: 1, isPerStack: isStacked })
 }
@@ -251,18 +252,41 @@ export function createAbilityBuffAsideCards(
   ability: CombatAbilityDefinition,
   level = 1
 ): FloatingAsideCard[] {
-  const buffSpecs = ability.buffs && ability.buffs.length > 0
+  const primarySpecs = ability.buffs && ability.buffs.length > 0
     ? ability.buffs
     : ability.buff
     ? [ability.buff]
     : []
+  const onHitSpecs = ability.onHitBuffs && ability.onHitBuffs.length > 0
+    ? ability.onHitBuffs
+    : ability.onHitBuff
+    ? [ability.onHitBuff]
+    : []
+  const selfSpecs = ability.selfBuffs && ability.selfBuffs.length > 0
+    ? ability.selfBuffs
+    : ability.selfBuff
+    ? [ability.selfBuff]
+    : []
+  const mergedSpecs = [...primarySpecs, ...onHitSpecs, ...selfSpecs]
+  const seenBuffIds = new Set<string>()
+  const buffSpecs = mergedSpecs.filter((spec, index) => {
+    const key = spec.buffId || `__idx_${index}`
+    if (seenBuffIds.has(key)) return false
+    seenBuffIds.add(key)
+    return true
+  })
   const t = getT()
   const cards: FloatingAsideCard[] = buffSpecs.map((spec, index) => {
     const items = extractSingleBuffSpecBonusItems(spec, level)
     const buffName = spec.name || (buffSpecs.length === 1
       ? t('game.abilityAside.buffTitle')
       : t('game.abilityAside.buffFallback', { index: index + 1 }))
-    const isDebuff = (spec.resistancePoints ?? 0) < 0 || (spec.damageAbsorptionPoints ?? 0) < 0
+    const isDebuff =
+      (spec.resistancePoints ?? 0) < 0 ||
+      (spec.damageAbsorptionPoints ?? 0) < 0 ||
+      (spec.evasionPostRatio ?? 0) < 0 ||
+      (spec.parryPostRatio ?? 0) < 0 ||
+      (spec.actionSpeedPoints ?? 0) < 0
     return createStandaloneBuffAsideCard({
       id: `aside-ability-buff-${ability.abilityId}-${spec.buffId || index}`,
       name: buffName,
@@ -277,24 +301,26 @@ export function createAbilityBuffAsideCards(
     if (morphCard) {
       cards.push(morphCard)
     }
-    const yixingName = t('combat.trigger.buff.yixing')
-    const yixingItems = extractBuffBonusItems({
-      buffId: 'buff.yixing',
-      name: yixingName,
-      effects: [{ channel: 'evasionPostRatio', value: 1 }],
-      stacks: 1,
-      isPerStack: false,
-    })
-    cards.push(
-      createStandaloneBuffAsideCard({
-        id: `aside-ability-buff-${ability.abilityId}-yixing`,
+    if (!seenBuffIds.has('buff.yixing')) {
+      const yixingName = t('combat.trigger.buff.yixing')
+      const yixingItems = extractBuffBonusItems({
+        buffId: 'buff.yixing',
         name: yixingName,
-        kind: 'buff',
-        durationSeconds: 5,
-        refreshOnStack: true,
-        items: yixingItems,
+        effects: [{ channel: 'evasionPostRatio', value: 1 }],
+        stacks: 1,
+        isPerStack: false,
       })
-    )
+      cards.push(
+        createStandaloneBuffAsideCard({
+          id: `aside-ability-buff-${ability.abilityId}-yixing`,
+          name: yixingName,
+          kind: 'buff',
+          durationSeconds: 5,
+          refreshOnStack: true,
+          items: yixingItems,
+        })
+      )
+    }
   }
   if ((ability.ranhunBaseStacks ?? 0) > 0 || (ability.ranhunSpellAttackRatio ?? 0) > 0) {
     const ranhunName = t('combat.trigger.buff.ranhun')

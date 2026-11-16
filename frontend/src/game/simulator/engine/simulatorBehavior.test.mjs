@@ -853,3 +853,131 @@ test('火神特质：全伤害转火（不改物理/术法/真伤类别）、等
   assert.ok(soloPlayerStat.damageDealtByElement.fire > 0)
   assert.ok(soloPlayerStat.damageDealtSpell > 0, '雷击符转火后仍应计入术法输出')
 })
+
+test('雾梦泽 20 级五技能在 TS 模拟器中与服务端语义 1:1 一致（天雷破/灼心/瞬闪/山鬼谣/破军）', () => {
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+
+  const tianleiPo = liveCatalog.abilities.get('ability.tianlei-po')
+  const zhuoxin = liveCatalog.abilities.get('ability.zhuoxin')
+  const shunshan = liveCatalog.abilities.get('ability.shunshan')
+  const shanguiYao = liveCatalog.abilities.get('ability.shangui-yao')
+  const pojun = liveCatalog.abilities.get('ability.pojun')
+  assert.ok(tianleiPo && zhuoxin && shunshan && shanguiYao && pojun)
+
+  // 1. 天雷破：至多 2 名目标受 5s 麻痹（闪避/化解 ×0.8，行动速度 -10，不吃成长）
+  const spellBase = createCombatantStats(2000, 10, 100, 100, 1_000_000, 0, CombatDamageKind.Spell, {
+    maxManapoints: 500,
+    accuracy: 1_000_000,
+    spellAttack: 100,
+  })
+  const mabiTarget = createCombatantStats(10_000, 10, 0, 100, 0, 50, CombatDamageKind.Physical, {
+    parryResolve: 50,
+  })
+  const tianleiEnc = CombatEncounterState.create(
+    'sim-tianlei-po',
+    11n,
+    { stats: spellBase, skills: [{ ability: tianleiPo, abilityId: 'ability.tianlei-po', level: 5, triggers: [] }] },
+    [{ stats: mabiTarget, skills: [] }, { stats: mabiTarget, skills: [] }, { stats: mabiTarget, skills: [] }],
+  )
+  decideInitialActions(tianleiEnc)
+  const tianleiRes = advanceCombatTo(tianleiEnc, 2.1)
+  assert.equal(tianleiRes.events.length, 2)
+  const paralysed = tianleiEnc.enemies.filter(e => e.buffStacks('buff.mabi') > 0)
+  assert.equal(paralysed.length, 2)
+  for (const foe of paralysed) {
+    assert.ok(Math.abs(foe.effectiveStats.evasion - 40) <= 1e-9)
+    assert.ok(Math.abs(foe.effectiveStats.parryResolve - 40) <= 1e-9)
+    assert.ok(Math.abs(foe.effectiveStats.actionSpeedPoints - (-10)) <= 1e-9)
+  }
+
+  // 2. 灼心：零直伤，叠加 50% AP + 10 层燃烧
+  const zhuoxinCaster = { ...spellBase, fixedSpellDamageBonus: 999, fixedDamageBonus: 999 }
+  const zhuoxinEnc = CombatEncounterState.create(
+    'sim-zhuoxin',
+    12n,
+    { stats: zhuoxinCaster, skills: [{ ability: zhuoxin, abilityId: 'ability.zhuoxin', level: 1, triggers: [] }] },
+    [{ stats: createCombatantStats(10_000, 10, 0, 100, 0, 0, CombatDamageKind.Physical), skills: [] }],
+  )
+  decideInitialActions(zhuoxinEnc)
+  const zhuoxinHit = advanceCombatTo(zhuoxinEnc, 2.1).events[0]
+  assert.equal(zhuoxinHit.hit, true)
+  assert.equal(zhuoxinHit.damage, 0)
+  assert.equal(zhuoxinEnc.enemies[0].hitpoints, 10_000)
+  assert.equal(zhuoxinEnc.enemies[0].buffStacks('buff.ranhun'), 60)
+
+  // 3. 瞬闪：先导移形击杀刷新 CD 且不重施，二连杀后正常入 CD 并重获移形
+  const swordBase = createCombatantStats(2000, 100, 0, 100, 1_000_000, 0, CombatDamageKind.Physical, {
+    maxManapoints: 500,
+    accuracy: 1_000_000,
+  })
+  const fragile = createCombatantStats(150, 10, 0, 100, 0, 0, CombatDamageKind.Physical)
+  const tank = createCombatantStats(10_000, 10, 0, 100, 0, 0, CombatDamageKind.Physical)
+  const shunEnc = CombatEncounterState.create(
+    'sim-shunshan-reset',
+    14n,
+    { stats: swordBase, skills: [{ ability: shunshan, abilityId: 'ability.shunshan', level: 1, triggers: [] }] },
+    [{ stats: fragile, skills: [] }, { stats: fragile, skills: [] }, { stats: tank, skills: [] }],
+  )
+  shunEnc.enemies[0].threat = 1000
+  shunEnc.enemies[1].threat = 1000
+  shunEnc.enemies[2].threat = 0
+  shunEnc.player.addBuff({
+    buffId: 'buff.yixing',
+    expiresAtSeconds: 5.0,
+    stacks: 1,
+    name: '移形',
+    resetOnWave: true,
+    missingHitpointsPerStack: 0,
+    effects: [{ channel: 15, value: 1 }],
+    statRatios: null,
+    sourceUnitId: 'player',
+  })
+  decideInitialActions(shunEnc)
+  advanceCombatTo(shunEnc, 0.6)
+  assert.equal(shunEnc.enemies.filter(e => !e.isAlive).length, 1)
+  assert.equal(shunEnc.player.buffStacks('buff.yixing'), 0)
+  assert.equal(shunEnc.player.pendingSkillIndex, 0)
+
+  advanceCombatTo(shunEnc, 1.1)
+  assert.equal(shunEnc.enemies.filter(e => !e.isAlive).length, 2)
+  assert.equal(shunEnc.player.buffStacks('buff.yixing'), 1)
+  assert.ok((shunEnc.player.skillCooldownUntil?.[0] ?? 0) > 20)
+
+  // 4. 山鬼谣：全体友方获得 5 + 12% AP = 17 层甘露
+  const shanguiEnc = CombatEncounterState.createAllied(
+    'sim-shangui-yao',
+    15n,
+    [
+      { stats: spellBase, skills: [{ ability: shanguiYao, abilityId: 'ability.shangui-yao', level: 1, triggers: [] }] },
+      { stats: spellBase, skills: [] },
+    ],
+    0,
+    [{ stats: tank, skills: [] }],
+  )
+  shanguiEnc.playerAllies[1].hitpoints = 1000
+  decideInitialActions(shanguiEnc)
+  advanceCombatTo(shanguiEnc, 3.1)
+  for (const ally of shanguiEnc.playerAllies) {
+    assert.equal(ally.buffStacks('buff.ganlu'), 17)
+  }
+
+  // 5. 破军：授予移形与 5 层势不可挡（100 免伤），2/3/5/6s 整秒衰减至移除
+  const pojunEnc = CombatEncounterState.create(
+    'sim-pojun',
+    16n,
+    { stats: swordBase, skills: [{ ability: pojun, abilityId: 'ability.pojun', level: 10, triggers: [] }] },
+    [{ stats: tank, skills: [] }, { stats: tank, skills: [] }],
+  )
+  decideInitialActions(pojunEnc)
+  advanceCombatTo(pojunEnc, 1.6)
+  assert.equal(pojunEnc.player.buffStacks('buff.yixing'), 1)
+  assert.equal(pojunEnc.player.buffStacks('buff.shibukedang'), 5)
+  assert.equal(pojunEnc.player.buffTotal(11), 100)
+  advanceCombatTo(pojunEnc, 2.1)
+  assert.equal(pojunEnc.player.buffStacks('buff.shibukedang'), 4)
+  advanceCombatTo(pojunEnc, 6.1)
+  assert.equal(pojunEnc.player.buffStacks('buff.shibukedang'), 0)
+})

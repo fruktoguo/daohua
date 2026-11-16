@@ -661,20 +661,26 @@ public sealed class GameDataCatalog
                 Add(JsonRead.Text(buff, "buffId"), JsonRead.Text(buff, "name"));
         }
         // 功法战内 Buff：显式 buffId 优先，缺省走引擎合成的 ability-buff:<abilityId>。
-        // buffs[] 多 Buff 形态逐条登记（如碎罡同时授予碎罡与罡锋）。
+        // 同时扫描主 Buff（buff/buffs[]）、命中附加（onHitBuff/onHitBuffs[]）与自我增益（selfBuff/selfBuffs[]）。
+        string[] abilitySingleBuffKeys = ["buff", "onHitBuff", "selfBuff"];
+        string[] abilityArrayBuffKeys = ["buffs", "onHitBuffs", "selfBuffs"];
         foreach (var (abilityId, ability) in abilities)
         {
-            if (ability.TryGetProperty("buffs", out var buffArray) && buffArray.ValueKind == JsonValueKind.Array)
+            var abilityName = JsonRead.Text(ability, "name");
+            foreach (var key in abilityArrayBuffKeys)
             {
+                if (!ability.TryGetProperty(key, out var buffArray) || buffArray.ValueKind != JsonValueKind.Array) continue;
                 foreach (var entry in buffArray.EnumerateArray())
                     if (entry.ValueKind == JsonValueKind.Object)
                         Add(JsonRead.Text(entry, "buffId") ?? $"ability-buff:{abilityId}",
-                            JsonRead.Text(entry, "name") ?? JsonRead.Text(ability, "name"));
-                continue;
+                            JsonRead.Text(entry, "name") ?? abilityName);
             }
-            if (!ability.TryGetProperty("buff", out var buff) || buff.ValueKind != JsonValueKind.Object) continue;
-            Add(JsonRead.Text(buff, "buffId") ?? $"ability-buff:{abilityId}",
-                JsonRead.Text(buff, "name") ?? JsonRead.Text(ability, "name"));
+            foreach (var key in abilitySingleBuffKeys)
+            {
+                if (!ability.TryGetProperty(key, out var buff) || buff.ValueKind != JsonValueKind.Object) continue;
+                Add(JsonRead.Text(buff, "buffId") ?? $"ability-buff:{abilityId}",
+                    JsonRead.Text(buff, "name") ?? abilityName);
+            }
         }
         // 行动产出 Buff（打坐/历练授予的长效增益）。
         foreach (var action in actions.All)

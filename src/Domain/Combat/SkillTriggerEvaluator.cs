@@ -86,27 +86,17 @@ public static class SkillTriggerEvaluator
         var cooldown = JsonRead.Number(ability, "cooldownMilliseconds");
         var target = JsonRead.Text(ability, "targetType");
         var supportive = target is "self" or "lowestHitpointsAlly" or "allAllies";
-        // Buff 规格：buffs[] 多 Buff 优先，回落单 buff 对象。
-        var buffElements = new List<JsonElement>();
-        if (ability.ValueKind == JsonValueKind.Object
-            && ability.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var entry in buffsArray.EnumerateArray())
-            {
-                if (entry.ValueKind != JsonValueKind.Object)
-                    throw new DomainException(DomainErrorCode.InvalidArgument, "技能 buffs 列表元素必须为对象。");
-                buffElements.Add(entry);
-            }
-        }
-        else if (ability.ValueKind == JsonValueKind.Object
-            && ability.TryGetProperty("buff", out var buffElement) && buffElement.ValueKind == JsonValueKind.Object)
-        {
-            buffElements.Add(buffElement);
-        }
+        // Buff 规格：分别收集 主 Buff（buffs[]/buff）、命中附加（onHitBuffs[]/onHitBuff）与自我增益（selfBuffs[]/selfBuff）。
+        var buffElements = CollectAbilityBuffElements(ability, "buff", "buffs");
+        var onHitBuffElements = CollectAbilityBuffElements(ability, "onHitBuff", "onHitBuffs");
+        var selfBuffElements = CollectAbilityBuffElements(ability, "selfBuff", "selfBuffs");
         var hasBuff = buffElements.Count > 0;
+        var ranhunBase = JsonRead.Number(ability, "ranhunBaseStacks");
+        var ranhunRatio = JsonRead.Number(ability, "ranhunSpellAttackRatio");
         var hasEffect = ratio + flat > 0 || healing
+            || (!supportive && (ranhunBase > 0 || ranhunRatio > 0 || onHitBuffElements.Count > 0))
             || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatPoints") > 0 || hasBuff);
-        if (ratio < 0 || flat < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
+        if (ratio < 0 || flat < 0 || ranhunBase < 0 || ranhunRatio < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
             || JsonRead.Number(ability, "manaCost") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能未配置可执行效果或有效施放周期。");
         if (JsonRead.Text(ability, "category") is not ("physical" or "spell")
@@ -117,8 +107,30 @@ public static class SkillTriggerEvaluator
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能目标没有可执行效果。");
         // 战内 Buff 必须携带正持续时长与有限效果量，否则授予即过期或语义不清。
         foreach (var spec in buffElements) ValidateAbilityBuff(spec);
+        foreach (var spec in onHitBuffElements) ValidateAbilityBuff(spec);
+        foreach (var spec in selfBuffElements) ValidateAbilityBuff(spec);
         if (ability.TryGetProperty("defaultTriggers", out var triggers) && triggers.ValueKind == JsonValueKind.Array)
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
+    }
+
+    private static List<JsonElement> CollectAbilityBuffElements(JsonElement ability, string singleKey, string arrayKey)
+    {
+        var result = new List<JsonElement>();
+        if (ability.ValueKind != JsonValueKind.Object) return result;
+        if (ability.TryGetProperty(arrayKey, out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in array.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"技能 {arrayKey} 列表元素必须为对象。");
+                result.Add(entry);
+            }
+        }
+        else if (ability.TryGetProperty(singleKey, out var single) && single.ValueKind == JsonValueKind.Object)
+        {
+            result.Add(single);
+        }
+        return result;
     }
 
     /// <summary>
@@ -135,6 +147,8 @@ public static class SkillTriggerEvaluator
             JsonRead.Number(buffElement, property.Name);
         }
         JsonRead.Number(buffElement, "maxStacks");
+        if (JsonRead.Number(buffElement, "baseStacks") < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 baseStacks 不能为负数。");
         var missingPerStack = JsonRead.Number(buffElement, "missingHitpointsPerStack");
         if (missingPerStack < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 missingHitpointsPerStack 不能为负数。");
@@ -150,10 +164,13 @@ public static class SkillTriggerEvaluator
         var stackPolicy = JsonRead.Text(buffElement, "stackPolicy");
         if (stackPolicy is not (null or "capped" or "perCaster" or "maxKeep"))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 stackPolicy 无效。");
-        // resetOnWave 只接受布尔字面量：true = 该 Buff 不进入跨波携带（波次清空即消散）。
-        if (buffElement.TryGetProperty("resetOnWave", out var resetFlag)
-            && resetFlag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 的 resetOnWave 必须为布尔值。");
+        // resetOnWave / noLevelGrowth / skipIfHasYixing 只接受布尔字面量。
+        foreach (var boolKey in new[] { "resetOnWave", "noLevelGrowth", "skipIfHasYixing" })
+        {
+            if (buffElement.TryGetProperty(boolKey, out var flag)
+                && flag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"技能 Buff 的 {boolKey} 必须为布尔值。");
+        }
         // 层数由已损气血派生的 Buff 满血时为 0 层，属合法惰性态。
         if (duration <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");

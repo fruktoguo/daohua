@@ -215,5 +215,91 @@
     "manaCost": 10.0,
     "rootAttribute": "agility",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.shunshan",
+    "name": "瞬闪",
+    "description": "身剑合一化电刺出。未负「移形」时借剑势遁入移形；若起手已怀「移形」，则消耗移形强行锁定破绽，击杀目标立即重置本技冷却且不再重复施加移形。",
+    "style": "sword",
+    "tier": 2,
+    "category": "physical",
+    "element": "metal",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 500,
+    "targetType": "targetEnemy",
+    "damageRatio": 2.4,
+    "flatDamage": 100,
+    "resetCooldownOnYixingKill": true,
+    "selfBuff": {
+      "buffId": "buff.yixing",
+      "name": "移形",
+      "durationSeconds": 5.0,
+      "maxStacks": 99,
+      "resetOnWave": true,
+      "noLevelGrowth": true,
+      "skipIfHasYixing": true,
+      "evasionPostRatio": 1.0
+    },
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 20.0,
+    "rootAttribute": "agility",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.pojun",
+    "name": "破军",
+    "description": "悍勇刀势横扫全体敌阵，随即自身踏入「移形」并蓄起五重「势不可挡」护体霸气，起始减半所受伤害且每秒削减一重。",
+    "style": "blade",
+    "tier": 2,
+    "category": "physical",
+    "element": "metal",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 1500,
+    "targetType": "allEnemies",
+    "damageRatio": 1.2,
+    "flatDamage": 50,
+    "selfBuffs": [
+      {
+        "buffId": "buff.yixing",
+        "name": "移形",
+        "durationSeconds": 5.0,
+        "maxStacks": 99,
+        "resetOnWave": true,
+        "noLevelGrowth": true,
+        "evasionPostRatio": 1.0
+      },
+      {
+        "buffId": "buff.shibukedang",
+        "name": "势不可挡",
+        "durationSeconds": 5.0,
+        "baseStacks": 5,
+        "maxStacks": 5,
+        "stackPolicy": "maxKeep",
+        "resetOnWave": true,
+        "noLevelGrowth": true,
+        "damageAbsorptionPoints": 20.0,
+        "decayStacksPerSecond": 1.0
+      }
+    ],
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "manaCost": 35.0,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
   }
 ]

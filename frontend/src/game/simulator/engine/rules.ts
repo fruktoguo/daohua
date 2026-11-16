@@ -144,6 +144,8 @@ export const BuffEffectChannel = {
   CriticalDamagePoints: 17,
   HealingBonusPoints: 18,
   FireSpellDamagePerSecond: 19,
+  ParryPostRatio: 20,
+  DecayStacksPerSecond: 21,
 } as const
 export type BuffEffectChannel = (typeof BuffEffectChannel)[keyof typeof BuffEffectChannel]
 
@@ -184,6 +186,8 @@ export const BUFF_CHANNELS: readonly BuffEffectChannelInfo[] = [
   { channel: BuffEffectChannel.CriticalDamagePoints, configKey: 'criticalDamagePoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.HealingBonusPoints, configKey: 'healingBonusPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.FireSpellDamagePerSecond, configKey: 'fireSpellDamagePerSecond', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.Tick1s, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.ParryPostRatio, configKey: 'parryPostRatio', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.DecayStacksPerSecond, configKey: 'decayStacksPerSecond', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.Tick1s, outOfCombatPanel: BuffOutOfCombatPanel.None },
 ]
 
 export const BUFF_CHANNEL_BY_KEY = new Map<string, BuffEffectChannelInfo>(

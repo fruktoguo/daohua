@@ -231,6 +231,17 @@ public static class DeterministicCombatEngine
         // 战斗经验对抗修正（总纲 §7.7.6）：作用于两侧等效输入，不占随机通道，不改暴击/破招判定与伤害链。
         (accuracy, evasion) = ApplyCombatExperienceContest(accuracy, evasion, attack.CombatExperience, defense.CombatExperience);
         var hit = Roll(encounter.Seed, side, context.Count, 1) >= evasion / (evasion + accuracy + 100);
+        if (context.ZeroDirectDamage)
+        {
+            // 零直伤施加型技能（如「灼心」）：完整结算破招/化解与命中检定，跳过暴击、面板直伤与固定伤害加成。
+            context.Hit = hit;
+            context.Critical = false;
+            context.Broken = broken;
+            context.Parried = parried;
+            context.RawDamage = 0;
+            context.Damage = 0;
+            return;
+        }
         var criticalPoints = attackEffective.Critical * (broken ? 2 : 1);
         var critical = hit && Roll(encounter.Seed, side, context.Count, 2)
             < criticalPoints / (criticalPoints + defenseEffective.CriticalResistance + 100);
@@ -373,6 +384,9 @@ public static class DeterministicCombatEngine
 
     internal static double AbilityNumber(JsonElement value, string key)
         => value.TryGetProperty(key, out var property) && property.TryGetDouble(out var number) ? number : 0;
+
+    internal static bool AbilityFlag(JsonElement value, string key)
+        => value.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.True;
 
     internal static CombatElement AbilityElement(JsonElement ability)
         => Enum.TryParse<CombatElement>(AbilityText(ability, "element") ?? "none", true, out var element) ? element : CombatElement.None;

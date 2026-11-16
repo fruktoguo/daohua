@@ -1,0 +1,101 @@
+[
+  {
+    "id": "map.wumeng-marsh",
+    "name": "雾梦泽",
+    "description": "位于畸木焦林以北的茫茫泽国（修仙四图）。终年迷雾锁津、瘴水纵横，练气后期乃至半步筑基方能立足其中，泽底沉睡着寒潭凶鳄、九首妖禽与上古剑魄。",
+    "backgroundSeed": 96314,
+    "nodes": [
+      {
+        "id": "node.mist-edge",
+        "name": "泽畔荒径",
+        "description": "从畸木焦林北出后踏入沼泽外围的湿滑苔径，雾岚弥漫，泽泥水傀常借水汽隐遁身形。",
+        "x": 135,
+        "y": -3,
+        "availableActionIds": [
+          "combat.sweep-wumeng-marsh"
+        ],
+        "encounterIds": [
+          "encounter.mist-edge"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.venom-fen",
+        "name": "毒瘴浅沼",
+        "description": "墨绿腐水与炽热地火交煎的泥沼区，毒火游泽蛙成群鸣叫，玄甲重鳞的寒潭玄鳄偶有上岸觅食。",
+        "x": 121,
+        "y": -17,
+        "cultivationMultiplier": 1.1,
+        "availableActionIds": [
+          "combat.sweep-wumeng-marsh"
+        ],
+        "encounterIds": [
+          "encounter.venom-fen"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.mist-heart",
+        "name": "迷雾泽心",
+        "description": "雾梦泽腹地深处，白雾浓如棉絮且隐见乙木风雷，九首鬼车盘旋枯枝之间厉声长啼。",
+        "x": 149,
+        "y": -21,
+        "cultivationMultiplier": 1.15,
+        "availableActionIds": [
+          "combat.sweep-wumeng-marsh"
+        ],
+        "encounterIds": [
+          "encounter.mist-heart"
+        ],
+        "buildableTemplate": "all"
+      },
+      {
+        "id": "node.sword-abyss",
+        "name": "剑冢沉潭",
+        "description": "大泽最北端的幽邃寒渊，昔年修仙古修斗剑遗冢沈溺于此，雾隐剑魄携龙珠盘踞深渊剑台之上。",
+        "x": 136,
+        "y": -36,
+        "cultivationMultiplier": 1.2,
+        "availableActionIds": [
+          "combat.sweep-wumeng-marsh"
+        ],
+        "encounterIds": [
+          "encounter.sword-abyss"
+        ],
+        "buildableTemplate": "all"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.pines-mist-edge",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.mist-edge",
+        "durationSeconds": 35
+      },
+      {
+        "id": "edge.mist-edge-fen",
+        "fromNodeId": "node.mist-edge",
+        "toNodeId": "node.venom-fen",
+        "durationSeconds": 15
+      },
+      {
+        "id": "edge.mist-edge-heart",
+        "fromNodeId": "node.mist-edge",
+        "toNodeId": "node.mist-heart",
+        "durationSeconds": 16
+      },
+      {
+        "id": "edge.fen-sword-abyss",
+        "fromNodeId": "node.venom-fen",
+        "toNodeId": "node.sword-abyss",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.heart-sword-abyss",
+        "fromNodeId": "node.mist-heart",
+        "toNodeId": "node.sword-abyss",
+        "durationSeconds": 18
+      }
+    ]
+  }
+]
