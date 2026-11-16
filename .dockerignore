@@ -14,6 +14,10 @@ artifacts
 !frontend/src/data
 !frontend/src/data/**
 docs
+!docs/design
+!docs/design/战斗演武画廊
+!docs/design/战斗演武画廊/vfx
+!docs/design/战斗演武画廊/vfx/**
 art
 tests
 temp
