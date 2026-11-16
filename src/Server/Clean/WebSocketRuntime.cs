@@ -410,11 +410,18 @@ public static class WebSocketEndpoint
         var token = linked.Token;
         async ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
         {
-            if (snapshot.PlayerId != session.PlayerId) return;
+            if (snapshot.PlayerId != session.PlayerId || token.IsCancellationRequested) return;
             // 权威位置随快照推进：迁地途中（EdgeId 非空）按「不在节点」上报——
             // 换节点会触发同节点修士的附近列表刷新，也是组队讨伐在场条件的仲裁触发源。
-            await presence.UpdateNodeAsync(snapshot.PlayerId,
-                snapshot.State.World.EdgeId is null ? snapshot.State.World.NodeId : null, token);
+            try
+            {
+                await presence.UpdateNodeAsync(snapshot.PlayerId,
+                    snapshot.State.World.EdgeId is null ? snapshot.State.World.NodeId : null, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return;
+            }
             // 握手全量快照入队前禁止增量：此时推送基线为空，delta 会携带全部分段并抢在首帧全量
             // 之前到达客户端（客户端 store 尚未归属即抛「增量快照归属不一致」）。改登记丢帧重投：
             // 发送循环在通道排空且握手快照基线就绪后按全段重编码幂等补发。
@@ -427,14 +434,19 @@ public static class WebSocketEndpoint
             if (!TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections))
                 session.MarkDeltaDropped();
         }
-        ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
-            ? ValueTask.CompletedTask
-            : QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(events), token);
+        ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events)
+            => eventPlayerId != session.PlayerId || token.IsCancellationRequested
+                ? ValueTask.CompletedTask
+                : QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(events), token);
         async ValueTask OnSocialStateChanged(Guid eventPlayerId)
         {
-            if (eventPlayerId != session.PlayerId) return;
-            var state = await social.BuildStateAsync(session.PlayerId, null, token);
-            await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(), state, token);
+            if (eventPlayerId != session.PlayerId || token.IsCancellationRequested) return;
+            try
+            {
+                var state = await social.BuildStateAsync(session.PlayerId, null, token);
+                await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(), state, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         }
         runtime.SnapshotUpdated += OnSnapshotUpdated;
         runtime.LogBatchEmitted += OnLogBatchEmitted;
