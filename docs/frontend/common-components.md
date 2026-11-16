@@ -418,9 +418,9 @@
   - **8 个分组 Tab 的日志面板**（综合/世界/附近/系统/战斗/好友/宗门/队伍）-> `GameLogPanel`：综合 = 系统日志 + 好友私聊 + 队伍群聊按时间合并（只读）；系统/战斗 = 服务端日志事件按 `channel` 分流；世界/附近/好友/队伍 = 传音频道；宗门为占位。
   - **传音频道面板**（世界/附近/队伍共用单会话模板）-> `ChatChannelPanel`；**好友私聊面板**（好友列表 + 申请处理 + 道号检索 + 私聊会话）-> `FriendChannelPanel`；**队伍面板**（成员列表 + 邀请 + 队伍群聊）-> `PartyChannelPanel`；**综合只读合并面板** -> `AggregatePanel`。
   - **传音输入框**：独立持有草稿状态，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定；左侧增设表情入口按钮呼出表情与表情包浮层 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
-  - **表情与表情包选择器浮层面板 (`ChatEmojiPicker`)**：包含「表情」与「表情包」双 Tab；原生 Emoji 与自定义表情包图片均按使用频次自适应实时排序（高频在先）；表情包支持右键快捷删除与底部添加链接。
-  - **表情包与离线缓存图像组件 (`ChatSticker`)**：智能识别消息内图片链接；未加载前渲染精致玄墨微光 `[图片]` 占位符；加载后通过浏览器 **IndexedDB**（`daohua_chat_stickers`）离线持久化二进制 Blob，相同链接 0 网络请求瞬时秒开；鼠标右键（或触屏长按）支持一键「添加到表情包」。
-  - **连续消息复读机 (+1 机制)**：在 `LogFeed.tsx` 的 `FeedList` / `ChatRow` 中线性扫描连续相同消息；当同一会话中连续出现 $\ge 2$ 句完全相同内容时，在最后一句消息底部渲染 `+1` 复读图标胶囊，点击自动替当前玩家在当前频道跟发相同消息。
+  - **表情与表情包选择器浮层面板 (`ChatEmojiPicker`)**：包含「表情」与「表情包」双 Tab；原生 Emoji 与自定义表情包图片均按使用频次自适应实时排序（高频在先）；自定义表情包上限 `100` 个（顶部显示 `X/100`），支持多图批量上传、批量勾选删除（「管理」模式）、右键删除、底部添加链接与多端云端同步；点击表情包时自动探测云端有效性并在过期时从本地 IndexedDB 静默重传换链后插入输入框。
+  - **表情包与离线缓存图像组件 (`ChatSticker`)**：智能识别消息内图片链接；未加载前渲染精致玄墨微光 `[图片]` 占位符；加载后通过浏览器 **IndexedDB**（`daohua_chat_stickers` v2，`blobs` 按 SHA-256 去重、`images` 按 URL 映射）离线持久化二进制 Blob，相同链接 0 网络请求瞬时秒开；鼠标右键（或触屏长按）支持一键「添加到表情包」（自动强制缓存二进制至本地，跨域受限时走服务端无状态中继）；若云端过期且本地存有原图，支持点击或发送时自动静默重传并同步刷新直链。
+  - **连续消息复读机 (+1 机制)**：在 `LogFeed.tsx` 的 `FeedList` / `ChatRow` 中线性扫描连续相同消息；当同一会话中连续出现 $\ge 2$ 句完全相同内容时，在最后一句消息底部渲染 `+1` 复读图标胶囊，点击自动替当前玩家在当前频道跟发相同消息（仅对已收藏表情包累加本地频次）。
   - **贴底滚动 Hook**：`useStickyScroll(revision)`，玩家未向上翻查时新内容自动滚到最新行；贴底标记只由用户滚动行为决定。
 - **组件源码**：
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
@@ -428,7 +428,7 @@
   - [`frontend/src/components/ChatPanel.tsx`](../../frontend/src/components/ChatPanel.tsx)
   - [`frontend/src/components/ChatSticker.tsx`](../../frontend/src/components/ChatSticker.tsx)
   - [`frontend/src/components/ChatEmojiPicker.tsx`](../../frontend/src/components/ChatEmojiPicker.tsx)
-- **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/chatStickerService.ts`](../../frontend/src/game/chatStickerService.ts)（表情与表情包 IndexedDB 离线缓存、频次自排序与收藏管理）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
+- **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/chatStickerService.ts`](../../frontend/src/game/chatStickerService.ts)（表情与表情包 IndexedDB v2 离线持久化、100 上限管理、多端 LWW 同步与过期自动重传）、[`frontend/src/game/chatImageUploadService.ts`](../../frontend/src/game/chatImageUploadService.ts)（开放 CORS 临时图床动态策略直传、串行队列与自适应 WebP 压缩）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-tabs`, `.chat-composer`, `.chat-sticker-*`, `.chat-repeat-*`, `.chat-picker-*`, `.chat-entry-list`, `.chat-presence`)
 - **设计真源**：[`docs/design/传音频道与日志分组.md`](../design/总纲/14-传音频道与日志分组.md)
 
@@ -449,9 +449,11 @@
   - **批次时序与击中帧锁步**：服务端按资源自然窗口（默认 5 秒）批量结算，一次快照可能携带窗口内多次出手。`frontend/src/game/combatFeedback.ts` 以稳定事件键（不随数组下标漂移）去重，并把同一批新事件压缩到 520ms 预算内按出手先后重放、同刻多段连击按 110ms 错峰；`ArenaActor` 的出手/受击/闪避与 `ArenaResource` 的浮字、血条落地共用该时间轴——有事件承接的掉血一律等击中帧（普攻 200ms / 施法 280ms）与数字同时落地，只有 DoT/反伤等无事件掉血才即时保底；浮字上限 24 条，伤害数字至少保留 1 点量级。灵力条只对消耗产浮字、不产切片，单位阵亡后冻结演出，尸体阵容保留战斗末值（`mp` 不再清零）。
   - **普攻与受击变体**：常态攻击/暴击/撞击复用共享 `vfx/feedback.js`；其中 `feedback.attack` 内置五式通用招式轮换（`0` 断岳斜劈 / `1` 惊鸿逆撩 / `2` 穿云疾刺 / `3` 残月横扫 / `4` 双绝交错，不区分武器与怪物，由 `CombatVfxRuntime` 按 `canonicalAttackerKey` 递增 `attackerKey`/`attackVariant` 独立推进连段，亦支持显式传入 `ctx.attackVariant`）；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`。逐项查看使用画廊演武控制台。
   - **尸体消散**：波次清空转入搜寻相位后服务端即清空 `enemies[]`，`CombatArena` 缓存战斗相位末帧敌方阵容继续以尸体形态（`is-dead`、不可交互）展示至寻敌倒数 1 秒，到点调 `CombatVfxRuntime.playCorpseDissipate()` 对全部 `.arena-actor--enemy` 播 `feedback.defeat` Canvas 残魂碎片与灵雾，槽位 CSS 淡出（`arena-corpse-dissipate` + `--corpse-fade-ms`）同步收束至新一波入场。
-- **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` Canvas v2.3.0 TS 门面 · `useCombatVfx.ts` React 全通道桥接 · `index.ts` 运行时与锚点/常驻阵管理 · `vfxRouting.ts` 纯规则映射）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
-- **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-ground-overlay`/`.vfx-stage-overlay`/顶栏层级保护）
-- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-ground-overlay"/>` 与 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef, groundOverlayRef, recentCombatEvents)`；返回值是运行时 ref，供快照调度之外的一次性演出（尸体消散）主动触发。
+  - **后台防积压与可见性基线同步**：`useCombatVfx`、`CombatVfxRuntime`、`core.js` 生产模式及 `ArenaActor`/`ArenaResource` 均接入页面页签隐藏态（`hidden`）与浏览器标签页可见性（`document.visibilityState`）联合门控；切至其它页签或浏览器切后台时立即停用调度并调用 `clearBattle()` 清空在途定时器/rAF/粒子/法阵，期间抵达的事件经 `markHandledCombatEvents` 静默推进基线；恢复可见时按最新快照重建基线（仅恢复实时吟唱与常驻阵盘，绝不补播切走期间积累的历史特效或动作）。
+  - **左上角「特效」切换胶囊与无动画模式**：`CombatArena` 顶部左侧操作区（`.combat-arena-top-actions-left`）提供紧凑「特效」切换胶囊（`.combat-vfx-toggle`），状态由 `useCombatVfxStore` 持久化至 `localStorage`（`daohua.combatVfxEnabled`）。关闭时 `.combat-arena-shell.is-vfx-disabled` 立即停用 Canvas 双层覆盖层、角色出招/受击/闪避动作、血条断裂切片、尸体消散动画及暴击/破招光效标签，去除击中前摇等待，仅保留简洁正常的伤害/治疗/闪避数字飘字与常规血蓝/行动读条推进。
+- **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` Canvas v2.3.0 TS 门面 · `useCombatVfx.ts` React 全通道桥接 · `index.ts` 运行时与锚点/常驻阵管理 · `vfxRouting.ts` 纯规则映射）与 [`frontend/src/game/combatVfxStore.ts`](../../frontend/src/game/combatVfxStore.ts)；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
+- **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-ground-overlay`/`.vfx-stage-overlay`/`.combat-vfx-toggle`/`.is-vfx-disabled`/顶栏层级保护）
+- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-ground-overlay"/>` 与 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef, groundOverlayRef, { hidden, enabled })`；返回值是运行时 ref，供快照调度之外的一次性演出（尸体消散）主动触发。
 - **注意**：`vite.config.ts` 的 `server.fs.allow: ['..']` 为 dev server serve 仓库根共享脚本所必需，勿删。
 
 ---

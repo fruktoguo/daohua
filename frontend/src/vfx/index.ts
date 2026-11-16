@@ -96,6 +96,7 @@ export class CombatVfxRuntime {
   private readonly basicAttackComboByActor = new Map<string, number>()
   private readonly scheduledTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly scheduledRafs = new Set<number>()
+  private playbackActive = true
   private disposed = false
 
   constructor(
@@ -105,6 +106,31 @@ export class CombatVfxRuntime {
   ) {
     this.shellEl = shellEl
     this.engine = new VfxEngine(shellEl, skyOverlayEl, groundOverlayEl)
+  }
+
+  /** 当前运行时是否允许播放特效（关闭开关、切页隐藏或浏览器后台时为 false） */
+  isPlaybackActive(): boolean {
+    return !this.disposed && this.playbackActive
+  }
+
+  /** 切换特效播放启停状态；停用时立即清场并清空在途调度，恢复时同步画布尺寸 */
+  setPlaybackActive(active: boolean): void {
+    if (this.disposed) return
+    if (!active) {
+      this.playbackActive = false
+      this.clearBattle()
+      return
+    }
+    if (!this.playbackActive) {
+      this.playbackActive = true
+      this.engine.resize(true)
+    }
+  }
+
+  /** 主动刷新画布尺寸（页签从隐藏恢复可见时调用） */
+  resize(notify = true): void {
+    if (this.disposed) return
+    this.engine.resize(notify)
   }
 
   hasVfx(id: string): boolean {
@@ -145,7 +171,7 @@ export class CombatVfxRuntime {
 
   /** 按当前所有正在吟唱的单位（本机 / 队友 / 野怪 / 斗法双方）全量同步地面蓄力法阵 */
   syncCastRings(casts: readonly ActiveCastSpec[], selfIndex?: number | null): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playbackActive) return
     const activeKeys = new Set<string>()
 
     for (const cast of casts) {
@@ -217,7 +243,7 @@ export class CombatVfxRuntime {
     formations: readonly ActiveFormationSpec[],
     selfIndex?: number | null,
   ): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playbackActive) return
     if (!active || formations.length === 0) {
       this.stopAllFormations()
       return
@@ -278,18 +304,19 @@ export class CombatVfxRuntime {
 
   /** 注册与运行时生命周期绑定的延迟回调（`delayMs <= 0` 在下一渲染帧执行，确保 React DOM 提交完成） */
   schedule(delayMs: number, fn: () => void): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playbackActive) return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     if (delayMs <= 0 && typeof requestAnimationFrame === 'function') {
       const rafId = requestAnimationFrame(() => {
         this.scheduledRafs.delete(rafId)
-        if (!this.disposed) fn()
+        if (!this.disposed && this.playbackActive) fn()
       })
       this.scheduledRafs.add(rafId)
       return
     }
     const timerId = setTimeout(() => {
       this.scheduledTimers.delete(timerId)
-      if (!this.disposed) fn()
+      if (!this.disposed && this.playbackActive) fn()
     }, Math.max(0, delayMs))
     this.scheduledTimers.add(timerId)
   }
@@ -310,7 +337,7 @@ export class CombatVfxRuntime {
 
   /** 播放聚合后的单次攻击/技能/阵法反击演出批次 */
   playCombatBatch(batch: CombatEventBatch, options: CombatBatchPlaybackOptions): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playbackActive) return
     const { selfIndex, ability, morphed, lowestHpAllyId } = options
 
     const side: 'ally' | 'enemy' = isEnemySideId(batch.attackerId) ? 'enemy' : 'ally'
@@ -437,26 +464,29 @@ export class CombatVfxRuntime {
     }
   }
 
-  /** 播放雷击符与 6 种战斗丹药的即时激活特效 */
+  /** 播放雷击符与 6 种战斗丹药的即时激活特效（支持本机/盟友与斗法敌方镜像双侧施放） */
   playConsumable(
     itemId: string,
     actorId: string,
     selfIndex?: number | null,
     preferredEnemyTargetId?: string | null,
   ): void {
-    if (this.disposed || !this.engine.has(itemId)) return
+    if (this.disposed || !this.playbackActive || !this.engine.has(itemId)) return
+    const isEnemy = isEnemySideId(actorId)
+    const side: 'ally' | 'enemy' = isEnemy ? 'enemy' : 'ally'
     const casterEl = this.findActorEl(actorId, selfIndex)
     const allyEls = this.collectSideEls('ally', true)
     const enemyEls = this.collectSideEls('enemy', true)
 
     if (itemId === 'item.leiji-talisman') {
+      const targetPool = isEnemy ? allyEls : enemyEls
       const targetEl =
         (preferredEnemyTargetId ? this.findActorEl(preferredEnemyTargetId, selfIndex) : null) ??
-        enemyEls[0] ??
+        targetPool[0] ??
         null
       if (!casterEl && !targetEl) return
       this.engine.play(itemId, {
-        side: 'ally',
+        side,
         casterEl,
         targetEl,
         targetEls: targetEl ? [targetEl] : [],
@@ -469,7 +499,7 @@ export class CombatVfxRuntime {
 
     if (!casterEl) return
     this.engine.play(itemId, {
-      side: 'ally',
+      side,
       casterEl,
       targetEl: casterEl,
       targetEls: [casterEl],
@@ -485,7 +515,7 @@ export class CombatVfxRuntime {
     selfIndex?: number | null,
     ability?: CombatAbilityDefinition | null,
   ): void {
-    if (this.disposed || !this.engine.has(abilityId)) return
+    if (this.disposed || !this.playbackActive || !this.engine.has(abilityId)) return
     const casterEl = this.findActorEl(actorId, selfIndex)
     if (!casterEl || isActorDeadOrDormant(casterEl)) return
     const side: 'ally' | 'enemy' = isEnemySideId(actorId) ? 'enemy' : 'ally'
@@ -508,7 +538,7 @@ export class CombatVfxRuntime {
 
   /** 播放战内复活降临光效（`feedback.revive`） */
   playRevive(actorId: string, selfIndex?: number | null): void {
-    if (this.disposed || !this.engine.has('feedback.revive')) return
+    if (this.disposed || !this.playbackActive || !this.engine.has('feedback.revive')) return
     const targetEl = this.findActorEl(actorId, selfIndex)
     if (!targetEl) return
     this.engine.play('feedback.revive', {
@@ -521,7 +551,7 @@ export class CombatVfxRuntime {
 
   /** 搜寻期敌人尸体退场消散（触发 `feedback.defeat` 并清理敌方残留施法阵） */
   playCorpseDissipate(): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playbackActive) return
     this.stopAllCastRings(true)
     const enemies = this.collectSideEls('enemy', false)
     if (enemies.length === 0 || !this.engine.has('feedback.defeat')) return

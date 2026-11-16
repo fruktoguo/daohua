@@ -67,18 +67,11 @@ function combatEventBaseKey(event: CombatRecentEvent): string {
   ].join('|')
 }
 
-/**
- * 从一批战斗事件中挑出「匹配当前单位且尚未消费」的新事件，并按批次内时序排期。
- *
- * @param events 快照下发的最近事件（服务端按出手时序排列）
- * @param matches 当前单位关心的事件（受击方 / 出手方或受击方）
- * @param handled 该单位已消费的事件稳定键集合（跨快照复用）
- */
-export function collectScheduledCombatEvents(
+function identifyFreshCombatEvents(
   events: readonly CombatRecentEvent[],
   matches: (event: CombatRecentEvent) => boolean,
   handled: ReadonlySet<string>,
-): ScheduledCombatEvent[] {
+): Array<{ event: CombatRecentEvent; key: string }> {
   if (events.length === 0) return []
   const source = events.length > COMBAT_EVENT_SCAN_LIMIT
     ? events.slice(-COMBAT_EVENT_SCAN_LIMIT)
@@ -99,6 +92,42 @@ export function collectScheduledCombatEvents(
     if (!matches(entry.event) || handled.has(entry.key)) continue
     fresh.push(entry)
   }
+  return fresh
+}
+
+/**
+ * 将一批战斗事件中匹配当前单位的新事件静默记为已消费（不排期表现）。
+ * 用于切页隐藏、切浏览器后台或关闭特效后恢复基线，避免积压历史事件在恢复可见时瞬间补播。
+ */
+export function markHandledCombatEvents(
+  events: readonly CombatRecentEvent[],
+  matches: (event: CombatRecentEvent) => boolean,
+  handled: Set<string>,
+  maxHandled = 200,
+): void {
+  const fresh = identifyFreshCombatEvents(events, matches, handled)
+  for (const { key } of fresh) {
+    handled.add(key)
+    if (handled.size > maxHandled) {
+      const oldest = handled.values().next().value
+      if (oldest) handled.delete(oldest)
+    }
+  }
+}
+
+/**
+ * 从一批战斗事件中挑出「匹配当前单位且尚未消费」的新事件，并按批次内时序排期。
+ *
+ * @param events 快照下发的最近事件（服务端按出手时序排列）
+ * @param matches 当前单位关心的事件（受击方 / 出手方或受击方）
+ * @param handled 该单位已消费的事件稳定键集合（跨快照复用）
+ */
+export function collectScheduledCombatEvents(
+  events: readonly CombatRecentEvent[],
+  matches: (event: CombatRecentEvent) => boolean,
+  handled: ReadonlySet<string>,
+): ScheduledCombatEvent[] {
+  const fresh = identifyFreshCombatEvents(events, matches, handled)
   if (fresh.length === 0) return []
 
   // 离线补算可能一次携带整段战斗的成千上万条事件：只重放距当前最近的一小段，

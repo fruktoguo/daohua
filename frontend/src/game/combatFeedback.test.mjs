@@ -8,6 +8,7 @@ import {
   COMBAT_EVENT_REPLAY_LIMIT,
   collectScheduledCombatEvents,
   combatHitDelayMilliseconds,
+  markHandledCombatEvents,
 } from './combatFeedback.ts'
 
 function event(overrides = {}) {
@@ -105,4 +106,21 @@ test('combatFeedback：离线补算的超长批次只保留最近一段', () => 
 test('combatFeedback：命中帧按普攻/技能区分', () => {
   assert.equal(combatHitDelayMilliseconds({ abilityId: null }), COMBAT_ATTACK_HIT_DELAY_MS)
   assert.equal(combatHitDelayMilliseconds({ abilityId: 'ability.thunder' }), COMBAT_CAST_HIT_DELAY_MS)
+})
+
+test('combatFeedback：markHandledCombatEvents 静默消费切页期间积压事件，恢复后不重放', () => {
+  const backlog = Array.from({ length: COMBAT_EVENT_REPLAY_LIMIT + 10 }, (_, index) => event({
+    at: 100 + index * 0.2,
+    damage: 10 + index,
+    targetHp: 5000 - index * 10,
+  }))
+  const handled = new Set()
+  markHandledCombatEvents(backlog, () => true, handled)
+  assert.equal(handled.size, COMBAT_EVENT_REPLAY_LIMIT + 10)
+  assert.deepEqual(collectScheduledCombatEvents(backlog, () => true, handled), [])
+
+  const fresh = event({ at: 200, damage: 42, targetHp: 4500 })
+  const scheduled = collectScheduledCombatEvents([...backlog, fresh], () => true, handled)
+  assert.equal(scheduled.length, 1)
+  assert.equal(scheduled[0].event, fresh)
 })

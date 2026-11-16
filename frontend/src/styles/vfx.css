@@ -24,8 +24,124 @@
   pointer-events: none;
 }
 
-/* 保证战场顶部操作栏（统计/模拟器/停止）层级高于天幕粒子层 */
+/* 保证战场顶部操作栏（特效开关/统计/模拟器/停止）层级高于天幕粒子层 */
 .combat-arena-shell > .combat-arena-top-actions {
   position: relative;
   z-index: 12;
+}
+
+/* 左上角「特效」切换胶囊 */
+.combat-vfx-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px 3px 10px;
+  border: 1px solid rgba(201, 180, 109, 0.28);
+  border-radius: 9999px;
+  background: rgba(14, 12, 9, 0.56);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.combat-vfx-toggle:hover,
+.combat-vfx-toggle:focus-visible {
+  border-color: var(--gold-dim);
+  color: var(--text);
+}
+
+.combat-vfx-toggle.is-enabled {
+  border-color: rgba(201, 180, 109, 0.54);
+  background: rgba(201, 180, 109, 0.14);
+  color: var(--gold-bright);
+}
+
+.combat-vfx-toggle-label {
+  letter-spacing: 0.5px;
+}
+
+.combat-vfx-toggle-pill {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.combat-vfx-toggle.is-enabled .combat-vfx-toggle-pill {
+  border-color: rgba(232, 214, 154, 0.7);
+  background: rgba(201, 180, 109, 0.34);
+}
+
+.combat-vfx-toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(226, 232, 240, 0.72);
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.combat-vfx-toggle.is-enabled .combat-vfx-toggle-thumb {
+  transform: translateX(12px);
+  background: var(--gold-bright, #facc15);
+  box-shadow: 0 0 6px rgba(250, 204, 21, 0.65);
+}
+
+/* 关闭特效模式：停用双层 Canvas、角色动作/受击/闪避/切片与暴击光效，仅保留正常伤害数字 */
+.combat-arena-shell.is-vfx-disabled > .vfx-ground-overlay,
+.combat-arena-shell.is-vfx-disabled > .vfx-stage-overlay,
+.combat-arena-shell.is-vfx-disabled .arena-action-fx,
+.combat-arena-shell.is-vfx-disabled .arena-impact-fx,
+.combat-arena-shell.is-vfx-disabled .arena-resource-shards {
+  display: none !important;
+}
+
+.combat-arena-shell.is-vfx-disabled .arena-actor.is-hit .arena-avatar,
+.combat-arena-shell.is-vfx-disabled .arena-actor.is-hit .arena-avatar::after,
+.combat-arena-shell.is-vfx-disabled .arena-actor.is-action-attack .arena-avatar-stage,
+.combat-arena-shell.is-vfx-disabled .arena-actor.is-action-cast .arena-avatar-stage,
+.combat-arena-shell.is-vfx-disabled .arena-actor.is-dodging .arena-avatar-stage,
+.combat-arena-shell.is-vfx-disabled .arena-slot--dissipating {
+  animation: none !important;
+}
+
+@keyframes arena-resource-float-plain {
+  0% {
+    opacity: 0;
+    transform: translate3d(calc(-50% + var(--float-drift)), 0, 0);
+  }
+  15%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(-50% + var(--float-drift)), -26px, 0);
+  }
+}
+
+.combat-arena-shell.is-vfx-disabled .arena-resource-floats em {
+  font-size: 14px;
+  letter-spacing: 0;
+  filter: none;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  animation: arena-resource-float-plain 0.85s ease-out forwards;
+}
+
+.combat-arena-shell.is-vfx-disabled .arena-resource-floats em.is-crit,
+.combat-arena-shell.is-vfx-disabled .arena-resource-floats em.is-break-crit,
+.combat-arena-shell.is-vfx-disabled .arena-resource-floats em.is-break,
+.combat-arena-shell.is-vfx-disabled .arena-resource-floats em.is-parry {
+  color: #ff3b30;
+  font-size: 14px;
 }

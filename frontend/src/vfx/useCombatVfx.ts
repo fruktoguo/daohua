@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { collectScheduledCombatEvents } from '../game/combatFeedback'
+import { isDocumentCurrentlyVisible, useDocumentVisible } from '../game/combatVfxStore'
 import { useGameStore } from '../game/gameStore'
 import type {
   CombatAbilityDefinition,
@@ -100,11 +101,26 @@ function resolveLowestHpAllyId(
  * 4. 10 门内功心法入战/斗法首帧周天护体演出 + `trait.xuyi`/`trait.ranhun` 特质反应特效；
  * 5. `item.leiji-talisman` + 6 种战斗丹药的双通道去重激活、战内倒地复活（`feedback.revive`）与搜寻散尸退场（`feedback.defeat`）。
  */
+export interface UseCombatVfxOptions {
+  /** 详情页签是否处于隐藏态（应用内切换至其它页签） */
+  readonly hidden?: boolean
+  /** 用户是否在左上角开启战斗特效 */
+  readonly enabled?: boolean
+}
+
 export function useCombatVfx(
   shellRef: RefObject<HTMLDivElement | null>,
   overlayRef: RefObject<HTMLDivElement | null>,
   groundOverlayRef?: RefObject<HTMLDivElement | null>,
+  options?: UseCombatVfxOptions,
 ): RefObject<CombatVfxRuntime | null> {
+  const hidden = options?.hidden ?? false
+  const enabled = options?.enabled ?? true
+  const documentVisible = useDocumentVisible()
+  const active = !hidden && enabled && documentVisible
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const syncActiveStateRef = useRef<((nextActive: boolean) => void) | null>(null)
   const runtimeRef = useRef<CombatVfxRuntime | null>(null)
 
   useEffect(() => {
@@ -115,6 +131,9 @@ export function useCombatVfx(
 
     const runtime = new CombatVfxRuntime(shellEl, skyOverlayEl, groundOverlayEl)
     runtimeRef.current = runtime
+
+    let playbackActive = activeRef.current
+    runtime.setPlaybackActive(playbackActive)
 
     let abilitiesSource: readonly CombatAbilityDefinition[] | null = null
     let abilitiesMap = new Map<string, CombatAbilityDefinition>()
@@ -150,6 +169,7 @@ export function useCombatVfx(
 
     function flushDomSync(): void {
       pendingSyncRafId = null
+      if (!playbackActive) return
       runtime.syncCastRings(pendingSyncCasts, pendingSyncSelfIndex)
       runtime.syncFormations(pendingSyncFormActive, pendingSyncFormations, pendingSyncSelfIndex)
     }
@@ -160,6 +180,7 @@ export function useCombatVfx(
       formations: ActiveFormationSpec[],
       selfIndex: number | null,
     ): void {
+      if (!playbackActive) return
       pendingSyncCasts = casts
       pendingSyncFormActive = formActive
       pendingSyncFormations = formations
@@ -302,6 +323,8 @@ export function useCombatVfx(
         const seenSide = new Set<string>()
         for (const ev of events) {
           if (ev.atSeconds <= battleElapsed) continue
+          if (ev.abilityId && (ev.abilityId.startsWith('item.') || ev.abilityId.startsWith('trait.'))) continue
+          if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator) continue
           const sideActorId = ev.attackerIsInitiator === duel.isInitiator ? 'player' : 'enemy:0'
           if (seenSide.has(sideActorId)) continue
           seenSide.add(sideActorId)
@@ -370,6 +393,7 @@ export function useCombatVfx(
       state: ReturnType<typeof useGameStore.getState>,
       isInitialBaseline: boolean,
     ): void {
+      if (!playbackActive) return
       const current = state.queue.entries[0] ?? null
       const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
       const expedition = isCombat ? (current.expedition ?? null) : null
@@ -399,7 +423,7 @@ export function useCombatVfx(
         resetEncounterState()
       }
 
-      const justLeftCombat = prevPhase === 'combat' && (phase === 'search' || phase === 'respawn')
+      const justLeftCombat = (prevPhase === 'combat' || prevPhase === 'duel') && (phase === 'search' || phase === 'respawn')
       const enteredNewWave =
         phase === 'combat' &&
         (prevPhase === 'search' ||
@@ -504,6 +528,15 @@ export function useCombatVfx(
                 ? resolveLowestHpAllyId(expedition, state, sideForTarget, selfIndex)
                 : null
             runtime.schedule(batch.delayMs, () => {
+              if (batch.abilityId && INSTANT_CONSUMABLE_ITEM_IDS.has(batch.abilityId)) {
+                const targetId = batch.targetIds[0] ?? (batch.canonicalAttackerKey === 'player' ? 'enemy:0' : 'player')
+                if (batch.canonicalAttackerKey === 'player') {
+                  emitConsumableWithDedup(batch.abilityId, 'player', selfIndex, targetId)
+                } else {
+                  runtime.playConsumable(batch.abilityId, batch.attackerId, selfIndex, targetId)
+                }
+                return
+              }
               runtime.playCombatBatch(batch, { selfIndex, ability, morphed, lowestHpAllyId })
             })
           }
@@ -525,6 +558,7 @@ export function useCombatVfx(
           const crossed: Array<{ index: number; mapped: CombatRecentEvent }> = []
           for (let i = 0; i < rawEvents.length; i++) {
             const ev = rawEvents[i]
+            if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator && (ev.damage ?? 0) <= 0) continue
             if (ev.atSeconds > duelLastElapsed && ev.atSeconds <= battleElapsed) {
               crossed.push({
                 index: i,
@@ -538,6 +572,7 @@ export function useCombatVfx(
                   broken: ev.broken,
                   parried: ev.parried,
                   abilityId: ev.abilityId ?? null,
+                  targetHp: ev.targetHitpointsAfter,
                 },
               })
             }
@@ -545,7 +580,15 @@ export function useCombatVfx(
           if (crossed.length > 0) {
             const windowCrossed = crossed.length > 16 ? crossed.slice(-16) : crossed
             const mappedList = windowCrossed.map(item => item.mapped)
-            const scheduled = collectScheduledCombatEvents(mappedList, () => true, new Set())
+            const scheduled = collectScheduledCombatEvents(mappedList, () => true, handledEventKeys)
+            for (const item of scheduled) {
+              handledEventKeys.add(item.key)
+            }
+            if (handledEventKeys.size > 1200) {
+              const tail = Array.from(handledEventKeys).slice(-600)
+              handledEventKeys.clear()
+              for (const key of tail) handledEventKeys.add(key)
+            }
             // 将每条 ScheduledCombatEvent 对应回原始 duel.events 下标以推算「跃迁→踏云」
             const origIndexByEvent = new Map<CombatRecentEvent, number>()
             for (const item of windowCrossed) {
@@ -567,6 +610,15 @@ export function useCombatVfx(
                   ? resolveLowestHpAllyId(expedition, state, sideForTarget, selfIndex)
                   : null
               runtime.schedule(batch.delayMs, () => {
+                if (batch.abilityId && INSTANT_CONSUMABLE_ITEM_IDS.has(batch.abilityId)) {
+                  const targetId = batch.canonicalAttackerKey === 'player' ? 'enemy:0' : 'player'
+                  if (batch.canonicalAttackerKey === 'player') {
+                    emitConsumableWithDedup(batch.abilityId, 'player', selfIndex, targetId)
+                  } else {
+                    runtime.playConsumable(batch.abilityId, 'enemy:0', selfIndex, targetId)
+                  }
+                  return
+                }
                 runtime.playCombatBatch(batch, { selfIndex, ability, morphed, lowestHpAllyId })
               })
             }
@@ -672,13 +724,39 @@ export function useCombatVfx(
       prevWaveNumber = waveNumber
     }
 
-    processSnapshot(useGameStore.getState(), true)
+    function syncActiveState(nextActive: boolean): void {
+      if (nextActive === playbackActive) return
+      playbackActive = nextActive
+      if (!nextActive) {
+        cancelPendingDomSync()
+        runtime.setPlaybackActive(false)
+        resetEncounterState()
+        prevEntryId = null
+        prevPhase = null
+        prevWaveNumber = null
+        return
+      }
+      resetEncounterState()
+      prevEntryId = null
+      prevPhase = null
+      prevWaveNumber = null
+      runtime.setPlaybackActive(true)
+      processSnapshot(useGameStore.getState(), true)
+    }
+
+    syncActiveStateRef.current = syncActiveState
+
+    if (playbackActive) {
+      processSnapshot(useGameStore.getState(), true)
+    }
 
     const unsubscribeStore = useGameStore.subscribe((state) => {
+      if (!playbackActive) return
       processSnapshot(state, false)
     })
 
     const unsubscribeRawLogs = gameLogService.subscribeRawBatch((playerId, events) => {
+      if (!playbackActive) return
       const state = useGameStore.getState()
       if (state.playerId !== playerId) return
       const current = state.queue.entries[0] ?? null
@@ -686,7 +764,7 @@ export function useCombatVfx(
         current?.type === 'combat' && current.executionKind === 'combat-encounter'
           ? (current.expedition ?? null)
           : null
-      if (!expedition || expedition.phase !== 'combat') return
+      if (!expedition || (expedition.phase !== 'combat' && expedition.phase !== 'duel')) return
 
       const selfIndex = expedition.selfIndex ?? null
       const bestEnemyTargetId = resolveHighestThreatEnemyTargetId(expedition)
@@ -702,7 +780,21 @@ export function useCombatVfx(
       }
     })
 
+    const handleVisibilityChange = (): void => {
+      // 浏览器切后台瞬间同步清场，防止 rAF 暂停期间继续累积回调或定时器
+      if (!isDocumentCurrentlyVisible()) {
+        syncActiveState(false)
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+
     return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+      syncActiveStateRef.current = null
       unsubscribeStore()
       unsubscribeRawLogs()
       cancelPendingDomSync()
@@ -710,6 +802,10 @@ export function useCombatVfx(
       runtimeRef.current = null
     }
   }, [shellRef, overlayRef, groundOverlayRef])
+
+  useEffect(() => {
+    syncActiveStateRef.current?.(active)
+  }, [active])
 
   return runtimeRef
 }

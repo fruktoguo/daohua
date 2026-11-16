@@ -25,9 +25,10 @@ import { BonusAsideList, extractBuffBonusItems, ItemIcon, ItemTooltipTarget } fr
 import { Icon } from './Icon'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useCombatVfx } from '../vfx/useCombatVfx'
+import { useCombatVfxStore, useDocumentVisible } from '../game/combatVfxStore'
 import { StatGlyph } from './StatGlyph'
 import { useUiStore } from '../uiStore'
-import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDelayMilliseconds } from '../game/combatFeedback'
+import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDelayMilliseconds, markHandledCombatEvents } from '../game/combatFeedback'
 import { computeArenaFormationScale, resolveOccupiedRows } from '../game/combatScale'
 
 import { scaleMonsterAttributes, scaleMonsterDrops } from '../game/combatDifficulty'
@@ -201,6 +202,8 @@ function ArenaResource({
   tone,
   recentEvents,
   frozen = false,
+  isVisible = true,
+  vfxEnabled = true,
 }: {
   /** 实体唯一标识符（切换目标时重置特效） */
   actorKey: string
@@ -214,6 +217,10 @@ function ArenaResource({
   recentEvents?: readonly CombatRecentEvent[] | null
   /** 单位已阵亡（尸体）：停止灵力消耗演出与浮字，避免死亡瞬间再播一次掉蓝动画 */
   frozen?: boolean
+  /** 详情页与浏览器标签页是否处于可见态 */
+  isVisible?: boolean
+  /** 是否启用动画与视觉特效（关闭后只显示正常伤害数字，不播切片与暴击光效） */
+  vfxEnabled?: boolean
 }): React.JSX.Element {
   const t = useT()
   const normalizedMax = Math.max(1, max)
@@ -224,6 +231,8 @@ function ArenaResource({
   const timers = useRef(new Set<number>())
   const [effects, setEffects] = useState<ResourceEffect[]>([])
   const handledEventsRef = useRef(new Set<string>())
+  const wasVisibleRef = useRef(isVisible)
+  const prevVfxEnabledRef = useRef(vfxEnabled)
   /**
    * 已排期、尚未到击中帧的权威掉血：期间血条等它落地，
    * 杜绝「条先掉、数字后出」的因果错位；同一批次后续快照只修正目标值，不抢先落条。
@@ -231,6 +240,12 @@ function ArenaResource({
   const pendingDropRef = useRef<{ id: number; dueAt: number; value: number } | null>(null)
   /** 上一目标键：仅切换单位时重置已消费事件（上限变化不重置，避免同批事件重复播放） */
   const actorKeyRef = useRef(actorKey)
+
+  const clearPendingTimers = useCallback(() => {
+    timers.current.forEach(timer => window.clearTimeout(timer))
+    timers.current.clear()
+    pendingDropRef.current = null
+  }, [])
 
   const pushEffect = useCallback((effect: ResourceEffect) => {
     setEffects(current => [...current.slice(-(COMBAT_RESOURCE_EFFECT_LIMIT - 1)), effect])
@@ -248,17 +263,54 @@ function ArenaResource({
       actorKeyRef.current = actorKey
       handledEventsRef.current.clear()
     }
-    timers.current.forEach(timer => window.clearTimeout(timer))
-    timers.current.clear()
-    pendingDropRef.current = null
+    clearPendingTimers()
     previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
     setDisplayValue(normalizedValue)
     setEffects([])
-  }, [actorKey, normalizedMax])
+  }, [actorKey, clearPendingTimers, normalizedMax])
 
   // 2. 消费战斗事件流：闪避/破招/拆招/暴击浮字与血条切片按击中帧卡点爆发；
   //    同一快照内的多秒事件先由 collectScheduledCombatEvents 压缩为有序重放时间轴。
   useLayoutEffect(() => {
+    if (!isVisible) {
+      wasVisibleRef.current = false
+      clearPendingTimers()
+      setEffects([])
+      if (tone === 'hp' && recentEvents && recentEvents.length > 0) {
+        markHandledCombatEvents(
+          recentEvents,
+          event => isActorMatchingId(event.targetId, actorKey),
+          handledEventsRef.current,
+        )
+      }
+      return
+    }
+
+    if (!wasVisibleRef.current) {
+      wasVisibleRef.current = true
+      clearPendingTimers()
+      setEffects([])
+      setDisplayValue(normalizedValue)
+      previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
+      if (tone === 'hp' && recentEvents && recentEvents.length > 0) {
+        markHandledCombatEvents(
+          recentEvents,
+          event => isActorMatchingId(event.targetId, actorKey),
+          handledEventsRef.current,
+        )
+      }
+      return
+    }
+
+    if (prevVfxEnabledRef.current !== vfxEnabled) {
+      prevVfxEnabledRef.current = vfxEnabled
+      if (!vfxEnabled) {
+        clearPendingTimers()
+        setDisplayValue(normalizedValue)
+        setEffects([])
+      }
+    }
+
     if (tone !== 'hp' || !recentEvents || recentEvents.length === 0) return
     const handled = handledEventsRef.current
     const scheduled = collectScheduledCombatEvents(
@@ -276,7 +328,8 @@ function ArenaResource({
       }
 
       const id = nextEffectId.current++
-      const hitDelay = delay + combatHitDelayMilliseconds(event)
+      // 关闭特效时不播放攻击/施法前摇，直接按批次错峰落数字与血条
+      const hitDelay = vfxEnabled ? delay + combatHitDelayMilliseconds(event) : delay
       if (event.hit && event.damage > 0) {
         pendingDropRef.current = {
           id,
@@ -289,12 +342,12 @@ function ArenaResource({
         timers.current.delete(triggerTimer)
 
         if (!event.hit) {
-          // 闪避（可同时附带化解标记）
+          // 闪避（关闭特效时保留基础闪避提示，不带特殊光效标签）
           pushEffect({
             id,
             text: t('combat.arena.dodge'),
-            badge: event.parried ? 'parry' : undefined,
-            badgeLabel: event.parried ? t('combat.arena.parry') : undefined,
+            badge: vfxEnabled && event.parried ? 'parry' : undefined,
+            badgeLabel: vfxEnabled && event.parried ? t('combat.arena.parry') : undefined,
             kind: 'dodge',
             left: 0.35,
             width: 0.3,
@@ -319,14 +372,16 @@ function ArenaResource({
         const isBreak = !isBreakCrit && Boolean(event.broken)
         const isParry = Boolean(event.parried)
 
-        const badgeKind: 'break-crit' | 'crit' | 'break' | 'parry' | undefined = isBreakCrit
-          ? 'break-crit'
-          : isCrit
-          ? 'crit'
-          : isBreak
-          ? 'break'
-          : isParry
-          ? 'parry'
+        const badgeKind: 'break-crit' | 'crit' | 'break' | 'parry' | undefined = vfxEnabled
+          ? (isBreakCrit
+              ? 'break-crit'
+              : isCrit
+              ? 'crit'
+              : isBreak
+              ? 'break'
+              : isParry
+              ? 'parry'
+              : undefined)
           : undefined
         const badgeLabel = badgeKind === 'break-crit'
           ? t('combat.arena.breakCrit')
@@ -360,11 +415,16 @@ function ArenaResource({
       }, hitDelay)
       timers.current.add(triggerTimer)
     }
-  }, [actorKey, normalizedMax, normalizedValue, recentEvents, t, tone, pushEffect])
+  }, [actorKey, clearPendingTimers, isVisible, normalizedMax, normalizedValue, recentEvents, t, tone, pushEffect, vfxEnabled])
 
   // 3. 数值变动保底：回血/灵力消耗/无事件承接的持续扣血立即落条；
   //    有事件承接的掉血只修正目标值，等击中帧与数字一起落地。
   useLayoutEffect(() => {
+    if (!isVisible) {
+      previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
+      setDisplayValue(normalizedValue)
+      return
+    }
     const previous = previousRef.current
     if (previous.actorKey !== actorKey || previous.max !== normalizedMax) {
       previousRef.current = { actorKey, max: normalizedMax, value: normalizedValue }
@@ -384,7 +444,7 @@ function ArenaResource({
     if (pending) pendingDropRef.current = null
 
     setDisplayValue(normalizedValue)
-    if (tone === 'mp' && (frozen || delta >= 0)) return
+    if (tone === 'mp' && (!vfxEnabled || frozen || delta >= 0)) return
     if (delta === 0) return
 
     const id = nextEffectId.current++
@@ -395,7 +455,7 @@ function ArenaResource({
       width: Math.min(1, Math.abs(delta) / normalizedMax),
       lane: ((id % 5) - 2) * 14,
     })
-  }, [actorKey, frozen, normalizedMax, normalizedValue, pushEffect, tone])
+  }, [actorKey, frozen, isVisible, normalizedMax, normalizedValue, pushEffect, tone, vfxEnabled])
 
   // 阵亡后不再保留灵力条的浮字与切片：尸体只展示定格状态。
   useEffect(() => {
@@ -416,7 +476,7 @@ function ArenaResource({
           <i style={{ transform: `scaleX(${displayValue / normalizedMax})` }} />
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
-          {tone === 'hp' && effects
+          {vfxEnabled && tone === 'hp' && effects
             .filter(effect => (effect.delta ?? 0) < 0 && effect.width >= resourceShardMinimumRatio)
             .map(effect => {
               const scale = 1 + Math.min(0.5, effect.width * 1.6)
@@ -965,6 +1025,8 @@ function ArenaActor({
   visible = true,
   compact = false,
   recentEvents,
+  isVisible = true,
+  vfxEnabled = true,
 }: {
   /** 实体唯一键：切换目标/波次时重置跳字与受击特效状态 */
   actorKey: string
@@ -989,12 +1051,18 @@ function ArenaActor({
   visible?: boolean
   compact?: boolean
   recentEvents?: readonly CombatRecentEvent[] | null
+  /** 详情页与浏览器标签页是否处于可见态 */
+  isVisible?: boolean
+  /** 是否开启角色动画与视觉特效 */
+  vfxEnabled?: boolean
 }): React.JSX.Element {
   const t = useT()
   const articleRef = useRef<HTMLElement | null>(null)
   const nextMotionId = useRef(1)
   const nextImpactSequence = useRef(0)
   const previousHitpoints = useRef({ actorKey, hp })
+  const effectsActive = isVisible && vfxEnabled
+  const wasEffectsActiveRef = useRef(effectsActive)
   /** 对方阵营最前存活单位（纵列顺序即铺位顺序，前排居中槽优先），作为无目标协议下攻击方位的几何近似 */
   const findOpposingActor = useCallback((): Element | null => {
     const field = articleRef.current?.closest('.combat-arena-field')
@@ -1021,6 +1089,22 @@ function ArenaActor({
   const lastEventMotionAt = useRef(0)
   const actorTimers = useRef(new Set<number>())
 
+  const clearActorEffects = useCallback(() => {
+    if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
+    scheduledAction.current = null
+    if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
+    clearActionMotionTimer.current = null
+    if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
+    clearDodgeTimer.current = null
+    if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
+    clearImpactTimer.current = null
+    actorTimers.current.forEach(timer => window.clearTimeout(timer))
+    actorTimers.current.clear()
+    setActionMotion(null)
+    setDodging(false)
+    setImpact(null)
+  }, [])
+
   const triggerActionMotion = useCallback((kind: ActorMotionKind) => {
     const aim = kind === 'attack'
       ? measureArenaAim(articleRef.current, findOpposingActor())
@@ -1033,6 +1117,30 @@ function ArenaActor({
 
   // 1. 消费事件流：攻击方按批次重放时刻起手出招，受击方精确在击中帧 (Hit-Frame) 卡点触发受击/闪避
   useEffect(() => {
+    if (!effectsActive) {
+      wasEffectsActiveRef.current = false
+      clearActorEffects()
+      if (recentEvents && recentEvents.length > 0) {
+        markHandledCombatEvents(
+          recentEvents,
+          event => isActorMatchingId(event.attackerId, actorKey) || isActorMatchingId(event.targetId, actorKey),
+          handledCombatEventsRef.current,
+        )
+      }
+      return
+    }
+    if (!wasEffectsActiveRef.current) {
+      wasEffectsActiveRef.current = true
+      clearActorEffects()
+      if (recentEvents && recentEvents.length > 0) {
+        markHandledCombatEvents(
+          recentEvents,
+          event => isActorMatchingId(event.attackerId, actorKey) || isActorMatchingId(event.targetId, actorKey),
+          handledCombatEventsRef.current,
+        )
+      }
+      return
+    }
     if (!recentEvents || recentEvents.length === 0) return
     const handled = handledCombatEventsRef.current
     const scheduled = collectScheduledCombatEvents(
@@ -1102,7 +1210,7 @@ function ArenaActor({
         }
       }
     }
-  }, [recentEvents, actorKey, maxHp, findOpposingActor, triggerActionMotion])
+  }, [recentEvents, actorKey, maxHp, findOpposingActor, triggerActionMotion, effectsActive, clearActorEffects])
 
   useLayoutEffect(() => {
     const previous = previousHitpoints.current
@@ -1112,17 +1220,11 @@ function ArenaActor({
       handledCombatEventsRef.current.clear()
       lastEventMotionAt.current = 0
       lastEventImpactTime.current = 0
-      actorTimers.current.forEach(timer => window.clearTimeout(timer))
-      actorTimers.current.clear()
-      if (clearActionMotionTimer.current !== null) window.clearTimeout(clearActionMotionTimer.current)
-      clearActionMotionTimer.current = null
-      if (clearDodgeTimer.current !== null) window.clearTimeout(clearDodgeTimer.current)
-      clearDodgeTimer.current = null
-      setActionMotion(null)
-      setDodging(false)
-      if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
-      clearImpactTimer.current = null
-      setImpact(null)
+      clearActorEffects()
+      return
+    }
+    if (!effectsActive) {
+      previousHitpoints.current = { actorKey, hp }
       return
     }
 
@@ -1143,13 +1245,13 @@ function ArenaActor({
       clearImpactTimer.current = window.setTimeout(() => setImpact(null), 560)
     }
     previousHitpoints.current = { actorKey, hp }
-  }, [actorKey, hp, maxHp, findOpposingActor])
+  }, [actorKey, hp, maxHp, findOpposingActor, effectsActive, clearActorEffects])
 
   // 行动倒计时保底（主要用于非战斗读条或无显式事件产出的持续动作）
   useEffect(() => {
     const kind = resolveActorMotionKind(action)
     const deadline = action?.completesAtUnixMilliseconds
-    if (!visible || hp <= 0 || kind === null || deadline == null) {
+    if (!effectsActive || !visible || hp <= 0 || kind === null || deadline == null) {
       if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
       scheduledAction.current = null
       return
@@ -1177,7 +1279,7 @@ function ArenaActor({
     }
     const timer = window.setTimeout(play, Math.max(0, delay))
     scheduledAction.current = { signature, deadline, kind, timer }
-  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible, triggerActionMotion])
+  }, [action?.completesAtUnixMilliseconds, action?.kind, actorKey, hp, visible, effectsActive, triggerActionMotion])
 
   useEffect(() => () => {
     if (scheduledAction.current !== null) window.clearTimeout(scheduledAction.current.timer)
@@ -1215,8 +1317,24 @@ function ArenaActor({
         <header className="arena-overhead">
           <strong>{name || '\u00a0'}</strong>
           <div className="arena-vitals">
-            <ArenaResource actorKey={actorKey} max={maxHp} tone="hp" value={hp} recentEvents={recentEvents} />
-            <ArenaResource actorKey={actorKey} frozen={hp <= 0} max={maxMp} tone="mp" value={mp} />
+            <ArenaResource
+              actorKey={actorKey}
+              isVisible={isVisible}
+              max={maxHp}
+              recentEvents={recentEvents}
+              tone="hp"
+              value={hp}
+              vfxEnabled={vfxEnabled}
+            />
+            <ArenaResource
+              actorKey={actorKey}
+              frozen={hp <= 0}
+              isVisible={isVisible}
+              max={maxMp}
+              tone="mp"
+              value={mp}
+              vfxEnabled={vfxEnabled}
+            />
             {threat != null && (
               <span aria-label={t('combat.arena.threatAria', { n: formatInteger(threat) })} className="arena-threat">
                 <i aria-hidden="true">{t('combat.arena.threatGlyph')}</i>
@@ -2018,6 +2136,8 @@ function duelActionState(
   let previousAt = -1
   for (const duelEvent of duel.events) {
     if (duelEvent.attackerIsInitiator !== attackerIsInitiatorSide) continue
+    if (duelEvent.abilityId?.startsWith('item.') || duelEvent.abilityId?.startsWith('trait.')) continue
+    if (!duelEvent.abilityId && duelEvent.attackerIsInitiator === duelEvent.targetIsInitiator) continue
     if (duelEvent.atSeconds > battleElapsedSeconds + 1e-9) {
       const durationSeconds = previousAt >= 0
         ? Math.max(0.1, duelEvent.atSeconds - previousAt)
@@ -2181,10 +2301,17 @@ export const CombatArena = memo(function CombatArena({
 
 
   // 战斗特效：双层 High-DPI Canvas 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
+  const vfxEnabled = useCombatVfxStore(state => state.vfxEnabled)
+  const toggleVfxEnabled = useCombatVfxStore(state => state.toggleVfxEnabled)
+  const documentVisible = useDocumentVisible()
+  const isArenaVisible = !hidden && documentVisible
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
   const vfxGroundOverlayRef = useRef<HTMLDivElement | null>(null)
   const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
-  const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef, vfxGroundOverlayRef)
+  const vfxRuntimeRef = useCombatVfx(arenaShellRef, vfxOverlayRef, vfxGroundOverlayRef, {
+    hidden,
+    enabled: vfxEnabled,
+  })
   const alliesFormationRef = useRef<HTMLDivElement | null>(null)
 
   const current = queue[0] ?? null
@@ -2392,7 +2519,7 @@ export const CombatArena = memo(function CombatArena({
     const entryId = current?.entryId ?? null
     const prevPhase = prevPhaseRef.current
     prevPhaseRef.current = phase
-    if (phase === 'combat') {
+    if (phase === 'combat' || phase === 'duel') {
       if (enemyEntries.length > 0 && entryId !== null)
         combatWaveRef.current = { entryId, entries: enemyEntries }
       if (prevPhase === 'search' || prevPhase === 'respawn') {
@@ -2402,7 +2529,7 @@ export const CombatArena = memo(function CombatArena({
       return
     }
     if (phase === 'search') {
-      if (prevPhase === 'combat') {
+      if (prevPhase === 'combat' || prevPhase === 'duel') {
         const wave = combatWaveRef.current
         setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
           ? wave.entries.map(entry => ({ ...entry, hp: 0, action: null }))
@@ -2412,9 +2539,9 @@ export const CombatArena = memo(function CombatArena({
       return
     }
     if (phase === 'respawn') {
-      if (prevPhase === 'combat') {
+      if (prevPhase === 'combat' || prevPhase === 'duel') {
         const wave = combatWaveRef.current
-        // 团灭/战败进入 respawn：保留击败己方的怪物阵容，行动条置空
+        // 团灭/斗法战败进入 respawn：保留击败己方的对手阵容，行动条置空
         setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
           ? wave.entries.map(entry => ({ ...entry, action: null }))
           : null)
@@ -2430,6 +2557,10 @@ export const CombatArena = memo(function CombatArena({
   // 消散调度：尸体保留到寻敌倒数最后一秒；到点置消散标志并触发残魂萤火粒子，
   // 淡出动画时长收敛到剩余寻敌毫秒（触发晚于计划时自动压缩），末帧即新一波入场。
   useEffect(() => {
+    if (!isArenaVisible || !vfxEnabled) {
+      if (corpseDissipating) setCorpseDissipating(false)
+      return
+    }
     if (phase !== 'search' || corpseWave === null || corpseDissipating || expedition == null) return
     const remainingMs = Math.max(0,
       (expedition.durationSeconds - expedition.elapsedSeconds) * 1000
@@ -2442,7 +2573,7 @@ export const CombatArena = memo(function CombatArena({
       vfxRuntimeRef.current?.playCorpseDissipate()
     }, Math.max(0, remainingMs - CORPSE_DISSIPATE_LEAD_MS))
     return () => window.clearTimeout(timer)
-  }, [phase, corpseWave, corpseDissipating, expedition, lastQueueSyncPerformanceTime, vfxRuntimeRef])
+  }, [phase, corpseWave, corpseDissipating, expedition, isArenaVisible, lastQueueSyncPerformanceTime, vfxEnabled, vfxRuntimeRef])
 
   // combat→search 过渡帧：服务端切搜寻相位时已清空 enemies[]，而 corpseWave 状态要等 effect
   // 执行后才写入。若这一帧落到空阵型，敌方卡片会整棵卸载再重挂——击杀帧仍在途的跳字/受击
@@ -2647,7 +2778,10 @@ export const CombatArena = memo(function CombatArena({
       const battleElapsed = expedition.battleElapsedSeconds ?? 0
       const isInitiator = duel.isInitiator
       return (duel.events ?? [])
-        .filter(e => e.atSeconds <= battleElapsed && e.atSeconds > battleElapsed - 2)
+        .filter(e =>
+          e.atSeconds <= battleElapsed + 1e-6
+          && e.atSeconds >= Math.max(0, battleElapsed - 6)
+          && !(e.attackerIsInitiator === e.targetIsInitiator && (e.damage ?? 0) <= 0 && !e.abilityId))
         .map(e => ({
           at: e.atSeconds,
           attackerId: e.attackerIsInitiator === isInitiator ? 'player' : 'enemy:0',
@@ -2658,6 +2792,7 @@ export const CombatArena = memo(function CombatArena({
           broken: e.broken,
           parried: e.parried,
           abilityId: e.abilityId,
+          targetHp: e.targetHitpointsAfter,
         }))
     }
     return expedition?.recentEvents ?? []
@@ -2666,15 +2801,29 @@ export const CombatArena = memo(function CombatArena({
 
   return (
     <div
-      className="combat-arena-shell"
+      className={`combat-arena-shell${vfxEnabled ? '' : ' is-vfx-disabled'}`}
       ref={arenaShellRef}
     >
       {/* 技能特效双层 Canvas 覆盖层：底层地面法阵（z=1）+ 高层天幕粒子（z=8），pointer-events 穿透零回流 */}
       <div className="vfx-ground-overlay" ref={vfxGroundOverlayRef} aria-hidden="true" />
       <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
-      {/* 战场顶部操作区：统计与模拟器入口 + 终止行动按钮（固定顶栏独立行，绝不遮挡角色名称与行动栏） */}
+      {/* 战场顶部操作区：特效开关 + 统计与模拟器入口 + 终止行动按钮（固定顶栏独立行，绝不遮挡角色名称与行动栏） */}
       <div className="combat-arena-top-actions">
         <div className="combat-arena-top-actions-left">
+          <button
+            aria-checked={vfxEnabled}
+            aria-label={t(vfxEnabled ? 'combat.arena.vfxToggleDisableAria' : 'combat.arena.vfxToggleEnableAria')}
+            className={`combat-vfx-toggle${vfxEnabled ? ' is-enabled' : ''}`}
+            onClick={toggleVfxEnabled}
+            role="switch"
+            title={t(vfxEnabled ? 'combat.arena.vfxToggleDisableAria' : 'combat.arena.vfxToggleEnableAria')}
+            type="button"
+          >
+            <span className="combat-vfx-toggle-label">{t('combat.arena.vfxToggleLabel')}</span>
+            <span aria-hidden="true" className="combat-vfx-toggle-pill">
+              <span className="combat-vfx-toggle-thumb" />
+            </span>
+          </button>
           {isCombat && (
             <button
               className="ghost-button combat-stats-open"
@@ -2734,6 +2883,7 @@ export const CombatArena = memo(function CombatArena({
                           buffs={playerDisplayBuffs}
                           compact
                           hp={playerHp}
+                          isVisible={isArenaVisible}
                           maxHp={playerMaxHp}
                           maxMp={playerMaxMp}
                           mp={playerMp}
@@ -2744,6 +2894,7 @@ export const CombatArena = memo(function CombatArena({
                           threat={playerThreat}
                           visual={playerVisual}
                           recentEvents={recentCombatEvents}
+                          vfxEnabled={vfxEnabled}
                         />
                       </div>
                     )
@@ -2760,6 +2911,7 @@ export const CombatArena = memo(function CombatArena({
                         actorKey={ally.actorKey}
                         compact
                         hp={ally.hp}
+                        isVisible={isArenaVisible}
                         maxHp={ally.maxHp}
                         maxMp={ally.maxMp}
                         mp={ally.mp}
@@ -2770,6 +2922,7 @@ export const CombatArena = memo(function CombatArena({
                         seal={ally.seal}
                         threat={ally.threat}
                         recentEvents={recentCombatEvents}
+                        vfxEnabled={vfxEnabled}
                       />
                     </div>
                   )
@@ -2788,6 +2941,7 @@ export const CombatArena = memo(function CombatArena({
                     actorKey="player"
                     buffs={playerDisplayBuffs}
                     hp={playerHp}
+                    isVisible={isArenaVisible}
                     maxHp={playerMaxHp}
                     maxMp={playerMaxMp}
                     mp={playerMp}
@@ -2798,6 +2952,7 @@ export const CombatArena = memo(function CombatArena({
                     threat={playerThreat}
                     visual={playerVisual}
                     recentEvents={recentCombatEvents}
+                    vfxEnabled={vfxEnabled}
                   />
                 </div>
                 {/* 预留空槽维持九宫格与前中后排比例 */}
@@ -2831,7 +2986,7 @@ export const CombatArena = memo(function CombatArena({
               >
                 {displayEntries.map((entry, index) => (
                   <div
-                    className={`arena-slot arena-slot--occupied arena-slot--slot-${ENEMY_DEPTH_SLOTS[Math.min(index, ENEMY_DEPTH_SLOTS.length - 1)]}${entry.hp <= 0 ? ' arena-slot--slain' : ''}${corpseSlotsActive ? ' arena-slot--corpse' : ''}${corpseSlotsActive && corpseDissipating ? ' arena-slot--dissipating' : ''}`}
+                    className={`arena-slot arena-slot--occupied arena-slot--slot-${ENEMY_DEPTH_SLOTS[Math.min(index, ENEMY_DEPTH_SLOTS.length - 1)]}${entry.hp <= 0 ? ' arena-slot--slain' : ''}${corpseSlotsActive ? ' arena-slot--corpse' : ''}${corpseSlotsActive && vfxEnabled && corpseDissipating ? ' arena-slot--dissipating' : ''}`}
                     key={`enemy-slot-${index + 1}`}
                   >
                     <ArenaActor
@@ -2841,6 +2996,7 @@ export const CombatArena = memo(function CombatArena({
                       buffs={entry.buffs}
                       compact
                       hp={entry.hp}
+                      isVisible={isArenaVisible}
                       maxHp={entry.maxHp}
                       maxMp={entry.maxMp}
                       mp={entry.mp}
@@ -2851,6 +3007,7 @@ export const CombatArena = memo(function CombatArena({
                       threat={entry.threat}
                       visual={entry.visual}
                       recentEvents={recentCombatEvents}
+                      vfxEnabled={vfxEnabled}
                     />
                   </div>
                 ))}

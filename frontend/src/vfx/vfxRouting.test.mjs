@@ -334,6 +334,7 @@ function createHeadlessVfxSandbox(extraRelativePaths = []) {
       if (idx >= 0) timerQueue.splice(idx, 1)
     },
     document: {
+      visibilityState: 'visible',
       createElement: tag => new FakeElement(tag),
     },
   }
@@ -381,6 +382,9 @@ function createHeadlessVfxSandbox(extraRelativePaths = []) {
 
   return {
     VFX: sandbox.DaohuaVFX,
+    sandbox,
+    rafQueue,
+    timerQueue,
     allyEl,
     enemyEl,
     topEnemyEl,
@@ -804,4 +808,75 @@ test('全量 55 项共享 VFX：完整注册覆盖与横竖屏无头渲染门禁
   }
 
   VFX.dispose()
+})
+
+test('core.js：生产模式页面不可见时阻止新特效与定时器累积，clear 同步取消挂起 rAF', () => {
+  const { VFX, sandbox, rafQueue, timerQueue, allyEl, enemyEl } = createHeadlessVfxSandbox()
+
+  VFX.play('feedback.attack', {
+    side: 'ally',
+    casterEl: allyEl,
+    targetEl: enemyEl,
+    targetEls: [enemyEl],
+    allyEls: [allyEl],
+    enemyEls: [enemyEl],
+    damage: 100,
+    hit: true,
+  })
+  assert.ok(rafQueue.size > 0, '可见时 play 应注册动画帧')
+  assert.ok(VFX.activeCount().total > 0)
+
+  // clear() 必须同时清空在途定时器与挂起的 requestAnimationFrame，防止切回首帧集中爆播
+  VFX.clear()
+  assert.equal(rafQueue.size, 0, 'clear 后不应残留挂起的 rAF')
+  assert.equal(timerQueue.length, 0, 'clear 后不应残留定时器')
+  assert.equal(VFX.activeCount().total, 0)
+
+  // 切到后台标签页后，生产模式 play() 与 after() 不再新增粒子、动画帧或定时器
+  sandbox.document.visibilityState = 'hidden'
+  const hiddenPlay = VFX.play('feedback.attack', {
+    side: 'ally',
+    casterEl: allyEl,
+    targetEl: enemyEl,
+    targetEls: [enemyEl],
+    allyEls: [allyEl],
+    enemyEls: [enemyEl],
+    damage: 100,
+    hit: true,
+  })
+  let afterFired = false
+  VFX.after(120, () => {
+    afterFired = true
+  })
+  assert.equal(hiddenPlay, null)
+  assert.equal(rafQueue.size, 0, '后台状态不应排队新的 rAF')
+  assert.equal(timerQueue.length, 0, '后台状态不应排队新的定时器')
+  assert.equal(VFX.activeCount().total, 0)
+  assert.equal(afterFired, false)
+
+  sandbox.document.visibilityState = 'visible'
+  VFX.dispose()
+})
+
+test('combatVfxStore：特效开关读写持久化与默认值兜底', async () => {
+  const {
+    COMBAT_VFX_STORAGE_KEY,
+    readStoredCombatVfxEnabled,
+    persistCombatVfxEnabled,
+  } = await import('../game/combatVfxStore.ts')
+
+  const backing = new Map()
+  const mockStorage = {
+    getItem: key => backing.get(key) ?? null,
+    setItem: (key, value) => backing.set(key, value),
+  }
+
+  assert.equal(readStoredCombatVfxEnabled(mockStorage), true, '未配置时默认开启特效')
+  persistCombatVfxEnabled(false, mockStorage)
+  assert.equal(backing.get(COMBAT_VFX_STORAGE_KEY), 'false')
+  assert.equal(readStoredCombatVfxEnabled(mockStorage), false)
+
+  persistCombatVfxEnabled(true, mockStorage)
+  assert.equal(backing.get(COMBAT_VFX_STORAGE_KEY), 'true')
+  assert.equal(readStoredCombatVfxEnabled(mockStorage), true)
 })

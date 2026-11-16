@@ -15,7 +15,9 @@ COPY config/game-data/ /src/config/game-data/
 COPY scripts/gen-simulator-catalog.mjs /src/scripts/gen-simulator-catalog.mjs
 COPY scripts/export-i18n-csv.mjs /src/scripts/export-i18n-csv.mjs
 COPY scripts/gen-asset-manifest.mjs /src/scripts/gen-asset-manifest.mjs
-RUN npm run build
+COPY docs/design/战斗演武画廊/vfx/ /src/docs/design/战斗演武画廊/vfx/
+RUN npm run build \
+    && grep -rq "DaohuaVFX" /src/frontend/dist/assets/
 
 FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /src

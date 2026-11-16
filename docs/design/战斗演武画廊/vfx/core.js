@@ -296,8 +296,16 @@
     registry: Object.create(null),
   };
 
+  function isProductionHidden() {
+    return (
+      state.hostMode === 'production' &&
+      typeof document !== 'undefined' &&
+      document.visibilityState === 'hidden'
+    );
+  }
+
   function ensureLoop() {
-    if (state.rafId) return;
+    if (state.rafId || isProductionHidden()) return;
     if (!state.skyCtx && !state.groundCtx) return;
     state.lastTime = performance.now();
     state.rafId = requestAnimationFrame(tick);
@@ -460,12 +468,16 @@
   }
 
   function after(delayMs, fn) {
+    if (isProductionHidden()) {
+      return { cancel: function () {} };
+    }
     if (!delayMs || delayMs <= 0) {
       fn();
       return { cancel: function () {} };
     }
     var token = setTimeout(function () {
       state.timers.delete(token);
+      if (isProductionHidden()) return;
       fn();
     }, delayMs);
     state.timers.add(token);
@@ -478,6 +490,14 @@
   }
 
   function clear() {
+    if (state.rafId) {
+      cancelAnimationFrame(state.rafId);
+      state.rafId = 0;
+    }
+    if (state.resizeRafId) {
+      cancelAnimationFrame(state.resizeRafId);
+      state.resizeRafId = 0;
+    }
     state.timers.forEach(function (id) {
       clearTimeout(id);
     });
@@ -3494,6 +3514,7 @@
   }
 
   function play(id, ctx) {
+    if (isProductionHidden()) return null;
     var fn = state.registry[id];
     if (!fn) return null;
     ensureLoop();

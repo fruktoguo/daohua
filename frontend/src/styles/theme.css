@@ -1917,6 +1917,37 @@
   border-color: var(--gold);
 }
 
+:root[data-theme="light"] .chat-picker-sticker-toolbar {
+  background: rgba(120, 92, 50, 0.06);
+  border-bottom-color: var(--border-gold);
+}
+
+:root[data-theme="light"] .chat-picker-sticker-count.is-full {
+  color: #a62b2b;
+}
+
+:root[data-theme="light"] .chat-picker-toolbar-btn {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(120, 92, 50, 0.3);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .chat-picker-toolbar-btn.is-danger {
+  background: rgba(180, 42, 52, 0.1);
+  border-color: rgba(180, 42, 52, 0.4);
+  color: #9e222e;
+}
+
+:root[data-theme="light"] .chat-picker-sync-warning {
+  background: rgba(180, 42, 52, 0.1);
+  color: #9e222e;
+}
+
+:root[data-theme="light"] .chat-picker-sticker-check {
+  background: rgba(255, 255, 255, 0.88);
+  color: #fff;
+}
+
 :root[data-theme="light"] .player-card-privacy-notice {
   background: rgba(154, 109, 32, 0.08);
 }
@@ -2007,4 +2038,41 @@
   border-color: rgba(178, 51, 39, 0.52);
   color: var(--seal);
   background: rgba(178, 51, 39, 0.09);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle {
+  border-color: rgba(125, 82, 26, 0.28);
+  background: rgba(248, 243, 230, 0.9);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle:hover,
+:root[data-theme="light"] .combat-vfx-toggle:focus-visible {
+  border-color: rgba(125, 82, 26, 0.52);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle.is-enabled {
+  border-color: rgba(154, 109, 32, 0.52);
+  background: rgba(154, 109, 32, 0.14);
+  color: #7c4d0f;
+}
+
+:root[data-theme="light"] .combat-vfx-toggle-pill {
+  border-color: rgba(71, 49, 18, 0.2);
+  background: rgba(71, 49, 18, 0.12);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle.is-enabled .combat-vfx-toggle-pill {
+  border-color: rgba(154, 109, 32, 0.6);
+  background: rgba(180, 126, 36, 0.28);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle-thumb {
+  background: rgba(71, 49, 18, 0.55);
+}
+
+:root[data-theme="light"] .combat-vfx-toggle.is-enabled .combat-vfx-toggle-thumb {
+  background: #b45309;
+  box-shadow: 0 0 5px rgba(180, 83, 9, 0.45);
 }
