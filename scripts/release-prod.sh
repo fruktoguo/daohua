@@ -384,8 +384,8 @@ bash "$ROOT_DIR/scripts/deploy-prod.sh" "${DEPLOY_FLAGS[@]}"
 OLD_ODIN_PID=""
 if [[ "$SKIP_ODIN" != "1" ]]; then
   printf '  - 原子切换 odin 目录并重启服务...\n'
-  OLD_ODIN_PID="$(ssh -o BatchMode=yes "$ODIN_HOST" "pgrep -f 'DaoHua[.]ComputeNode' | head -n1 || true" 2>/dev/null || true)"
-  ssh -o BatchMode=yes "$ODIN_HOST" '
+  OLD_ODIN_PID="$(ssh -n -o BatchMode=yes "$ODIN_HOST" "(pgrep -x DaoHua.ComputeNode 2>/dev/null || pgrep -x DaoHua.ComputeN 2>/dev/null || true) | head -n1" 2>/dev/null || true)"
+  ssh -n -o BatchMode=yes "$ODIN_HOST" '
     set -Eeuo pipefail
     rm -rf /root/daohua-compute.old
     [[ -d /root/daohua-compute ]] && mv /root/daohua-compute /root/daohua-compute.old
@@ -448,8 +448,8 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   NEW_ODIN_PID=""
   ODIN_READY=0
   for _ in {1..30}; do
-    NEW_ODIN_PID="$(ssh -o BatchMode=yes "$ODIN_HOST" "pgrep -f 'DaoHua[.]ComputeNode' | head -n1 || true" 2>/dev/null || true)"
-    ODIN_STATUS="$(ssh -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
+    NEW_ODIN_PID="$(ssh -n -o BatchMode=yes "$ODIN_HOST" "(pgrep -x DaoHua.ComputeNode 2>/dev/null || pgrep -x DaoHua.ComputeN 2>/dev/null || true) | head -n1" 2>/dev/null || true)"
+    ODIN_STATUS="$(ssh -n -o BatchMode=yes "$ODIN_HOST" 'curl -s -m 2 http://127.0.0.1:8090/healthz' 2>/dev/null || printf '{"status":"offline"}')"
     if [[ -n "$NEW_ODIN_PID" && ( -z "$OLD_ODIN_PID" || "$NEW_ODIN_PID" != "$OLD_ODIN_PID" ) ]] \
        && [[ "$ODIN_STATUS" == *'"status":"ok"'* && "$ODIN_STATUS" == *"\"version\":\"${RELEASE_TAG}\""* && "$ODIN_STATUS" == *'"upstreamConnected":true'* ]]; then
       ODIN_READY=1
