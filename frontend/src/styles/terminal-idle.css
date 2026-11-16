@@ -1,9 +1,9 @@
 /* ==========================================================================
-   纯字符终端挂机伪装遮罩样式 (TerminalIdleOverlay)
+   纯字符中文终端挂机遮罩样式 (TerminalIdleOverlay)
    硬约束：
-   1. 100% 纯等宽字符界面，严禁任何图片、SVG、Canvas 或 url(...) 外部资源；
-   2. 无论宿主处于浅色或深色主题，终端遮罩始终保持深黑 SSH / Hacknet 磷光配色；
-   3. 仅铺满网页视口 (100vw x 100dvh)，桌面四象限无滚动条分屏，窄屏自适应纵列。
+   1. 100% 纯等宽字符界面，无任何图片、SVG、Canvas 或外部背景资源；
+   2. 无论宿主处于浅色或深色主题，终端遮罩始终保持深黑命令行磷光配色；
+   3. 仅铺满网页视口 (100vw x 100dvh)，桌面五窗格分屏，窄屏自适应纵列。
    ========================================================================== */
 
 .term-idle-root {
@@ -19,13 +19,13 @@
     to bottom,
     rgba(255, 255, 255, 0) 0px,
     rgba(255, 255, 255, 0) 2px,
-    rgba(0, 0, 0, 0.22) 3px,
-    rgba(0, 0, 0, 0.22) 4px
+    rgba(0, 0, 0, 0.2) 3px,
+    rgba(0, 0, 0, 0.2) 4px
   );
-  color: #b8d4c8;
-  font-family: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.38;
+  color: #c2dcd1;
+  font-family: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'Sarasa Mono SC', 'Microsoft YaHei UI', 'PingFang SC', Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.46;
   font-weight: 400;
   letter-spacing: 0.01em;
   padding:
@@ -38,16 +38,16 @@
   user-select: text;
 }
 
-/* 顶部 tmux 会话栏 */
+/* 顶部终端会话栏 */
 .term-idle-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
   background: #0d161d;
-  border: 1px solid #1e3542;
-  padding: 3px 8px;
+  border: 1px solid #1f3947;
+  padding: 4px 10px;
   white-space: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
@@ -67,9 +67,9 @@
 }
 
 .term-idle-session-badge {
-  color: #06100b;
+  color: #05140c;
   background: #34d399;
-  padding: 0 6px;
+  padding: 1px 7px;
   font-weight: 700;
 }
 
@@ -83,17 +83,17 @@
   appearance: none;
   background: transparent;
   border: 1px solid transparent;
-  color: #6f8f84;
+  color: #7c9b90;
   font-family: inherit;
   font-size: 12px;
-  line-height: 1.3;
+  line-height: 1.35;
   padding: 1px 6px;
   cursor: pointer;
 }
 
 .term-idle-tmux-btn:hover {
   color: #d1fae5;
-  border-color: #284c5c;
+  border-color: #2a5060;
 }
 
 .term-idle-tmux-btn.is-active {
@@ -105,21 +105,21 @@
 
 .term-idle-action-btn {
   appearance: none;
-  background: #131f28;
-  border: 1px solid #35586c;
-  color: #e2f1ea;
+  background: #14222c;
+  border: 1px solid #3d667d;
+  color: #e6f5ef;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
-  line-height: 1.3;
-  padding: 2px 8px;
+  line-height: 1.35;
+  padding: 2px 10px;
   cursor: pointer;
 }
 
 .term-idle-action-btn:hover {
-  background: #e2f1ea;
-  color: #060a0e;
-  border-color: #e2f1ea;
+  background: #34d399;
+  color: #05120b;
+  border-color: #34d399;
 }
 
 .term-idle-action-btn--warn {
@@ -133,14 +133,14 @@
   color: #060a0e;
 }
 
-/* 主体多窗格网格 */
+/* 主体五窗格网格 */
 .term-idle-grid {
   flex: 1 1 auto;
   min-height: 0;
   margin-top: 6px;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: minmax(210px, 44%) minmax(0, 1fr);
+  grid-template-rows: minmax(236px, 46%) minmax(0, 1fr);
   gap: 6px;
 }
 
@@ -149,12 +149,12 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: rgba(9, 15, 20, 0.94);
-  border: 1px solid #1c313d;
+  background: rgba(9, 15, 20, 0.95);
+  border: 1px solid #1d3442;
   overflow: hidden;
 }
 
-.term-idle-pane--cpu {
+.term-idle-pane--role {
   grid-column: span 4;
 }
 
@@ -162,7 +162,7 @@
   grid-column: span 4;
 }
 
-.term-idle-pane--mem {
+.term-idle-pane--battle {
   grid-column: span 4;
 }
 
@@ -179,9 +179,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 4px 8px;
   background: #0c171f;
-  border-bottom: 1px solid #1c313d;
+  border-bottom: 1px solid #1d3442;
   color: #7dd3fc;
   font-weight: 700;
   white-space: nowrap;
@@ -193,10 +193,17 @@
 .term-idle-pane-body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 8px;
+  padding: 6px 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #1e3542 #060a0e;
+}
+
+.term-idle-pane--stream .term-idle-pane-body {
   overflow: hidden;
 }
 
@@ -217,16 +224,20 @@
   color: #f87171;
 }
 
+.term-tone-gold {
+  color: #fcd34d;
+}
+
 .term-tone-dim {
-  color: #5b7682;
+  color: #6b8896;
 }
 
 .term-tone-bright {
-  color: #e6f4ee;
+  color: #ecfdf5;
 }
 
 .term-badge {
-  padding: 0 4px;
+  padding: 0 5px;
   font-weight: 700;
 }
 
@@ -250,14 +261,26 @@
   background: #f87171;
 }
 
-/* 指标行与纯字符双栏 CPU 表 */
+/* 键值行与算力表 */
 .term-kv-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  white-space: pre;
+  white-space: nowrap;
   overflow: hidden;
+}
+
+.term-kv-label {
+  color: #6b8896;
+  flex-shrink: 0;
+}
+
+.term-kv-val {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 
 .term-cpu-grid {
@@ -269,37 +292,95 @@
 .term-pre-block {
   margin: 0;
   font-family: inherit;
-  font-size: 11.5px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.42;
   white-space: pre;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .term-divider {
-  color: #213a47;
+  color: #213c4a;
   white-space: nowrap;
   overflow: hidden;
   flex-shrink: 0;
   user-select: none;
 }
 
-/* 实时日志流与交互式命令行 */
+.term-sub-heading {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7dd3fc;
+  margin-top: 2px;
+}
+
+/* 战斗单位纯字符血条列表 */
+.term-unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.term-unit-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.term-unit-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 实时日志流与频道切换 */
+.term-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.term-filter-btn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid #203b4a;
+  color: #7c9b90;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.term-filter-btn:hover {
+  color: #e6f5ef;
+  border-color: #366075;
+}
+
+.term-filter-btn.is-active {
+  color: #05140d;
+  background: #34d399;
+  border-color: #34d399;
+  font-weight: 700;
+}
+
 .term-log-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: 1px;
-  font-size: 11.5px;
+  gap: 2px;
+  font-size: 12px;
   scrollbar-width: thin;
   scrollbar-color: #1e3542 #060a0e;
 }
 
 .term-log-line {
   white-space: pre-wrap;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .term-prompt-bar {
@@ -327,25 +408,26 @@
   }
 }
 
-/* 右下检视器（进程表 + Hex 转储） */
+/* 右下检视器表格 */
 .term-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 11.5px;
   white-space: nowrap;
 }
 
 .term-table th {
   text-align: left;
-  color: #06100b;
+  color: #05140d;
   background: #2dd4bf;
-  padding: 1px 4px;
+  padding: 1px 5px;
   font-weight: 700;
 }
 
 .term-table td {
-  padding: 1px 4px;
-  color: #b8d4c8;
+  padding: 2px 5px;
+  color: #c2dcd1;
+  border-bottom: 1px solid rgba(29, 52, 66, 0.45);
 }
 
 .term-table tr.is-highlight td {
@@ -353,7 +435,12 @@
   background: rgba(52, 211, 153, 0.08);
 }
 
-/* 底部快捷键状态条 */
+.term-table tr.is-danger td {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+/* 底部状态条 */
 .term-idle-statusbar {
   flex-shrink: 0;
   margin-top: 5px;
@@ -362,15 +449,15 @@
   justify-content: space-between;
   gap: 8px;
   background: #0b1319;
-  border: 1px solid #1c313d;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: #6c8a96;
+  border: 1px solid #1d3442;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  color: #7393a1;
   white-space: nowrap;
   overflow: hidden;
 }
 
-/* 窄屏与竖屏移动端自适应：单列纵向可滚动终端栈 */
+/* 窄屏与竖屏移动端自适应 */
 @media (max-width: 1024px) {
   .term-idle-grid {
     display: flex;
@@ -386,10 +473,11 @@
 
   .term-idle-pane-body {
     overflow-x: auto;
+    overflow-y: visible;
   }
 
   .term-log-list {
-    max-height: 220px;
+    max-height: 240px;
   }
 
   .term-cpu-grid {
