@@ -380,10 +380,19 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             foreach (var id in _players.Keys)
             {
                 if (excludedPlayerIds is not null && excludedPlayerIds.Contains(id)) continue;
-                DateTimeOffset? value = overrideBoundariesUtc is not null
-                    && overrideBoundariesUtc.TryGetValue(id, out var overridden)
-                    ? overridden
-                    : NextAdvanceBoundaryCore(id);
+                DateTimeOffset? value;
+                try
+                {
+                    value = overrideBoundariesUtc is not null
+                        && overrideBoundariesUtc.TryGetValue(id, out var overridden)
+                        ? overridden
+                        : NextAdvanceBoundaryCore(id);
+                }
+                catch
+                {
+                    // 单玩家异常状态不得打穿整个分片边界推算或终止宿主循环，留待单步推进隔离处置。
+                    continue;
+                }
                 if (value is { } candidate && (earliest is null || candidate < earliest.Value))
                     earliest = candidate;
             }
@@ -1125,6 +1134,9 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     {
         using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create.encounter");
         var player = GetPlayer(playerId);
+        // 挂载新遭遇前防御性销毁遗留遭遇实体，防止队列置换等边界残留幽灵怪物实体。
+        if (player.GetComponent<PlayerCombatComponent>() is { EncounterEntityId: not 0 })
+            DestroyPlayerEncounters(player.ID);
         var encounterEntity = new YuoEntity(World);
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");
         encounterEntity.EntityName = $"encounter:{state.EncounterId}:{state.Seed}";

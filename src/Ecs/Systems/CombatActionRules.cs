@@ -1125,9 +1125,8 @@ internal static class CombatActionRules
             else opponentMp = frame.AttackerManapointsAfter;
         }
         string DuelLabel(bool initiatorSide) => initiatorSide == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
-        // 回放游标前的事件已全部应用过；游标到 playbackTo 之间的事件逐条应用并写日志。
-        // 普攻帧不落日志；同一次施放的连续帧（同出手方+技能+时刻）合并为一条施放行。
-        for (var i = cursor; i < playback.Events.Count; i++)
+        // 仅在尚未裁决前逐帧消费未播事件；同一次施放的连续帧（同出手方+技能+时刻）合并为一条施放行。
+        for (var i = cursor; !playback.Resolved && i < playback.Events.Count; i++)
         {
             var duelEvent = playback.Events[i];
             if (duelEvent.AtSeconds > playbackTo + 1e-9) break;
@@ -1214,10 +1213,11 @@ internal static class CombatActionRules
                     playback.Forfeited
                         ? $"斗法弃战：你已结束斗法行动，暂存物品被 {playback.OpponentName} 取走。"
                         : $"斗法落败：{playback.OpponentName} 取走了你的暂存物品，一小时内不再进入斗法。", definition.Id);
+                // 先同步归零角色气血再构建复活搜寻态，避免 Respawning 期 PlayerHitpoints 虚高。
+                player.Resources.Hitpoints = 0;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
                 { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
-                player.Resources.Hitpoints = 0;
                 break;
             default:
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.draw",

@@ -8,6 +8,8 @@ using Domain.Player;
 using Domain.Simulation;
 using Domain.World;
 
+using DaoHua.Ecs.Systems;
+
 namespace DaoHua.Ecs;
 
 /// <summary>
@@ -35,6 +37,9 @@ public static class SimulationSchedule
         }
         void ConsiderUnix(double unixSeconds)
         {
+            // durable 消耗品 Buff 用 double.MaxValue 占位：超过安全上限时视作永不过期，
+            // 避免 AddSecondsExact * TicksPerSecond 溢出成 long.MinValue 打崩宿主推进循环。
+            if (ActionExecutionRules.IsInfiniteOrBeyondMaxUnixBoundary(unixSeconds)) return;
             if (unixSeconds > fromUnix) Consider(unixSeconds - fromUnix);
         }
 
@@ -161,6 +166,10 @@ public static class SimulationSchedule
             if (slot.Enabled)
                 ConsiderUnix(slot.CooldownUntilUnixSeconds);
 
-        return double.IsFinite(best) ? from.AddSecondsExact(Math.Max(0, best)) : null;
+        if (!double.IsFinite(best)) return null;
+        var boundedSeconds = Math.Max(0, best);
+        var maxRemainingSeconds = (DateTimeOffset.MaxValue - from).TotalSeconds;
+        if (boundedSeconds >= maxRemainingSeconds) return DateTimeOffset.MaxValue;
+        return from.AddSecondsExact(boundedSeconds);
     }
 }

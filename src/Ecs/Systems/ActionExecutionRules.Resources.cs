@@ -106,6 +106,13 @@ internal static partial class ActionExecutionRules
         return new(step, naturalStep <= step + 1e-9, changed);
     }
 
+    /// <summary>永驻/不可到达边界阈值（如 durable buff 的 double.MaxValue）；低于此值才纳入时钟换算。</summary>
+    internal static readonly double MaxUnixBoundarySeconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() / 1000d - 1;
+
+    /// <summary>判断目标 Unix 秒是否代表永不过期或超过 DateTimeOffset 安全上限。</summary>
+    internal static bool IsInfiniteOrBeyondMaxUnixBoundary(double targetUnix)
+        => !double.IsFinite(targetUnix) || targetUnix >= MaxUnixBoundarySeconds;
+
     /// <summary>
     /// 计算从 now 到目标 Unix 秒边界需要推进的最小正秒数。
     /// 下游过期、冷却、暂存与散场均按 ToUnixTimeMilliseconds()/1000d 截断比较；
@@ -115,8 +122,7 @@ internal static partial class ActionExecutionRules
     private static double SecondsUntilUnixBoundary(DateTimeOffset now, double nowUnix, double targetUnix)
     {
         if (!double.IsFinite(targetUnix) || targetUnix <= nowUnix) return 0;
-        var maxUnix = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() / 1000d - 1;
-        if (targetUnix >= maxUnix) return double.PositiveInfinity;
+        if (targetUnix >= MaxUnixBoundarySeconds) return double.PositiveInfinity;
         var candidate = now.AddSecondsExact(targetUnix - nowUnix);
         while (candidate <= now || candidate.ToUnixTimeMilliseconds() / 1000d < targetUnix)
             candidate = DateTimeOffset.FromUnixTimeMilliseconds(candidate.ToUnixTimeMilliseconds() + 1);
