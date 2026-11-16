@@ -486,15 +486,44 @@ public sealed partial class PlayerAggregate
     public bool IsDuelPending => _actions.Count > 0
         && _actions[0].Expedition?.Phase == CombatExpeditionPhase.DuelPending;
 
-    /// <summary>
-    /// 斗法入场检查：当前是否满足「可被匹配/发起匹配」的全部前置条件。
-    /// 要求队首为勾选斗法的战斗远征、遭遇计数大于 0、不在冷却且无进行中斗法。
-    /// </summary>
-    public bool CanJoinDuel(double nowUnixSeconds)
-        => _actions.Count > 0
+    private bool CanEnterDuelFromCurrentExpedition()
+        => !Settings.QueuePaused
+            && _actions.Count > 0
+            && _actions[0].Status == ActionQueueStatus.Running
+            && _actions[0].Participation is null
             && _actions[0].Intent.PvpEnabled
             && _actions[0].Expedition is { } expedition
-            && expedition.Phase is not CombatExpeditionPhase.Duel
+            && expedition.Phase is CombatExpeditionPhase.Combat
+                or CombatExpeditionPhase.Search
+                or CombatExpeditionPhase.DuelPending
+            && expedition.Outcome == CombatOutcome.Running
+            && expedition.Allies is null
+            && expedition.PlayerRespawnAtSeconds is null
+            && (expedition.Phase != CombatExpeditionPhase.Combat || expedition.PlayerHitpoints > 1e-9)
+            && Resources.Hitpoints > 1e-9;
+
+    private static CombatExpeditionState BuildDuelFallbackSearch(CombatExpeditionState expedition, double elapsed) => expedition with
+    {
+        Phase = CombatExpeditionPhase.Search,
+        PhaseElapsedSeconds = elapsed,
+        PhaseDurationSeconds = elapsed,
+        Outcome = CombatOutcome.Running,
+        PlayerRespawnAtSeconds = null,
+        PlayerState = null,
+        Allies = null,
+        Enemies = null,
+        Duel = null,
+        DuelSeekFailed = true
+    };
+
+    /// <summary>
+    /// 斗法入场检查：当前是否满足「可被匹配/发起匹配」的全部前置条件。
+    /// 要求队列未暂停、队首未绑定组队会话且为正在运行的勾选斗法战斗远征、已进入正式讨伐循环
+    /// （Combat/Search/DuelPending 相位；初搜与战败复活读条不参与，角色存活且未处于倒地复活倒计时）、
+    /// 遭遇计数大于 0、不在冷却且无进行中斗法。
+    /// </summary>
+    public bool CanJoinDuel(double nowUnixSeconds)
+        => CanEnterDuelFromCurrentExpedition()
             && Duel.EncounterCharges > 0
             && Duel.CooldownUntilUnixSeconds <= nowUnixSeconds
             && Duel.ActiveDuelId is null;
@@ -522,14 +551,14 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 挂载斗法回放：发起方从 DuelPending、应战方从任意战斗远征相位进入斗法。
-    /// 双方气血灵力重置为满，当前波次怪物被斗法打断（应战方搜寻进度保留到赛后）。
+    /// 挂载斗法回放：发起方从 DuelPending、应战方从活跃非倒地的 Combat/Search/DuelPending 相位进入斗法。
+    /// 双方气血灵力重置为满，显式清除所有 PVE 战斗残留字段（倒地复活截止点/单位快照/盟友）并校验不变量。
     /// </summary>
     public void AttachDuel(DuelPlaybackState playback)
     {
         ArgumentNullException.ThrowIfNull(playback);
-        if (!playback.IsValid || _actions.Count == 0 || _actions[0].Expedition is not { } expedition
-            || !_actions[0].Intent.PvpEnabled)
+        if (!playback.IsValid || !CanEnterDuelFromCurrentExpedition()
+            || _actions[0].Expedition is not { } expedition)
             throw new DomainException(DomainErrorCode.InvariantViolation, "斗法挂载时远征状态无效。");
         if (Duel.ActiveDuelId != playback.DuelId)
             throw new DomainException(DomainErrorCode.InvariantViolation, "斗法挂载与预约标识不一致。");
@@ -537,21 +566,30 @@ public sealed partial class PlayerAggregate
         resources.Hitpoints = resources.MaxHitpoints;
         resources.Manapoints = resources.MaxManapoints;
         Combat.Skills = PlayerCombatSkillState.Empty;
-        _actions[0].Expedition = expedition with
+        var updated = expedition with
         {
             Phase = CombatExpeditionPhase.Duel,
             PhaseElapsedSeconds = 0,
             PhaseDurationSeconds = 0,
             BattleElapsedSeconds = 0,
             PlayerHitpoints = Resources.Hitpoints,
-            PlayerManapoints = Resources.Manapoints,
+            PlayerManapoints = Resources.MaxManapoints,
             PlayerNextAttackAtSeconds = 0,
             PlayerAttackCount = 0,
             PlayerThreat = 0,
+            Outcome = CombatOutcome.Running,
+            // 必须显式清零 PVE 战斗残留（倒地复活倒计时/单位快照/盟友），避免触发 CombatExpeditionState.IsValid 拒载。
+            PlayerRespawnAtSeconds = null,
+            PlayerState = null,
+            Allies = null,
             Enemies = null,
             Duel = playback,
-            DuelSeekFailed = false
+            DuelSeekFailed = false,
+            RecentEvents = null
         };
+        if (!updated.IsValid)
+            throw new DomainException(DomainErrorCode.InvariantViolation, "斗法挂载时远征状态无效。");
+        _actions[0].Expedition = updated;
         _actions[0].ProgressSeconds = 0;
         // 斗法本方战斗统计并入队首行动账本（对方队伍数据不入账）；剧本结算在撮合时已锁定。
         if (playback.ViewerStats is { Count: > 0 } viewerStats
@@ -577,14 +615,9 @@ public sealed partial class PlayerAggregate
         if (_actions.Count > 0 && _actions[0].Expedition is { Phase: CombatExpeditionPhase.Duel, Duel: { } playback } expedition
             && playback.DuelId == duelId.ToString("N"))
         {
-            _actions[0].Expedition = expedition with
-            {
-                Duel = null,
-                DuelSeekFailed = true,
-                Phase = CombatExpeditionPhase.Search,
-                PhaseElapsedSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
-                PhaseDurationSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9)
-            };
+            var elapsed = Math.Max(expedition.PhaseElapsedSeconds, 1e-9);
+            _actions[0].Expedition = BuildDuelFallbackSearch(expedition, elapsed);
+            _actions[0].ProgressSeconds = elapsed;
         }
         MarkDirty(PlayerSectionKind.Duel);
         MarkDirty(PlayerSectionKind.ActionQueue);
@@ -597,13 +630,9 @@ public sealed partial class PlayerAggregate
     {
         if (_actions.Count == 0 || _actions[0].Expedition is not { Phase: CombatExpeditionPhase.DuelPending } expedition)
             return;
-        _actions[0].Expedition = expedition with
-        {
-            Phase = CombatExpeditionPhase.Search,
-            PhaseElapsedSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
-            PhaseDurationSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
-            DuelSeekFailed = true
-        };
+        var elapsed = Math.Max(expedition.PhaseElapsedSeconds, 1e-9);
+        _actions[0].Expedition = BuildDuelFallbackSearch(expedition, elapsed);
+        _actions[0].ProgressSeconds = elapsed;
         MarkDirty(PlayerSectionKind.ActionQueue);
     }
 

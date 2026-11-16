@@ -539,6 +539,90 @@ public sealed class DuelSimulationTests
         Assert.Equal("item.loot", restored.Duel.StagedItems[0].ItemId);
     }
 
+    /// <summary>
+    /// 原地复活倒地期、初搜、战败复活读条与队列暂停玩家不得被匹配或挂载进斗法；
+    /// AttachDuel/DetachDuel/AbortDuelSeek 亦不得遗留 PlayerRespawnAtSeconds 等无效状态导致存档拒载。
+    /// </summary>
+    [Fact]
+    public void DownedOrInvalidPhaseExpedition_CannotJoinOrAttachDuel()
+    {
+        var catalog = CreateCatalog();
+        var nowUnix = NowUnix();
+
+        // 场景 A：Combat 相位正处于原地复活倒地期（PlayerHitpoints=0, PlayerRespawnAtSeconds!=null）
+        var downed = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "倒地甲", Baseline, catalog.Fingerprint);
+        downed.Duel.EncounterCharges = 2;
+        downed.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        downed.Actions[0].Status = ActionQueueStatus.Running;
+        downed.Resources.Hitpoints = 0;
+        downed.Actions[0].Expedition = new CombatExpeditionState(
+            "encounter.test",
+            CombatExpeditionPhase.Combat,
+            0, 0, 1L,
+            BattleElapsedSeconds: 10,
+            PlayerHitpoints: 0,
+            PlayerManapoints: 100,
+            PlayerNextAttackAtSeconds: 12,
+            PlayerAttackCount: 1,
+            PlayerThreat: 1,
+            CombatOutcome.Running,
+            WaveNumber: 1,
+            [new ExpeditionEnemyState("enemy.test", new CombatantSnapshot(10, 0, 2, 10, 10))])
+        {
+            PlayerState = new CombatantSnapshot(0, 100, 12, 1, 1, RespawnAtSeconds: 40),
+            PlayerRespawnAtSeconds = 40
+        };
+        downed.Actions[0].ProgressSeconds = 0;
+
+        Assert.True(downed.Actions[0].Expedition!.IsValid);
+        Assert.False(downed.CanJoinDuel(nowUnix));
+        var duelId = Guid.NewGuid();
+        Assert.False(downed.TryReserveDuel(duelId, nowUnix));
+
+        var (seeker, _) = PreparePendingSeeker(catalog, "发起乙");
+        var mirrorA = seeker.BuildDuelMirror(catalog);
+        var mirrorB = downed.BuildDuelMirror(catalog);
+        var script = DuelScriptEngine.Resolve(mirrorA, mirrorB, 1, catalog.Duel);
+        downed.Duel.ActiveDuelId = duelId.ToString("N");
+        Assert.Throws<DomainException>(() => downed.AttachDuel(
+            DuelPlaybackState.ForViewer(script, duelId.ToString("N"), mirrorA, mirrorB, viewerIsInitiator: false)));
+        Assert.Equal(CombatExpeditionPhase.Combat, downed.Actions[0].Expedition!.Phase);
+        Assert.Equal(40d, downed.Actions[0].Expedition!.PlayerRespawnAtSeconds);
+        Assert.NotNull(PlayerAggregate.Restore(downed.ExportState()));
+
+        // 场景 B：InitialSearch / Respawning / QueuePaused 均不得入场
+        var initialSearch = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "初搜丙", Baseline, catalog.Fingerprint);
+        initialSearch.Duel.EncounterCharges = 1;
+        initialSearch.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
+        initialSearch.Actions[0].Expedition = new CombatExpeditionState(
+            "encounter.test", CombatExpeditionPhase.InitialSearch, 0, 10, 1L, 0, 100, 100, 0, 0, 0, CombatOutcome.Running);
+        initialSearch.Actions[0].Status = ActionQueueStatus.Running;
+        Assert.False(initialSearch.CanJoinDuel(nowUnix));
+
+        initialSearch.Actions[0].Expedition = initialSearch.Actions[0].Expedition! with
+        { Phase = CombatExpeditionPhase.Respawning, PhaseElapsedSeconds = 0, PhaseDurationSeconds = 5 };
+        Assert.False(initialSearch.CanJoinDuel(nowUnix));
+
+        var (paused, _) = PreparePendingSeeker(catalog, "暂停丁");
+        paused.SetQueuePaused(true);
+        Assert.False(paused.CanJoinDuel(nowUnix));
+
+        // 场景 C：AbortDuelSeek 与 DetachDuel 同步维持 Expedition.IsValid 与 ProgressSeconds 一致性
+        var (seekerOnly, _) = PreparePendingSeeker(catalog, "回退戊");
+        seekerOnly.AbortDuelSeek();
+        Assert.Equal(CombatExpeditionPhase.Search, seekerOnly.Actions[0].Expedition!.Phase);
+        Assert.True(seekerOnly.Actions[0].Expedition!.IsValid);
+        Assert.NotNull(PlayerAggregate.Restore(seekerOnly.ExportState()));
+
+        Assert.True(seeker.TryReserveDuel(duelId, nowUnix));
+        seeker.AttachDuel(DuelPlaybackState.ForViewer(script, duelId.ToString("N"), mirrorA, mirrorB, viewerIsInitiator: true));
+        Assert.True(seeker.Actions[0].Expedition!.IsValid);
+        seeker.DetachDuel(duelId);
+        Assert.Equal(CombatExpeditionPhase.Search, seeker.Actions[0].Expedition!.Phase);
+        Assert.True(seeker.Actions[0].Expedition!.IsValid);
+        Assert.NotNull(PlayerAggregate.Restore(seeker.ExportState()));
+    }
+
     private static double NowUnix() => Baseline.ToUnixTimeMilliseconds() / 1000d;
 
     private static (PlayerAggregate Player, Guid PlayerId) PreparePendingSeeker(GameDataCatalog catalog, string name)

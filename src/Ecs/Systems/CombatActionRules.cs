@@ -169,14 +169,19 @@ internal static class CombatActionRules
                 return null;
             }
             // 离线补算等无撮合路径：保留遭遇计数，回退为正常波次入口。
+            var fallbackElapsed = Math.Max(expedition.PhaseElapsedSeconds, 1e-9);
             expedition = expedition with
             {
                 Phase = CombatExpeditionPhase.Search,
-                PhaseElapsedSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
-                PhaseDurationSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
+                PhaseElapsedSeconds = fallbackElapsed,
+                PhaseDurationSeconds = fallbackElapsed,
+                Outcome = CombatOutcome.Running,
+                PlayerRespawnAtSeconds = null,
+                PlayerState = null,
                 DuelSeekFailed = true
             };
             action.Expedition = expedition;
+            action.ProgressSeconds = fallbackElapsed;
         }
 
         var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
@@ -237,13 +242,24 @@ internal static class CombatActionRules
                     }
                     // 计数大于 0 时进入匹配等待（以判定前计数为准，本波新增的计数留给下次入场）。
                     // 匹配等待静默进行：撮合结果未知前不写日志，无候选对手时由运行时回退为正常波次。
-                    if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true)
+                    if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true
+                        && action.Participation is null
+                        && !player.Settings.QueuePaused
+                        && updated.Allies is null
+                        && updated.PlayerRespawnAtSeconds is null
+                        && player.Resources.Hitpoints > 1e-9)
                     {
                         action.Expedition = updated with
                         {
                             Phase = CombatExpeditionPhase.DuelPending,
                             PhaseElapsedSeconds = 0,
                             PhaseDurationSeconds = 0,
+                            Outcome = CombatOutcome.Running,
+                            PlayerRespawnAtSeconds = null,
+                            PlayerState = null,
+                            Allies = null,
+                            Enemies = null,
+                            Duel = null,
                             DuelSeekFailed = false,
                             // 波间搜寻承载的上一波终局事件到此失效：斗法回放自带事件通道，
                             // 残留事件只会在镜像对手身上重放幽灵跳字。
