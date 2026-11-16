@@ -81,7 +81,10 @@ public static class PostgresSchema
     /// v56：双轨邮件系统（social.broadcast_mails / social.player_mail_states / social.player_mails）；玩家载荷标签保持 v43 不变。
     /// v57：持久化白名单治理与高频落盘根治（新增 game.duel_logs 斗法完整收益日志表、ix_shop_daily_purchases_updated 留存清理索引、状态/队列/临时幂等表 fillfactor 与 autovacuum 调优）；玩家载荷标签保持 v43 不变。
     /// v58：每日签到系统（新增 game.player_daily_checkins 旁路签到状态表）；玩家载荷标签保持 v43 不变。
-    public const int Version = 58;
+    /// v59：队列死信收口与热表索引/填满因子加固（section_flush_queue/integration_outbox 增 status 死信态与部分索引、
+    /// compute_jobs 增 dead_count 防无限死复循环、补齐 auth_sessions/market.trades/market.orders/settlement_claims/
+    /// reservations/party_session_inbox 清理与反查索引及热表 fillfactor/autovacuum 调优）；玩家载荷标签保持 v43 不变。
+    public const int Version = 59;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -133,6 +136,8 @@ public static class PostgresSchema
         revoked_at timestamptz NULL
     );
     CREATE INDEX IF NOT EXISTS ix_auth_sessions_active ON identity.auth_sessions(token_hash, expires_at) WHERE revoked_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_auth_sessions_expires ON identity.auth_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS ix_auth_sessions_revoked ON identity.auth_sessions(revoked_at) WHERE revoked_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS identity.audit_events (
         event_id uuid PRIMARY KEY,
@@ -393,6 +398,7 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_reservations_player ON economy.reservations(player_id, status);
+    CREATE INDEX IF NOT EXISTS ix_reservations_terminal_updated ON economy.reservations(updated_at) WHERE status <> 'active';
 
     -- 系统商店每日限购认领行：与经济事务同事务累加，守卫拒绝即视为超限并整体回滚。
     CREATE TABLE IF NOT EXISTS economy.shop_daily_purchases (
@@ -444,6 +450,7 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_market_orders_book ON market.orders(partition_id, asset_id, variant, status, side, price, sequence);
     CREATE INDEX IF NOT EXISTS ix_market_orders_expiration ON market.orders(partition_id, expires_at) WHERE status IN ('active', 'partially_filled');
+    CREATE INDEX IF NOT EXISTS ix_market_orders_terminal_updated ON market.orders(updated_at) WHERE status IN ('filled', 'cancelled', 'expired');
     CREATE INDEX IF NOT EXISTS ix_market_orders_owner ON market.orders(owner_player_id, status);
     CREATE UNIQUE INDEX IF NOT EXISTS ux_market_orders_partition_sequence ON market.orders(partition_id, sequence);
 
@@ -465,6 +472,8 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_market_trades_partition ON market.trades(partition_id, traded_at DESC);
     CREATE INDEX IF NOT EXISTS ix_market_trades_buyer ON market.trades(buyer_id, traded_at);
     CREATE INDEX IF NOT EXISTS ix_market_trades_seller ON market.trades(seller_id, traded_at);
+    CREATE INDEX IF NOT EXISTS ix_market_trades_buy_order ON market.trades(buy_order_id);
+    CREATE INDEX IF NOT EXISTS ix_market_trades_sell_order ON market.trades(sell_order_id);
 
     CREATE TABLE IF NOT EXISTS market.item_stats (
         asset_id varchar(128) NOT NULL,
@@ -497,6 +506,7 @@ public static class PostgresSchema
         PRIMARY KEY (player_id, request_id)
     );
     CREATE INDEX IF NOT EXISTS ix_settlement_claims_player_time ON market.settlement_claims(player_id, claimed_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_settlement_claims_claimed ON market.settlement_claims(claimed_at);
 
     CREATE TABLE IF NOT EXISTS platform.section_flush_queue (
         queue_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -510,6 +520,7 @@ public static class PostgresSchema
         checksum char(64) NOT NULL,
         game_data_fingerprint varchar(128) NOT NULL DEFAULT '',
         last_simulated_at timestamptz NULL,
+        status varchar(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dead')),
         attempts integer NOT NULL DEFAULT 0,
         next_attempt_at timestamptz NOT NULL,
         lease_until timestamptz NULL,
@@ -517,7 +528,9 @@ public static class PostgresSchema
         last_error varchar(512) NULL,
         updated_at timestamptz NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at);
+    DROP INDEX IF EXISTS platform.ix_section_flush_ready;
+    CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS ix_section_flush_dead ON platform.section_flush_queue(updated_at) WHERE status = 'dead';
     CREATE INDEX IF NOT EXISTS ix_section_flush_player ON platform.section_flush_queue(player_id, section_kind, state_version DESC);
 
     CREATE TABLE IF NOT EXISTS platform.integration_outbox (
@@ -527,6 +540,7 @@ public static class PostgresSchema
         event_type varchar(96) NOT NULL,
         payload bytea NOT NULL,
         occurred_at timestamptz NOT NULL,
+        status varchar(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dead')),
         attempts integer NOT NULL DEFAULT 0,
         visible_at timestamptz NOT NULL,
         lease_until timestamptz NULL,
@@ -534,7 +548,9 @@ public static class PostgresSchema
         delivered_at timestamptz NULL,
         last_error varchar(512) NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_outbox_ready ON platform.integration_outbox(visible_at, lease_until) WHERE delivered_at IS NULL;
+    DROP INDEX IF EXISTS platform.ix_outbox_ready;
+    CREATE INDEX IF NOT EXISTS ix_outbox_ready ON platform.integration_outbox(visible_at, lease_until) WHERE delivered_at IS NULL AND status = 'pending';
+    CREATE INDEX IF NOT EXISTS ix_outbox_dead ON platform.integration_outbox(visible_at) WHERE delivered_at IS NULL AND status = 'dead';
 
     CREATE TABLE IF NOT EXISTS platform.command_receipts (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
@@ -561,6 +577,7 @@ public static class PostgresSchema
         next_attempt_at timestamptz NULL,
         last_error varchar(512) NULL,
         attempts integer NOT NULL DEFAULT 0,
+        dead_count integer NOT NULL DEFAULT 0 CHECK (dead_count >= 0),
         updated_at timestamptz NOT NULL,
         created_at timestamptz NOT NULL
     );
@@ -572,6 +589,7 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_compute_jobs_lease_orphan
         ON platform.compute_jobs(lease_until) WHERE status = 'leased';
     CREATE INDEX IF NOT EXISTS ix_compute_jobs_retention ON platform.compute_jobs(status, updated_at);
+    CREATE INDEX IF NOT EXISTS ix_compute_jobs_dead_player ON platform.compute_jobs(player_id, updated_at DESC) WHERE status = 'dead';
     -- 同一玩家最多一个未完结冷挂机任务：pending/leased 期间重复入队走 upsert/忽略，
     -- 防止同一玩家被并发派发到多个计算批次。
     CREATE UNIQUE INDEX IF NOT EXISTS ux_compute_jobs_open
@@ -714,6 +732,8 @@ public static class PostgresSchema
         ON social.party_session_inbox(player_id, created_at, session_id, sequence) WHERE consumed_at IS NULL;
     CREATE INDEX IF NOT EXISTS ix_party_session_inbox_consumed_tx
         ON social.party_session_inbox(consumed_transaction_id) WHERE (consumed_transaction_id IS NOT NULL);
+    CREATE INDEX IF NOT EXISTS ix_party_session_inbox_consumed_at
+        ON social.party_session_inbox(consumed_at) WHERE consumed_at IS NOT NULL;
 
     -- 待处理的队伍邀请：每名玩家最多一条（被邀请人作主键），接受/拒绝/过期后清除。
     CREATE TABLE IF NOT EXISTS social.party_invitations (
@@ -813,6 +833,9 @@ public static class PostgresSchema
     -- 高频状态覆盖表与瞬时防重队列调优 fillfactor 与 autovacuum，降低页面分裂与膨胀写放大。
     ALTER TABLE game.player_state_heads SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
     ALTER TABLE game.player_state_sections SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+    ALTER TABLE game.player_projection SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+    ALTER TABLE game.player_runtime_leases SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_cost_limit = 1000);
+    ALTER TABLE economy.player_asset_balances SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
     ALTER TABLE platform.section_flush_queue SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_cost_limit = 1000);
     ALTER TABLE economy.transient_idempotency SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_cost_limit = 1000);
 
@@ -823,7 +846,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

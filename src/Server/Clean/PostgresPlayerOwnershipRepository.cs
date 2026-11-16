@@ -34,11 +34,11 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         return acquired;
     }
 
-    /// <summary>持有者续租；返回 false 表示租约已被其他实例接管，调用方必须按租约丢失处理。</summary>
+    /// <summary>持有者续租；返回 false 表示租约已过期或已被其他实例接管，调用方必须按租约丢失处理并淘汰内存陈旧状态。</summary>
     public async ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
-        // ownerInstanceId 每次进程启动都会重新生成；即使本机时钟跳变导致 lease_until 已过期，
-        // 只要期间没有其他实例接管（ownerInstanceId 仍匹配），当前实例可以原子续租恢复。
+        // lease_until > now() 硬守卫：租约一旦过期，ColdCatchUpWorker 与 ComputeResultCommitter 均视该玩家为无人持租，
+        // 若允许原实例在失速恢复后直接续活陈旧内存实体而不重载持久化状态，会覆盖期间冷挂机写入，形成脑裂。
         Validate(playerId, ownerInstanceId, lease);
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -47,7 +47,7 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         await using var command = new NpgsqlCommand("""
             UPDATE game.player_runtime_leases
             SET lease_until = $1, renewed_at = $2
-            WHERE player_id = $3 AND owner_instance_id = $4
+            WHERE player_id = $3 AND owner_instance_id = $4 AND lease_until > $2
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
         command.Parameters.Add(new NpgsqlParameter { Value = now });

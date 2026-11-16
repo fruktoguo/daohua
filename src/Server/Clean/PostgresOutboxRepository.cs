@@ -28,6 +28,9 @@ public sealed class UnconfiguredIntegrationEventDispatcher(ILogger<UnconfiguredI
 /// <summary>platform.integration_outbox 的 PostgreSQL 实现：同事务追加、租约认领与回执。</summary>
 public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOutboxRepository
 {
+    /// <summary>投递失败最大重试次数；超过后转入 dead 死信态，停止无限轮询消费。</summary>
+    public const int MaxAttempts = 20;
+
     /// <summary>在调用方事务内插入 outbox 行；事件随业务提交一起可见，保证不丢。</summary>
     public async ValueTask AppendAsync(
         NpgsqlConnection connection,
@@ -72,7 +75,7 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         await using var command = new NpgsqlCommand("""
             WITH candidates AS (
                 SELECT outbox_id FROM platform.integration_outbox
-                WHERE delivered_at IS NULL AND visible_at <= $1
+                WHERE delivered_at IS NULL AND status = 'pending' AND visible_at <= $1
                   AND (lease_until IS NULL OR lease_until < $1)
                 ORDER BY occurred_at
                 FOR UPDATE SKIP LOCKED LIMIT $2
@@ -108,26 +111,31 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         await using var command = new NpgsqlCommand("""
             UPDATE platform.integration_outbox
             SET delivered_at = now(), lease_until = NULL, lease_token = NULL, last_error = NULL
-            WHERE outbox_id = $1 AND lease_token = $2 AND delivered_at IS NULL
+            WHERE outbox_id = $1 AND lease_token = $2 AND delivered_at IS NULL AND status = 'pending'
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = outboxId });
         command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>投递失败回租：清租约、记 last_error，并按 retryAfter 推迟 visible_at 形成退避。</summary>
+    /// <summary>投递失败回租：清租约、记 last_error；达到最大重试次数转入 dead 死信态，否则推迟 visible_at 形成退避。</summary>
     public async ValueTask ReleaseAsync(Guid outboxId, Guid leaseToken, string error, TimeSpan retryAfter, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             UPDATE platform.integration_outbox
-            SET visible_at = $3, lease_until = NULL, lease_token = NULL, last_error = left($4, 512)
-            WHERE outbox_id = $1 AND lease_token = $2 AND delivered_at IS NULL
+            SET status = CASE WHEN attempts >= $5 THEN 'dead' ELSE 'pending' END,
+                visible_at = $3,
+                lease_until = NULL,
+                lease_token = NULL,
+                last_error = left($4, 512)
+            WHERE outbox_id = $1 AND lease_token = $2 AND delivered_at IS NULL AND status = 'pending'
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = outboxId });
         command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
         command.Parameters.Add(new NpgsqlParameter { Value = DateTimeOffset.UtcNow.Add(retryAfter) });
         command.Parameters.Add(new NpgsqlParameter { Value = error ?? "unknown" });
+        command.Parameters.Add(new NpgsqlParameter { Value = MaxAttempts });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
@@ -174,7 +182,11 @@ public sealed class OutboxWorker(
                     catch (Exception ex)
                     {
                         if (_failureLog.TryAcquire())
-                            logger.LogError(ex, "Outbox 事件投递失败 outboxId={OutboxId}", message.OutboxId);
+                            logger.LogError(ex, "Outbox 事件投递失败 outboxId={OutboxId} attempts={Attempts}/{MaxAttempts}",
+                                message.OutboxId, message.Attempts, PostgresOutboxRepository.MaxAttempts);
+                        if (message.Attempts >= PostgresOutboxRepository.MaxAttempts)
+                            logger.LogError("Outbox 事件达到最大重试次数转入死信 outboxId={OutboxId} type={EventType}",
+                                message.OutboxId, message.EventType);
                         await repository.ReleaseAsync(message.OutboxId, message.LeaseToken, ex.Message, TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Min(message.Attempts, 8)))), stoppingToken);
                     }
                 }

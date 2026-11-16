@@ -187,11 +187,12 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
 
         // 目标时刻推进使 job_id 变化时，按玩家维度原地复用/复活已有 dead 终态行：
         // 避免毒丸或批量失败玩家在每次新目标时刻到来时无限堆积 dead 行；
-        // 若仍在冷却期内保留剩余闸门，熬过完整冷却窗口后立即可领。
+        // 若连续判死次数达到 5 次，则强制进入 24 小时冷却门控，阻止坏存档无限死复循环。
         Guid? existingDeadJobId = null;
         DateTimeOffset deadUpdatedAt = default;
+        var deadCount = 0;
         await using (var findDead = new NpgsqlCommand("""
-            SELECT job_id, updated_at
+            SELECT job_id, updated_at, dead_count
             FROM platform.compute_jobs
             WHERE player_id = $1 AND status = 'dead'
             ORDER BY updated_at DESC
@@ -205,11 +206,15 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             {
                 existingDeadJobId = reader.GetGuid(0);
                 deadUpdatedAt = reader.GetFieldValue<DateTimeOffset>(1);
+                deadCount = reader.GetInt32(2);
             }
         }
         if (existingDeadJobId is { } deadJobId)
         {
-            var retryAt = deadRetryDelay > TimeSpan.Zero ? deadUpdatedAt.Add(deadRetryDelay) : DateTimeOffset.MinValue;
+            var effectiveDelay = deadCount >= 5 && deadRetryDelay < TimeSpan.FromHours(24)
+                ? TimeSpan.FromHours(24)
+                : deadRetryDelay;
+            var retryAt = effectiveDelay > TimeSpan.Zero ? deadUpdatedAt.Add(effectiveDelay) : DateTimeOffset.MinValue;
             DateTimeOffset? nextAttemptAt = retryAt > now ? retryAt : null;
             await using var reuseDead = new NpgsqlCommand("""
                 UPDATE platform.compute_jobs
@@ -301,7 +306,8 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
             UPDATE platform.compute_jobs
             SET status = 'pending', attempts = 0,
                 lease_until = NULL, lease_token = NULL,
-                next_attempt_at = $3, input_payload = $4, output_payload = NULL,
+                next_attempt_at = CASE WHEN dead_count >= 5 THEN GREATEST($3, updated_at + interval '24 hours') ELSE $3 END,
+                input_payload = $4, output_payload = NULL,
                 target_time = $5, updated_at = $6
             WHERE job_id = $1 AND player_id = $2 AND status = 'dead'
             """, connection, transaction);
@@ -432,6 +438,7 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
         await using var command = new NpgsqlCommand("""
             UPDATE platform.compute_jobs
             SET status = CASE WHEN $4 OR attempts >= $5 THEN 'dead' ELSE 'pending' END,
+                dead_count = CASE WHEN $4 OR attempts >= $5 THEN dead_count + 1 ELSE dead_count END,
                 next_attempt_at = CASE WHEN $4 OR attempts >= $5 THEN next_attempt_at ELSE $6 END,
                 lease_until = NULL, lease_token = NULL,
                 last_error = left($3, 512), updated_at = now()
@@ -469,6 +476,7 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
         await using var command = new NpgsqlCommand("""
             UPDATE platform.compute_jobs
             SET status = CASE WHEN attempts >= $3 THEN 'dead' ELSE 'pending' END,
+                dead_count = CASE WHEN attempts >= $3 THEN dead_count + 1 ELSE dead_count END,
                 next_attempt_at = CASE WHEN attempts >= $3 THEN next_attempt_at ELSE $4 END,
                 lease_until = NULL, lease_token = NULL,
                 last_error = left($2, 512), updated_at = now()
@@ -594,7 +602,8 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
                   SELECT 1 FROM platform.compute_jobs d
                   WHERE d.player_id = p.player_id
                     AND d.status = 'dead'
-                    AND d.updated_at > $1 - $3)
+                    AND (d.updated_at > $1 - $3
+                         OR (d.dead_count >= 5 AND d.updated_at > $1 - interval '24 hours')))
               AND NOT EXISTS (
                   SELECT 1 FROM social.party_sessions s
                   WHERE s.ended_at IS NULL AND s.spec @> jsonb_build_object(

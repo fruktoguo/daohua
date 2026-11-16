@@ -88,7 +88,7 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
                     FROM game.player_state_sections WHERE player_id=m.player_id AND section_kind='world'
                     UNION ALL
                     SELECT state_version, schema_version, codec, payload, raw_bytes, checksum, updated_at
-                    FROM platform.section_flush_queue WHERE player_id=m.player_id AND section_kind='world'
+                    FROM platform.section_flush_queue WHERE player_id=m.player_id AND section_kind='world' AND status = 'pending'
                 ) candidates ORDER BY state_version DESC LIMIT 1
             ) world ON true
             """, connection, transaction);

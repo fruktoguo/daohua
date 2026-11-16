@@ -2672,8 +2672,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         {
             await sections.EnqueueSectionsAsync(writes, pending.ToArray(), cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            // 网络中断/超时/取消可能在 Commit 已送达库端后才抛回：锁定已用 StateVersion 防止续传重用同版本号撞校验和冲突。
+            if (IsAmbiguousPersistenceError(ex))
+                AdvancePersistedVersionFloor(playerId, snapshot.StateVersion);
             // durable queue 失败时保留原脏集合、缓冲状态与 receipt，下一次刷新可立即重试。
             foreach (var section in eligible) _dirtyAt[playerId][section] = wallNow;
             throw;
@@ -2949,8 +2952,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         {
             await sections.EnqueueSectionsAsync(writes, receipts.ToArray(), cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            // 未知写入结局后即将内存状态回滚到 before；若库端实际已落库 after.StateVersion，
+            // 提前锁定已 persisted 水位，强制下次重试递增版本，避免 (state_version, checksum) 冲突锁死玩家。
+            if (IsAmbiguousPersistenceError(ex))
+                AdvancePersistedVersionFloor(playerId, after.StateVersion);
             RestoreUncommittedPlayer(playerId, before, dirtyBefore);
             throw;
         }
@@ -3476,10 +3483,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
 
     private void MarkCheckpointSynced(Guid playerId, PlayerRuntimeSnapshot snapshot)
     {
-        _lastPersistedStateVersion[playerId] = snapshot.StateVersion;
+        AdvancePersistedVersionFloor(playerId, snapshot.StateVersion);
         _lastCheckpointSimAt[playerId] = snapshot.LastSimulatedAt;
         _lastCheckpointWallAt[playerId] = DateTimeOffset.UtcNow;
     }
+
+    private void AdvancePersistedVersionFloor(Guid playerId, long stateVersion) =>
+        _lastPersistedStateVersion.AddOrUpdate(playerId, stateVersion, (_, existing) => Math.Max(existing, stateVersion));
+
+    private static bool IsAmbiguousPersistenceError(Exception ex) =>
+        ex is OperationCanceledException or TimeoutException or EndOfStreamException or Npgsql.NpgsqlException;
 
     private bool HasPendingSimulationDeltas(Guid playerId)
         => _pendingSimulationDeltas.TryGetValue(playerId, out var map) && map.Count > 0;

@@ -315,4 +315,32 @@
   ```
 - 【离线脚本 / 人工步骤】：无。
 
+---
+
+## v58 -> v59
+
+- **变更日期**：2026-11-17 03:30:00
+- **关联任务**：全仓持久化死信收口、锁序对齐、索引补齐与留存短事务拆分（热修复加固批次四）
+- **数据库版本**：`PostgresSchema.Version` 58 -> 59
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 保持 `43`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0059_v58_to_v59.sql`
+- **存量处理结论**：幂等加列、重建部分索引与参数调优，存量行与玩家存档保持不变
+
+### 1. 变了什么
+- 【库结构/权限】
+  1. `platform.section_flush_queue` 与 `platform.integration_outbox` 新增 `status varchar(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dead'))`，将就绪索引收窄为 `WHERE status = 'pending'` 并新增死信清理索引（`ix_section_flush_dead`、`ix_outbox_dead`）。
+  2. `platform.compute_jobs` 新增 `dead_count integer NOT NULL DEFAULT 0 CHECK (dead_count >= 0)` 与 `ix_compute_jobs_dead_player`（`WHERE status = 'dead'`），超过 5 次终态判死后进入 24 小时冷却闸门，防止坏玩家状态无限循环重演。
+  3. 补齐清理与关联反查索引：`identity.auth_sessions(expires_at)` / `(revoked_at) WHERE revoked_at IS NOT NULL`、`economy.reservations(updated_at) WHERE status <> 'active'`、`market.orders(updated_at) WHERE status IN ('filled','cancelled','expired')`、`market.trades(buy_order_id)` / `(sell_order_id)`、`market.settlement_claims(claimed_at)`、`social.party_session_inbox(consumed_at) WHERE consumed_at IS NOT NULL`。
+  4. 为高频写入表 `game.player_projection`、`game.player_runtime_leases`、`economy.player_asset_balances` 配置 `fillfactor` 与 `autovacuum` 阈值；无新增表或角色权限变更。
+- 【存档载荷】无变更（玩家八分段结构与标签保持 `v43`）。
+- 【配表/持久化语义】`PostgresRetentionRepository.PruneAsync` 改按逐表独立短事务分批清理并纳入过期运行时租约/7 天死信；`PostgresSectionRepository` 统一先锁 `identity.players` 并在冷挂机写入前桥接未落盘 `section_flush_queue` pending 行；`PostgresPlayerOwnershipRepository.RenewAsync` 增加 `lease_until > now()` 守卫。
+
+### 2. 是否需要处理存量数据
+- **无需回填或重置存量存档**：新增列均带有安全默认值 `'pending'` / `0`，存量表数据直接生效，不改变任何既有表语义，玩家八分段维持 `v43`。
+
+### 3. 如果要处理，怎么处理
+- 【合入合并迁移脚本的 SQL 指引】：见 [`migrations/0059_v58_to_v59.sql`](../../migrations/0059_v58_to_v59.sql)（单事务内幂等加列、加约束、重建索引、设置 `fillfactor`/`autovacuum` 并写入 `platform.schema_version = 59`）。
+- 【离线脚本 / 人工步骤】：无。
+
+
 
