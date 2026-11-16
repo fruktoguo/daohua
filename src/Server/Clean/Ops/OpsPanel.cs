@@ -497,18 +497,18 @@ public static class OpsPanel
             return Results.Ok(new { action = "kick", playerId = request.PlayerId, closeCode = KickCloseCode });
         });
 
-        group.MapPost("/api/actions/flush", async (HttpContext context, OpsFlushRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        group.MapPost("/api/actions/flush", async (HttpContext context, OpsFlushRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             try
             {
                 if (request.PlayerId is { } playerId && playerId != Guid.Empty)
                 {
-                    await players.FlushAsync(playerId, request.Force, cancellationToken);
+                    await players.FlushAsync(playerId, request.Force, CancellationToken.None);
                     Audit(loggerFactory, context, "flush", playerId);
                     return Results.Ok(new { action = "flush", scope = "player", playerId, force = request.Force });
                 }
-                await players.FlushAllAsync(request.Force, cancellationToken);
+                await players.FlushAllAsync(request.Force, CancellationToken.None);
                 Audit(loggerFactory, context, "flush-all", null);
                 return Results.Ok(new { action = "flush", scope = "all", loadedPlayers = players.LoadedCount, force = request.Force });
             }
@@ -518,17 +518,17 @@ public static class OpsPanel
             }
         });
 
-        group.MapPost("/api/actions/unload", async (HttpContext context, OpsUnloadRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        group.MapPost("/api/actions/unload", async (HttpContext context, OpsUnloadRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             if (request.PlayerId == Guid.Empty)
                 return Results.BadRequest(new { code = "INVALID_PLAYER", message = "必须提供 playerId。" });
-            await players.RemoveAsync(request.PlayerId, request.Flush, null, cancellationToken);
+            await players.RemoveAsync(request.PlayerId, request.Flush, null, CancellationToken.None);
             Audit(loggerFactory, context, "unload", request.PlayerId);
             return Results.Ok(new { action = "unload", playerId = request.PlayerId, flushed = request.Flush });
         });
 
-        group.MapPost("/api/actions/grant-foundation", async (HttpContext context, OpsGrantFoundationRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        group.MapPost("/api/actions/grant-foundation", async (HttpContext context, OpsGrantFoundationRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             var amount = request.Amount <= 0 ? 100_000_000d : request.Amount;
@@ -538,18 +538,18 @@ public static class OpsPanel
                 {
                     agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
                     agg.Touch(PlayerSectionKind.Progression);
-                }, cancellationToken);
+                }, CancellationToken.None);
                 Audit(loggerFactory, context, "grant-foundation", targetId);
                 return Results.Ok(new { action = "grant-foundation", playerId = targetId, amount });
             }
-            var loaded = await players.GetLoadedSnapshotsAsync(cancellationToken);
+            var loaded = await players.GetLoadedSnapshotsAsync(CancellationToken.None);
             foreach (var snapshot in loaded)
             {
                 await players.MutateOwnedAsync(snapshot.PlayerId, agg =>
                 {
                     agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
                     agg.Touch(PlayerSectionKind.Progression);
-                }, cancellationToken);
+                }, CancellationToken.None);
             }
             Audit(loggerFactory, context, "grant-foundation-all", null);
             return Results.Ok(new { action = "grant-foundation", scope = "all", count = loaded.Count, amount });
@@ -576,13 +576,12 @@ public static class OpsPanel
             HttpContext context,
             OpsOptions opts,
             ILoggerFactory loggerFactory,
-            Server.Clean.Leaderboards.LeaderboardRuntime? leaderboard,
-            CancellationToken ct) =>
+            Server.Clean.Leaderboards.LeaderboardRuntime? leaderboard) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             if (leaderboard is null)
                 return Results.NotFound(new { code = "LEADERBOARD_UNAVAILABLE", message = "当前进程角色未启用排行榜服务。" });
-            await leaderboard.RebuildAsync(ct);
+            await leaderboard.RebuildAsync(CancellationToken.None);
             Audit(loggerFactory, context, "leaderboard.rebuild", null);
             return Results.Ok(leaderboard.GetStatus());
         });

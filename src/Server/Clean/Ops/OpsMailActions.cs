@@ -33,7 +33,7 @@ public static class OpsMailActions
                 return Results.NotFound(new { code = "MAIL_UNAVAILABLE", message = "当前进程角色未启用邮件服务。" });
             try
             {
-                var outcome = await mail.SendPlayerMailAsync(request, ct).ConfigureAwait(false);
+                var outcome = await mail.SendPlayerMailAsync(request, CancellationToken.None).ConfigureAwait(false);
                 OpsPanel.Audit(loggerFactory, context, "mail.send-player", outcome.PlayerId);
                 return Results.Ok(new
                 {
@@ -62,7 +62,7 @@ public static class OpsMailActions
                 return Results.NotFound(new { code = "MAIL_UNAVAILABLE", message = "当前进程角色未启用邮件服务。" });
             try
             {
-                var created = await mail.SendBroadcastMailAsync(request, ct).ConfigureAwait(false);
+                var created = await mail.SendBroadcastMailAsync(request, CancellationToken.None).ConfigureAwait(false);
                 OpsPanel.Audit(loggerFactory, context, "mail.send-broadcast", null);
                 return Results.Ok(new
                 {
@@ -93,7 +93,7 @@ public static class OpsMailActions
                 return Results.NotFound(new { code = "MAIL_UNAVAILABLE", message = "当前进程角色未启用邮件服务。" });
             try
             {
-                var revoked = await mail.RevokeBroadcastMailAsync(request.BroadcastId, ct).ConfigureAwait(false);
+                var revoked = await mail.RevokeBroadcastMailAsync(request.BroadcastId, CancellationToken.None).ConfigureAwait(false);
                 if (!revoked)
                     return Results.NotFound(new { code = "BROADCAST_NOT_FOUND", message = "公告不存在或已撤回。" });
                 OpsPanel.Audit(loggerFactory, context, "mail.revoke-broadcast", null);

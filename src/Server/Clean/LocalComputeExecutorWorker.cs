@@ -52,7 +52,7 @@ public sealed class LocalComputeExecutorWorker(
             {
                 if (_failureLog.TryAcquire())
                     logger.LogError(exception, "LocalComputeExecutorWorker 循环失败，将在下个周期重试。");
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(5), stoppingToken)) break;
             }
         }
     }

@@ -83,8 +83,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     // 没有它栅栏只能靠进程重启清除，玩家会被永久锁在门外（COMMIT 回包丢失 + 核实请求也超时即触发）。
     private readonly ConcurrentDictionary<Guid, Func<CancellationToken, ValueTask<bool>>> _fenceResolvers = new();
     private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logs = new();
-    // 玩家级单写者门：命令/装载/刷盘/卸载统一经此串行进入 Fiber，不设全局加载门。
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
+    // 玩家级单写者门：按需分配并在无引用后回收释放，避免长运行会话键表无限增长。
+    private readonly RefCountedGateMap<Guid> _playerGates = new();
+    // 实例生命周期停机取消源：命令权威提交后的钱包同步、斗法弃战落库等收敛步骤与客户端断连解耦，仅随宿主卸载取消。
+    private readonly CancellationTokenSource _shutdownCts = new();
     // 进程内请求幂等窗（上限 1024/玩家）：跨重连去重由持久化 command_receipts 兜底。
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
     // 上次推送时的属性流水号：命令后用差值判定 WireAttributesChanged，驱动网络层是否发属性增量。
@@ -250,13 +252,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     public async ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var notifications = new List<RuntimeNotification>();
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try { return await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false); }
         finally
         {
-            gate.Release();
+            gateLease.Dispose();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
     }
@@ -268,9 +270,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     public async ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var notifications = new List<RuntimeNotification>();
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
             var snapshot = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
@@ -298,7 +300,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         finally
         {
-            gate.Release();
+            gateLease.Dispose();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
     }
@@ -377,7 +379,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
                 logs = (await CommitSimulationAsync(playerId, before, advanced, null, loadDirtyBefore, cancellationToken).ConfigureAwait(false)).Logs;
                 if (duelBeforeLoad is not null && advanced.State.Duel.ActiveDuelId is null)
-                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeLoad, forfeited: false, advanced.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
+                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeLoad, forfeited: false, advanced.LastSimulatedAt, _shutdownCts.Token).ConfigureAwait(false);
             }
             else
             {
@@ -396,19 +398,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         catch (Exception loadError)
         {
+            // 未知结局栅栏必须在 LoadOwnedAsync 失败时保留已装配的 ECS 实体、_loaded 与租约等待确认重放；
+            // 非栅栏原因的加载失败才清理半成品实体与派生缓存并释放租约。
             if (_fencedCommits.ContainsKey(playerId)) throw;
-            ecs.RemovePlayer(playerId);
-            // 成功提交或装载对账可能已暂存 _loaded；不能留下“缓存已加载、实体已移除”的假状态。
-            _loaded.TryRemove(playerId, out _);
-            _wallets.TryRemove(playerId, out _);
-            _logs.TryRemove(playerId, out _);
-            _dirtyAt.TryRemove(playerId, out _);
-            _pendingReceipts.TryRemove(playerId, out _);
-            ClearBufferingState(playerId);
-            _walletReloadRequired.TryRemove(playerId, out _);
-            _recentRequests.TryRemove(playerId, out _);
-            _attributeRevisions.TryRemove(playerId, out _);
-            _publishedVersions.TryRemove(playerId, out _);
+            ClearLoadedPlayerStateOwned(playerId);
             if (ownership is not null)
             {
                 try { await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false); }
@@ -457,9 +450,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var emptyRequestSnapshot = await LoadAsync(playerId, cancellationToken).ConfigureAwait(false);
             return new PlayerCommandResult(false, "INVALID_REQUEST_ID", "请求标识不能为空。", emptyRequestSnapshot);
         }
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
+        (Guid DuelId, Guid PeerId)? pendingPeerForfeit = null;
+        PlayerCommandResult commandResult;
         try
         {
             var before = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
@@ -467,9 +462,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             {
                 await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
             }
-            catch (PlayerOwnershipLostException)
+            catch (Exception ex) when (ex is PlayerOwnershipLostException or InvalidDataException)
             {
-                // 所有权已转移给其他实例：返回明确错误；实体逐出在锁外由 ExecuteAsync 执行。
+                // 所有权已转移给其他实例（或身份已停用）：返回明确错误；实体逐出在锁外由 ExecuteAsync 执行。
                 return new PlayerCommandResult(false, "PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。", before);
             }
             await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
@@ -599,10 +594,16 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
                             if (request.Priority)
+                            {
+                                if (aggregate.Actions.Count > 0)
+                                    forfeit = aggregate.ApplyDuelForfeit(now, gameData.Duel);
                                 aggregate.EnqueuePriority(intent, now, gameData.Actions);
+                            }
                             else
+                            {
                                 aggregate.Enqueue(intent, now, gameData.Actions);
-                        });
+                            }
+                        }, destroyEncounters: request.Priority);
                         break;
                     }
                     case "action.remove":
@@ -681,15 +682,21 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         // 沿袭历史 OOP 运行时的次序基线：先推进到当前，再按是否挪动队首做弃战判定。
                         if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
+                        var affectsSlotZero = before.State.Actions.Count > 0
+                            && (before.State.Actions[0].Id == actionInstanceId
+                                || (direction < 0 && before.State.Actions.Count > 1 && before.State.Actions[1].Id == actionInstanceId));
                         var moved = false;
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
-                            if (aggregate.Actions.Count > 0 && aggregate.Actions[0].Id == actionInstanceId)
+                            if (affectsSlotZero && aggregate.Actions.Count > 0
+                                && (aggregate.Actions[0].Id == actionInstanceId
+                                    || (direction < 0 && aggregate.Actions.Count > 1 && aggregate.Actions[1].Id == actionInstanceId)))
                                 forfeit = aggregate.ApplyDuelForfeit(_simulationClock.UtcNow, gameData.Duel);
                             moved = aggregate.MoveAction(actionInstanceId, direction);
-                        });
+                        }, destroyEncounters: affectsSlotZero);
                         if (!moved)
                         {
+                            forfeit = null;
                             // 若前置 RunPlayerOnceAsync 或 ApplyDuelForfeit 已改动内存态，拒绝移动时必须完整还原未提交状态。
                             RestoreUncommittedPlayer(playerId, before, dirtySectionsBefore);
                             return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在或已在边界位置。", before);
@@ -1091,10 +1098,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             throw;
                         }
                         receiptAlreadyCommitted = true;
-                        await SyncWalletAfterCommitAsync(playerId, committed, cancellationToken);
-                        if (command == "zongmen.create" && nodeBuildings is not null && await zongmen.FindForPlayerAsync(playerId, cancellationToken) is { } created)
-                            await nodeBuildings.RefreshBuildingAsync(created.NodeId, ZongmenRules.HallBuildingId, cancellationToken);
-                        await ReconcileZongmenResidenceAsync(playerId, _simulationClock.UtcNow, cancellationToken);
+                        await SyncWalletAfterCommitAsync(playerId, committed, _shutdownCts.Token);
+                        if (command == "zongmen.create" && nodeBuildings is not null && await zongmen.FindForPlayerAsync(playerId, _shutdownCts.Token) is { } created)
+                            await nodeBuildings.RefreshBuildingAsync(created.NodeId, ZongmenRules.HallBuildingId, _shutdownCts.Token);
+                        await ReconcileZongmenResidenceAsync(playerId, _simulationClock.UtcNow, _shutdownCts.Token);
                         customNotice = "宗门操作成功。";
                         break;
                     }
@@ -1141,6 +1148,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var currentAfterExit = ToSnapshot(ecs.ExportSnapshot(playerId));
                         if (travelNow > currentAfterExit.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, travelNow, cancellationToken).ConfigureAwait(false);
+                        var alreadyAtTargetNode = string.Equals(currentAfterExit.State.World.NodeId, targetNodeId, StringComparison.Ordinal)
+                            && string.IsNullOrWhiteSpace(currentAfterExit.State.World.EdgeId);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
                             static void RemoveStaleTravel(PlayerAggregate aggregate)
@@ -1173,7 +1182,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             var enqueuedAt = aggregate.LastSimulatedAt > travelNow ? aggregate.LastSimulatedAt : travelNow;
                             aggregate.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, targetNodeId),
                                 enqueuedAt, gameData.Actions, travelState);
-                        });
+                        }, destroyEncounters: !alreadyAtTargetNode);
                         break;
                     }
                     case "building.build":
@@ -1278,10 +1287,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, contributeResult.ErrorCode ?? "CONTRIBUTE_FAILED", contributeResult.Message ?? "材料提交失败。", before);
                         receiptAlreadyCommitted = contributeCommit is { Applied: true };
                         if (contributeCommit is { } committedContribute)
-                            await SyncWalletAfterCommitAsync(playerId, committedContribute, cancellationToken).ConfigureAwait(false);
+                            await SyncWalletAfterCommitAsync(playerId, committedContribute, _shutdownCts.Token).ConfigureAwait(false);
                         else
-                            await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
-                        await RefreshNodeBuildingsAsync(playerId, before.State.World, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+                            await ReloadWalletAsync(playerId, _shutdownCts.Token).ConfigureAwait(false);
+                        await RefreshNodeBuildingsAsync(playerId, before.State.World, DateTimeOffset.UtcNow, _shutdownCts.Token).ConfigureAwait(false);
                         TrackDirty(playerId);
                         break;
                     }
@@ -1447,7 +1456,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             cancellationToken).ConfigureAwait(false);
                         if (!disposeResult.Applied)
                             return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "物品处置事务未提交。", before);
-                        await SyncWalletAfterCommitAsync(playerId, disposeResult, cancellationToken).ConfigureAwait(false);
+                        await SyncWalletAfterCommitAsync(playerId, disposeResult, _shutdownCts.Token).ConfigureAwait(false);
                         receiptAlreadyCommitted = true;
                         break;
                     }
@@ -1516,7 +1525,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         if (!shopResult.Applied)
                             return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "购买事务未提交。", before);
-                        await SyncWalletAfterCommitAsync(playerId, shopResult, cancellationToken).ConfigureAwait(false);
+                        await SyncWalletAfterCommitAsync(playerId, shopResult, _shutdownCts.Token).ConfigureAwait(false);
                         receiptAlreadyCommitted = true;
                         break;
                     }
@@ -1541,7 +1550,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "AVATAR_LOCKED", "该形象尚未解锁。", before);
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetAvatar(normalized));
                         if (presence is not null)
-                            await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
+                            await presence.UpdateAvatarAsync(playerId, normalized, _shutdownCts.Token).ConfigureAwait(false);
                         break;
                     }
                     case "respawn.policy":
@@ -1632,7 +1641,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         receiptAlreadyCommitted = true;
 
                         if (presence is not null)
-                            await presence.UpdateAvatarAsync(playerId, normalized, cancellationToken).ConfigureAwait(false);
+                            await presence.UpdateAvatarAsync(playerId, normalized, _shutdownCts.Token).ConfigureAwait(false);
                         break;
                     }
                     case "simulation.advance":
@@ -1728,7 +1737,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             var enqueuedAt = aggregate.LastSimulatedAt > restartNow ? aggregate.LastSimulatedAt : restartNow;
                             aggregate.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, homeNodeId),
                                 enqueuedAt, gameData.Actions, travelState);
-                        });
+                        }, destroyEncounters: true);
                         break;
                     }
                     default:
@@ -1777,19 +1786,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 if (forfeit is { } resolvedForfeit)
                 {
                     if (duelBeforeCommand is not null)
-                        await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: true, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
+                        await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: true, _simulationClock.UtcNow, _shutdownCts.Token).ConfigureAwait(false);
                     if (ecs.GetDirtySections(playerId).Length > 0 || HasPendingSimulationDeltas(playerId))
-                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
-                    await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
+                        await FlushOwnedAsync(playerId, force: true, _shutdownCts.Token).ConfigureAwait(false);
+                    // 先释放本玩家 gate 再通知对手侧拿 peerGate，彻底消除双方互弃或与 AdvanceAllAsync 并发的 AB-BA 死锁。
+                    pendingPeerForfeit = resolvedForfeit;
                 }
                 else if (duelBeforeCommand is not null && after.State.Duel.ActiveDuelId is null)
                 {
-                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: false, after.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
+                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: false, after.LastSimulatedAt, _shutdownCts.Token).ConfigureAwait(false);
                     if (ecs.GetDirtySections(playerId).Length > 0 || HasPendingSimulationDeltas(playerId))
-                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                        await FlushOwnedAsync(playerId, force: true, _shutdownCts.Token).ConfigureAwait(false);
                 }
                 _simulationBackoffs.TryRemove(playerId, out _);
-                return new PlayerCommandResult(true, "OK", customNotice ?? SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
+                commandResult = new PlayerCommandResult(true, "OK", customNotice ?? SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
             }
             catch (DomainException exception)
             {
@@ -1804,7 +1814,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 return new PlayerCommandResult(false, "INVALID_PAYLOAD", exception.Message, before);
             }
         }
-        finally { gate.Release(); }
+        finally { gateLease.Dispose(); }
+        if (pendingPeerForfeit is { } peerForfeit)
+            await RouteDuelForfeitAsync(peerForfeit, notifications, _shutdownCts.Token).ConfigureAwait(false);
+        return commandResult;
     }
 
     /// <inheritdoc />
@@ -1813,9 +1826,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         // 社交仲裁通道：与命令路径同构——玩家门内装载（离线成员强制装载+补算）、就地变更、
         // 标脏入刷盘轨道、刷新驻留快照，版本推进时在锁外推送。不附加战报/回执（无结算语义）。
         var notifications = new List<RuntimeNotification>();
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
             var before = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
@@ -1841,7 +1854,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         finally
         {
-            gate.Release();
+            gateLease.Dispose();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
     }
@@ -1879,51 +1892,80 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             try { await participationRuntime.AdvanceOnlineAsync(target, cancellationToken).ConfigureAwait(false); }
             catch (Exception exception) when (exception is not OperationCanceledException)
             { failures.Add(exception); }
-        var ids = _loaded.Keys.OrderBy(id => id).ToArray();
-        var gates = ids.Select(id => _playerGates.GetOrAdd(id, static _ => new SemaphoreSlim(1, 1))).ToArray();
+        var allIds = _loaded.Keys.Concat(_fencedCommits.Keys).Distinct().OrderBy(id => id).ToArray();
         var notifications = new List<RuntimeNotification>();
         Dictionary<Guid, PlayerRuntimeSnapshot>? before = null;
         Dictionary<Guid, PlayerSectionKind[]>? dirtyBefore = null;
         Dictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>>? walletsBeforeBatch = null;
         Dictionary<Guid, Dictionary<AssetKey, double>>? pendingBeforeBatch = null;
         Dictionary<Guid, DateTimeOffset?>? pendingFromBeforeBatch = null;
-        var uncommitted = ids.ToHashSet();
+        var uncommitted = allIds.Where(_loaded.ContainsKey).ToHashSet();
         var playerFailures = new List<Exception>();
-        var acquired = 0;
+        RefCountedGateMap<Guid>.MultiReleaser batchGates;
+        using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+            batchGates = await _playerGates.AcquireOrderedAsync(allIds, cancellationToken: cancellationToken).ConfigureAwait(false);
         try
         {
-            for (; acquired < gates.Length; acquired++)
-                using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-                    await gates[acquired].WaitAsync(cancellationToken).ConfigureAwait(false);
-            // 等待 gate 期间会话可能已经卸载；原 gate 集合仍在 finally 释放，后续只操作实际加载交集。
-            ids = ids.Where(_loaded.ContainsKey).ToArray();
+            // 等待 gate 期间会话可能已经卸载；后续只操作实际加载与仍在围栏集合内的玩家交集。
+            var ids = allIds.Where(_loaded.ContainsKey).ToArray();
+            var fencedCandidates = allIds.Where(_fencedCommits.ContainsKey).ToArray();
             uncommitted.IntersectWith(ids);
-            // 批量推进同样续租校验：租约已失的玩家逐出并从本批推进中剔除。
+            var lostSet = new HashSet<Guid>();
+            var failedLease = new HashSet<Guid>();
+            // 批量推进同样续租校验：在线与 fenced 持租者统一检查，租约已失（或身份停用）逐出，单人瞬态失败隔离。
             if (ownership is not null)
             {
-                var lost = new List<Guid>();
-                foreach (var playerId in ids)
-                    try { await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false); }
-                    catch (PlayerOwnershipLostException) { lost.Add(playerId); }
-                if (lost.Count > 0)
+                foreach (var playerId in allIds)
                 {
-                    var lostSet = lost.ToHashSet();
-                    foreach (var playerId in lost)
+                    if (!_loaded.ContainsKey(playerId) && !_leaseRenewedAt.ContainsKey(playerId)) continue;
+                    try { await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false); }
+                    catch (Exception ex) when (ex is PlayerOwnershipLostException or InvalidDataException) { lostSet.Add(playerId); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        EvictOwnershipLostOwned(playerId);
+                        failedLease.Add(playerId);
+                        RecordSimulationFailureOwned(playerId, target);
+                        playerFailures.Add(ex);
+                        _logger.LogError(ex, "在线玩家续租检查失败，已隔离 playerId={PlayerId}", playerId);
+                    }
+                }
+                if (lostSet.Count > 0)
+                {
+                    foreach (var playerId in lostSet)
+                    {
+                        if (_loaded.ContainsKey(playerId))
+                            EvictOwnershipLostOwned(playerId);
+                        else
+                            _leaseRenewedAt.TryRemove(playerId, out _);
                         uncommitted.Remove(playerId);
                     }
-                    // gates/acquired 仍覆盖原始集合，由 finally 统一释放全部已持有 gate。
-                    ids = ids.Where(id => !lostSet.Contains(id)).ToArray();
+                    ids = ids.Where(id => !lostSet.Contains(id) && !failedLease.Contains(id)).ToArray();
+                }
+                else if (failedLease.Count > 0)
+                {
+                    ids = ids.Where(id => !failedLease.Contains(id)).ToArray();
                 }
             }
-            // fenced 玩家仍参加上面的续租，但不允许进入任何变更、推进或刷盘路径。
-            // 但栅栏不是死锁：每轮先用幂等事实核实一次（确认已提交即解除），
-            // 否则 COMMIT 回包与核实请求同时超时后该玩家只能等进程重启才能再上线。
+            uncommitted.ExceptWith(failedLease);
+            // fenced 玩家仍参加上面的续租，但不允许进入任何变更、推进或刷盘路径；
+            // 主动扫一遍 _fencedCommits（含 LoadOwnedAsync 失败但仍持租的未装载玩家），确认已提交即解除并归还空闲租约。
             var fenced = new HashSet<Guid>();
-            foreach (var playerId in ids.Where(_fencedCommits.ContainsKey))
+            foreach (var playerId in fencedCandidates)
+            {
+                if (lostSet.Contains(playerId) || failedLease.Contains(playerId)) continue;
                 if (await TryResolveFencedCommitAsync(playerId, cancellationToken).ConfigureAwait(false) is not null)
+                {
                     fenced.Add(playerId);
+                    continue;
+                }
+                if (!_loaded.ContainsKey(playerId) && _leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
+                {
+                    try { await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception releaseEx)
+                    {
+                        _logger.LogWarning(releaseEx, "栅栏解除后归还空闲玩家租约失败 player={PlayerId}", playerId);
+                    }
+                }
+            }
             // 核实成功会丢弃陈旧内存状态：这些玩家本轮没有可推进实体，等下次装载重建。
             // 连续失败退避中的玩家暂跳过推进与斗法撮合，避免单名异常玩家拖死全服 50ms 空转。
             ids = ids.Where(id => !fenced.Contains(id) && _loaded.ContainsKey(id) && !IsSimulationBackedOff(id, target)).ToArray();
@@ -2134,7 +2176,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         finally
         {
-            while (acquired > 0) gates[--acquired].Release();
+            batchGates.Dispose();
             await EmitNotificationsAsync(notifications).ConfigureAwait(false);
         }
         if (failures.Count == 0 && playerFailures.Count == 1)
@@ -2345,7 +2387,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             {
                 aggregate.AttachDuel(playback);
                 aggregate.Touch(PlayerSectionKind.ActionQueue);
-            });
+            }, destroyEncounters: true);
             return true;
         }
         catch (DomainException exception)
@@ -2373,9 +2415,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     public async ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken cancellationToken = default)
     {
         if (!_loaded.TryGetValue(playerId, out var snapshot)) return;
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
             if (!_loaded.TryGetValue(playerId, out snapshot)) return;
@@ -2409,7 +2451,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
                 await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false);
         }
-        finally { gate.Release(); }
+        finally { gateLease.Dispose(); }
     }
 
     /// <inheritdoc />
@@ -2429,7 +2471,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         if (!_loaded.ContainsKey(playerId)) return;
         _walletReloadRequired[playerId] = 0;
         var logEvent = AppendInvitationLog(playerId, logTemplate);
-        if (LogBatchEmitted is { } handler) await handler(playerId, [logEvent]).ConfigureAwait(false);
+        await AsyncEventDispatch.InvokeEachAsync(
+            LogBatchEmitted, playerId, [logEvent], _logger, $"邀请奖励日志推送异常 playerId={playerId:D}").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2497,9 +2540,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         if (!_loaded.ContainsKey(playerId)) return;
         PlayerRuntimeSnapshot? updated = null;
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
             if (!_loaded.ContainsKey(playerId)) return;
@@ -2515,7 +2558,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         finally
         {
-            gate.Release();
+            gateLease.Dispose();
         }
         if (updated is not null)
             await EmitNotificationsAsync([new RuntimeNotification(playerId, null, updated)]).ConfigureAwait(false);
@@ -2523,7 +2566,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
 
     /// <summary>
     /// 优雅停机：解除市场入账订阅后逐玩家强制落盘并卸载（单个失败只记日志不阻断其余玩家），
-    /// 最后释放玩家 gate 并销毁 ECS 世界；重复调用幂等。
+    /// 随后取消停机令牌并销毁 ECS 世界；重复调用幂等。
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -2536,21 +2579,22 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             catch (Exception exception) { _logger.LogError(exception, "ECS 玩家运行时关闭时释放失败 player={PlayerId}", playerId); }
         }
         _disposed = true;
-        foreach (var gate in _playerGates.Values) gate.Dispose();
+        _shutdownCts.Cancel();
+        _shutdownCts.Dispose();
         await ecs.DisposeAsync().ConfigureAwait(false);
     }
 
     private async ValueTask FlushLoadedAsync(Guid playerId, bool force, CancellationToken cancellationToken)
     {
         if (!_loaded.ContainsKey(playerId)) return;
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        RefCountedGateMap<Guid>.Releaser gateLease;
         using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
             if (_loaded.ContainsKey(playerId)) await FlushOwnedAsync(playerId, force, cancellationToken).ConfigureAwait(false);
         }
-        finally { gate.Release(); }
+        finally { gateLease.Dispose(); }
     }
 
     private async ValueTask FlushOwnedAsync(Guid playerId, bool force, CancellationToken cancellationToken)
@@ -2563,10 +2607,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             // 核实成功会丢弃陈旧内存状态：此时没有可刷内容，等待下一次装载重建。
             if (!_loaded.ContainsKey(playerId)) return;
         }
-        catch (PlayerOwnershipLostException)
+        catch (Exception ex) when (ex is PlayerOwnershipLostException or InvalidDataException)
         {
-            // 所有权已转移：本实例内存脏状态不再权威，跳过本次刷盘；实体由命令/推进路径逐出。
-            _logger.LogError("所有权已丢失，跳过玩家刷盘 player={PlayerId}", playerId);
+            // 所有权已转移或身份已停用：本实例内存脏状态不再权威，跳过本次刷盘；实体由命令/推进路径逐出。
+            _logger.LogError(ex, "所有权已丢失，跳过玩家刷盘 player={PlayerId}", playerId);
             return;
         }
         TrackDirty(playerId);
@@ -2603,7 +2647,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             pending.Clear();
             ClearPendingSimulationDeltas(playerId);
             MarkCheckpointSynced(playerId, snapshot);
-            try { await SyncWalletAfterCommitAsync(playerId, result, cancellationToken).ConfigureAwait(false); }
+            try { await SyncWalletAfterCommitAsync(playerId, result, _shutdownCts.Token).ConfigureAwait(false); }
             catch (Exception exception)
             {
                 _walletReloadRequired[playerId] = 0;
@@ -2672,10 +2716,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     /// <summary>锁外逐出：命令返回后释放 gate，再重新拿锁检查并移除——避免与并发命令竞态。</summary>
     private async ValueTask EvictOwnershipLostAsync(Guid playerId)
     {
-        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try { if (_loaded.ContainsKey(playerId)) EvictOwnershipLostOwned(playerId); }
-        finally { gate.Release(); }
+        using var gateLease = await _playerGates.AcquireAsync(playerId, CancellationToken.None).ConfigureAwait(false);
+        if (_loaded.ContainsKey(playerId)) EvictOwnershipLostOwned(playerId);
     }
 
     /// <summary>清理已加载玩家在本实例中的 ECS 实体与全部运行时缓存（不含租约释放）；调用方必须持有该玩家 gate。</summary>
@@ -2967,7 +3009,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _pendingReceipts[playerId].Clear();
         MarkCheckpointSynced(playerId, after);
         _loaded[playerId] = after;
-        try { await SyncWalletAfterCommitAsync(playerId, result, cancellationToken).ConfigureAwait(false); }
+        try { await SyncWalletAfterCommitAsync(playerId, result, _shutdownCts.Token).ConfigureAwait(false); }
         catch (Exception exception)
         {
             _walletReloadRequired[playerId] = 0;
@@ -3060,8 +3102,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _fencedCommits.TryRemove(playerId, out _);
         _fenceResolvers.TryRemove(playerId, out _);
         // 已提交事务同时带走了分段写回与资产扣减，内存实体在结局未知期间没有同步这份权威状态，
-        // 必须整体丢弃后由下一次装载从 durable 事实重建，绝不能用陈旧钱包继续写入。
-        if (_loaded.ContainsKey(playerId)) DiscardInMemoryStateForRecovery(playerId);
+        // 无论缓存命中与否都必须无条件清零 ECS 实体与派生状态，由下次装载从 durable 事实重建。
+        DiscardInMemoryStateForRecovery(playerId);
         _logger.LogWarning(unknown, "资产提交结局已由幂等事实确认，解除玩家写入栅栏并丢弃陈旧内存状态 player={PlayerId}", playerId);
         return null;
     }
@@ -3167,10 +3209,10 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         List<RuntimeNotification> notifications, CancellationToken cancellationToken)
     {
         if (forfeit.PeerId == Guid.Empty || !_loaded.ContainsKey(forfeit.PeerId)) return;
-        var peerGate = _playerGates.GetOrAdd(forfeit.PeerId, static _ => new SemaphoreSlim(1, 1));
-        await peerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            using var peerGate = await _playerGates.AcquireAsync(forfeit.PeerId, cancellationToken).ConfigureAwait(false);
+            if (!_loaded.ContainsKey(forfeit.PeerId)) return;
             await RenewOwnershipLeaseIfDueAsync(forfeit.PeerId, cancellationToken, force: true).ConfigureAwait(false);
             ThrowIfCommitFenced(forfeit.PeerId);
             var applied = false;
@@ -3183,7 +3225,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             _loaded[forfeit.PeerId] = peerAfter;
             notifications.Add(new RuntimeNotification(forfeit.PeerId, null, peerAfter));
         }
-        finally { peerGate.Release(); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "路由斗法弃战判胜通知对手失败 duelId={DuelId} peer={PeerId}", forfeit.DuelId, forfeit.PeerId);
+        }
     }
 
     /// <summary>命令回执持久化清单（口径沿袭历史 OOP 运行时基线）；market.place/cancel 走订单幂等键不入回执。</summary>
@@ -3222,24 +3271,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     .Record(snapshot.StateVersion);
         foreach (var notification in notifications)
         {
-            // 订阅者隔离：单个会话的推送异常（编码超限、存在感登记 IO 抖动）不得吞掉命令回执
-            // 或经模拟路径上抛打断整轮 Advance；记日志后继续派发其余通知。
-            if (notification.Logs is { Count: > 0 } logs && LogBatchEmitted is { } logHandler)
-            {
-                try { await logHandler(notification.PlayerId, logs).ConfigureAwait(false); }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    _logger.LogError(exception, "战报推送订阅者异常 playerId={PlayerId}", notification.PlayerId);
-                }
-            }
-            if (notification.Snapshot is { } snapshot && SnapshotUpdated is { } snapshotHandler)
-            {
-                try { await snapshotHandler(snapshot).ConfigureAwait(false); }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    _logger.LogError(exception, "快照推送订阅者异常 playerId={PlayerId}", notification.PlayerId);
-                }
-            }
+            // 逐个订阅者隔离：单个 WebSocket 会话断连触发 OperationCanceledException 或编解码异常时，
+            // 不得阻断同一事件上的其余订阅者或上抛打断整轮 Advance。
+            if (notification.Logs is { Count: > 0 } logs)
+                await AsyncEventDispatch.InvokeEachAsync(
+                    LogBatchEmitted, notification.PlayerId, logs, _logger, $"战报推送订阅者异常 playerId={notification.PlayerId:D}").ConfigureAwait(false);
+            if (notification.Snapshot is { } snapshot)
+                await AsyncEventDispatch.InvokeEachAsync(
+                    SnapshotUpdated, snapshot, _logger, $"快照推送订阅者异常 playerId={notification.PlayerId:D}").ConfigureAwait(false);
         }
     }
 

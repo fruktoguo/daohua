@@ -107,7 +107,7 @@ public sealed class ComputeDispatcherWorker(
                 {
                     if (_failureLog.TryAcquire())
                         logger.LogError(exception, "ComputeDispatcherWorker 循环失败，将在下个周期重试。");
-                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                    if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(2), stoppingToken)) break;
                 }
             }
         }

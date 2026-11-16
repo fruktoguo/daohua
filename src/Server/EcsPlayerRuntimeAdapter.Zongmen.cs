@@ -29,7 +29,7 @@ public sealed partial class EcsPlayerRuntimeAdapter
             if (staleTravel is not null) aggregate.RemoveAction(staleTravel.Id);
             forfeit = aggregate.ApplyDuelForfeit(now, gameData.Duel);
             aggregate.TravelTo(nodeId, position.X, position.Y);
-        });
+        }, destroyEncounters: true);
         return forfeit;
     }
 

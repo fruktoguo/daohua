@@ -56,8 +56,8 @@ public sealed class SocialRuntime
     private readonly IAssetBalanceRepository? _assetBalances;
     /// <summary>节点公共建筑注册表：开打定格时读取目标节点封魔阵类怪物削弱比并冻结进会话规格。</summary>
     private readonly NodeBuildingRegistry? _nodeBuildings;
-    /// <summary>组队讨伐的每队伍裁决门：开打/散场仲裁串行化，跨实例竞态由 DB 唯一索引收敛。</summary>
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _partyGates = new();
+    /// <summary>组队讨伐的每队伍裁决门：按需分配并在无引用时回收释放，避免历史解散队伍门闩长期滞留。</summary>
+    private readonly RefCountedGateMap<Guid> _partyGates = new();
     /// <summary>实例级通知并发门：跨并发存在感触发共享 4 个实际通知槽位。</summary>
     private readonly SemaphoreSlim _notifyGate = new(MaxNotifyParallelism, MaxNotifyParallelism);
     /// <summary>常驻成员簿：有人在线（含宽限期）的活跃会话里保持装载的离线成员（总纲18 §14.6）。</summary>
@@ -1023,7 +1023,8 @@ public sealed class SocialRuntime
             ? await _repository.TryCommitDouDiZhuGameAsync(updated, expectedVersion, cancellationToken)
             : await _repository.TrySaveDouDiZhuGameAsync(updated, expectedVersion, cancellationToken);
         if (saved && updated.Phase == DouDiZhuGamePhase.Finished)
-            foreach (var member in updated.PlayerIds) WalletChanged?.Invoke(member);
+            foreach (var member in updated.PlayerIds)
+                AsyncEventDispatch.InvokeEach(WalletChanged, member, _logger, $"斗地主结算钱包变更通知异常 player={member:D}");
         return saved;
     }
 
@@ -1077,8 +1078,19 @@ public sealed class SocialRuntime
         (_participation ?? throw new InvalidOperationException("未装配行动参与权威宿主。"))
             .PrepareConnectionAsync(playerId, _clock.UtcNow, cancellationToken);
 
-    private ValueTask OnOnlineChangedAsync(Guid playerId) => _participation is null
-        ? ValueTask.CompletedTask : _participation.SynchronizePresenceAsync(playerId, _clock.UtcNow, CancellationToken.None);
+    private async ValueTask OnOnlineChangedAsync(Guid playerId)
+    {
+        if (_participation is null) return;
+        try
+        {
+            await _participation.SynchronizePresenceAsync(playerId, _clock.UtcNow, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // 上线/下线存在感变化通知失败只记日志，不反伤登记主路径（下次心跳/重连/看门狗补偿）。
+            _logger.LogError(exception, "在线存在感变化触发组队讨伐模式切换失败（玩家 {PlayerId}）。", playerId);
+        }
+    }
 
     private async ValueTask OnPresenceChangedAsync(IReadOnlyList<Guid> affected)
     {
@@ -1323,16 +1335,8 @@ public sealed class SocialRuntime
     private async ValueTask ArbitratePartySessionAsync(Guid partyId, string reason, CancellationToken cancellationToken, bool forceDissolve = false)
     {
         if (_players is null) return; // 无玩家运行时的装配（社交单测）：仲裁退化，社交状态照常落库。
-        var gate = _partyGates.GetOrAdd(partyId, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
-        {
-            await ArbitratePartySessionOwnedAsync(partyId, reason, forceDissolve, cancellationToken);
-        }
-        finally
-        {
-            gate.Release();
-        }
+        using var gateLease = await _partyGates.AcquireAsync(partyId, cancellationToken);
+        await ArbitratePartySessionOwnedAsync(partyId, reason, forceDissolve, cancellationToken);
     }
 
     /// <summary>裁决体（必须持有队伍门后调用）：条件齐备开打，条件失效散场，二者互斥且幂等。</summary>
@@ -1621,12 +1625,23 @@ public sealed class SocialRuntime
         if (_players is null) return;
         foreach (var memberId in members.Distinct())
         {
-            await ApplySessionMutationAsync(memberId,
-                aggregate => {
-                    if (memberId == departedPlayerId) aggregate.ResetRespawnPolicy();
-                    else aggregate.ResetRespawnPolicyIfTarget(departedPlayerId);
-                },
-                cancellationToken);
+            try
+            {
+                await ApplySessionMutationAsync(memberId,
+                    aggregate => {
+                        if (memberId == departedPlayerId) aggregate.ResetRespawnPolicy();
+                        else aggregate.ResetRespawnPolicyIfTarget(departedPlayerId);
+                    },
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "队伍成员离队后重置复活策略失败 member={MemberId} departed={DepartedId}", memberId, departedPlayerId);
+            }
         }
     }
 
@@ -1656,10 +1671,9 @@ public sealed class SocialRuntime
         foreach (var group in evicted.GroupBy(item => item.PartyId))
         {
             var partyId = group.Key;
-            var gate = _partyGates.GetOrAdd(partyId, static _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync(cancellationToken);
             try
             {
+                using var gateLease = await _partyGates.AcquireAsync(partyId, cancellationToken);
                 var party = await _repository.GetPartyAsync(partyId, cancellationToken);
                 if (party is null) continue;
                 // 被逐出者是队长时移交最早剩余成员（与离队路径同规则）。
@@ -1679,9 +1693,13 @@ public sealed class SocialRuntime
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), .. group.Select(item => item.PlayerId)]);
                 _logger.LogInformation("48h 离线逐出完成：队伍 {PartyId} 移除 {Count} 人。", partyId, group.Count());
             }
-            finally
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                gate.Release();
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "48h 离线逐出单队收尾失败：队伍 {PartyId}，其余队伍继续处理。", partyId);
             }
         }
     }
@@ -1699,20 +1717,42 @@ public sealed class SocialRuntime
         var parties = new HashSet<Guid>();
         foreach (var snapshot in loaded)
         {
-            if (await _repository.GetPartyIdAsync(snapshot.PlayerId, cancellationToken) is { } partyId)
-                parties.Add(partyId);
-            if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].Participation is { } binding)
+            try
             {
-                var session = await _repository.GetPartySessionAsync(binding.SessionId, cancellationToken)
-                    ?? throw new InvalidOperationException("参与引用缺少权威会话记录。");
-                parties.Add(session.PartyId);
+                if (await _repository.GetPartyIdAsync(snapshot.PlayerId, cancellationToken) is { } partyId)
+                    parties.Add(partyId);
+                if (snapshot.State.Actions.Count > 0 && snapshot.State.Actions[0].Participation is { } binding)
+                {
+                    var session = await _repository.GetPartySessionAsync(binding.SessionId, cancellationToken);
+                    if (session is not null)
+                        parties.Add(session.PartyId);
+                    else
+                        _logger.LogWarning("参与引用缺少权威会话记录，将由成员对账收尾 player={PlayerId} session={SessionId}",
+                            snapshot.PlayerId, binding.SessionId);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "采集成员会话绑定对账信息失败 player={PlayerId}", snapshot.PlayerId);
             }
         }
         foreach (var partyId in parties)
-            await ArbitratePartySessionAsync(partyId, "organization-reconciled", cancellationToken);
+        {
+            try { await ArbitratePartySessionAsync(partyId, "organization-reconciled", cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { _logger.LogError(exception, "组织条件绑定对账仲裁失败 party={PartyId}", partyId); }
+        }
         foreach (var snapshot in loaded)
+        {
             // 空变更：保留门内结算对账调用以触发收件箱消费，在线状态由连接生命周期驱动不再在此对账。
-            await _players.MutateOwnedAsync(snapshot.PlayerId, _ => { }, cancellationToken);
+            try { await _players.MutateOwnedAsync(snapshot.PlayerId, _ => { }, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { _logger.LogError(exception, "触发已装载成员会话结算消费失败 player={PlayerId}", snapshot.PlayerId); }
+        }
     }
 
     /// <summary>

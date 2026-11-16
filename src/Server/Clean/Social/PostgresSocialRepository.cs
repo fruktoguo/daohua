@@ -632,7 +632,17 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var games = new List<DouDiZhuGameState>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            games.Add(JsonSerializer.Deserialize<DouDiZhuGameState>(reader.GetString(0), PersistenceJson.Options)!);
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<DouDiZhuGameState>(reader.GetString(0), PersistenceJson.Options) is { } game)
+                    games.Add(game);
+            }
+            catch (JsonException)
+            {
+                // 单局状态损坏跳过加载，避免一只坏牌局让 DouDiZhuTurnWatchdog 对全部正常牌局失明。
+            }
+        }
         return games;
     }
 

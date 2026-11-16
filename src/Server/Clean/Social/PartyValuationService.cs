@@ -78,6 +78,16 @@ public sealed class PartyValuationService
         if (misses.Count == 0) return result;
 
         var loadouts = await LoadLoadoutsAsync(misses, cancellationToken);
+        if (_displayCache.Count > 2048)
+        {
+            foreach (var pair in _displayCache)
+            {
+                if (pair.Value.ExpiresAt <= now)
+                    _displayCache.TryRemove(new KeyValuePair<Guid, (ValuationResult Value, long ExpiresAt)>(pair.Key, pair.Value));
+            }
+            if (_displayCache.Count > 4096)
+                _displayCache.Clear();
+        }
         foreach (var playerId in misses)
         {
             var value = loadouts.TryGetValue(playerId, out var document) && document is not null

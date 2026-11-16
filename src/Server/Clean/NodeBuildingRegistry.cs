@@ -646,7 +646,7 @@ public sealed class NodeBuildingRegistry(
             // 撞行时把活行采纳进快照，让「已存在」的节点立刻看得见那座建筑。
             if (!await repository.InsertIfAbsentAsync(nodeId, state, cancellationToken))
             {
-                if (await repository.TryLoadAsync(nodeId, definition.Id, cancellationToken) is { } existing)
+                if (await repository.TryLoadAsync(nodeId, definition.Id, CancellationToken.None) is { } existing)
                     AdoptState(nodeId, existing);
                 return NodeBuildingMutationResult.Fail("BUILDING_EXISTS", "此地已有同类建筑或同类工程进行中。");
             }
@@ -698,7 +698,9 @@ public sealed class NodeBuildingRegistry(
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var outcome = await repository.ContributeAsync(nodeId, buildingId, definition, requested, context, cancellationToken);
+            // 进入写锁后使用 CancellationToken.None 完成共享建筑捐献提交，避免请求半途取消造成建筑与钱包视图错位；
+            // 由上层按幂等键确认提交终态。
+            var outcome = await repository.ContributeAsync(nodeId, buildingId, definition, requested, context, CancellationToken.None);
             if (outcome.State is { } live) AdoptState(nodeId, live);
             return outcome.Status switch
             {

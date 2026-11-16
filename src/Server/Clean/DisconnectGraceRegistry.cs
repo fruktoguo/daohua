@@ -101,6 +101,7 @@ public sealed class DisconnectGraceRegistry : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         var completions = new List<Task>();
+        var pendingEntries = new List<Entry>();
         var timers = new List<CancellationTokenSource>();
         foreach (var entry in _entries.Values)
         {
@@ -112,7 +113,8 @@ public sealed class DisconnectGraceRegistry : IHostedService
                     case EntryState.Pending:
                         entry.State = EntryState.Tearing;
                         timers.Add(entry.Timer);
-                        entry.Completion = RunTeardownAndCleanupAsync(entry);
+                        entry.EnsureTeardownCompletion();
+                        pendingEntries.Add(entry);
                         completion = entry.Completion;
                         break;
                     case EntryState.Tearing:
@@ -123,6 +125,9 @@ public sealed class DisconnectGraceRegistry : IHostedService
             if (completion is not null) completions.Add(completion);
         }
         foreach (var timer in timers) timer.Cancel();
+        // 在锁外派发异步收尾，避免持有 entry 锁同步跑进 OnlinePresenceRegistry / 订阅者引发锁重入死锁。
+        foreach (var entry in pendingEntries)
+            _ = RunTeardownAndCleanupAsync(entry);
         await Task.WhenAll(completions).ConfigureAwait(false);
     }
 
@@ -138,21 +143,23 @@ public sealed class DisconnectGraceRegistry : IHostedService
         {
             return;
         }
-        Task completion;
         lock (entry)
         {
             if (entry.State != EntryState.Pending) return;
             entry.State = EntryState.Tearing;
-            entry.Completion = RunTeardownAndCleanupAsync(entry);
-            completion = entry.Completion;
+            entry.EnsureTeardownCompletion();
         }
-        await completion.ConfigureAwait(false);
+        await RunTeardownAndCleanupAsync(entry).ConfigureAwait(false);
     }
 
     private async Task RunTeardownAndCleanupAsync(Entry entry)
     {
         try { await RunTeardownAsync(entry.PlayerId, entry.DisconnectedAt).ConfigureAwait(false); }
-        finally { _entries.TryRemove(new KeyValuePair<Guid, Entry>(entry.PlayerId, entry)); }
+        finally
+        {
+            _entries.TryRemove(new KeyValuePair<Guid, Entry>(entry.PlayerId, entry));
+            entry.SignalCompleted();
+        }
     }
 
     /// <summary>到期收尾固定顺序：注销在线位 → 按断线时刻落盘卸载 → 触发订阅；逐段记录异常不中断后续步骤。</summary>
@@ -172,14 +179,8 @@ public sealed class DisconnectGraceRegistry : IHostedService
         {
             _logger.LogError(exception, "断线宽限收尾：玩家卸载失败 playerId={PlayerId}", playerId);
         }
-        try
-        {
-            if (Expired is { } expired) await expired(playerId).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogError(exception, "断线宽限收尾：Expired 订阅者异常 playerId={PlayerId}", playerId);
-        }
+        await AsyncEventDispatch.InvokeEachAsync(
+            Expired, playerId, _logger, $"断线宽限收尾：Expired 订阅者异常 playerId={playerId:D}").ConfigureAwait(false);
     }
 
     private enum EntryState
@@ -194,7 +195,11 @@ public sealed class DisconnectGraceRegistry : IHostedService
         public readonly Guid PlayerId = playerId;
         public readonly DateTimeOffset DisconnectedAt = disconnectedAt;
         public readonly CancellationTokenSource Timer = new();
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public EntryState State = EntryState.Pending;
-        public Task? Completion;
+        public Task? Completion { get; private set; }
+
+        public void EnsureTeardownCompletion() => Completion ??= _completion.Task;
+        public void SignalCompleted() => _completion.TrySetResult();
     }
 }

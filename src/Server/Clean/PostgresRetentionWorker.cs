@@ -400,6 +400,6 @@ public sealed class PostgresRetentionWorker(
                 if (_errorLog.TryAcquire()) logger.LogError(exception, "运行与流水留存清理失败，将在下个周期重试。");
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await HostedLoopSupport.WaitNextTickQuietlyAsync(timer, stoppingToken));
     }
 }

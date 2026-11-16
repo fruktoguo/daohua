@@ -167,14 +167,18 @@ public sealed class OutboxWorker(
                         else
                             await repository.ReleaseAsync(message.OutboxId, message.LeaseToken, "dispatcher unavailable", TimeSpan.FromMinutes(1), stoppingToken);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
                     {
                         if (_failureLog.TryAcquire())
                             logger.LogError(ex, "Outbox 事件投递失败 outboxId={OutboxId}", message.OutboxId);
                         await repository.ReleaseAsync(message.OutboxId, message.LeaseToken, ex.Message, TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Min(message.Attempts, 8)))), stoppingToken);
                     }
                 }
-                await Task.Delay(options.OutboxPollInterval, stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(options.OutboxPollInterval, stoppingToken)) break;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -183,7 +187,7 @@ public sealed class OutboxWorker(
             catch (Exception ex)
             {
                 if (_failureLog.TryAcquire()) logger.LogError(ex, "OutboxWorker 循环失败。");
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(2), stoppingToken)) break;
             }
         }
     }

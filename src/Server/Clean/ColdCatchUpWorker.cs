@@ -69,7 +69,7 @@ public sealed class ColdCatchUpWorker(
                         if (enqueued > 0)
                             logger.LogInformation("冷挂机入队 {Enqueued}/{Candidates} 个玩家。", enqueued, candidates.Count);
                     }
-                    await Task.Delay(options.ColdCatchUpInterval, stoppingToken);
+                    if (!await HostedLoopSupport.DelayQuietlyAsync(options.ColdCatchUpInterval, stoppingToken)) break;
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -79,7 +79,7 @@ public sealed class ColdCatchUpWorker(
                 {
                     if (_failureLog.TryAcquire())
                         logger.LogError(exception, "ColdCatchUpWorker 循环失败，将在下个周期重试。");
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(5), stoppingToken)) break;
                 }
             }
         }

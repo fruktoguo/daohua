@@ -237,8 +237,16 @@ public sealed class WebSocketSession(
     public void CompleteDeltaResync() => _deltaResyncPending = false;
     /// 握手全量快照已入队（基线已提交）前禁止实时增量推送：装载期模拟推进改走丢帧重投通道。
     public bool HandshakeSnapshotPending => _handshakeSnapshotPending;
-    /// 握手快照入队并提交基线后解除抑制；此后增量推送照常。
-    public void CompleteHandshakeSnapshot() => _handshakeSnapshotPending = false;
+    /// <summary>握手快照入队并提交基线后原子解除抑制；与增量构建共用 OutboundSync 避免竞态。</summary>
+    public void CompleteHandshakeSnapshot(IReadOnlyDictionary<string, string> sectionChecksums, IReadOnlyList<AssetBalanceDto> assets)
+    {
+        lock (OutboundSync)
+        {
+            _lastPushedSectionChecksums = sectionChecksums;
+            _lastPushedAssets = assets;
+            _handshakeSnapshotPending = false;
+        }
+    }
 }
 
 /// <summary>
@@ -422,17 +430,8 @@ public static class WebSocketEndpoint
             {
                 return;
             }
-            // 握手全量快照入队前禁止增量：此时推送基线为空，delta 会携带全部分段并抢在首帧全量
-            // 之前到达客户端（客户端 store 尚未归属即抛「增量快照归属不一致」）。改登记丢帧重投：
-            // 发送循环在通道排空且握手快照基线就绪后按全段重编码幂等补发。
-            if (session.HandshakeSnapshotPending)
-            {
-                session.MarkDeltaDropped();
-                return;
-            }
-            // 入队失败登记重投：静止态角色可能再无推送事件，仅靠基线保留无法补回被丢分段。
-            if (!TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections))
-                session.MarkDeltaDropped();
+            // 入队失败（或握手全量快照基线尚在途中）原子登记重投：静止态角色可能再无推送事件。
+            TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections);
         }
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events)
             => eventPlayerId != session.PlayerId || token.IsCancellationRequested
@@ -457,12 +456,10 @@ public static class WebSocketEndpoint
             // 由发送循环在通道排空时回调，按当前已装载快照全段重建差集（touched=null）补投。
             void ResyncDroppedDelta()
             {
-                if (!session.DeltaResyncPending) return;
-                // 握手快照基线未就绪时不得重投：此时 delta 仍是全段形态且会抢在首帧全量之前。
-                if (session.HandshakeSnapshotPending) return;
+                if (!session.DeltaResyncPending || session.HandshakeSnapshotPending) return;
                 var snapshot = runtime.TryGetLoaded(session.PlayerId);
-                if (snapshot is not null && TryPushDelta(session, snapshot, gameData, null))
-                    session.CompleteDeltaResync();
+                if (snapshot is not null)
+                    TryPushDelta(session, snapshot, gameData, null, resyncOnly: true);
             }
             var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token, logger);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
@@ -538,10 +535,17 @@ public static class WebSocketEndpoint
     /// </summary>
     /// <returns>帧已入队返回 true；出站队列拥塞被丢弃返回 false，由调用方登记 <see cref="WebSocketSession.MarkDeltaDropped"/>。</returns>
     private static bool TryPushDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot,
-        Domain.GameData.GameDataCatalog gameData, IReadOnlySet<PlayerSectionKind>? touchedSections)
+        Domain.GameData.GameDataCatalog gameData, IReadOnlySet<PlayerSectionKind>? touchedSections, bool resyncOnly = false)
     {
         lock (session.OutboundSync)
         {
+            if (session.HandshakeSnapshotPending)
+            {
+                session.MarkDeltaDropped();
+                return false;
+            }
+            if (resyncOnly && !session.DeltaResyncPending)
+                return true;
             var (previousSections, previousAssets) = session.ReadPushBaseline();
             // 按需属性为一次性交付：仅「登记后尚未送达」期间投影；本帧实际写入属性且入队成功才解除武装，
             // 被慢消费者丢弃时保留武装由下一拍重投，保证客户端最终拿到面板数据。
@@ -553,10 +557,15 @@ public static class WebSocketEndpoint
                 out var nextSections, out var nextAssets,
                 pendingInspect, () => attributesProjected = true);
             var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
-            // 可丢弃帧入队成功才前移基线；被丢弃时基线保持上次已送达内容，避免客户端永久漂移。
-            if (!session.TrySendDroppable(packet)) return false;
+            // 可丢弃帧入队成功才前移基线并原子更新丢帧重投标记；被丢弃时标记重投，消除锁外竞态覆盖。
+            if (!session.TrySendDroppable(packet))
+            {
+                session.MarkDeltaDropped();
+                return false;
+            }
             if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
             session.CommitPushBaseline(nextSections, nextAssets);
+            if (touchedSections is null) session.CompleteDeltaResync();
             return true;
         }
     }
@@ -768,14 +777,12 @@ public static class WebSocketEndpoint
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         // 握手快照必达：属性面板实际写入即解除一次性交付武装。
                         if (inspectAttributesProjected) session.MarkInspectedAttributesDelivered(handshakeInspect);
-                        // 初始快照帧已进入发送队列：直接提交推送基线，后续增量以此裁决变更。
+                        // 初始快照帧已进入发送队列：在同一锁内提交推送基线并原子解除实时增量抑制；
+                        // 期间被抑制的推进经 DeltaResyncPending 在通道排空后全段重投补齐。
                         var initialSectionChecksums = new Dictionary<string, string>(initialSnapshot.Sections.Count, StringComparer.Ordinal);
                         foreach (var section in initialSnapshot.Sections)
                             initialSectionChecksums[section.Section] = section.Checksum;
-                        session.CommitPushBaseline(initialSectionChecksums, initialSnapshot.Assets);
-                        // 全量快照已入队且基线已提交：解除实时增量抑制；期间被抑制的推进
-                        // 经 DeltaResyncPending 在通道排空后全段重投补齐。
-                        session.CompleteHandshakeSnapshot();
+                        session.CompleteHandshakeSnapshot(initialSectionChecksums, initialSnapshot.Assets);
                         // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)
@@ -1024,8 +1031,8 @@ public static class WebSocketEndpoint
                         if (inspect.Side is not null && !session.HandshakeSnapshotPending)
                         {
                             var inspectSnapshot = runtime.TryGetLoaded(session.PlayerId);
-                            if (inspectSnapshot is not null && TryPushDelta(session, inspectSnapshot, gameData, null))
-                                session.CompleteDeltaResync();
+                            if (inspectSnapshot is not null)
+                                TryPushDelta(session, inspectSnapshot, gameData, null);
                         }
                         break;
                     default:
@@ -1033,7 +1040,7 @@ public static class WebSocketEndpoint
                         break;
                 }
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (ChannelClosedException) { }
                 catch (Exception ex)
                 {
@@ -1079,7 +1086,8 @@ public static class WebSocketEndpoint
         foreach (var recipientId in recipients)
         {
             if (!sessions.TryGet(recipientId, out var target)) continue;
-            target.TrySendDroppableEnvelope(WireMessageType.ChatMessage, Guid.NewGuid(), payloadBytes);
+            try { target.TrySendDroppableEnvelope(WireMessageType.ChatMessage, Guid.NewGuid(), payloadBytes); }
+            catch { /* 单会话通道异常或已拆除，忽略以避免阻断剩余收件人 */ }
         }
     }
 

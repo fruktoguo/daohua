@@ -1585,7 +1585,7 @@ public sealed class SectionFlushWorker(
                     logger.LogDebug("section flush claimed={Claimed} applied={Applied} failed={Failed} durationMs={DurationMs}",
                         result.Claimed, result.Applied, result.Failed, result.Duration.TotalMilliseconds);
                 }
-                await Task.Delay(options.SectionFlushInterval, stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(options.SectionFlushInterval, stoppingToken)) break;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -1595,7 +1595,7 @@ public sealed class SectionFlushWorker(
             {
                 if (_loopErrorLog.TryAcquire())
                     logger.LogError(ex, "SectionFlushWorker 循环失败，将在下个周期重试。");
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                if (!await HostedLoopSupport.DelayQuietlyAsync(TimeSpan.FromSeconds(2), stoppingToken)) break;
             }
         }
     }

@@ -49,7 +49,7 @@ public sealed class CommandReceiptCleanupWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(10));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        while (await HostedLoopSupport.WaitNextTickQuietlyAsync(timer, stoppingToken))
         {
             try
             {

@@ -226,7 +226,7 @@ public sealed class OnlinePresenceRegistry
 
     private async ValueTask PublishOnlineChangedAsync(Guid playerId, List<Guid> affected, Guid? movedPlayer)
     {
-        if (OnlineChanged is { } changed) await changed(playerId);
+        await AsyncEventDispatch.InvokeEachAsync(OnlineChanged, playerId, logger: null, "存在感 OnlineChanged 订阅者异常。");
         await PublishAsync(affected, movedPlayer);
     }
 
@@ -234,14 +234,8 @@ public sealed class OnlinePresenceRegistry
     {
         // 附近集合为空不代表无事发生：移动者本人仍需经 NodeChanged 触发组队讨伐仲裁。
         if (affected.Count > 0)
-        {
-            var handler = PresenceChanged;
-            if (handler is not null) await handler(affected);
-        }
+            await AsyncEventDispatch.InvokeEachAsync(PresenceChanged, (IReadOnlyList<Guid>)affected, logger: null, "存在感 PresenceChanged 订阅者异常。");
         if (movedPlayer is { } mover)
-        {
-            var nodeHandler = NodeChanged;
-            if (nodeHandler is not null) await nodeHandler(mover);
-        }
+            await AsyncEventDispatch.InvokeEachAsync(NodeChanged, mover, logger: null, "存在感 NodeChanged 订阅者异常。");
     }
 }
