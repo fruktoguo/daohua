@@ -126,10 +126,10 @@ scripts/deploy-prod.sh \
 1. 从仓库源码读出两个独立目标：`EXPECTED_SCHEMA_VERSION`（`PostgresSchema.Version`）与 `EXPECTED_SECTION_VERSION`（`SectionCodec.CurrentSchemaVersion`）。两者**不相等**（例如库 v41 对应存档标签 v38），用错会把标签推进到解码器拒绝的值，脚本因此拒绝在缺少目标时继续。
 2. 校验 `daohua-app` 与 `daohua-compute` 已停止写者；未停且未显式 `--allow-running` 时直接失败。**这是硬要求**：旧版本进程在迁移窗口内仍会按旧标签写存档，使新版本加载玩家时抛 `section schema 版本不受支持` 并无限重连（2026-10-22 生产事故）。
 3. 全库 `pg_dump -Fc` 备份到 `/opt/daohua/backups/pre-migration/`（失败即中止，`--skip-backup` 可跳过）。
-4. 按 `platform.schema_version` 链式应用 `migrations/` 中落后脚本（通常由 `prod-release` 在发版前依据 [`db-version-changes.md`](../backend/db-version-changes.md) 按跨度统一合写为单个合并脚本；若发版改走停写人工迁移，则在此前已完成版本与标签收敛，此处闸门核对通过即放行），涉及真实资产退款的脚本拒绝自动执行。
+4. 按 `platform.schema_version` 链式应用 `migrations/` 中落后脚本（日常开发完成时应已逐版本增量编写，并在 `prod-release` 前依据 [`db-version-changes.md`](../backend/db-version-changes.md) 与 `git diff` 查漏补齐；若发版走停写人工迁移，则在此前已完成版本与标签收敛，此处闸门核对通过即放行），涉及真实资产退款的脚本拒绝自动执行。
 5. 校验库版本达到代码要求，并要求 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version` **无任何一行**偏离当前解码器版本；不满足即非零退出，绝不带着旧标签启动新镜像。
 
-迁移完成后再由 `ccr-auto-update.sh` 重建容器。`migrations/` 不在镜像内，由部署链同步到 `/opt/daohua/migrations/`；日常开发不再强制每步生成单次 `.sql`，而是强制登记 [`db-version-changes.md`](../backend/db-version-changes.md)。
+迁移完成后再由 `ccr-auto-update.sh` 重建容器。`migrations/` 不在镜像内，由部署链同步到 `/opt/daohua/migrations/`；凡持久化变更在完成时均须登记 [`db-version-changes.md`](../backend/db-version-changes.md) 并增量编写对应 `.sql`。
 
 `daohua-ccr-auto-update.timer` 每分钟检查 `prod`：Server 与 ComputeNode 镜像 ID 均未变化时不重建；替换前先把当前运行镜像标记为 `daohua-rollback:app-previous` / `daohua-rollback:compute-previous`，随后 `compose up --force-recreate` 先替换再 `wait_healthy`/`wait_ready`；任一环节失败即经回滚标签恢复上一版本，并把失败的 `app_id|compute_id` 组合 marker 写入 `/opt/daohua/failed-image.id`，CCR 出现新版本前不再重试该候选。成功后在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。自动更新 timer 只做镜像替换，**不执行迁移**；携带 schema 变更的发布必须走 `deploy-prod.sh`。
 
@@ -171,7 +171,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 ## 兼容边界
 
-本部署基线是一次性重写后的唯一版本。空库永远由权威 `PostgresSchema.Sql` 直建当前 schema；唯一例外是 [`db-version-changes.md`](../backend/db-version-changes.md) 变更台账与 `migrations/` 兼容性迁移目录——日常开发只需在变更台账登记 `vX -> vY` 变更与处理方式，正式发布前按版本跨度在 `migrations/` 统一合写跨版本迁移脚本或走停写人工迁移，可整体删除且无任何运行时依赖。除此之外不存在双读双写、legacy DTO、旧 API 别名、旧 WebSocket fallback 或共享 `ACCESS_TOKEN`。schema、协议或部署拓扑改变时，直接同步代码、测试、文档并重新初始化本地数据库。
+本部署基线是一次性重写后的唯一版本。空库永远由权威 `PostgresSchema.Sql` 直建当前 schema；唯一例外是 [`db-version-changes.md`](../backend/db-version-changes.md) 变更台账与 `migrations/` 兼容性迁移目录——凡持久化变更在完成时须在变更台账登记 `vX -> vY` 变更与处理方式，并增量编写 `migrations/NNNN_vX_to_vY.sql`（`prod-release` 前再核查是否有遗漏），可整体删除且无任何运行时依赖。除此之外不存在双读双写、legacy DTO、旧 API 别名、旧 WebSocket fallback 或共享 `ACCESS_TOKEN`。schema、协议或部署拓扑改变时，直接同步代码、测试、文档并重新初始化本地数据库。
 
 ## 本地 PostgreSQL 18 与权限验收
 

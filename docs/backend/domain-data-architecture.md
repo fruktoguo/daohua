@@ -74,7 +74,7 @@
   - **Section 编解码**：`SectionCodec`（Server 侧静态适配器）将分段载荷序列化为稳定 JSON 并计算 SHA-256；原始字节 ≥ 512B 且压缩有效时自适应使用 Brotli（落库 `codec` 为 `json` 或 `br-json`）。
   - **持久化记录**：`PlayerStateHead`（提交头：state_version、schema_version、last_simulated_at、game_data_fingerprint、checksum）+ `PlayerSectionSnapshot`（分段最新行：section_version、codec、raw/stored bytes、checksum），对应 `game.player_state_heads` / `game.player_state_sections`；待写载荷经 `platform.section_flush_queue` latest-only 合并落盘。
   - **协议投影**：`ProtocolSnapshotMapper` 将聚合状态映射为快照/增量 DTO，必须显式透传当前激活的 `GameDataCatalog`，禁止脱离配表伪造协议载荷。
-  - schema 版本不一致直接拒绝载入，不提供运行时历史迁移；日常变更须按规在 [`db-version-changes.md`](db-version-changes.md) 登记（`SectionCodec` bump 时 `PostgresSchema.Version` 同步 +1，日常不强制手写单次 `.sql`，留待发版时于 `migrations/` 统一合写或停写手工迁移）；本地库漂移由 `reset-outdated-players.sh` 优先运行已有链式脚本，缺失或不可迁移版本经控制台交互确认后清零。
+  - schema 版本不一致直接拒绝载入，不提供运行时历史迁移；凡持久化/破档变更在完成时须按规在 [`db-version-changes.md`](db-version-changes.md) 登记并增量编写 `migrations/NNNN_vX_to_vY.sql`（`SectionCodec` bump 时 `PostgresSchema.Version` 同步 +1，`prod-release` 前再核查遗漏）；本地库漂移由 `reset-outdated-players.sh` 先尝试已有链式脚本，缺失或不可迁移版本才经控制台交互确认后清零。
 
 ---
 

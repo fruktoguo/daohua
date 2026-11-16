@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用最新 schema 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；日常改动必须推进版本号并在 [`db-version-changes.md`](db-version-changes.md) 登记「变了什么/是否处理/怎么处理」，不再强制随开发编写单次迁移 SQL；既有库在发布前按版本跨度于 `migrations/` 统一合写迁移脚本或由停写手工迁移完成升级（本地开发启动链优先尝试已有脚本、缺失则经 `reset-outdated-players.sh` 交互 `RESET`；运行时与门禁均不引用）。 |
+| 兼容性 | 当前内测直接采用最新 schema 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；凡持久化/破档变更在完成时必须推进版本号、在 [`db-version-changes.md`](db-version-changes.md) 登记「变了什么/是否处理/怎么处理」，并同步增量编写 `migrations/NNNN_vX_to_vY.sql`（`prod-release` 前再核查是否有遗漏；本地开发启动链先尝试已有脚本、缺失或不可迁移才经 `reset-outdated-players.sh` 交互 `RESET`；运行时与门禁均不引用）。 |
 
 ### 2. 明确不在本次持久化范围的内容
 

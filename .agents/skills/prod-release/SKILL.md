@@ -1,7 +1,7 @@
 ---
 name: prod-release
 description: >-
-  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），每次发布自动同步 HD 画质包至 `/hd/*`，Android APK 仅在 `--with-apk` 显式要求时构建并发布 GitHub Releases；采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），并在发布前读取 `docs/backend/db-version-changes.md` 按版本跨度统一合写迁移脚本或执行停写手动迁移，覆盖门禁、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
+  正式服快速发布：一次发布同时更新 yuohira 主服务器（linux/amd64 不可变镜像）与 odin 计算节点（linux-arm64 自包含发布），每次发布自动同步 HD 画质包至 `/hd/*`，Android APK 仅在 `--with-apk` 显式要求时构建并发布 GitHub Releases；采用三路并发流水线（镜像构建推送 ∥ odin 交叉编译预传 ∥ 远端备份与预检），并在发布前读取 `docs/backend/db-version-changes.md` 交叉核对 `migrations/` 增量脚本是否有遗漏或断链（如有缺口则补齐，或执行停写手动迁移），覆盖门禁、双层烟测、存档无损修复与回滚。适用于「正式服发布」「发布到生产」「更新主服和 odin」「prod release」等请求。
 ---
 
 # 正式服快速发布（yuohira 主服 + odin 计算节点）
@@ -13,7 +13,7 @@ description: >-
 `.dockerignore` 已排除 `**/bin`、`**/obj`、`**/node_modules`。门禁通过后**流 A（镜像构建推送）、流 B（远端备份）、流 C（odin 交叉编译与预上传）三路并发启动**；主服与 odin 双端切换完成后，**阶段 3.6 自动重新生成并上传 HD 画质包至 `/hd/*`**；**阶段 3.5 APK 构建默认跳过**，仅 `--with-apk` 显式要求时独占编译 Android 完全版安装包并发布到 GitHub Releases：
 
 ```text
-阶段 0：本机与远端并发预检 → 读取 db-version-changes.md 跨度台账 → 路线裁决（合写迁移脚本定稿提交 或 选定 prod 手动迁移） → verify.sh --full 全量门禁
+阶段 0：本机与远端并发预检 → 读取 db-version-changes.md 与 migrations/ 交叉查漏 → 路线裁决（确认链完整 / 补齐遗漏脚本并提交 / 选定 prod 手动迁移） → verify.sh --full 全量门禁
   ↓（门禁全绿后三路并发）
   ├─ 流 A（阶段 1）：docker-build-prod.sh --push 构建并推送成对镜像
   ├─ 流 B（阶段 2）：yuohira 远端 backup.sh + verify-backup.sh（含迁移脚本预置）
@@ -68,15 +68,16 @@ ssh -o BatchMode=yes odin 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https:
    ```
    若存在被删除的 `equipment.*` / `item.*` / `forge.*` / `building.*` ID，立即只读查询生产库 `economy.player_asset_balances` 与 `game.player_state_sections` 是否有存量玩家持有，**在发布前向用户确认替换映射**（见阶段 6），避免新服启动后玩家加载抛 `DomainException`。
 
-4. **读取数据库/存档版本变更台账（强制，决定构建前迁移脚本是否需补充）**：
+4. **核对数据库/存档版本变更台账与 `migrations/` 链条查漏（强制，决定构建前是否需补齐迁移脚本）**：
    - 将阶段 0 查出的线上 `max(version)` 记为 `db_ver`，将代码 `PostgresSchema.Version` 记为 `target_ver`、`SectionCodec.CurrentSchemaVersion` 记为 `target_section_ver`。
    - **当 `db_ver < target_ver` 或 `git diff <old_rev>..HEAD` 涉及持久化/配表删改时**：
      1. 通读 [`docs/backend/db-version-changes.md`](../../../docs/backend/db-version-changes.md) 中覆盖 **`[db_ver -> ... -> target_ver]` 全部版本段落**的「变了什么 / 是否需要处理 / 怎么处理」。
      2. 与 `git diff <old_rev>..HEAD -- src/Server/Clean/PostgresSchema.cs src/Domain/Persistence/SectionCodec.cs config/game-data/` 交叉对账；若发现源码或配表有持久化变更却漏记于 `db-version-changes.md`，须立即补记或向用户澄清后再推进，**严禁在信息缺失下盲目构建发布**。
-     3. 盘点 `migrations/` 从 `db_ver` 起沿着现有 `NNNN_vX_to_vY.sql` 链能够连续覆盖到的最高前沿版本 `covered_ver`（若日常未写脚本，则 `covered_ver == db_ver`）。若 `covered_ver < target_ver`，向用户汇总待处理清单并裁决采用下述两条路线之一（必须在阶段 1 构建镜像并要求工作区干净之前定稿）：
-        - **路线 A · 统一编写合并迁移脚本（常规 DDL/索引/权限/回填/可缺省存档标签/SQL 可处理配表替换，优先推荐）**：
-          - 将 `[covered_ver -> ... -> target_ver]` 全部未覆盖变更**合并编写成单个事务脚本 `migrations/NNNN_v{covered_ver}_to_v{target_ver}.sql`**（含幂等 DDL、角色 `GRANT`/`OWNER`、存量回填/配表 SQL 替换、仅当存档标签变化时对 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version = <target_section_ver>` 推进、以及结尾 `INSERT INTO platform.schema_version` 写入 `target_ver`）。
-          - **红线**：检查 `migrations/` 不得出现同一起始版本 `from_version` 的分叉脚本；同步更新 [`migrations/README.md`](../../../migrations/README.md)，通过本地 `migrate-local-db.sh --dry-run` 或测试库校验后，在执行 `release-prod.sh` / `docker-build-prod.sh` **之前提交工作区**（注意：合并脚本需随工作区提交后方可触发镜像构建，否则构建拒绝 dirty worktree）。之后可走常规 `release-prod.sh` 一键流水线，阶段 2.5 会通过 `deploy-prod.sh` 自动执行链式迁移。
+     3. 盘点 `migrations/` 从 `db_ver` 起沿着现有 `NNNN_vX_to_vY.sql` 链能够连续覆盖到的最高前沿版本 `covered_ver`（按规范日常开发完成时应已增量编写单步脚本，`covered_ver` 正常应等于 `target_ver`），并逐一抽检已有脚本是否遗漏权限 `GRANT`、索引、回填或存档标签推进：
+        - **正常路径（`covered_ver == target_ver` 且查漏无遗漏）**：向用户汇报已覆盖的增量脚本清单与校验结论，确认后直接走常规 `release-prod.sh` 一键流水线，阶段 2.5 会通过 `deploy-prod.sh` 自动执行链式迁移。
+        - **路线 A · 遗漏补齐迁移脚本（`covered_ver < target_ver` 或发现某步脚本有遗漏）**：
+          - 针对尚未被 `migrations/` 连续覆盖的跨度 `[covered_ver -> ... -> target_ver]`（或遗漏的 SQL 项），补齐单步或合并事务脚本 `migrations/NNNN_v{covered_ver}_to_v{target_ver}.sql`（含幂等 DDL、角色 `GRANT`/`OWNER`、存量回填/配表 SQL 替换、仅当存档标签变化时对 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version = <target_section_ver>` 推进、以及结尾 `INSERT INTO platform.schema_version` 写入 `target_ver`）。
+          - **红线**：检查 `migrations/` 不得出现同一起始版本 `from_version` 的分叉脚本；同步更新 [`migrations/README.md`](../../../migrations/README.md)，通过本地 `migrate-local-db.sh --dry-run` 或测试库校验后，在执行 `release-prod.sh` / `docker-build-prod.sh` **之前提交工作区**（注意：补齐的脚本需随工作区提交后方可触发镜像构建，否则构建拒绝 dirty worktree）。之后可走常规 `release-prod.sh` 一键流水线。
         - **路线 B · prod 时手动迁移（涉及真实资产退赔、离线 Brotli/JSON 载荷重编码 `.mjs` 重算校验和、复杂配表删项清理或用户指定手工操作）**：
           - 先向用户展示完整手工迁移计划与校验 SQL 并获确认。
           - **严禁直接执行一体化的 `scripts/release-prod.sh`**（该脚本会在建完镜像后立刻运行 `deploy-prod.sh` 触发版本闸门并失败）。改走分步流程：先完成 **阶段 1（`docker-build-prod.sh --push`）∥ 阶段 2（远端全库备份）∥ 阶段 4a（odin 交叉编译预传）**；然后在 **阶段 2.5** 人工停写容器并执行手动 SQL / `.mjs` 修复脚本、确认版本与三张存档表标签全部收敛后，再执行 **阶段 3（`deploy-prod.sh --image ... --compute-image ...`）∥ 阶段 4b**、阶段 3.6 与阶段 5。
@@ -137,7 +138,7 @@ rm -rf /tmp/daohua-compute-odin \
 
 - 若阶段 0 查出生产库 `max(version) == PostgresSchema.Version` 且 `min/max(schema_version) == SectionCodec.CurrentSchemaVersion` 且无存量配表删改处理需求：直接跳过本阶段进入阶段 3。
 - 若生产库版本落后或需存量数据处置：**严禁先替换启动新镜像**（新镜像启动门禁会 fail-fast 并被 `ccr-auto-update.sh` 自动回滚拉黑）。必须先向用户说明来自 `docs/backend/db-version-changes.md` 的 `[db_ver -> target_ver]` 迁移范围及所选路线并获准：
-  - **路线 A（已在阶段 0 提交合并迁移 SQL 至 `migrations/NNNN_v{covered}_to_v{target}.sql`）**：可直接继续由阶段 3 的 `scripts/deploy-prod.sh` 自动调用 `/opt/daohua/migrate-prod-db.sh` 完成「停写 → 备份 → 链式应用 `migrations/NNNN_vX_to_vY.sql` → `schema_version` 零残留校验」；若需人工观测缩短停机，按下列等价步骤执行。
+  - **路线 A（增量脚本已连续覆盖或已在阶段 0 补齐并提交至 `migrations/`）**：可直接继续由阶段 3 的 `scripts/deploy-prod.sh` 自动调用 `/opt/daohua/migrate-prod-db.sh` 完成「停写 → 备份 → 链式应用 `migrations/NNNN_vX_to_vY.sql` → `schema_version` 零残留校验」；若需人工观测缩短停机，按下列等价步骤执行。
   - **路线 B（prod 时手动迁移）**：必须先完成阶段 1（推送镜像）∥ 阶段 2（远端全库备份），再执行下列 `1 → 4` 步人工停写与迁移验收，**保持旧写者容器停止**直至阶段 3 `deploy-prod.sh` 启动新镜像（`migrate-prod-db.sh` 检测到库版本与标签已全部收敛时会自动放行重启）：
   1. **预拉取新镜像**（缩短停机窗口）：`ssh yuohira "sudo docker pull <app@sha256> && sudo docker pull <compute@sha256>"`
   2. **停自动更新 timer 与全部写者容器**：
