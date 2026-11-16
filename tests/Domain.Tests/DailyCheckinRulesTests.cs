@@ -147,4 +147,69 @@ public sealed class DailyCheckinRulesTests
         Assert.Equal(202611, DailyCheckinRules.ChinaMonthKeyOf(nov));
         Assert.Equal(202612, DailyCheckinRules.ChinaMonthKeyOf(dec));
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(30)]
+    [InlineData(100)]
+    [InlineData(1000)]
+    public void CheckinTiltedDistribution_MatchesTargetMeanAndSuppressesLowTail(int streakDays)
+    {
+        var targetMean = DailyCheckinRules.ComputeTargetMean(streakDays);
+        var dist = DailyCheckinRules.BuildCheckinDistribution(streakDays);
+        var probs = DailyCheckinRules.ComputeCheckinProbabilities(streakDays);
+
+        Assert.Equal(DailyCheckinRules.MinMerit, dist.Min);
+        Assert.Equal(DailyCheckinRules.MaxMerit, dist.Max);
+        Assert.True(Math.Abs(dist.ExpectedMean - targetMean) < 1e-6);
+        Assert.Equal(DailyCheckinRules.MaxMerit - DailyCheckinRules.MinMerit + 1, probs.Length);
+
+        var probSum = 0.0;
+        var expectation = 0.0;
+        var veryBadProb = 0.0;
+        var badTotalProb = 0.0;
+        for (var offset = 0; offset < probs.Length; offset++)
+        {
+            var merit = DailyCheckinRules.MinMerit + offset;
+            var p = probs[offset];
+            Assert.True(p > 0.0);
+            probSum += p;
+            expectation += merit * p;
+            var tier = DailyCheckinRules.ResolveFortuneTier(merit);
+            if (tier == "very_bad") veryBadProb += p;
+            if (tier is "very_bad" or "bad") badTotalProb += p;
+        }
+
+        Assert.True(Math.Abs(probSum - 1.0) < 1e-9);
+        Assert.True(Math.Abs(expectation - targetMean) < 1e-6, $"expectation={expectation}, target={targetMean}");
+
+        if (streakDays == 1)
+        {
+            // 首日（期望 ~30.30）：下下签压至 ~9.8%，坏签合计压至 ~37.8%（显著低于纯单向几何的 61.8%）。
+            Assert.InRange(veryBadProb, 0.08, 0.12);
+            Assert.InRange(badTotalProb, 0.35, 0.40);
+        }
+    }
+
+    [Fact]
+    public void RollReward_RespectsBoundsAndReducesBadFortuneWithStreak()
+    {
+        Assert.Equal(DailyCheckinRules.MinMerit, DailyCheckinRules.RollReward(1, () => 0.0));
+        Assert.Equal(DailyCheckinRules.MaxMerit, DailyCheckinRules.RollReward(1, () => 1.0));
+        Assert.InRange(DailyCheckinRules.RollReward(1, () => 0.5), DailyCheckinRules.MinMerit, DailyCheckinRules.MaxMerit);
+
+        static double SumBadProb(int streak)
+        {
+            var probs = DailyCheckinRules.ComputeCheckinProbabilities(streak);
+            var sum = 0.0;
+            for (var i = 0; i < DailyCheckinRules.LowTailPivotOffset; i++) sum += probs[i];
+            return sum;
+        }
+
+        var day1Bad = SumBadProb(1);
+        var day30Bad = SumBadProb(30);
+        var day100Bad = SumBadProb(100);
+        Assert.True(day1Bad > day30Bad && day30Bad > day100Bad);
+    }
 }

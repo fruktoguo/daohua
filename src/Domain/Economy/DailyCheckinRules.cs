@@ -17,10 +17,22 @@ public sealed record TruncatedGeometricDistribution(
     double ExpectedMean);
 
 /// <summary>
-/// 每日签到领域规则（对齐《道劫余生》长尾分布与连签推进模型，剥离幸运值与固定池）：
+/// 低段抑制双向截断几何分布参数快照：以功德 30（枢轴偏移 20）为众数中心，
+/// 压低坏签左尾（10~29）并保留长尾（61~999），经对数域指数族倾斜因子 TiltFactor 精确锚定 TargetMean。
+/// </summary>
+public sealed record CheckinTiltedDistribution(
+    int Min,
+    int Max,
+    double TargetMean,
+    double TiltFactor,
+    double ExpectedMean);
+
+/// <summary>
+/// 每日签到领域规则（对齐《道劫余生》长尾分布与连签推进模型，叠加低段坏签压制，剥离幸运值与固定池）：
 /// - 奖励资产：item.gongde-bound（绑定功德）；
 /// - 奖励区间：[10, 999] 整数；
 /// - 期望均值：无连签基础均值 30，每有效连签 1 天提供 +1% 均值推进量，渐近逼近上限 60；
+/// - 低段抑制：以功德 30 为众数枢轴（LeftPeak=0.45 / LeftQ=0.90 / RightQ=0.83），首日下下签 ~9.8%、坏签合计 ~37.8%；
 /// - 自然日口径：复用 UTC+8 自然日序号（ShopDailyWindow.DayIndexOf）。
 /// </summary>
 public static class DailyCheckinRules
@@ -43,8 +55,23 @@ public static class DailyCheckinRules
     /// <summary>每个有效连续签到天数额外提供的均值推进率（+1%/天）。</summary>
     public const double StreakBonusPerDay = 0.01;
 
+    /// <summary>低段抑制枢轴偏移量（对应功德 30，即坏签与中签分界点）。</summary>
+    public const int LowTailPivotOffset = 20;
+
+    /// <summary>左尾在枢轴紧邻处的相对幅值，用于整体下压 10~29 坏签比例。</summary>
+    public const double LowTailPeakRatio = 0.45;
+
+    /// <summary>左尾向保底 10 方向的逐级衰减率。</summary>
+    public const double LowTailDecayRate = 0.90;
+
+    /// <summary>右尾从功德 30 向长尾 999 方向的基础衰减率。</summary>
+    public const double HighTailBaseDecayRate = 0.83;
+
     private const double ExpectationEpsilon = 1e-9;
     private const int GeometricSolveIterations = 80;
+    private static readonly double LogLowTailPeakRatio = Math.Log(LowTailPeakRatio);
+    private static readonly double LogLowTailDecayRate = Math.Log(LowTailDecayRate);
+    private static readonly double LogHighTailBaseDecayRate = Math.Log(HighTailBaseDecayRate);
     private static readonly TimeSpan ChinaOffset = TimeSpan.FromHours(8);
 
     /// <summary>计算指定时刻对应的 UTC+8 自然日序号。</summary>
@@ -128,7 +155,77 @@ public static class DailyCheckinRules
 
     /// <summary>在给定有效连续签到天数下抽取本次每日签到奖励（保证落在 [10, 999] 内）。</summary>
     public static int RollReward(int effectiveStreakDays, Func<double>? unitRandom = null)
-        => RollExpandedMeanInteger(MinMerit, MaxMerit, ComputeTargetMean(effectiveStreakDays), unitRandom);
+    {
+        var distribution = BuildCheckinDistribution(effectiveStreakDays);
+        if (distribution.Min == distribution.Max) return distribution.Min;
+
+        var rawU = (unitRandom ?? RollCryptoUnitRandom)();
+        if (rawU >= 1.0) return distribution.Max;
+
+        var u = ClampUnitRandom(rawU);
+        var span = distribution.Max - distribution.Min;
+        var logTilt = Math.Log(distribution.TiltFactor);
+        var (weightSum, _, maxLog) = EvaluateTiltedMoments(span, logTilt);
+        var threshold = u * weightSum;
+
+        for (var offset = 0; offset <= span; offset++)
+        {
+            var weight = Math.Exp(TiltedLogWeight(offset, logTilt) - maxLog);
+            threshold -= weight;
+            if (threshold <= 0.0 || offset == span)
+                return distribution.Min + offset;
+        }
+
+        return distribution.Max;
+    }
+
+    /// <summary>
+    /// 求解低段抑制双向截断几何分布的指数族倾斜因子 TiltFactor，
+    /// 使 [10, 999] 上的数学期望精确锚定当前连续签到对应的 TargetMean。
+    /// </summary>
+    public static CheckinTiltedDistribution BuildCheckinDistribution(int effectiveStreakDays)
+    {
+        var targetMean = ComputeTargetMean(effectiveStreakDays);
+        var span = MaxMerit - MinMerit;
+        var targetOffsetMean = targetMean - MinMerit;
+
+        // 换元 t = r / (1 + r) ∈ (0, 1)，保证期望随 t 在全区间严格单调递增且避免无穷边界。
+        var low = 1e-12;
+        var high = 1.0 - 1e-12;
+        for (var i = 0; i < GeometricSolveIterations; i++)
+        {
+            var mid = (low + high) * 0.5;
+            var tilt = mid / (1.0 - mid);
+            var (_, offsetMean, _) = EvaluateTiltedMoments(span, Math.Log(tilt));
+            if (offsetMean < targetOffsetMean) low = mid;
+            else high = mid;
+        }
+
+        var solvedT = (low + high) * 0.5;
+        var solvedTilt = solvedT / (1.0 - solvedT);
+        var (_, solvedOffsetMean, _) = EvaluateTiltedMoments(span, Math.Log(solvedTilt));
+        return new CheckinTiltedDistribution(
+            MinMerit,
+            MaxMerit,
+            targetMean,
+            solvedTilt,
+            MinMerit + solvedOffsetMean);
+    }
+
+    /// <summary>计算指定连签天数下 [MinMerit, MaxMerit] 每个整数功德的精确解析概率数组。</summary>
+    public static double[] ComputeCheckinProbabilities(int effectiveStreakDays)
+    {
+        var distribution = BuildCheckinDistribution(effectiveStreakDays);
+        var span = distribution.Max - distribution.Min;
+        var logTilt = Math.Log(distribution.TiltFactor);
+        var (weightSum, _, maxLog) = EvaluateTiltedMoments(span, logTilt);
+        var probabilities = new double[span + 1];
+        for (var offset = 0; offset <= span; offset++)
+        {
+            probabilities[offset] = Math.Exp(TiltedLogWeight(offset, logTilt) - maxLog) / weightSum;
+        }
+        return probabilities;
+    }
 
     /// <summary>反解离散截断几何分布衰减系数 q，使 [min, max] 上的期望精确等于 targetMean。</summary>
     public static TruncatedGeometricDistribution BuildTruncatedGeometricDistribution(
@@ -236,5 +333,32 @@ public static class DailyCheckinRules
         var numerator = q - (span + 1) * qToNPlusOne + span * qToNPlusTwo;
         var denominator = (1.0 - q) * (1.0 - qToNPlusOne);
         return denominator <= 0.0 ? 0.0 : numerator / denominator;
+    }
+
+    private static double TiltedLogWeight(int offset, double logTilt)
+    {
+        var baseLog = offset < LowTailPivotOffset
+            ? LogLowTailPeakRatio + (LowTailPivotOffset - offset) * LogLowTailDecayRate
+            : (offset - LowTailPivotOffset) * LogHighTailBaseDecayRate;
+        return baseLog + (offset - LowTailPivotOffset) * logTilt;
+    }
+
+    private static (double WeightSum, double OffsetMean, double MaxLog) EvaluateTiltedMoments(int span, double logTilt)
+    {
+        // 分段线性函数的最大值必出现在左段或右段的端点，先提取 MaxLog 防止指数溢出/下溢。
+        var leftMax = Math.Max(TiltedLogWeight(0, logTilt), TiltedLogWeight(LowTailPivotOffset - 1, logTilt));
+        var rightMax = Math.Max(TiltedLogWeight(LowTailPivotOffset, logTilt), TiltedLogWeight(span, logTilt));
+        var maxLog = Math.Max(leftMax, rightMax);
+
+        var weightSum = 0.0;
+        var weightedOffsetSum = 0.0;
+        for (var offset = 0; offset <= span; offset++)
+        {
+            var weight = Math.Exp(TiltedLogWeight(offset, logTilt) - maxLog);
+            weightSum += weight;
+            weightedOffsetSum += offset * weight;
+        }
+
+        return (weightSum, weightedOffsetSum / weightSum, maxLog);
     }
 }
