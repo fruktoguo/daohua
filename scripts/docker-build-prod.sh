@@ -90,10 +90,14 @@ if [[ "$BUILD" == "1" ]]; then
   fi
 
   # staging 构建上下文 = git archive 干净快照 + 私有模块拼装：
-  #   src/Private                 -> MSBuild 按 DaoHuaPrivateRoot 注入 Server.Clean 程序集
+  #   src/Private/server          -> MSBuild 按 DaoHuaPrivateRoot=/src/src/Private 匹配 $(DaoHuaPrivateRoot)/server/**/*.cs 注入 Server.Clean 程序集
   #   frontend/src/private-impl   -> Vite 完整版构建挂载点（真实目录优先于链接）
   # 私有源码只进入构建上下文与镜像层，绝不落入主仓库工作区；--allow-dirty 下镜像内容
   # 仍固定为 HEAD 快照 + 私有仓库当前内容，保证可追溯。
+  if [[ ! -f "$PRIVATE_ROOT/frontend/antiMulti/index.ts" ]]; then
+    printf '错误: 生产镜像必须为完整口径，但未发现私有前端入口 %s/frontend/antiMulti/index.ts。\n' "$PRIVATE_ROOT" >&2
+    exit 1
+  fi
   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/daohua-prod-build-XXXXXX")"
   trap 'rm -rf "$STAGING_DIR"' EXIT
@@ -104,9 +108,9 @@ if [[ "$BUILD" == "1" ]]; then
       git archive "$dirty_commit" | tar -x -C "$STAGING_DIR"
     fi
   fi
-  mkdir -p "$STAGING_DIR/src/Private" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
+  mkdir -p "$STAGING_DIR/src/Private/server" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
   cp -R "$ROOT_DIR/vendor/YuoCore/." "$STAGING_DIR/vendor/YuoCore/"
-  cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/"
+  cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/server/"
   cp -R "$PRIVATE_ROOT/frontend/antiMulti/." "$STAGING_DIR/frontend/src/private-impl/"
   NODE_IMAGE_REF="${NODE_IMAGE:-ccr.ccs.tencentyun.com/yuohira/node:22-alpine}"
   common_args=(
@@ -117,6 +121,7 @@ if [[ "$BUILD" == "1" ]]; then
     --build-arg "VCS_REF=${VCS_REF}"
     --build-arg "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}"
     --build-arg "NODE_IMAGE=${NODE_IMAGE_REF}"
+    --build-arg "REQUIRE_PRIVATE_MODULES=1"
   )
   if [[ "$PULL" == "1" ]]; then common_args+=(--pull); fi
   printf '构建 Server 镜像: %s（完整口径，含私有扩展模块）\n' "$RELEASE_IMAGE"

@@ -5,11 +5,26 @@
 export PATH=/data/data/com.termux/files/usr/bin:$PATH
 export PROOT_NO_SECCOMP=0
 LOG=/data/data/com.termux/files/home/daohua_compute_watchdog.log
+NODE_LOG=/data/data/com.termux/files/home/daohua_compute.log
+MAX_LOG_BYTES=$((10 * 1024 * 1024))
+
+rotate_log_if_large() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        local size
+        size="$(wc -c < "$file" 2>/dev/null || echo 0)"
+        if (( size > MAX_LOG_BYTES )); then
+            mv -f "$file" "${file}.1" 2>/dev/null || : > "$file"
+        fi
+    fi
+}
 
 exec 9>/data/data/com.termux/files/home/.daohua_compute_watchdog.lock
 flock -n 9 || exit 0
 
 while true; do
+    rotate_log_if_large "$LOG"
+    rotate_log_if_large "$NODE_LOG"
     if ! pgrep -f "DaoHua[.]ComputeNode" >/dev/null 2>&1; then
         echo "[$(date "+%F %T")] compute node not running, starting" >> "$LOG"
         nohup proot-distro login ubuntu -- /bin/bash -c "
@@ -23,7 +38,7 @@ while true; do
             export DAOHUA_BACKUP_STORAGE_DIR=/root/daohua-backups
             export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
             exec /root/daohua-compute/DaoHua.ComputeNode
-        " </dev/null >>/data/data/com.termux/files/home/daohua_compute.log 2>&1 &
+        " </dev/null >>"$NODE_LOG" 2>&1 &
     fi
     sleep 10
 done

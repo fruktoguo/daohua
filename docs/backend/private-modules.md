@@ -35,7 +35,7 @@
 - **稳定出口** `frontend/src/private/`：`contract.ts`（契约类型 `PrivateClientModuleContract`）→ `stub.ts`（开源默认实现）→ `impl.ts`（默认 re-export stub）→ `index.ts`（主仓库调用点唯一 import 路径）。
 - **挂载点** `frontend/src/private-impl/`（.gitignore）：`scripts/sync-private-modules.mjs` 在 dev/verify 启动时把 `../DaoHua-Private/frontend/antiMulti` 以 junction（Windows）/ symlink（POSIX）挂载于此。目录深度与原 `src/antiMulti` 一致，私有实现内部相对 import 零改动。
   - **跨环境约束（易踩）**：挂载必须由「将来消费它的那套工具链」创建。Windows junction 在 WSL 内可正常解析，但 WSL（node 跑在 `/mnt/d`）创建的 symlink 指向 `/mnt/d/...` 这类 WSL 专属路径，Windows 侧完全无法解析——`vite.config.ts` 的 `existsSync` 判定私有模块缺失而回退开源 stub，握手不带 `moduleDeclaration`，完整版服务端随即以 4010 拒绝，前端只显示「该服务器要求使用专用客户端」。因此脚本以「能否解析到挂载入口 `index.ts`」为唯一判据：可解析即原样保留（不论谁创建），不可解析才重建。同一工作区同时用 Windows `dev.sh` 与 WSL `verify.sh` 时不会再互相破坏。
-- **构建切换**：`vite.config.ts` 探测挂载点存在时以正则 alias（`/private\/impl$/`）把 impl 重定向到 `private-impl/index.ts`；构建混淆插件路径同步匹配 `/src/private-impl/`。tsc 始终按 stub 类型检查主仓库调用点；私有实现自带 tsconfig（`DaoHua-Private/frontend/tsconfig.json`）在完整口径 verify 中独立 `tsc --noEmit` 检查，并以契约对象赋值校验导出面。
+- **构建切换**：`vite.config.ts` 探测挂载点存在时经 `resolveId` 钩子仅将 `src/private/index.ts` 的 `./impl` 重定向到 `private-impl/index.ts`（避免误劫持其他目录 `./impl`）；构建混淆插件路径同步匹配 `/src/private-impl/`。tsc 始终按 stub 类型检查主仓库调用点；私有实现自带 tsconfig（`DaoHua-Private/frontend/tsconfig.json`）在完整口径 verify 中独立 `tsc --noEmit` 检查，并以契约对象赋值校验导出面。
 - **留存边界**：`accountSignals.ts`（登录/注册风险信号采集框架）留在主仓库 `frontend/src/network/`（服务于开源的账号风控）；仅浏览器指纹合成（`getBrowserFingerprint`）经契约出口取自私有实现。关闭码 4005-4008 的用户提示词条保留主词典（文案不含实现细节，开源前端连官方服被拒时也需要展示）。
 
 ## 4. 构建与部署口径
@@ -44,10 +44,10 @@
 | --- | --- | --- |
 | `dotnet build` / `dev.sh` | 自动（探测） | MSBuild 默认探测兄弟目录 |
 | `verify.sh` | 双口径 | 开源口径必跑不变；检测到私有仓库时追加私有后端测试与完整版前端构建/类型检查 |
-| `docker compose -f compose.yaml` | 开源 | 构建上下文无私有内容，`DaoHuaPrivateRoot=/src/Private` 路径不存在自动跳过 |
-| `docker-build-prod.sh` / `release-prod.sh` | 完整（强制） | staging 复制：主仓库源码 + `../DaoHua-Private` → `src/Private` 与 `frontend/src/private-impl` 真实目录；私有仓库缺失时快速失败 |
+| `docker compose -f compose.yaml` | 开源 | 构建上下文无私有内容，`DaoHuaPrivateRoot=/src/src/Private` 路径不存在自动跳过 |
+| `docker-build-prod.sh` / `release-prod.sh` | 完整（强制） | staging 复制：主仓库源码 + `../DaoHua-Private/server` → `src/Private/server` 与 `frontend/src/private-impl` 真实目录，传 `REQUIRE_PRIVATE_MODULES=1`（`DaoHuaRequirePrivate=1` + `tsc` 门禁）；私有源码缺失即快速失败 |
 
-生产镜像始终完整版；开源用户以主仓库自建永远得到开源版。`Dockerfile` 单一双口径：publish 传 `-p:DaoHuaPrivateRoot=/src/Private`，MSBuild 通配在路径缺失时零匹配自动降级。
+生产镜像始终完整版；开源用户以主仓库自建永远得到开源版。`Dockerfile` 单一双口径：publish 传 `-p:DaoHuaPrivateRoot=/src/src/Private -p:DaoHuaRequirePrivate=${REQUIRE_PRIVATE_MODULES}`，开源场景按 0 自动跳过、生产场景按 1 强制校验。
 
 ## 5. 兼容矩阵与安全边界
 

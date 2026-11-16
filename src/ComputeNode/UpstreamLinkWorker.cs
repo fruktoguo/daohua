@@ -13,6 +13,21 @@ namespace DaoHua.ComputeNode;
 /// 配表指纹不一致时主服拒绝握手，节点保持退避重试直到被重部署为匹配版本。
 /// 节点在 NAT/防火墙后也可工作：只需要出方向 443/80 连通主服，无任何入站端口要求。
 /// </summary>
+/// <summary>节点上游拨入链路连接状态单例（供 /healthz 与 /readyz 观测）。</summary>
+public sealed class ComputeLinkState
+{
+    private volatile string? _activeUpstream;
+
+    /// <summary>当前是否已完成 welcome 握手连入主服。</summary>
+    public bool IsConnected => _activeUpstream is not null;
+
+    /// <summary>当前已连入的上游描述串；未连接为 null。</summary>
+    public string? ActiveUpstream => _activeUpstream;
+
+    internal void SetConnected(string upstream) => _activeUpstream = upstream;
+    internal void SetDisconnected() => _activeUpstream = null;
+}
+
 public sealed class UpstreamLinkWorker(
     IReadOnlyList<string> upstreamUrls,
     string token,
@@ -24,7 +39,8 @@ public sealed class UpstreamLinkWorker(
     SemaphoreSlim batchGate,
     int maxJobsPerBatch,
     int maxConcurrentBatches,
-    ILoggerFactory loggerFactory) : BackgroundService
+    ILoggerFactory loggerFactory,
+    ComputeLinkState? linkState = null) : BackgroundService
 {
     private readonly IReadOnlyList<string> _upstreams = upstreamUrls is { Count: > 0 }
         ? upstreamUrls
@@ -135,7 +151,9 @@ public sealed class UpstreamLinkWorker(
             default:
                 throw new InvalidDataException("主服首帧必须是 welcome。");
         }
-        _logger.LogInformation("已接入主服 node={NodeName} upstream={Upstream}", NodeName, DescribeUri(uri));
+        var describedUpstream = DescribeUri(uri);
+        _logger.LogInformation("已接入主服 node={NodeName} upstream={Upstream}", NodeName, describedUpstream);
+        linkState?.SetConnected(describedUpstream);
 
         Volatile.Write(ref _drainRequested, 0);
         var inFlightTasks = new ConcurrentDictionary<long, Task>();
@@ -161,6 +179,7 @@ public sealed class UpstreamLinkWorker(
         }
         finally
         {
+            linkState?.SetDisconnected();
             session.Cancel();
             workCts.Cancel();
             drainGate.Cancel();

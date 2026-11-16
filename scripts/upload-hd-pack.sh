@@ -52,8 +52,12 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -d -m 0755 /opt/daohua/static/hd.releases
   sudo rm -rf '/opt/daohua/static/hd.releases/$RELEASE_NAME'
   sudo mv /tmp/daohua-hd-pack.new '/opt/daohua/static/hd.releases/$RELEASE_NAME'
-  sudo rm -rf /opt/daohua/static/hd
-  sudo ln -s 'hd.releases/$RELEASE_NAME' /opt/daohua/static/hd
+  # 若历史遗留非符号链接真实目录，先迁移清理后再执行 POSIX ln + mv -Tf 原子切换，消除 /hd/* 瞬时 404 窗口。
+  if sudo test -d /opt/daohua/static/hd && ! sudo test -L /opt/daohua/static/hd; then
+    sudo rm -rf /opt/daohua/static/hd
+  fi
+  sudo ln -sfn 'hd.releases/$RELEASE_NAME' /opt/daohua/static/hd.tmp
+  sudo mv -Tf /opt/daohua/static/hd.tmp /opt/daohua/static/hd
   # 仅保留最近 3 个历史版本
   cd /opt/daohua/static/hd.releases
   ls -1t | tail -n +4 | while read -r old; do sudo rm -rf \"\$old\"; done

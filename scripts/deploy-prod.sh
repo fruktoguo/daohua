@@ -37,6 +37,25 @@ if [[ -z "$EXPECTED_SCHEMA_VERSION" || -z "$EXPECTED_SECTION_VERSION" ]]; then
   printf '无法从源码推断 schema 版本（库/存档标签），拒绝部署：迁移校验缺少判定依据。\n' >&2
   exit 1
 fi
+EXPECTED_APP_VERSION="v$(cd "$ROOT_DIR" && node -p "try{require('./version.json').version}catch{''}" 2>/dev/null || true)"
+if [[ -z "${SMOKE_MODULE_DECLARATION:-}" && -d "$ROOT_DIR/../DaoHua-Private/server" ]]; then
+  SMOKE_MODULE_DECLARATION="$(cd "$ROOT_DIR" && node -e "
+    const fs = require('fs'), path = require('path');
+    function walk(dir) {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { const r = walk(p); if (r) return r; }
+        else if (e.name.endsWith('.cs')) {
+          const m = fs.readFileSync(p, 'utf8').match(/ModuleDeclaration\\w*\\s*=\\s*\"([^\"]+)\"/);
+          if (m) return m[1];
+        }
+      }
+      return '';
+    }
+    process.stdout.write(walk('../DaoHua-Private/server'));
+  " 2>/dev/null || true)"
+fi
+SMOKE_EXPECT_PRIVATE="${SMOKE_EXPECT_PRIVATE:-$([[ -n "${SMOKE_MODULE_DECLARATION:-}" ]] && printf '1' || printf '0')}"
 
 REMOTE_HOST="${SSH_HOST:-yuohira}"
 IMAGE="${APP_IMAGE:-}"
@@ -154,6 +173,10 @@ if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
       printf 'SMOKE_REGISTER=1\n' >> "$SMOKE_ENV_FILE"
     fi
   fi
+  printf 'SMOKE_EXPECT_PRIVATE=%q\n' "${SMOKE_EXPECT_PRIVATE:-0}" >> "$SMOKE_ENV_FILE"
+  if [[ -n "${SMOKE_MODULE_DECLARATION:-}" ]]; then
+    printf 'SMOKE_MODULE_DECLARATION=%q\n' "$SMOKE_MODULE_DECLARATION" >> "$SMOKE_ENV_FILE"
+  fi
   SMOKE_ENV_FILE_UPLOAD="$SMOKE_ENV_FILE"
   if command -v cygpath >/dev/null 2>&1; then
     SMOKE_ENV_FILE_UPLOAD="$(cygpath -m "$SMOKE_ENV_FILE")"
@@ -245,7 +268,6 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0755 '$REMOTE_TMP/market-ledger-archive.sh' /opt/daohua/market-ledger-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/postgres-wal-archive.sh' /opt/daohua/postgres-wal-archive.sh
   sudo install -m 0755 '$REMOTE_TMP/migrate-prod-db.sh' /opt/daohua/migrate-prod-db.sh
-  printf '%s\n' '$EXPECTED_SCHEMA_VERSION' | sudo tee /opt/daohua/schema-version.expected >/dev/null
   sudo rm -rf /opt/daohua/migrations
   sudo install -d -m 0755 /opt/daohua/migrations
   sudo cp -f '$REMOTE_TMP'/migrations/*.sql /opt/daohua/migrations/
@@ -261,26 +283,16 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0644 '$REMOTE_TMP/daohua-wal-archive.timer' /etc/systemd/system/daohua-wal-archive.timer
   sudo systemctl daemon-reload
   sudo rm -f /opt/daohua/failed-image.id
-  if [[ $IMAGE_EXPLICIT == 1 ]]; then
-    if sudo grep -q '^APP_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i \"s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|\" /opt/daohua/daohua.env
-    else
-      printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
-    fi
-  fi
-  if [[ $COMPUTE_IMAGE_EXPLICIT == 1 ]]; then
-    if sudo grep -q '^COMPUTE_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i \"s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|\" /opt/daohua/daohua.env
-    else
-      printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
-    fi
-  fi
   expected_app_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$IMAGE')\"
   expected_compute_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$COMPUTE_IMAGE')\"
-  # 迁移必须先于新镜像启动，且必须在旧写者停止之后执行：
-  # 旧版本进程在迁移窗口内仍会按旧标签写存档，导致新版本加载玩家时
-  # 抛 'section schema 版本不受支持' 并无限重连（生产事故 2026-10-22）。
-  sudo systemctl stop daohua-ccr-auto-update.timer
+  # 迁移必须先于新镜像启动，且必须在旧写者停止与 CCR 自动更新服务完全静止之后执行：
+  # 同时停掉 timer 与在飞 service，防止自动更新并发拉起容器污染迁移窗口。
+  sudo systemctl stop daohua-ccr-auto-update.timer || true
+  sudo systemctl stop daohua-ccr-auto-update.service || true
+  for _ in {1..30}; do
+    if ! sudo systemctl is-active --quiet daohua-ccr-auto-update.service; then break; fi
+    sleep 1
+  done
   # 若 compose.prod.yaml 调整了 db 参数（例如关闭 archive_mode=off 并移除 WAL 挂载），
   # 需先单服务收敛 daohua-db 并等待就绪，再停写迁移并替换 app/compute。
   sudo docker compose --env-file /opt/daohua/daohua.env -f /opt/daohua/compose.prod.yaml up -d --no-deps db
@@ -302,7 +314,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
     EXPECTED_SCHEMA_VERSION='$EXPECTED_SCHEMA_VERSION' \\
     EXPECTED_SECTION_VERSION='$EXPECTED_SECTION_VERSION' \\
     /opt/daohua/migrate-prod-db.sh
-  sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
+  sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' EXPECTED_SCHEMA_VERSION_FILE=/dev/null /opt/daohua/ccr-auto-update.sh
   # 更新锁被 timer 占用时 ccr-auto-update.sh 会跳过本轮并以 0 退出；
   # 必须等运行容器真正收敛到目标镜像且健康，否则后续健康检查与烟测会打到旧容器并误报成功。
   converged=0
@@ -320,6 +332,22 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   if [[ \"\$converged\" != 1 ]]; then
     printf '运行容器未在 300 秒内收敛到目标镜像: app=%s(期望 %s) compute=%s(期望 %s)\n' \"\$running_app_id\" \"\$expected_app_id\" \"\$running_compute_id\" \"\$expected_compute_id\" >&2
     exit 1
+  fi
+  # 仅在新镜像真正健康收敛后才提交 daohua.env 目标镜像与 schema-version.expected，避免失败时污染自动更新真源。
+  printf '%s\n' '$EXPECTED_SCHEMA_VERSION' | sudo tee /opt/daohua/schema-version.expected >/dev/null
+  if [[ $IMAGE_EXPLICIT == 1 ]]; then
+    if sudo grep -q '^APP_IMAGE=' /opt/daohua/daohua.env; then
+      sudo sed -i \"s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|\" /opt/daohua/daohua.env
+    else
+      printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
+    fi
+  fi
+  if [[ $COMPUTE_IMAGE_EXPLICIT == 1 ]]; then
+    if sudo grep -q '^COMPUTE_IMAGE=' /opt/daohua/daohua.env; then
+      sudo sed -i \"s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|\" /opt/daohua/daohua.env
+    else
+      printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
+    fi
   fi
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
@@ -360,6 +388,10 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
     printf '/readyz 未返回 ok/ready: %s\n' \"\$local_ready\" >&2
     exit 1
   fi
+  local_health=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/healthz)\"
+  if [[ -n '$EXPECTED_APP_VERSION' ]] && ! printf '%s' \"\$local_health\" | grep -qF '\"version\":\"$EXPECTED_APP_VERSION\"'; then
+    printf '警告: /healthz 版本与预期不一致: expected=%s health=%s\n' '$EXPECTED_APP_VERSION' \"\$local_health\" >&2
+  fi
   printf '%s\n' \"\$local_ready\"
   sudo systemctl is-enabled daohua-ccr-auto-update.timer
   sudo systemctl is-active daohua-ccr-auto-update.timer
@@ -372,7 +404,10 @@ if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
   printf '==> 公网 HTTPS 与 WebSocket 烟测（/readyz 应被拦截）\n'
   smoke_ok=0
   for attempt in {1..6}; do
-    if SMOKE_REQUIRE_READYZ=0 node "$ROOT_DIR/scripts/smoke-production.mjs" https://daohua.yuohira.com; then
+    if (cd "$ROOT_DIR" && SMOKE_REQUIRE_READYZ=0 \
+       SMOKE_EXPECT_PRIVATE="${SMOKE_EXPECT_PRIVATE:-0}" \
+       SMOKE_MODULE_DECLARATION="${SMOKE_MODULE_DECLARATION:-}" \
+       node scripts/smoke-production.mjs https://daohua.yuohira.com); then
       smoke_ok=1
       break
     fi

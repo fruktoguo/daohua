@@ -63,7 +63,7 @@ public sealed class BackupArchiveWorker : BackgroundService
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
 
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(Math.Max(1, _options.IntervalMinutes)));
-        do
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
@@ -78,8 +78,15 @@ public sealed class BackupArchiveWorker : BackgroundService
                 _state.LastError = ex.Message;
                 _logger.LogError(ex, "内置备份归档同步失败，将在下个周期重试。");
             }
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false)) break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
     public async Task SyncOnceAsync(CancellationToken cancellationToken)
@@ -125,6 +132,10 @@ public sealed class BackupArchiveWorker : BackgroundService
         {
             response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning("无法连接主服备份目录 url={Url} error={Error}", url, ex.Message);
@@ -160,6 +171,10 @@ public sealed class BackupArchiveWorker : BackgroundService
             try
             {
                 await DownloadFileAsync(fileUrl, localPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
