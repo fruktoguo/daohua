@@ -1036,6 +1036,141 @@ PRESET_BATCHES = {
             "caption": "Top-right item: [陨星踏虚胫 - Meteor Void-Striding Greaves]. Heavy martial armored greaves forged from dark meteoric iron with glowing orange molten star-fire veins across the shin plates, supple leather calf bindings, symmetrical frontal view, bold dark ink outline, clean 2D game icon."
         }
     ],
+    # 雾梦泽奇珍材料与破损储物袋组 (4件套, 2x2 网格, 体系 B 手绘厚涂)
+    "materials_wumeng_4": [
+        {
+            "id": "item.black-croc-scale",
+            "name": "玄鳄逆鳞",
+            "bbox": [-400, -400, -130, -130],
+            "caption": "Top-left item: [玄鳄逆鳞 - Abyssal Black Crocodile Reverse Scale]. A single thick heavy dark meteor-black armored crocodile reverse throat scale shaped like a compact shield plate, jagged stony scale ridges with subtle cold icy-blue water luster on edges, painterly ink-wash style, bold dark ink outline, strictly zero text, no words."
+        },
+        {
+            "id": "item.guiche-crimson-plume",
+            "name": "鬼车赤翎",
+            "bbox": [-400, 130, -130, 400],
+            "caption": "Top-right item: [鬼车赤翎 - Nine-Headed Guiche Crimson Plume]. A single long slender mythical demon bird tail feather in 45-degree diagonal composition, vibrant deep crimson-red barbs with subtle dark-gold thunder vein patterns along the quill shaft, painterly ink-wash style, bold dark ink outline, strictly zero text, no words."
+        },
+        {
+            "id": "item.dragon-pearl",
+            "name": "龙珠",
+            "bbox": [130, -400, 400, -130],
+            "caption": "Bottom-left item: [龙珠 - Azure Dragon Spirit Pearl]. A pristine smooth spherical celadon-cyan dragon spirit pearl floating in 30-degree view, containing a faint bright silver-white miniature sword-qi gleam inside the translucent jade orb, supported below by two simple minimalist pale-cyan cloud wisps, painterly ink-wash style, bold dark ink outline, strictly zero text, no words."
+        },
+        {
+            "id": "item.storage-bag.broken",
+            "name": "破损的储物袋",
+            "bbox": [130, 130, 400, 400],
+            "caption": "Bottom-right item: [破损的储物袋 - Broken Storage Pouch]. An antique rustic slate-blue cloth Daoist spatial storage pouch tied at the neck with dark cord and half of a cracked bronze talisman tag, a torn seam gash on the side revealing faint warm cyan-gold spirit stone glimmer inside, painterly ink-wash style, bold dark ink outline, strictly zero text, no words."
+        }
+    ],
+    # 移形体系与剑刀战技组 (4件套, 2x2 网格, 体系 B 手绘技能图标)
+    "abilities_yixing_4": [
+        {
+            "id": "ability.zhanyu",
+            "name": "斩玉",
+            "bbox": [-390, -390, -140, -140],
+            "caption": "Top-left item: [斩玉 - Jade-Cleaving Slash Skill]. A compact centered 2D martial skill icon showing a sharp frost-white and jade-cyan crescent sword-qi arc slashing diagonally through a pale celadon ancient jade disc, splitting it cleanly in half amidst swirling white wind ribbons, generous empty white margin around edges, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.shunshan",
+            "name": "瞬闪",
+            "bbox": [-390, 140, -140, 390],
+            "caption": "Top-right item: [瞬闪 - Instant Flash Strike Skill]. A compact well-centered 2D martial skill icon depicting a complete sleek silver-cyan flying sword thrusting diagonally at 45 degrees through a bright four-pointed frost star flash and short blue-white speed streaks, entirely contained inside frame with generous white margin on all four sides, no cropped blade tip, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.pojun",
+            "name": "破军",
+            "bbox": [140, -390, 390, -140],
+            "caption": "Bottom-left item: [破军 - Army-Breaking Cleave Skill]. A compact well-centered 2D martial skill icon showing a complete heavy dark-iron broadsword saber sweeping a blazing crimson-gold qi arc over a sturdy amber-gold war shield, entirely contained inside frame with generous white margin on all four sides, no touching edges, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.yueqian",
+            "name": "跃迁",
+            "bbox": [140, 140, 390, 390],
+            "caption": "Bottom-right item: [跃迁 - Spatial Shift Talisman Skill]. A mystical compact centered 2D Daoist skill icon depicting a tilted floating cyan-gold octagonal bagua talisman circle plate with glowing teal spatial teleportation wing arcs rising upward from its center and soft curling white spirit clouds below, NO stone stele, NO calligraphy, strictly zero text, zero chinese characters, zero symbols inside center, bold dark ink outline."
+        }
+    ],
+    # 雾梦泽法术与祝由技能组 (4件套, 2x2 网格, 体系 B 手绘技能图标)
+    "abilities_wumeng_4": [
+        {
+            "id": "ability.huoyan-fengbao",
+            "name": "火焰风暴",
+            "bbox": [-400, -400, -130, -130],
+            "caption": "Top-left item: [火焰风暴 - Flame Tempest Skill]. A fierce 2D spell skill icon depicting a swirling spiraling tornado vortex of vibrant crimson-red and molten solar-gold flames rising upward in layered bold painterly flame tongues, dynamic compact silhouette, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.tianlei-po",
+            "name": "天雷破",
+            "bbox": [-400, 130, -130, 400],
+            "caption": "Top-right item: [天雷破 - Sky Thunder Shatter Skill]. A striking 2D spell skill icon showing twin jagged emerald-cyan wood lightning bolts and bright pale-blue thunder arcs crashing down from an ancient dark wood thunder seal ring, sharp stylized lightning shapes, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.zhuoxin",
+            "name": "灼心",
+            "bbox": [130, -400, 400, -130],
+            "caption": "Bottom-left item: [灼心 - Heart-Scorching Curse Skill]. A sinister 2D spell skill icon depicting an occult dark-crimson and deep-violet burning seal brand etched over a stylized heart-core emblem, radiating smoldering scarlet embers and dark toxic flame wisps, bold dark ink outline, strictly zero text."
+        },
+        {
+            "id": "ability.shangui-yao",
+            "name": "山鬼谣",
+            "bbox": [130, 130, 400, 400],
+            "caption": "Bottom-right item: [山鬼谣 - Mountain Spirit Chant Skill]. A serene 2D healing spell icon depicting graceful emerald-green mountain orchid leaves and bamboo sprigs arching over cascading glowing aqua-jade spiritual dew drops and gentle concentric healing water ripples, bold dark ink outline, strictly zero text."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 E (斩玉/跃迁/火焰风暴/天雷破, 2x2 四宫格)
+    "logos_abilities_c": [
+        {
+            "id": "emblem.zhanyu",
+            "name": "斩玉图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [斩玉图腾 - Jade Cleave Emblem]. A completely solid filled pure white minimalist vector silhouette logo of a diagonal flying sword blade cleanly splitting a circular jade bi-disc into two halves, crisp wide negative black stencil cut lines separating sword and two disc halves, bold massive white shapes, no thin outline-only strokes, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.yueqian",
+            "name": "跃迁图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [跃迁图腾 - Spatial Shift Emblem]. A completely solid filled pure white minimalist vector silhouette logo of two interlocking dynamic crescent vortex rings cradling a bold upward-surging teleportation flash chevron arrow in the center, crisp negative black stencil cut lines, bold solid white masses, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.huoyan-fengbao",
+            "name": "火焰风暴图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [火焰风暴图腾 - Flame Tempest Emblem]. A completely solid filled pure white minimalist vector silhouette logo of three thick broad swirling flame cyclone tongues spiraling clockwise into a fierce tempest vortex, separated by crisp wide negative black stencil cut curves, bold solid white shapes, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.tianlei-po",
+            "name": "天雷破图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [天雷破图腾 - Sky Thunder Emblem]. A completely solid filled pure white minimalist vector silhouette logo of a massive twin-forked jagged lightning bolt striking down and splitting an ancient gnarled tree-root medallion crest, thick solid white geometric masses separated by crisp negative black stencil cut lines, strictly solid pure white on solid pure black."
+        }
+    ],
+    # 纯黑底纯白二值矢量Logo图腾组 F (灼心/瞬闪/山鬼谣/破军, 2x2 四宫格)
+    "logos_abilities_d": [
+        {
+            "id": "emblem.zhuoxin",
+            "name": "灼心图腾",
+            "bbox": [-420, -420, -80, -80],
+            "caption": "Top-left item: [灼心图腾 - Heart-Scorch Emblem]. A completely solid filled pure white minimalist vector silhouette logo of a bold plump stylized heart shape with three sharp rising inner flame tongues carved out as crisp negative black stencil space inside the heart center, massive solid white outer silhouette, no thin strokes, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.shunshan",
+            "name": "瞬闪图腾",
+            "bbox": [-420, 80, -80, 420],
+            "caption": "Top-right item: [瞬闪图腾 - Instant Flash Emblem]. A completely solid filled pure white minimalist vector silhouette logo of a sharp diagonal diamond-blade sword flash piercing straight across a bold four-pointed star emblem with two trailing speed dash wedges, separated by crisp negative black stencil cut lines, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.shangui-yao",
+            "name": "山鬼谣图腾",
+            "bbox": [80, -420, 420, -80],
+            "caption": "Bottom-left item: [山鬼谣图腾 - Mountain Spirit Chant Emblem]. A completely solid filled pure white minimalist vector silhouette logo of three plump solid teardrop spirit dew drops hovering upright over two symmetric sweeping solid mountain orchid leaf blades, all shapes solid opaque white with crisp negative black separation gaps, no thin outline-only strokes, strictly solid pure white on solid pure black."
+        },
+        {
+            "id": "emblem.pojun",
+            "name": "破军图腾",
+            "bbox": [80, 80, 420, 420],
+            "caption": "Bottom-right item: [破军图腾 - Army-Breaker Emblem]. A completely solid filled pure white minimalist vector silhouette logo of a heavy wide-backed Chinese broadsword saber diagonally cleaving right through a sturdy war shield, broad solid white weapon and split shield halves separated by crisp wide negative black stencil cut gaps, strictly solid pure white on solid pure black."
+        }
+    ],
 }
 
 def _sanitize_workflow(wf):
@@ -1132,7 +1267,9 @@ def submit_task(workflow, prompt_str, seed=None, steps=35, cfg=3.5, prefix="daoh
     
     # Node 5: 负向提示词
     if not negative_prompt:
-        negative_prompt = "text, letters, words, chinese characters, hanzi, font, label, signature, watermark, overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, glowing particles, neon glow, lightning bolts, fire, smoke, crowded, clutter, blurry, bad anatomy, worst quality"
+        negative_prompt = "text, letters, words, chinese characters, hanzi, font, label, signature, watermark, overcomplicated, hyper-detailed, intricate noise, realistic photo, 3d render, neon cyberpunk, overflow, touching borders, crowded, clutter, blurry, bad anatomy, worst quality"
+    if "5" in prompt:
+        prompt["5"]["inputs"]["text"] = negative_prompt
     
     # Node 19 / Node 6: 分辨率与长宽比 (支持直接覆盖 1280x720 等自定义尺寸)
     if width and height:
@@ -1198,7 +1335,19 @@ def wait_for_completion(prompt_id, timeout=300):
             pass
     raise TimeoutError(f"Task {prompt_id} timed out after {timeout}s.")
 
-def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size=64, inner_size=54):
+def _save_webp(canvas, out_path, lossless=True, quality=90, max_bytes=None):
+    """按母模无损或运行时有损体积预算保存 WebP。"""
+    if lossless:
+        canvas.save(out_path, format="WEBP", lossless=True)
+        return
+    q = quality
+    canvas.save(out_path, format="WEBP", quality=q)
+    if max_bytes is not None:
+        while os.path.getsize(out_path) > max_bytes and q > 60:
+            q = max(60, q - 10)
+            canvas.save(out_path, format="WEBP", quality=q)
+
+def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size=64, inner_size=54, lossless=True, quality=90, max_bytes=None):
     os.makedirs(output_dir, exist_ok=True)
     im = Image.open(image_path).convert("RGBA")
     w_full, h_full = im.size
@@ -1273,13 +1422,13 @@ def process_and_slice(image_path, items_spec, output_dir=OUTPUT_DIR, target_size
         
         out_name = f"{it['id']}.webp"
         out_path = os.path.join(output_dir, out_name)
-        canvas.save(out_path, format="WEBP", lossless=True)
+        _save_webp(canvas, out_path, lossless=lossless, quality=quality, max_bytes=max_bytes)
         saved_paths.append((it["name"], out_path))
         print(f"  [EXPORTED] {it['name']} ({it['id']}) -> {out_path} ({os.path.getsize(out_path)} bytes)")
         
     return saved_paths
 
-def process_single_entity(image_path, entity_id, output_dir, target_size=256, inner_size=230, remove_bg=True, hard_binary=False):
+def process_single_entity(image_path, entity_id, output_dir, target_size=256, inner_size=230, remove_bg=True, hard_binary=False, lossless=True, quality=90, max_bytes=None):
     """处理单体对象（如单只怪物/角色/法宝）：提取透明主体后居中缩放并保存。"""
     os.makedirs(output_dir, exist_ok=True)
     im = Image.open(image_path).convert("RGBA")
@@ -1292,10 +1441,44 @@ def process_single_entity(image_path, entity_id, output_dir, target_size=256, in
         arr[is_white] = [255, 255, 255, 255]
         arr[~is_white] = [0, 0, 0, 0]
     elif remove_bg:
-        has_rmbg_alpha = (a == 0).any()
+        from scipy.ndimage import label
+        h_img, w_img = a.shape
+        corners = [(0, 0), (0, w_img - 1), (h_img - 1, 0), (h_img - 1, w_img - 1)]
+        dark_corners = [
+            (cy, cx) for cy, cx in corners
+            if a[cy, cx] > 200 and r[cy, cx] < 25 and g[cy, cx] < 25 and b[cy, cx] < 25
+        ]
+        # 仅清理从画布四角连通进来的外围纯黑实底，绝不伤及骨白描边内侧的主体深墨肉身
+        if len(dark_corners) >= 2:
+            near_black = (r < 25) & (g < 25) & (b < 25) & (a > 40)
+            blk_labeled, _ = label(near_black)
+            corner_labels = {int(blk_labeled[cy, cx]) for cy, cx in dark_corners if blk_labeled[cy, cx] > 0}
+            if corner_labels:
+                arr[np.isin(blk_labeled, list(corner_labels)), 3] = 0
+
+        has_rmbg_alpha = (arr[:, :, 3] == 0).any()
         if not has_rmbg_alpha:
             is_bg = (r > 235) & (g > 235) & (b > 235)
-            arr[:, :, 3] = np.where(is_bg, 0, a)
+            arr[:, :, 3] = np.where(is_bg, 0, arr[:, :, 3])
+
+        # 清理边缘残余或角落微小悬浮噪点，防止 getbbox() 被角落 1px 噪点撑大导致主体缩水
+        alpha_mask = arr[:, :, 3] > 40
+        if alpha_mask.any():
+            labeled, num_features = label(alpha_mask)
+            if num_features > 1:
+                sizes = np.bincount(labeled.ravel())
+                sizes[0] = 0
+                max_size = sizes.max()
+                border_labels = set(np.unique(np.concatenate([
+                    labeled[0, :], labeled[-1, :], labeled[:, 0], labeled[:, -1]
+                ])))
+                keep_mask = np.zeros_like(alpha_mask, dtype=bool)
+                for lbl in range(1, num_features + 1):
+                    if sizes[lbl] >= 0.02 * max_size:
+                        keep_mask |= (labeled == lbl)
+                    elif lbl not in border_labels and sizes[lbl] >= 0.003 * max_size:
+                        keep_mask |= (labeled == lbl)
+                arr[~keep_mask, 3] = 0
             
     clean_crop = Image.fromarray(arr)
     c_bbox = clean_crop.getbbox()
@@ -1318,7 +1501,7 @@ def process_single_entity(image_path, entity_id, output_dir, target_size=256, in
         
     out_name = f"{clean_id}.webp"
     out_path = os.path.join(output_dir, out_name)
-    canvas.save(out_path, format="WEBP", lossless=True)
+    _save_webp(canvas, out_path, lossless=lossless, quality=quality, max_bytes=max_bytes)
     print(f"  [EXPORTED SINGLE] {clean_id} -> {out_path} ({os.path.getsize(out_path)} bytes)")
     return out_path
 
@@ -1327,24 +1510,24 @@ def dispatch_category_outputs(image_path, entity_id, category, raw_image_path=No
     clean_id = entity_id.replace("enemy.", "").replace("player.", "")
     if category == "monster":
         art_dir = os.path.join(REPO_ROOT, "art", "avatars")
-        process_single_entity(image_path, clean_id, art_dir, target_size=512, inner_size=460)
+        process_single_entity(image_path, clean_id, art_dir, target_size=512, inner_size=460, lossless=True)
         pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
-        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115, lossless=False, quality=80)
     elif category == "character":
         art_dir = os.path.join(REPO_ROOT, "art", "avatars")
-        process_single_entity(image_path, clean_id, art_dir, target_size=1024, inner_size=920)
+        process_single_entity(image_path, clean_id, art_dir, target_size=1024, inner_size=920, lossless=True)
         pub_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
-        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115)
+        process_single_entity(image_path, clean_id, pub_dir, target_size=128, inner_size=115, lossless=False, quality=80)
     elif category in ("item", "equipment", "ability"):
         art_dir = os.path.join(REPO_ROOT, "art", "items")
-        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=108)
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=108, lossless=True)
         items_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "items")
-        process_single_entity(image_path, entity_id, items_dir, target_size=64, inner_size=54)
+        process_single_entity(image_path, entity_id, items_dir, target_size=48, inner_size=42, lossless=False, quality=90, max_bytes=4096)
     elif category == "building":
         art_dir = os.path.join(REPO_ROOT, "art", "buildings")
-        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=112)
+        process_single_entity(image_path, entity_id, art_dir, target_size=128, inner_size=112, lossless=True)
         bldg_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
-        process_single_entity(image_path, entity_id, bldg_dir, target_size=64, inner_size=56)
+        process_single_entity(image_path, entity_id, bldg_dir, target_size=64, inner_size=56, lossless=False, quality=90)
     elif category in ("emblem", "glyph"):
         use_img = raw_image_path if raw_image_path and os.path.exists(raw_image_path) else image_path
         art_dir = os.path.join(REPO_ROOT, "art", "emblems")
@@ -1419,6 +1602,8 @@ def main():
             summary_cap = "simplified stylized 2D Chinese Xianxia martial arts skill solid pure white vector logo sprite sheet, bold thick solid white graphic shapes, clean minimalist logo emblem mark, no gradients, no shading, no 3D, high contrast flat 2D icon, floating on solid pure white background, generous empty white spacing between items, strictly no overflow."
         elif "monsters_" in args.batch:
             summary_cap = "a clean 2x2 grid sprite sheet of four Chinese Xianxia mythical beast monsters and spiritual apparitions on a pure solid white background. Dark fantasy stylized paper-cut planar polygonal silhouette art style with dark ink contours, rich dark black mass silhouette, distinct bone-white structural plates, isolated vibrant mystical energy accent colors, facing right, 3/4 dynamic battle stance, high contrast, perfectly centered isolated game sprites."
+        elif "abilities_" in args.batch:
+            summary_cap = "simplified stylized 2D Chinese Xianxia martial arts and Daoist spell skill icon sprite sheet, dynamic bold shapes, painterly ink-wash thick-coating style, clear silhouette, distinct dark ink outline, compact skill icons floating on solid pure white background, generous empty white spacing between items, strictly no overflow, strictly zero text, zero letters."
         else:
             summary_cap = None
         prompt_str = build_layout_prompt(items, summary_caption=summary_cap)
@@ -1488,34 +1673,34 @@ def main():
     elif category == "monster":
         art_avatars_dir = os.path.join(REPO_ROOT, "art", "avatars")
         print(f"开始自动切片、去底与 512px WebP 怪物母模归档: {latest_img} -> {art_avatars_dir}")
-        process_and_slice(latest_img, items, output_dir=art_avatars_dir, target_size=512, inner_size=460)
+        process_and_slice(latest_img, items, output_dir=art_avatars_dir, target_size=512, inner_size=460, lossless=True)
         out_dir = os.path.join(REPO_ROOT, "frontend", "public", "avatars")
         t_size, in_size = 128, 115
         print(f"开始自动切片、去底与 128px WebP 怪物立绘下采样: {latest_img} -> {out_dir}")
-        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size, lossless=False, quality=80)
     elif category == "emblem":
         out_dir = os.path.join(REPO_ROOT, "art", "emblems")
         t_size, in_size = 128, 110
         use_img = raw_img if raw_img and os.path.exists(raw_img) else latest_img
         print(f"图腾批次使用未抠图原图执行硬二值化阈值切片: {use_img} -> {out_dir}")
-        process_and_slice(use_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        process_and_slice(use_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size, lossless=True)
     elif category == "building":
         art_buildings_dir = os.path.join(REPO_ROOT, "art", "buildings")
         frontend_buildings_dir = os.path.join(REPO_ROOT, "frontend", "src", "assets", "buildings")
         print(f"开始自动切片、去底与 128px WebP 高精建筑母版导出: {latest_img} -> {art_buildings_dir}")
-        process_and_slice(latest_img, items, output_dir=art_buildings_dir, target_size=128, inner_size=112)
+        process_and_slice(latest_img, items, output_dir=art_buildings_dir, target_size=128, inner_size=112, lossless=True)
         out_dir = frontend_buildings_dir
         t_size, in_size = 64, 56
         print(f"开始自动切片、去底与 64px WebP 游戏建筑瓦片导出: {latest_img} -> {out_dir}")
-        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size, lossless=False, quality=90)
     else:
         art_items_dir = os.path.join(REPO_ROOT, "art", "items")
         print(f"开始自动切片、去底与 128px WebP 道具母模归档: {latest_img} -> {art_items_dir}")
-        process_and_slice(latest_img, items, output_dir=art_items_dir, target_size=128, inner_size=108)
+        process_and_slice(latest_img, items, output_dir=art_items_dir, target_size=128, inner_size=108, lossless=True)
         out_dir = OUTPUT_DIR
         t_size, in_size = 48, 42
         print(f"开始自动切片、去底与 48px WebP 道具图标下采样: {latest_img} -> {out_dir}")
-        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size)
+        process_and_slice(latest_img, items, output_dir=out_dir, target_size=t_size, inner_size=in_size, lossless=False, quality=90, max_bytes=4096)
         
     print(f"\n=== 标的 [{batch_tag}] 处理完成并已落盘！ ===")
     return 0

@@ -34,12 +34,20 @@ INTERNAL_CONFIGS = [
     ("ganlu", "《甘露秘籍》", (40, 108, 138), -8),
     ("tide", "《潮汐秘籍》", (22, 85, 130), -7),
     ("sui-gang", "《碎罡秘籍》", (120, 38, 30), -8),
+    ("zhanyu", "《斩玉秘籍》", (38, 102, 110), -8),
+    ("yueqian", "《跃迁秘籍》", (48, 78, 128), -7),
+    ("huoyan-fengbao", "《火焰风暴秘籍》", (132, 38, 24), -8),
+    ("tianlei-po", "《天雷破秘籍》", (36, 96, 78), -7),
+    ("zhuoxin", "《灼心秘籍》", (96, 32, 58), -8),
+    ("shunshan", "《瞬闪秘籍》", (46, 62, 88), -9),
+    ("shangui-yao", "《山鬼谣秘籍》", (34, 108, 92), -6),
+    ("pojun", "《破军秘籍》", (128, 72, 26), -8),
 ]
 
 # 原版同款带棕带黄的宣纸象牙古色 (暖黄米棕 #edd8b5: RGB 237, 216, 181)
 IVORY_BUFF = np.array([237, 216, 181], dtype=np.uint8)
 
-def synthesize_all():
+def synthesize_all(only_slugs=None):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     art_items_dir = os.path.join(REPO_ROOT, "art", "items")
     os.makedirs(art_items_dir, exist_ok=True)
@@ -75,6 +83,8 @@ def synthesize_all():
     
     count = 0
     for slug, name, target_color, tilt_angle in INTERNAL_CONFIGS:
+        if only_slugs and slug not in only_slugs:
+            continue
         # A. 合成秘籍
         book_arr = clean_tome_arr.copy()
         tr, tg, tb = target_color
@@ -173,4 +183,9 @@ def synthesize_all():
     return 0
 
 if __name__ == "__main__":
-    sys.exit(synthesize_all())
+    import argparse
+    parser = argparse.ArgumentParser(description="合成功法秘籍与残卷图标")
+    parser.add_argument("--only", type=str, default=None, help="逗号分隔仅合成指定功法 slug")
+    args = parser.parse_args()
+    only_set = {s.strip() for s in args.only.split(",") if s.strip()} if args.only else None
+    sys.exit(synthesize_all(only_slugs=only_set))

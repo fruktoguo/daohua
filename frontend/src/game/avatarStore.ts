@@ -73,6 +73,14 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'fallen-devil-priest': { src: '/avatars/fallen-devil-priest.webp', format: 'webp' },
   'falling-star-beast': { src: '/avatars/falling-star-beast.webp', format: 'webp' },
   'xuanyuan-remnant': { src: '/avatars/xuanyuan-remnant.webp', format: 'webp' },
+
+  // 雾梦泽怪物 (Lv 24~30)
+  'marsh-water-puppet': { src: '/avatars/marsh-water-puppet.webp', format: 'webp' },
+  'venom-flame-toad': { src: '/avatars/venom-flame-toad.webp', format: 'webp' },
+  'crimson-thorn-lizard': { src: '/avatars/crimson-thorn-lizard.webp', format: 'webp' },
+  'abyss-black-croc': { src: '/avatars/abyss-black-croc.webp', format: 'webp' },
+  'nine-head-guiche': { src: '/avatars/nine-head-guiche.webp', format: 'webp' },
+  'mist-sword-wraith': { src: '/avatars/mist-sword-wraith.webp', format: 'webp' },
 }
 
 /**
