@@ -28,6 +28,7 @@ await build({
   ],
 })
 const {
+  isActionUnlocked,
   resolveCatalogItemLevel,
   resolveCatalogItemMetadata,
   resolveItemMetadata,
@@ -136,6 +137,57 @@ test('目录元数据解析优先装备与物品真实等级，避免被等阶�
     [],
   )
   assert.equal(forgeLevel, 9)
+})
+
+test('讨伐行动不受境界等级门禁锁定，level 仅作推荐强度参考；制造/探索与底蕴配方仍受对应门槛限制', () => {
+  const crusade18 = {
+    id: 'combat.sweep-twilight-valley',
+    name: '讨伐 星陨异境',
+    description: '',
+    type: 'combat',
+    executionKind: 'combat-encounter',
+    level: 18,
+    durationSeconds: 0,
+  }
+  const crusade24 = {
+    id: 'combat.sweep-wumeng-marsh',
+    name: '讨伐 雾梦泽',
+    description: '',
+    type: 'combat',
+    executionKind: 'combat-encounter',
+    level: 24,
+    durationSeconds: 0,
+  }
+  assert.equal(resolveActionLevel(crusade18), 18)
+  assert.equal(resolveActionLevel(crusade24), 24)
+  assert.equal(isActionUnlocked(crusade18, 18, 1, 0), true)
+  assert.equal(isActionUnlocked(crusade24, 24, 1, 0), true)
+
+  const gather18 = {
+    id: 'explore.mine-crimson-copper',
+    name: '开采赤铜矿',
+    description: '',
+    type: 'exploration',
+    technique: 'mining',
+    level: 18,
+    durationSeconds: 10,
+  }
+  assert.equal(isActionUnlocked(gather18, 18, 1, 0), false)
+  assert.equal(isActionUnlocked(gather18, 18, 18, 0), true)
+  assert.equal(isActionUnlocked(gather18, 18, 1, 18), true)
+
+  const reversePill = {
+    id: 'alchemy.refine-reverse-fate-pill',
+    name: '逆命丹',
+    description: '',
+    type: 'alchemy',
+    technique: 'alchemy',
+    level: 18,
+    foundationCostRatio: 0.5,
+    durationSeconds: 10,
+  }
+  assert.equal(isActionUnlocked(reversePill, 18, 17, 30), false)
+  assert.equal(isActionUnlocked(reversePill, 18, 18, 0), true)
 })
 
 await rm(tempOut, { force: true })

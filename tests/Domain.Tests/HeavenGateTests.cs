@@ -360,4 +360,29 @@ public sealed class HeavenGateTests
         var refineIron = catalog.Actions.Get(new ActionId("craft.refine-iron")) with { Level = null };
         Assert.Equal(3, CraftingRecipeRules.ResolveRequiredRealmLevel(refineIron, catalog));
     }
+
+    /// <summary>
+    /// 讨伐行动（combat）配表保留推荐参考等级，但不受境界等级解锁限制：1 级修士也应直接放行。
+    /// </summary>
+    [Fact]
+    public void CombatActions_DoNotRequireRealmLevelUnlock()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var combatCases = new (string ActionId, int ExpectedReferenceLevel)[]
+        {
+            ("combat.hunt-qi-beast", 1),
+            ("combat.hunt-trail-beast", 9),
+            ("combat.sweep-twilight-valley", 18),
+            ("combat.sweep-wumeng-marsh", 24),
+        };
+
+        foreach (var (actionId, expectedLevel) in combatCases)
+        {
+            var action = catalog.Actions.Get(new ActionId(actionId));
+            Assert.Equal(ActionKind.Combat, action.Kind);
+            Assert.Equal(expectedLevel, action.Level);
+            Assert.True(CraftingRecipeRules.IsActionUnlocked(action, realmLevel: 1, techniqueLevel: 0, catalog, out var resolvedLevel));
+            Assert.Equal(expectedLevel, resolvedLevel);
+        }
+    }
 }

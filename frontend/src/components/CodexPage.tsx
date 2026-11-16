@@ -29,6 +29,7 @@ import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import {
   findItemInCatalog,
+  isActionUnlocked as checkActionUnlocked,
   resolveActionLevel,
   resolveActionTier,
   resolveAssetLabel,
@@ -266,12 +267,8 @@ export const CodexPage = memo(function CodexPage(): React.JSX.Element {
   const isActionUnlocked = useCallback(
     (action: ActionDefinition): boolean => {
       const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
-      if (requiredLevel <= 1) return true
-      if (realmLevel >= requiredLevel) return true
-      if (action.foundationCostRatio && action.foundationCostRatio > 0) return false
-      const tech = action.technique
-      if (tech && (techniqueLevels[tech] ?? 0) >= requiredLevel) return true
-      return false
+      const techLevel = action.technique ? (techniqueLevels[action.technique] ?? 0) : 0
+      return checkActionUnlocked(action, requiredLevel, realmLevel, techLevel)
     },
     [items, equipment, encounters, realmLevel, techniqueLevels]
   )
@@ -924,8 +921,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
 }): React.JSX.Element {
   const t = useT()
   const requiredLevel = resolveActionLevel(action, items, equipment, encounters)
-  const isTechAllowed = !action.foundationCostRatio && Boolean(techniqueLevel && techniqueLevel >= requiredLevel)
-  const isUnlocked = requiredLevel <= 1 || realmLevel >= requiredLevel || isTechAllowed
+  const isUnlocked = checkActionUnlocked(action, requiredLevel, realmLevel, techniqueLevel ?? 0)
   // 首选产出物品
   const outputYield = action.yields?.find(y => y.kind === 'item' && y.id)
   const outputItemId = outputYield?.id ?? action.id

@@ -199,6 +199,30 @@ public sealed class EnhancementContractTests
     }
 
     /// <summary>
+    /// 讨伐行动的 level 仅作推荐强度参考，不设境界解锁门禁：
+    /// 1 级玩家身处高阶地图节点时，可以直接入队 18/24 级讨伐行动，不被 ACTION_LOCKED 拒绝。
+    /// </summary>
+    [Fact]
+    public async Task ActionEnqueue_CombatCrusade_AllowsUnderleveledPlayer()
+    {
+        var playerId = Guid.NewGuid();
+        var repo = new FakeRepository(playerId, p => p.TravelTo("node.astral-rift"));
+        await using var runtime = EcsRuntimeFactory.Create(
+            repo, new EmptyAssets(), new NoopEconomy(),
+            GameDataCatalog.LoadEmbedded());
+        await runtime.LoadAsync(playerId);
+
+        var requestId = Guid.NewGuid();
+        var result = await runtime.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                requestId.ToString("D"), "combat.sweep-twilight-valley", -1), ProtocolJson.Options),
+            0, requestId);
+        Assert.True(result.Success, $"{result.Code}: {result.Message}");
+        var queued = Assert.Single(result.Snapshot.State.Actions);
+        Assert.Equal("combat.sweep-twilight-valley", queued.Intent.ActionId.Value);
+    }
+
+    /// <summary>
     /// 验证境界或技艺双重「或」解锁：
     /// 当玩家角色境界为 1 级，但对应技艺（如采矿 mining、锻造 forging）等级达到 18 级时，
     /// 对应 T2 行动入队直接放行。

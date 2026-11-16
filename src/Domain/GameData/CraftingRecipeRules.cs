@@ -66,6 +66,7 @@ public static class CraftingRecipeRules
 
     /// <summary>
     /// 判断行动/配方是否已解锁：
+    /// 0. 讨伐行动（<see cref="ActionKind.Combat"/> / <see cref="ActionExecutionKind.CombatEncounter"/>）的等级仅作推荐强度参考，不设境界解锁门禁；
     /// 1. 所需等级 requiredLevel <= 1 默认解锁；
     /// 2. 玩家角色境界达到 requiredLevel；
     /// 3. 若行动关联技艺（technique），且对应技艺等级达到 requiredLevel。
@@ -83,6 +84,9 @@ public static class CraftingRecipeRules
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(catalog);
         requiredLevel = ResolveRequiredRealmLevel(action, catalog);
+        // 讨伐行动的等级仅用于推荐强度与品质展示，任何境界均可发起讨伐。
+        if (action.Kind == ActionKind.Combat || action.ExecutionKind == ActionExecutionKind.CombatEncounter)
+            return true;
         if (requiredLevel <= 1) return true;
         if (realmLevel >= requiredLevel) return true;
         if (action.FoundationCostRatio > 0) return false;
