@@ -175,4 +175,57 @@ public sealed class CombatDifficultyTests
         var monster = catalog.CombatMonsters["enemy.mod-effects"];
         Assert.Equal(new CombatEffectProfile(12, 7, 15, 22, 35), monster.Stats.Effects);
     }
+
+    [Fact]
+    public void ParseMonsterDefinitions_AppliesPost18LinearMultiplierByRank()
+    {
+        var header = System.Text.Encoding.UTF8.GetBytes("""
+        {
+          "baseAttributeAnchors": [
+            { "level": 1, "hp": 100, "mp": 50, "ad": 10, "ap": 10, "armor": 10, "mr": 10, "acc": 10, "eva": 10, "crit": 10, "cavoid": 10, "breakPt": 10, "parry": 10, "hpRegen": 1, "mpRegen": 1 }
+          ],
+          "levelExpected": [
+            { "level": 18, "finalExpected": { "maxHitpoints": 1000, "maxManapoints": 1000, "physicalAttack": 100, "magicAttack": 100, "armor": 100, "magicResistance": 100, "accuracyRating": 100, "evasionRating": 100, "criticalRating": 100, "criticalAvoidance": 100, "breakRating": 100, "parryRating": 100 } },
+            { "level": 30, "finalExpected": { "maxHitpoints": 1000, "maxManapoints": 1000, "physicalAttack": 100, "magicAttack": 100, "armor": 100, "magicResistance": 100, "accuracyRating": 100, "evasionRating": 100, "criticalRating": 100, "criticalAvoidance": 100, "breakRating": 100, "parryRating": 100 } }
+          ]
+        }
+        """);
+        var monsters = System.Text.Encoding.UTF8.GetBytes("""
+        [
+          { "id": "enemy.lv18-minion", "name": "18级妖兽", "level": 18, "rank": "minion" },
+          { "id": "enemy.lv30-minion", "name": "30级妖兽", "level": 30, "rank": "minion" },
+          { "id": "enemy.lv30-elite", "name": "30级精英", "level": 30, "rank": "elite" },
+          { "id": "enemy.lv30-boss", "name": "30级妖王", "level": 30, "rank": "boss" }
+        ]
+        """);
+
+        var catalog = GameDataCatalog.Parse([header, monsters]);
+        var lv18Minion = catalog.CombatMonsters["enemy.lv18-minion"].Stats;
+        var lv30Minion = catalog.CombatMonsters["enemy.lv30-minion"].Stats;
+        var lv30Elite = catalog.CombatMonsters["enemy.lv30-elite"].Stats;
+        var lv30Boss = catalog.CombatMonsters["enemy.lv30-boss"].Stats;
+
+        // 18 级不变：HP = 1000 * 3.0 = 3000，Armor = 100 * 0.8 = 80
+        Assert.Equal(3000, lv18Minion.MaxHitpoints);
+        Assert.Equal(80, lv18Minion.Defense);
+
+        // 30 级普通怪 (+24%)：HP = 1000 * 3.0 * 1.24 = 3720，AD = 100 * 0.8 * 0.8 * 1.24 = 79.36 -> 80，Armor = 100 * 0.8 * 1.24 = 100 (99.2 -> 100)
+        Assert.Equal(3720, lv30Minion.MaxHitpoints);
+        Assert.Equal(80, lv30Minion.AttackPower);
+        Assert.Equal(100, lv30Minion.Defense);
+
+        // 30 级精英 (+24%)：HP = 1000 * 5.0 * 1.24 = 6200，AD = 100 * 1.2 * 0.8 * 1.24 = 119.04 -> 120，Armor = 100 * 1.2 * 1.24 = 148.8 -> 149
+        Assert.Equal(6200, lv30Elite.MaxHitpoints);
+        Assert.Equal(120, lv30Elite.AttackPower);
+        Assert.Equal(149, lv30Elite.Defense);
+
+        // 30 级妖王 (+36%)：HP = 1000 * 20.0 * 1.36 = 27200，AD = 100 * 1.5 * 0.8 * 1.36 = 163.2 -> 164，Armor = 100 * 1.5 * 1.36 = 204
+        Assert.Equal(27200, lv30Boss.MaxHitpoints);
+        Assert.Equal(164, lv30Boss.AttackPower);
+        Assert.Equal(204, lv30Boss.Defense);
+
+        // 点数通道不受 post18Multiplier 放大（30级统一按 CombatGrowthCurve 注入）
+        Assert.Equal(lv30Minion.CriticalDamagePoints, lv30Boss.CriticalDamagePoints);
+        Assert.Equal(lv30Minion.AttackSpeedPoints, lv30Boss.AttackSpeedPoints);
+    }
 }

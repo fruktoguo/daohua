@@ -571,12 +571,15 @@ function parseMonsters(
       rank === CombatMonsterRank.Elite ? 1.2 : rank === CombatMonsterRank.Boss ? 1.5 : 0.8;
     const hpMultiplier =
       rank === CombatMonsterRank.Elite ? 5.0 : rank === CombatMonsterRank.Boss ? 20.0 : 3.0;
+    // 18 级后线性全属性增幅（与服务端 GameDataCatalog 严格同口径：普通/精英每级 +2%，妖王每级 +3%）
+    const post18Step = rank === CombatMonsterRank.Boss ? 0.03 : 0.02;
+    const post18Multiplier = 1.0 + post18Step * Math.max(0, level - 18);
     const rawInterval = num(value, 'attackIntervalMilliseconds', 0) / 1000;
     const interval = rawInterval > 0 ? rawInterval : 1;
     const attackMultiplier =
       level <= 1 ? 0.6 : level >= 24 ? 0.8 : 0.6 + (0.2 * (level - 1.0)) / 23.0;
-    const ad = anchor.ad * attrMultiplier * weight('ad') * attackMultiplier;
-    const ap = anchor.ap * attrMultiplier * weight('ap') * attackMultiplier;
+    const ad = anchor.ad * attrMultiplier * weight('ad') * attackMultiplier * post18Multiplier;
+    const ap = anchor.ap * attrMultiplier * weight('ap') * attackMultiplier * post18Multiplier;
     const tier = tierBoundaries.tierAt(level);
 
     const dropTable: CombatDropDefinition[] = [];
@@ -636,23 +639,23 @@ function parseMonsters(
     };
 
     const rawStats = createCombatantStats(
-      anchor.hp * hpMultiplier * weight('hp'),
+      anchor.hp * hpMultiplier * weight('hp') * post18Multiplier,
       ad,
-      anchor.armor * attrMultiplier * weight('armor'),
+      anchor.armor * attrMultiplier * weight('armor') * post18Multiplier,
       interval,
-      anchor.acc * attrMultiplier * weight('hit'),
-      anchor.eva * attrMultiplier * weight('eva') * 0.5,
+      anchor.acc * attrMultiplier * weight('hit') * post18Multiplier,
+      anchor.eva * attrMultiplier * weight('eva') * 0.5 * post18Multiplier,
       CombatDamageKind.Physical,
       {
         spellAttack: ap,
-        maxManapoints: anchor.mp * attrMultiplier * weight('mp'),
-        magicResistance: anchor.mr * attrMultiplier * weight('mres'),
+        maxManapoints: anchor.mp * attrMultiplier * weight('mp') * post18Multiplier,
+        magicResistance: anchor.mr * attrMultiplier * weight('mres') * post18Multiplier,
         resistanceScale: tier,
-        critical: anchor.crit * attrMultiplier * weight('crit'),
-        criticalResistance: anchor.cavoid * attrMultiplier * weight('cavoid') * 0.5,
+        critical: anchor.crit * attrMultiplier * weight('crit') * post18Multiplier,
+        criticalResistance: anchor.cavoid * attrMultiplier * weight('cavoid') * 0.5 * post18Multiplier,
         criticalDamagePoints: growthCriticalDamagePoints(level) + modifier('criticalDamageBonusPoints'),
-        breakPower: anchor.breakPt * attrMultiplier * weight('break'),
-        parryResolve: anchor.parry * attrMultiplier * weight('parry'),
+        breakPower: anchor.breakPt * attrMultiplier * weight('break') * post18Multiplier,
+        parryResolve: anchor.parry * attrMultiplier * weight('parry') * post18Multiplier,
         element: parseCombatElement(text(value, 'element', 'none')),
         physicalDamageBonusPoints: modifier('physicalDamageBonusPoints'),
         spellDamageBonusPoints: modifier('spellDamageBonusPoints'),

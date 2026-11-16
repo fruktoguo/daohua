@@ -1218,6 +1218,10 @@ public sealed class GameDataCatalog
             };
             var attrMultiplier = rank switch { CombatMonsterRank.Elite => 1.2, CombatMonsterRank.Boss => 1.5, _ => 0.8 };
             var hpMultiplier = rank switch { CombatMonsterRank.Elite => 5.0, CombatMonsterRank.Boss => 20.0, _ => 3.0 };
+            // 18 级后线性全属性增幅（总纲 §7.3.1）：弥补底座未计入玩家特质与灵根的缺口，
+            // 普通/精英自 18 级起每级 +2%，妖王自 18 级起每级 +3%，于静态解析阶段直接生效（地图/预览/战斗同口径）。
+            var post18Step = rank == CombatMonsterRank.Boss ? 0.03 : 0.02;
+            var post18Multiplier = 1.0 + post18Step * Math.Max(0, level - 18);
             // 成长点数全单位同构：与玩家属性解析共用 CombatGrowthCurve 单点实现，
             // 折算为点数注入对应通道（下方与 modifiers 同池相加）。
             var interval = JsonRead.Number(value, "attackIntervalMilliseconds", 0) / 1_000d;
@@ -1226,8 +1230,8 @@ public sealed class GameDataCatalog
             interval = interval > 0 ? interval : 1;
             // 怪物双攻按等级阶梯削减（总纲 §7.3.1 / §10.1.1）：1级削40%至24级削20%，后续恒定削20%
             var attackMultiplier = level <= 1 ? 0.6 : (level >= 24 ? 0.8 : 0.6 + 0.2 * (level - 1.0) / 23.0);
-            var ad = anchor.Ad * attrMultiplier * Weight("ad") * attackMultiplier;
-            var ap = anchor.Ap * attrMultiplier * Weight("ap") * attackMultiplier;
+            var ad = anchor.Ad * attrMultiplier * Weight("ad") * attackMultiplier * post18Multiplier;
+            var ap = anchor.Ap * attrMultiplier * Weight("ap") * attackMultiplier * post18Multiplier;
             // 等阶边界由 12 阶锚点目录判定——levelExpected 是 127 个每级锚点，不能直接当等阶边界用。
             var tier = tierBoundaries.TierAt(level);
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
@@ -1283,24 +1287,24 @@ public sealed class GameDataCatalog
                 && modifiersValue.ValueKind == JsonValueKind.Object ? modifiersValue : default;
             double Modifier(string key) => modifiers.ValueKind == JsonValueKind.Object ? JsonRead.Number(modifiers, key) : 0;
             var stats = CombatantStats.Create(
-                anchor.Hp * hpMultiplier * Weight("hp"),
+                anchor.Hp * hpMultiplier * Weight("hp") * post18Multiplier,
                 ad,
-                anchor.Armor * attrMultiplier * Weight("armor"),
+                anchor.Armor * attrMultiplier * Weight("armor") * post18Multiplier,
                 interval,
-                anchor.Acc * attrMultiplier * Weight("hit"),
-                anchor.Eva * attrMultiplier * Weight("eva") * 0.5,
+                anchor.Acc * attrMultiplier * Weight("hit") * post18Multiplier,
+                anchor.Eva * attrMultiplier * Weight("eva") * 0.5 * post18Multiplier,
                 CombatDamageKind.Physical) with
             {
                 SpellAttack = ap,
-                MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp"),
-                MagicResistance = anchor.Mr * attrMultiplier * Weight("mres"),
+                MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp") * post18Multiplier,
+                MagicResistance = anchor.Mr * attrMultiplier * Weight("mres") * post18Multiplier,
                 ResistanceScale = tier,
-                Critical = anchor.Crit * attrMultiplier * Weight("crit"),
-                CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid") * 0.5,
+                Critical = anchor.Crit * attrMultiplier * Weight("crit") * post18Multiplier,
+                CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid") * 0.5 * post18Multiplier,
                 // 暴击伤害 = 基础 50 点 + 境界成长 + 配表加点，与玩家同池（倍率 = 1+点数/100）。
                 CriticalDamagePoints = CombatGrowthCurve.CriticalDamagePoints(level) + Modifier("criticalDamageBonusPoints"),
-                BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),
-                ParryResolve = anchor.Parry * attrMultiplier * Weight("parry"),
+                BreakPower = anchor.BreakPt * attrMultiplier * Weight("break") * post18Multiplier,
+                ParryResolve = anchor.Parry * attrMultiplier * Weight("parry") * post18Multiplier,
                 Element = Enum.Parse<CombatElement>(JsonRead.Text(value, "element", "none"), true),
                 PhysicalDamageBonusPoints = Modifier("physicalDamageBonusPoints"),
                 SpellDamageBonusPoints = Modifier("spellDamageBonusPoints"),
