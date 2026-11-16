@@ -1,5 +1,6 @@
 import { useGameStore } from '../game/gameStore'
 import { useMailStore } from '../game/mailStore'
+import { useCheckinStore } from '../game/checkinStore'
 import { useSocialStore } from '../game/socialStore'
 import { getT } from '../i18n'
 import { chatService } from '../logging/chatService'
@@ -16,6 +17,7 @@ import {
   type ChatHistoryRequestDto,
   type ChatMessageDto,
   type ChatSendDto,
+  type CheckinSummaryDto,
   type CommandResultDto,
   CommandResultSnapshotForm,
   type ErrorDto,
@@ -903,6 +905,13 @@ export class GameClient {
           if (useUiStore.getState().mailOpen) {
             void useMailStore.getState().refreshList({ silent: true })
           }
+          appliedBusinessPayload = true
+          break
+        }
+        case WireMessageType.CheckinSummary: {
+          const summary = decodeJsonPayload<CheckinSummaryDto>(envelope)
+          if (!summary) throw new Error('每日签到摘要载荷无效。')
+          useCheckinStore.getState().applySummary(summary)
           appliedBusinessPayload = true
           break
         }

@@ -74,6 +74,8 @@ await Promise.all([
               export const claimAllMailAttachments = async () => ({ claimedMailKeys: [], grantedAttachments: [], summary: { unreadCount: 0, claimableCount: 0 } });
               export const deleteMail = async (mailKey) => ({ deletedMailKeys: [mailKey], skippedUnclaimedCount: 0, summary: { unreadCount: 1, claimableCount: 1 } });
               export const deleteReadMails = async () => ({ deletedMailKeys: ['p:2'], skippedUnclaimedCount: 0, summary: { unreadCount: 1, claimableCount: 1 } });
+              export const fetchCheckinStatus = async () => ({});
+              export const claimDailyCheckin = async () => ({ claimed: false, rewardMerit: 0, rewardItemId: 'item.gongde-bound', status: {} });
             `,
             loader: 'js',
           }))

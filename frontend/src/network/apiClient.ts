@@ -3,6 +3,8 @@ import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, Com
 import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/simulatorTypes'
 import {
   createRequestId,
+  type CheckinClaimResponseDto,
+  type CheckinStatusDto,
   type LeaderboardIndexDto,
   type LeaderboardSnapshotDto,
   type MailClaimResponseDto,
@@ -486,6 +488,18 @@ export function deleteMail(mailKey: string): Promise<MailDeleteResponseDto> {
 /** 批量删除已读且无可领附件的邮件 */
 export function deleteReadMails(): Promise<MailDeleteResponseDto> {
   return requestJson<MailDeleteResponseDto>('/api/v1/mails/delete-read', {
+    method: 'POST',
+  })
+}
+
+/** 查询当前角色每日签到状态（含连续签到、当日可签状态与期望均值预览） */
+export function fetchCheckinStatus(signal?: AbortSignal): Promise<CheckinStatusDto> {
+  return requestJson<CheckinStatusDto>('/api/v1/checkin', { signal })
+}
+
+/** 领取今日每日签到绑定功德奖励（服务端原子入账与防重） */
+export function claimDailyCheckin(): Promise<CheckinClaimResponseDto> {
+  return requestJson<CheckinClaimResponseDto>('/api/v1/checkin/claim', {
     method: 'POST',
   })
 }

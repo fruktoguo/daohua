@@ -1,14 +1,17 @@
 # 数据库与存档版本变更台账（`vX -> vY`）
 
-本文档是《道化太初》持久化演进的**唯一版本变更登记台账**。自 `v55` 起，**日常开发不再强制手写单次 `migrations/NNNN_vX_to_vY.sql` 过渡脚本**；所有可能影响存量数据库、玩家存档或旧资产加载的改动，一律在本文件按 `## vX -> vY` 顺序滚动登记，供 `prod-release` 发布前统一评估并编写合并迁移脚本或执行生产人工迁移。
+本文档是《道化太初》持久化演进的**唯一版本变更登记台账**。凡涉及可能影响存量数据库、玩家存档或旧资产加载的改动，**在任务完成时必须**：
+1. 推进版本号并在本文档按 `## vX -> vY` 顺序滚动登记；
+2. **同步增量编写当前最新版本的迁移/修复脚本 `migrations/NNNN_v{from}_to_v{to}.sql`**（并更新 `migrations/README.md`），保障本地测试库可就地平滑升级；
+3. 在 `prod-release` 正式发布前，通读本台账并交叉对账 `git diff` 与 `migrations/` 链条，**检查是否有遗漏或断链**后再发布。
 
 > 当前线上参考水位（以 `TASK-20261114-23` 发布为准）：`yuohira` 正式服数据库 `platform.schema_version = 54`、玩家八分段存档 `SectionCodec = 43`（`MinReadableSchemaVersion = 41`）。
 
 ---
 
-## 一、强制登记触发条件（全部纳入）
+## 一、强制登记与增量脚本触发条件（全部纳入）
 
-凡代码或配置涉及以下**任意一类**改动，必须将 `PostgresSchema.Version` 单调 `+1`（全局统一版本号），同步更新空库权威脚本 `PostgresSchema.Sql`（如有 DDL 变动），并在本文档末尾追加一节 `## vX -> vY`：
+凡代码或配置涉及以下**任意一类**改动，必须将 `PostgresSchema.Version` 单调 `+1`（全局统一版本号），同步更新空库权威脚本 `PostgresSchema.Sql`（如有 DDL 变动），在本文档末尾追加一节 `## vX -> vY`，并**在任务完成时增量编写 `migrations/NNNN_v{from}_to_v{to}.sql`**：
 
 1. **数据库结构与权限（DDL / DCL）**
    - 新增/删除/修改 schema、表、列、默认值、`CHECK`/外键/唯一约束、索引、序列；
@@ -22,17 +25,18 @@
 
 ---
 
-## 二、日常开发与发版迁移分工
+## 二、日常开发与发版检查分工
 
-1. **日常开发期**：
-   - 只改 `src/Server/Clean/PostgresSchema.cs`（`Version` 与 `Sql`）、`src/Domain/Persistence/SectionCodec.cs`、`config/game-data/**` 等源码与配表，并在**本文档**完整填报 `## vX -> vY` 变更条目。
-   - **不强制手写 `migrations/NNNN_vX_to_vY.sql`**；本地开发库若版本落后且无过渡脚本，按「兼容清零」默认路径由 `scripts/reset-outdated-players.sh` 控制台输入 `RESET` 重建玩家域数据（保留账号）。
-   - 如个别高危结构改造确需本地保留数据调试或提前验证复杂转换逻辑，允许自愿提前在 `migrations/` 编写脚本并在对应条目中标注「已有脚本」。
-2. **正式服发布期（`prod-release`）**：
-   - 发布前在 **阶段 0** 核对生产库实际 `platform.schema_version`（记为 `v_prod`）与代码目标 `PostgresSchema.Version`（记为 `v_target`），**通读本文档 `[v_prod -> ... -> v_target]` 全部章节**并与 `git diff` 交叉校验。
-   - **两条收口路线**（二选一，均须先获用户确认）：
-     - **路线 A · 统一编写合并迁移脚本**：针对尚未被 `migrations/` 连续覆盖的跨度 `[covered_ver -> target_ver]`，一次性编写单个合并事务脚本 `migrations/NNNN_v{covered_ver}_to_v{target_ver}.sql`（汇总全部 DDL、权限 `GRANT`、回填、配表 ID 替换与存档标签推进），同步更新 [`migrations/README.md`](../../migrations/README.md) 并提交后再构建推送，交由 `deploy-prod.sh` 自动闸门执行。
-     - **路线 B · prod 时手动迁移**：对涉及真实资产退款/补偿、需离线重写 Brotli JSON 载荷重算 SHA-256、或需交互式核对的复杂配表删项，分步完成镜像推送与全库备份后，在阶段 2.5 停写窗口手工执行文档指引的 SQL / `.mjs` 脚本并验收版本与标签零不一致，再执行 `deploy-prod.sh`。
+1. **日常开发完成时**：
+   - 修改 `src/Server/Clean/PostgresSchema.cs`（`Version` 与 `Sql`）、`src/Domain/Persistence/SectionCodec.cs`、`config/game-data/**` 等源码与配表，并在**本文档**完整填报 `## vX -> vY` 变更条目。
+   - **必须增量编写 `migrations/NNNN_v{from}_to_v{to}.sql`**（含幂等 DDL、角色 `GRANT`/`OWNER`、存量回填/配表替换、必要时的存档标签推进以及 `platform.schema_version` 写入），同步更新 [`migrations/README.md`](../../migrations/README.md)，并在本地运行 `scripts/migrate-local-db.sh --dry-run`（或实际执行）验证，确保本地开发/测试库可直接就地升级。
+   - 若极个别破坏性变更确实无法通过单步自动 SQL 完成（例如必须离线重编码 Brotli JSON 或涉及不可自动裁决的重置），须在对应条目与 `migrations/README.md` 明确标注不可自动迁移原因（本地走 `scripts/reset-outdated-players.sh` 交互确认 `RESET`）。
+2. **正式服发布前（`prod-release` 查漏与收口）**：
+   - 发布前在 **阶段 0** 核对生产库实际 `platform.schema_version`（记为 `v_prod`）与代码目标 `PostgresSchema.Version`（记为 `v_target`），**通读本文档 `[v_prod -> ... -> v_target]` 全部章节**并与 `git diff`、`migrations/` 链条交叉校验。
+   - **重点检查是否有遗漏或断链**：
+     - **正常路径（无遗漏且全链路连续覆盖 `v_prod -> target_ver`）**：复核已有 `migrations/NNNN_vX_to_vY.sql` 内容完整无误（DDL/权限/回填/存档标签齐备），直接走 `release-prod.sh` / `deploy-prod.sh` 链式迁移。
+     - **遗漏补齐路线（发现某步缺失脚本或出现断链）**：针对尚未被 `migrations/` 连续覆盖的跨度 `[covered_ver -> target_ver]`，补齐单个或缺失的事务脚本 `migrations/NNNN_v{covered_ver}_to_v{target_ver}.sql`（汇总缺失的 DDL、权限 `GRANT`、回填、配表 ID 替换与存档标签推进），同步更新 [`migrations/README.md`](../../migrations/README.md) 并提交后再构建推送。
+     - **停写手动迁移路线（特殊情况）**：对涉及真实资产退款/补偿、需离线重写 Brotli JSON 载荷重算 SHA-256、或需交互式核对的复杂配表删项，分步完成镜像推送与全库备份后，在阶段 2.5 停写窗口手工执行文档指引的 SQL / `.mjs` 脚本并验收版本与标签零不一致，再执行 `deploy-prod.sh`。
 
 ---
 
@@ -45,7 +49,7 @@
 - **关联任务**：`TASK-YYYYMMDD-XX`（简述）
 - **数据库版本**：`PostgresSchema.Version` {from} -> {to}
 - **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 未变（保持 {S}） / {S1} -> {S2}；`MinReadableSchemaVersion` 保持 {M} / 升至 {S2}
-- **迁移脚本状态**：暂未编写（留待 `prod-release` 统一合写/手迁） / 已有 `migrations/NNNN_v{from}_to_v{to}.sql`
+- **迁移脚本状态**：已完成 `migrations/NNNN_v{from}_to_v{to}.sql`（本地校验通过） / 需停写人工迁移（说明原因）
 - **存量处理结论**：无需额外处理 / 仅推进版本号或存档标签 / 需执行 SQL 回填或清理 / 需离线重写存档载荷或人工介入
 
 ### 1. 变了什么
@@ -57,7 +61,7 @@
 - 说明原因：……（例如：新字段可缺省解码为默认语义 / `NOT NULL` 无默认值必须回填 / 已删配表 ID 会导致 `DomainException` 需替换或回收……）
 
 ### 3. 如果要处理，怎么处理
-- 【合入合并迁移脚本的 SQL 指引】（或人工停服执行的明确语句与校验 SQL）：
+- 【增量迁移脚本 `migrations/NNNN_v{from}_to_v{to}.sql` 要点 / 人工停服执行语句与校验 SQL】：
   ```sql
   -- 给出幂等 DDL、角色 GRANT、存量 UPDATE/替换逻辑、以及必要的校验语句
   ```
@@ -255,5 +259,60 @@
   END $$;
   ```
 - 【离线脚本 / 人工步骤】：若生产此前运行历史大量积累导致 `economy.transactions` 存在数百万旧非白名单流水，可在发版低峰观察 `PostgresRetentionWorker` 5 分钟批次自然排空并触发一次 `VACUUM (ANALYZE) economy.transactions, economy.transaction_lines;` 回收物理页。
+
+---
+
+## v57 -> v58
+
+- **变更日期**：2026-11-16 18:52:00
+- **关联任务**：`TASK-20261116-09`（每日签到系统与高密度独立弹窗）
+- **数据库版本**：`PostgresSchema.Version` 57 -> 58
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 保持 `43`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已有 `migrations/0058_v57_to_v58.sql`
+- **存量处理结论**：新增独立空表与角色授权，存量玩家存档与账号数据无需回填
+
+### 1. 变了什么
+- 【库结构/权限】在 `PostgresSchema.Sql` 新增 `game.player_daily_checkins`（`player_id uuid PRIMARY KEY REFERENCES identity.players(player_id) ON DELETE CASCADE`、`last_claim_day_index bigint`、`last_claim_date char(10)`、`streak_days integer`、`total_days integer`、`last_reward_merit integer`、`week_start_day_index bigint`、`week_days integer`、`week_merit integer`、`week_days_mask smallint`、`month_key integer`、`month_days integer`、`month_merit integer`、`last_claimed_at timestamptz`、`updated_at timestamptz`），并在 `deploy/postgres-local-roles.sql` 向 `daohua_api`、`daohua_worker` 授予 `SELECT, INSERT, UPDATE, DELETE` 权限。
+- 【存档载荷】无变更（签到状态独立于玩家八分段，保持 `v43`）。
+- 【配表/持久化语义】签到领奖发放 `item.gongde-bound`（绑定功德），通过 `PostgresEconomyRepository.CommitCoreAsync`（`PersistLedger = false` + `economy.transient_idempotency`）与 `game.player_daily_checkins` 在同一 `Serializable` 事务内原子提交。
+
+### 2. 是否需要处理存量数据
+- **无需回填存量玩家数据**：首次上线新表为空表，存量玩家首次访问或登录时天然处于「未签到（可领取）」初始态；发版前只需执行幂等建表与权限授予。
+
+### 3. 如果要处理，怎么处理
+- 【合入合并迁移脚本的 SQL 指引】：
+  ```sql
+  CREATE TABLE IF NOT EXISTS game.player_daily_checkins (
+      player_id uuid PRIMARY KEY REFERENCES identity.players(player_id) ON DELETE CASCADE,
+      last_claim_day_index bigint NOT NULL,
+      last_claim_date char(10) NOT NULL,
+      streak_days integer NOT NULL CHECK (streak_days >= 1),
+      total_days integer NOT NULL CHECK (total_days >= 1),
+      last_reward_merit integer NOT NULL CHECK (last_reward_merit BETWEEN 10 AND 999),
+      week_start_day_index bigint NOT NULL DEFAULT 0,
+      week_days integer NOT NULL DEFAULT 0 CHECK (week_days >= 0),
+      week_merit integer NOT NULL DEFAULT 0 CHECK (week_merit >= 0),
+      week_days_mask smallint NOT NULL DEFAULT 0,
+      month_key integer NOT NULL DEFAULT 0,
+      month_days integer NOT NULL DEFAULT 0 CHECK (month_days >= 0),
+      month_merit integer NOT NULL DEFAULT 0 CHECK (month_merit >= 0),
+      last_claimed_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+  );
+
+  DO $$
+  BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_bootstrap') THEN
+          EXECUTE 'ALTER TABLE game.player_daily_checkins OWNER TO daohua_bootstrap';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_api') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_daily_checkins TO daohua_api';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_worker') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_daily_checkins TO daohua_worker';
+      END IF;
+  END $$;
+  ```
+- 【离线脚本 / 人工步骤】：无。
 
 

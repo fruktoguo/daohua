@@ -76,7 +76,9 @@ public enum WireMessageType : byte
     /// <summary>服务端下发角色信息卡（仅 WebSocket 下行）</summary>
     PlayerCard = 28,
     /// <summary>服务端下发传书邮件红点摘要（仅 WebSocket 下行，含 ForceRedDot 零扇出标记）</summary>
-    MailSummary = 29
+    MailSummary = 29,
+    /// <summary>服务端下发每日签到摘要（仅 WebSocket Hello 握手下行）</summary>
+    CheckinSummary = 30
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -1461,3 +1463,41 @@ public sealed record MailDeleteResponseDto(
     IReadOnlyList<string> DeletedMailKeys,
     int SkippedUnclaimedCount,
     MailSummaryDto Summary);
+
+/// <summary>每日签到轻量摘要（WS Hello 握手下行，用于点亮红点与判断是否自动弹出签到弹窗）。</summary>
+public sealed record CheckinSummaryDto(
+    bool CanClaimToday,
+    string TodayDate,
+    long DayIndex,
+    int StreakDays,
+    int TotalDays,
+    int? LastRewardMerit,
+    bool IsBot = false);
+
+/// <summary>每日签到完整状态响应（GET /api/v1/checkin）。</summary>
+public sealed record CheckinStatusDto(
+    bool CanClaimToday,
+    string TodayDate,
+    long DayIndex,
+    string? LastClaimDate,
+    int StreakDays,
+    int TotalDays,
+    int? TodayRewardMerit,
+    int? LastRewardMerit,
+    string? TodayFortuneTier,
+    int WeekDays,
+    int WeekMerit,
+    int WeekDaysMask,
+    string? WeekFortuneTier,
+    int MonthDays,
+    int MonthMerit,
+    DateTimeOffset? LastClaimedAt,
+    string RewardItemId,
+    long NextResetUnixSeconds);
+
+/// <summary>每日签到领取响应（POST /api/v1/checkin/claim）。</summary>
+public sealed record CheckinClaimResponseDto(
+    bool Claimed,
+    int RewardMerit,
+    string RewardItemId,
+    CheckinStatusDto Status);

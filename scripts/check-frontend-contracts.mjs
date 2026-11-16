@@ -145,6 +145,10 @@ try {
   const mailEnvelope = decodeEnvelope(encodeJsonEnvelope(WireMessageType.MailSummary, createRequestId(), 2, mailSummary))
   assert.equal(mailEnvelope.messageType, WireMessageType.MailSummary)
   assert.deepEqual(decodeJsonPayload(mailEnvelope), mailSummary)
+  const checkinSummary = { canClaimToday: true, todayDate: '2026-11-16', dayIndex: 20774, streakDays: 5, totalDays: 12, lastRewardMerit: 33, isBot: false }
+  const checkinEnvelope = decodeEnvelope(encodeJsonEnvelope(WireMessageType.CheckinSummary, createRequestId(), 3, checkinSummary))
+  assert.equal(checkinEnvelope.messageType, WireMessageType.CheckinSummary)
+  assert.deepEqual(decodeJsonPayload(checkinEnvelope), checkinSummary)
   const { parseCsvToMap, LOCALES } = mod
   const { registerBaseAttributeAnchors, calculateBaseAttributes } = mod
   const payload = {

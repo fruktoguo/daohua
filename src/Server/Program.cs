@@ -162,6 +162,8 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.PostgresMailRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.MailRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Checkin.PostgresCheckinRepository>();
+    builder.Services.AddSingleton<Server.Clean.Checkin.CheckinRuntime>();
     builder.Services.AddSingleton<Server.Clean.Leaderboards.LeaderboardRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatImageUploadRegistry>();
@@ -778,6 +780,7 @@ if (processRole == ServerProcessRole.Api)
     }).RequireAuthorization();
     Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     Server.Clean.Social.MailEndpoints.Map(app);
+    Server.Clean.Checkin.CheckinEndpoints.Map(app);
     // 传音图片上传凭据与哈希去重预检：单账号每日限 20 张新图，哈希命中复用已有直链且不扣额度
     app.MapPost("/api/v1/chat/upload-ticket", (
         ChatUploadTicketRequest request,

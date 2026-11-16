@@ -18,13 +18,14 @@ import { MOBILE_NAV_GROUP_DEFS, MOBILE_NAV_GROUP_ORDER, mobileNavGroupIdOf, type
  * - 'codex': 图鉴
  * - 'leaderboard': 排行榜
  * - 'changelog': 更新日志
+ * - 'checkin': 每日签到（独立居中弹窗，不替换底层主视区）
  * - 'help': 帮助教程
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
  * - 'records': 记录（离线挂机 / 今日统计 / 近期战报历史）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'changelog' | 'help' | 'inventory' | 'log' | 'records' | 'settings'
+export type TabId = 'insight' | 'market' | 'shop' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'codex' | 'leaderboard' | 'changelog' | 'checkin' | 'help' | 'inventory' | 'log' | 'records' | 'settings'
 
 /** 帮助中心快捷跳转目标（支持直达一级页签与嵌套子选项卡） */
 export type HelpJumpTarget =
@@ -167,6 +168,10 @@ interface UiStore {
   helpModalOpen: boolean
   /** 设置「帮助」修行指南独立弹窗开启状态 */
   setHelpModalOpen: (open: boolean) => void
+  /** 「每日签到」独立弹窗开启状态 */
+  checkinModalOpen: boolean
+  /** 设置「每日签到」独立弹窗开启状态 */
+  setCheckinModalOpen: (open: boolean) => void
   /** 新手引导浮层当前是否处于可见状态（用于与更新日志等开局弹窗互斥避让） */
   tutorialOverlayActive: boolean
   /** 同步新手引导浮层当前可见状态 */
@@ -192,9 +197,13 @@ const INITIAL_NAV_MEMORY = Object.fromEntries(
 export const useUiStore = create<UiStore>(set => ({
   activeTab: 'exploration',
   setActiveTab: activeTab => {
-    // 'help' 以独立大尺寸弹窗展示，不替换底层正在查看的主视图与导航记忆
+    // 'help' 与 'checkin' 以独立弹窗展示，不替换底层正在查看的主视图与导航记忆
     if (activeTab === 'help') {
       set({ helpModalOpen: true })
+      return
+    }
+    if (activeTab === 'checkin') {
+      set({ checkinModalOpen: true })
       return
     }
     // 'alchemy' 不是独立页面：作为直达技艺-炼丹的别名，同时展开二级导航并复位子选项卡
@@ -206,15 +215,17 @@ export const useUiStore = create<UiStore>(set => ({
         alchemySubTab: 'extraction',
         mailOpen: false,
         helpModalOpen: false,
+        checkinModalOpen: false,
         mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf('crafting')]: 'crafting' },
       }))
       return
     }
-    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏传书与帮助弹窗
+    // 任何页签跳转（含代码直跳、引导驱动）都记录该分组的落点，切回分组时直达上次所见，并收起顶栏传书、帮助与签到弹窗
     set(state => ({
       activeTab,
       mailOpen: false,
       helpModalOpen: false,
+      checkinModalOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(activeTab)]: activeTab },
     }))
   },
@@ -293,6 +304,7 @@ export const useUiStore = create<UiStore>(set => ({
       mapFocusNodeId: nodeId,
       mailOpen: false,
       helpModalOpen: false,
+      checkinModalOpen: false,
       mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(targetTab)]: targetTab },
     }))
   },
@@ -315,6 +327,8 @@ export const useUiStore = create<UiStore>(set => ({
   setHelpPromptOpen: helpPromptOpen => set({ helpPromptOpen }),
   helpModalOpen: false,
   setHelpModalOpen: helpModalOpen => set({ helpModalOpen }),
+  checkinModalOpen: false,
+  setCheckinModalOpen: checkinModalOpen => set({ checkinModalOpen }),
   tutorialOverlayActive: false,
   setTutorialOverlayActive: tutorialOverlayActive => set({ tutorialOverlayActive }),
   tutorialExternalSkipSeq: 0,

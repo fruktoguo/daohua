@@ -76,6 +76,8 @@ export const WireMessageType = {
   PlayerCard: 28,
   /** 服务端下发传书邮件红点摘要（含零扇出强制点亮标识） */
   MailSummary: 29,
+  /** 服务端下发每日签到摘要（Hello 握手下行） */
+  CheckinSummary: 30,
 } as const
 /** WireMessageType 常量表对应的值联合类型（帧类型编号） */
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
@@ -1061,6 +1063,47 @@ export interface MailDeleteResponseDto {
   summary: MailSummaryDto
 }
 
+/** 每日签到轻量摘要（WS Hello 握手下行） */
+export interface CheckinSummaryDto {
+  canClaimToday: boolean
+  todayDate: string
+  dayIndex: number
+  streakDays: number
+  totalDays: number
+  lastRewardMerit: number | null
+  isBot?: boolean
+}
+
+/** 每日签到完整状态响应（GET /api/v1/checkin） */
+export interface CheckinStatusDto {
+  canClaimToday: boolean
+  todayDate: string
+  dayIndex: number
+  lastClaimDate: string | null
+  streakDays: number
+  totalDays: number
+  todayRewardMerit: number | null
+  lastRewardMerit: number | null
+  todayFortuneTier: string | null
+  weekDays: number
+  weekMerit: number
+  weekDaysMask: number
+  weekFortuneTier: string | null
+  monthDays: number
+  monthMerit: number
+  lastClaimedAt: string | null
+  rewardItemId: string
+  nextResetUnixSeconds: number
+}
+
+/** 每日签到领取响应（POST /api/v1/checkin/claim） */
+export interface CheckinClaimResponseDto {
+  claimed: boolean
+  rewardMerit: number
+  rewardItemId: string
+  status: CheckinStatusDto
+}
+
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -1100,7 +1143,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.MailSummary
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.CheckinSummary
 }
 
 function isWireCodec(value: number): value is WireCodec {

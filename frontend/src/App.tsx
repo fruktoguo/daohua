@@ -41,9 +41,10 @@ import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
 import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { getDifficultyBracket } from './game/combatDifficulty'
 import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
+import { computeMsUntilNextChinaMidnight, getChinaDayIndex, hasCheckinRedDot, readDismissedCheckinDay, useCheckinStore } from './game/checkinStore'
 import { useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
@@ -77,6 +78,7 @@ const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(m
 const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
 const HelpModal = lazy(() => import('./components/HelpModal').then(module => ({ default: module.HelpModal })))
 const MailModal = lazy(() => import('./components/MailModal').then(module => ({ default: module.MailModal })))
+const CheckinModal = lazy(() => import('./components/CheckinModal').then(module => ({ default: module.CheckinModal })))
 // 战场与其专属 VFX 只在首次查看详情时加载；访问后仍随原 hidden 页面常驻。
 const CombatArena = lazy(() => import('./components/CombatArena').then(module => ({ default: module.CombatArena })))
 const CombatSimulatorModal = lazy(() => import('./components/simulator/CombatSimulatorModal').then(module => ({ default: module.CombatSimulatorModal })))
@@ -880,7 +882,7 @@ const CRAFTING_FLOATING_TONE_MAP: Record<string, FloatingTone> = {
 const SIDEBAR_MARKET_TABS: readonly TabId[] = ['market', 'shop']
 
 /** 桌面端侧边栏「其他」分组子页签 */
-const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'leaderboard', 'changelog', 'help']
+const SIDEBAR_OTHER_TABS: readonly TabId[] = ['codex', 'checkin', 'leaderboard', 'changelog', 'help']
 
 interface SidebarTabGroupProps {
   activeTab: TabId | null
@@ -888,6 +890,8 @@ interface SidebarTabGroupProps {
   icon: IconName
   label: string
   tabs: readonly TabId[]
+  groupRedDot?: boolean
+  tabRedDot?: (tab: TabId) => boolean
   onActivateGroup: () => void
   onSelectTab: (tab: TabId) => void
   onToggleExpanded: () => void
@@ -900,6 +904,8 @@ const SidebarTabGroup = memo(function SidebarTabGroup({
   icon,
   label,
   tabs,
+  groupRedDot = false,
+  tabRedDot,
   onActivateGroup,
   onSelectTab,
   onToggleExpanded,
@@ -921,6 +927,9 @@ const SidebarTabGroup = memo(function SidebarTabGroup({
         <span className="nav-text">
           <span className="nav-label">{label}</span>
         </span>
+        {groupRedDot && !expanded && (
+          <span aria-label={t('app.checkin.redDotTooltip')} className="nav-group-dot" />
+        )}
         <span
           aria-hidden="true"
           className={`nav-chevron${expanded ? ' is-expanded' : ''}`}
@@ -945,6 +954,9 @@ const SidebarTabGroup = memo(function SidebarTabGroup({
                 <span className="nav-sub-glyph" aria-hidden="true"><Icon name={TAB_ICON[tab]} size={15} /></span>
                 <span className="nav-sub-label">{t(`app.nav.${tab}`)}</span>
               </span>
+              {tabRedDot?.(tab) && (
+                <span aria-label={t('app.checkin.redDotTooltip')} className="nav-sub-dot" />
+              )}
             </button>
           ))}
         </div>
@@ -973,6 +985,9 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
   const otherNavExpanded = useUiStore(state => state.otherNavExpanded)
   const setOtherNavExpanded = useUiStore(state => state.setOtherNavExpanded)
+  const checkinSummary = useCheckinStore(state => state.summary)
+  const checkinStatus = useCheckinStore(state => state.status)
+  const checkinCanClaim = hasCheckinRedDot(checkinSummary, checkinStatus)
 
   // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按「修为曲线前 30 级线性削减」的技艺曲线导出（0 级起步）；
   // 满级（expToNext=0）时进度条恒显满格，悬浮气泡经验行改显「已臻化境」。
@@ -1181,6 +1196,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
         <SidebarTabGroup
           activeTab={activeTab}
           expanded={otherNavExpanded}
+          groupRedDot={checkinCanClaim}
           icon="more"
           label={t('app.nav.other')}
           onActivateGroup={() => {
@@ -1189,6 +1205,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           }}
           onSelectTab={setActiveTab}
           onToggleExpanded={() => setOtherNavExpanded(expanded => !expanded)}
+          tabRedDot={tab => tab === 'checkin' && checkinCanClaim}
           tabs={SIDEBAR_OTHER_TABS}
         />
       </nav>
@@ -1441,8 +1458,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       const techLevel = action.technique
         ? calculateTechniqueProgress(techniqueExperiences?.[action.technique] ?? 0).level
         : 0
-      const isTechAllowed = !action.foundationCostRatio && Boolean(action.technique && level <= techLevel)
-      if (level <= 1 || level <= realmLevel || isTechAllowed) {
+      if (isActionUnlocked(action, level, realmLevel, techLevel)) {
         actionLevelMap[action.id] = level
         unlockedList.push(action)
       }
@@ -1742,7 +1758,7 @@ const ActionCard = memo(function ActionCard({ action, hidden = false, onOpen }: 
     return calculateTechniqueProgress(techniqueExperiences?.[action.technique] ?? 0).level
   }, [action.technique, techniqueExperiences])
 
-  const isUnlocked = level <= 1 || level <= realmLevel || (action.technique ? level <= techLevel : false);
+  const isUnlocked = isActionUnlocked(action, level, realmLevel, techLevel)
   const isLocked = !isUnlocked;
   const rarity = useMemo(
     () => resolveActionRarity(action, itemCatalog, equipmentCatalog, encounters),
@@ -1869,7 +1885,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     return calculateTechniqueProgress(combat?.techniqueExperiences?.[action.technique] ?? 0).level
   }, [action.technique, combat?.techniqueExperiences])
 
-  const isUnlocked = actionLevel <= 1 || actionLevel <= realmLevel || (action.technique ? actionLevel <= techLevel : false)
+  const isUnlocked = isActionUnlocked(action, actionLevel, realmLevel, techLevel)
   const isLocked = !isUnlocked
   const yieldPreview = useMemo(() => calculateActionYieldPreview({
     action,
@@ -2854,15 +2870,23 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
   // 子行各自只显示自己的那一份（日志显示未读数、同道显示有多少条邀请）。
   const unreadCounts = useLogUnreadStore(state => state.unreadCounts)
   const partyInvitation = useSocialStore(state => state.partyInvitation)
+  const checkinSummary = useCheckinStore(state => state.summary)
+  const checkinStatus = useCheckinStore(state => state.status)
   const logUnread = useMemo(() => {
     let total = 0
     for (const group of LOG_GROUPS_FOR_BADGE) total += unreadCounts[group] ?? 0
     return total
   }, [unreadCounts])
   const inviteBadge = partyInvitation ? 1 : 0
-  const moreBadge = logUnread + inviteBadge
-  /** 子行各自角标：日志只报未读条数，同道只报待处理邀请数，避免两项混算误导 */
-  const subBadge = (tab: TabId): number => tab === 'log' ? logUnread : tab === 'social' ? inviteBadge : 0
+  const checkinBadge = hasCheckinRedDot(checkinSummary, checkinStatus) ? 1 : 0
+  const moreBadge = logUnread + inviteBadge + checkinBadge
+  /** 子行各自角标：日志只报未读条数，同道只报待处理邀请数，签到提示未签 */
+  const subBadge = (tab: TabId): number => (
+    tab === 'log' ? logUnread
+      : tab === 'social' ? inviteBadge
+        : tab === 'checkin' ? checkinBadge
+          : 0
+  )
 
   // 子行高度随内容（技艺条比纯文字子行高，同道在「更多」子行之上叠加通用二级行）变化，用实测高度反写 CSS 变量驱动底部占位。
   const subVisible = activeGroup.subNav !== 'none'
@@ -2994,10 +3018,128 @@ export default function App(): React.JSX.Element {
   const helpPromptOpen = useUiStore(state => state.helpPromptOpen)
   const helpModalOpen = useUiStore(state => state.helpModalOpen)
   const setHelpModalOpen = useUiStore(state => state.setHelpModalOpen)
+  const checkinModalOpen = useUiStore(state => state.checkinModalOpen)
+  const setCheckinModalOpen = useUiStore(state => state.setCheckinModalOpen)
+  const checkinSummary = useCheckinStore(state => state.summary)
+  const checkinStatus = useCheckinStore(state => state.status)
+  const checkinDismissedDay = useCheckinStore(state => state.dismissedDayIndex)
+  const serverTimeUnixSeconds = useGameStore(state => state.serverTimeUnixSeconds)
   const [catalogReady, setCatalogReady] = useState(false)
   const latestNoticeEntry = useMemo(() => resolveLatestNoticeEntry(), [])
   const dismissedSessionNoticeIdsRef = useRef<Set<string>>(new Set())
   const [changelogNoticeOpen, setChangelogNoticeOpen] = useState(false)
+  const serverClockAnchorRef = useRef<{ serverSec: number; clientMs: number } | null>(null)
+  const lastChinaDayIndexRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (serverTimeUnixSeconds > 0) {
+      serverClockAnchorRef.current = { serverSec: serverTimeUnixSeconds, clientMs: Date.now() }
+      const dayIndex = getChinaDayIndex(serverTimeUnixSeconds)
+      if (lastChinaDayIndexRef.current === null) {
+        lastChinaDayIndexRef.current = dayIndex
+      } else if (dayIndex > lastChinaDayIndexRef.current && connection === 'online' && hasReceivedSnapshot) {
+        lastChinaDayIndexRef.current = dayIndex
+        void useCheckinStore.getState().refreshStatus({ silent: true })
+      }
+    }
+  }, [serverTimeUnixSeconds, connection, hasReceivedSnapshot])
+
+  useEffect(() => {
+    if (!catalogReady || !hasReceivedSnapshot || connection !== 'online' || tabBlocked || !currentAccount) {
+      return undefined
+    }
+    const resolveEstimatedNowSec = (): number => {
+      const anchor = serverClockAnchorRef.current
+      if (!anchor) return Math.floor(Date.now() / 1000)
+      return anchor.serverSec + (Date.now() - anchor.clientMs) / 1000
+    }
+    if (lastChinaDayIndexRef.current === null) {
+      lastChinaDayIndexRef.current = getChinaDayIndex(resolveEstimatedNowSec())
+    }
+    let timerId: number | undefined
+    const scheduleNextMidnight = (): void => {
+      const estimatedNow = resolveEstimatedNowSec()
+      const currentDay = getChinaDayIndex(estimatedNow)
+      if (lastChinaDayIndexRef.current !== null && currentDay > lastChinaDayIndexRef.current) {
+        lastChinaDayIndexRef.current = currentDay
+        void useCheckinStore.getState().refreshStatus({ silent: true })
+      }
+      const delayMs = computeMsUntilNextChinaMidnight(estimatedNow)
+      timerId = window.setTimeout(() => {
+        const nowAtFire = resolveEstimatedNowSec()
+        const firedDay = getChinaDayIndex(nowAtFire)
+        if (lastChinaDayIndexRef.current === null || firedDay > lastChinaDayIndexRef.current) {
+          lastChinaDayIndexRef.current = firedDay
+          void useCheckinStore.getState().refreshStatus({ silent: true })
+        }
+        scheduleNextMidnight()
+      }, delayMs)
+    }
+    scheduleNextMidnight()
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState !== 'visible') return
+      const nowDay = getChinaDayIndex(resolveEstimatedNowSec())
+      if (lastChinaDayIndexRef.current !== null && nowDay > lastChinaDayIndexRef.current) {
+        lastChinaDayIndexRef.current = nowDay
+        void useCheckinStore.getState().refreshStatus({ silent: true })
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      if (timerId !== undefined) window.clearTimeout(timerId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [catalogReady, hasReceivedSnapshot, connection, tabBlocked, currentAccount])
+
+  useEffect(() => {
+    if (!catalogReady || !hasReceivedSnapshot || connection !== 'online' || tabBlocked || !currentAccount) {
+      return
+    }
+    if (tutorialStep < TUTORIAL_DONE || tutorialOverlayActive || helpPromptOpen || helpModalOpen || awakenResults || changelogNoticeOpen) {
+      return
+    }
+    if (!hasCheckinRedDot(checkinSummary, checkinStatus)) {
+      return
+    }
+    const activeDayIndex = checkinStatus?.dayIndex ?? checkinSummary?.dayIndex
+    if (activeDayIndex === undefined || activeDayIndex <= 0) return
+    const playerKey = zongmenPlayerId || currentAccount.playerId || null
+    const persistedDismissed = readDismissedCheckinDay(playerKey)
+    if (checkinDismissedDay === activeDayIndex || persistedDismissed === activeDayIndex) {
+      return
+    }
+    setCheckinModalOpen(true)
+  }, [
+    catalogReady,
+    hasReceivedSnapshot,
+    connection,
+    tabBlocked,
+    currentAccount,
+    zongmenPlayerId,
+    tutorialStep,
+    tutorialOverlayActive,
+    helpPromptOpen,
+    helpModalOpen,
+    awakenResults,
+    changelogNoticeOpen,
+    checkinSummary,
+    checkinStatus,
+    checkinDismissedDay,
+    setCheckinModalOpen,
+  ])
+
+  const handleCloseCheckinModal = useCallback(() => {
+    const state = useCheckinStore.getState()
+    if (hasCheckinRedDot(state.summary, state.status)) {
+      const dayIndex = state.status?.dayIndex ?? state.summary?.dayIndex
+      if (dayIndex && dayIndex > 0) {
+        const playerKey = useGameStore.getState().playerId || useAccountStore.getState().currentAccount?.playerId || null
+        state.markDismissedForDay(playerKey, dayIndex)
+      }
+    }
+    state.clearLastClaimResult()
+    setCheckinModalOpen(false)
+  }, [setCheckinModalOpen])
 
   useEffect(() => {
     const noticeId = latestNoticeEntry?.noticeId
@@ -3176,6 +3318,11 @@ export default function App(): React.JSX.Element {
         {mailOpen && (
           <Suspense fallback={null}>
             <MailModal open={mailOpen} onClose={() => setMailOpen(false)} />
+          </Suspense>
+        )}
+        {checkinModalOpen && (
+          <Suspense fallback={null}>
+            <CheckinModal open={checkinModalOpen} onClose={handleCloseCheckinModal} />
           </Suspense>
         )}
         {simulatorOpen && (

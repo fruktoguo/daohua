@@ -1,0 +1,610 @@
+/* ============================================================================
+ * 每日仙途签到独立高密度弹窗样式
+ * - 复用公共 Modal 壳体与修仙设计令牌，支持暗墨玄石与浅色宣纸双主题；
+ * - 突出「今日收获 / 本周本月 / 今日气运与本周气运 / 连续签到」，无冗余数值堆砌；
+ * - 横屏左右双栏高信息密度零浪费，竖屏自动折叠为紧凑单栏。
+ * ========================================================================== */
+
+.checkin-modal.modal-shell {
+  width: min(760px, calc(100vw - 24px));
+  max-width: 760px;
+  max-height: calc(100dvh - 24px);
+  padding: 14px 16px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.checkin-modal-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+
+/* ====== 紧凑顶部栏 ====== */
+
+.checkin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-right: 36px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.checkin-header-brand {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 9px;
+  min-width: 0;
+}
+
+.checkin-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 38%, transparent);
+  color: var(--gold-bright, var(--gold));
+  flex-shrink: 0;
+}
+
+.checkin-title {
+  margin: 0;
+  font-family: var(--font-kaiti);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--gold-bright, var(--gold));
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.checkin-date-pill,
+.checkin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.checkin-date-pill {
+  color: var(--text-dim);
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 76%, transparent);
+}
+
+.checkin-status-pill.is-claimable {
+  color: var(--gold-bright, var(--gold));
+  border: 1px solid color-mix(in srgb, var(--gold) 52%, transparent);
+  background: color-mix(in srgb, var(--gold) 15%, transparent);
+  font-weight: 600;
+}
+
+.checkin-status-pill.is-claimed {
+  color: var(--jade, #48bb78);
+  border: 1px solid color-mix(in srgb, var(--jade, #48bb78) 44%, transparent);
+  background: color-mix(in srgb, var(--jade, #48bb78) 12%, transparent);
+  font-weight: 600;
+}
+
+/* ====== 加载 / 错误态 ====== */
+
+.checkin-loading-box,
+.checkin-error-box {
+  padding: 28px 16px;
+  text-align: center;
+  border-radius: 8px;
+  border: 1px dashed var(--gold-faint);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.checkin-retry-btn {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  color: var(--gold-bright, var(--gold));
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+/* ====== 主体双栏网格 ====== */
+
+.checkin-body-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.checkin-stage-col,
+.checkin-stats-col {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* ====== 左栏：功德赏赐主卡 ====== */
+
+.checkin-hero-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--gold) 9%, var(--bg-raised)) 0%,
+    color-mix(in srgb, var(--bg-raised) 92%, transparent) 100%
+  );
+}
+
+.checkin-hero-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.checkin-hero-anchor {
+  flex-shrink: 0;
+}
+
+.checkin-hero-tile {
+  width: 54px;
+  height: 54px;
+}
+
+.checkin-hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.checkin-hero-name {
+  font-family: var(--font-kaiti);
+  font-size: var(--text-md, 15px);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.checkin-hero-sub {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.checkin-wallet-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-panel, var(--bg-raised)) 72%, transparent);
+}
+
+.checkin-wallet-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--gold-faint);
+}
+
+.checkin-wallet-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkin-wallet-label {
+  font-size: var(--text-2xs);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checkin-wallet-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.checkin-inline-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* ====== 左栏下方：领奖操作 / 今日收获回执 ====== */
+
+.checkin-action-card,
+.checkin-receipt-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 9px;
+  flex: 1 1 auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 84%, transparent);
+}
+
+.checkin-action-card.is-ready {
+  border-color: color-mix(in srgb, var(--gold) 44%, transparent);
+}
+
+.checkin-action-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.checkin-claim-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--gold-bright, var(--gold)) 72%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--gold) 28%, transparent) 0%,
+    color-mix(in srgb, var(--gold) 16%, transparent) 100%
+  );
+  color: var(--gold-bright, var(--gold));
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.checkin-claim-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--gold) 26%, transparent);
+}
+
+.checkin-claim-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.checkin-claim-btn.is-done {
+  border-color: var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 70%, transparent);
+  color: var(--text-dim);
+  font-weight: 600;
+  padding: 7px 12px;
+}
+
+.checkin-receipt-card.is-fresh {
+  border-color: color-mix(in srgb, var(--jade, #48bb78) 54%, transparent);
+  box-shadow: inset 0 0 16px color-mix(in srgb, var(--jade, #48bb78) 10%, transparent);
+}
+
+.checkin-receipt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.checkin-receipt-title {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.checkin-receipt-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--jade, #48bb78);
+  border: 1px solid color-mix(in srgb, var(--jade, #48bb78) 45%, transparent);
+  background: color-mix(in srgb, var(--jade, #48bb78) 12%, transparent);
+}
+
+.checkin-receipt-amount {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--jade, #48bb78) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--jade, #48bb78) 28%, transparent);
+  color: var(--gold-bright, var(--gold));
+  font-size: var(--text-md, 15px);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkin-receipt-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.checkin-fortune-pill {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  color: var(--text);
+}
+
+.checkin-fortune-pill.tone-gold {
+  color: var(--gold-bright, var(--gold));
+  border-color: color-mix(in srgb, var(--gold) 54%, transparent);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+}
+
+.checkin-fortune-pill.tone-good {
+  color: var(--jade, #48bb78);
+  border-color: color-mix(in srgb, var(--jade, #48bb78) 48%, transparent);
+  background: color-mix(in srgb, var(--jade, #48bb78) 12%, transparent);
+}
+
+.checkin-fortune-pill.tone-bad {
+  color: var(--crimson, #e05252);
+  border-color: color-mix(in srgb, var(--crimson, #e05252) 45%, transparent);
+  background: color-mix(in srgb, var(--crimson, #e05252) 10%, transparent);
+}
+
+.checkin-receipt-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.checkin-reset-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+
+.checkin-reset-row svg {
+  flex-shrink: 0;
+  color: var(--qi);
+}
+
+.checkin-countdown {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ====== 右栏：气运、连签、本周与本月 ====== */
+
+.checkin-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.checkin-metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 82%, transparent);
+  min-width: 0;
+}
+
+.checkin-metric-label {
+  font-size: var(--text-2xs);
+  color: var(--text-dim);
+}
+
+.checkin-metric-value {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.checkin-metric-value.is-gold,
+.checkin-metric-value.fortune-gold {
+  color: var(--gold-bright, var(--gold));
+}
+
+.checkin-metric-value.fortune-good {
+  color: var(--jade, #48bb78);
+}
+
+.checkin-metric-value.fortune-bad {
+  color: var(--crimson, #e05252);
+}
+
+.checkin-metric-value.fortune-neutral {
+  color: var(--qi);
+}
+
+.checkin-metric-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkin-period-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 82%, transparent);
+}
+
+.checkin-month-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 82%, transparent);
+}
+
+.checkin-period-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.checkin-period-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.checkin-period-summary {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-bright, var(--gold));
+}
+
+.checkin-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.checkin-week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 2px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-panel, var(--bg-raised)) 68%, transparent);
+  color: var(--text-dim);
+}
+
+.checkin-week-day.is-today:not(.is-signed) {
+  border-color: color-mix(in srgb, var(--gold) 52%, transparent);
+  color: var(--gold-bright, var(--gold));
+}
+
+.checkin-week-day.is-signed {
+  border-color: color-mix(in srgb, var(--jade, #48bb78) 54%, transparent);
+  background: color-mix(in srgb, var(--jade, #48bb78) 14%, transparent);
+  color: var(--jade, #48bb78);
+}
+
+.checkin-week-label {
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.checkin-week-mark {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.1;
+  min-height: 13px;
+}
+
+.checkin-simple-hint {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--bg-raised) 64%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* ====== 侧边栏「签到」/「其他」红点指示 ====== */
+
+.nav-sub-dot,
+.nav-group-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e14b4b;
+  box-shadow: 0 0 6px rgba(225, 75, 75, 0.85);
+  flex-shrink: 0;
+}
+
+.nav-group-dot {
+  margin-left: auto;
+  margin-right: 4px;
+}
+
+.nav-sub-dot {
+  margin-left: auto;
+}
+
+/* ====== 响应式折叠（竖屏与矮横屏） ====== */
+
+@media (max-width: 768px) {
+  .checkin-modal.modal-shell {
+    width: calc(100vw - 16px);
+    padding: 12px 13px 14px;
+  }
+
+  .checkin-body-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+  .checkin-modal.modal-shell {
+    padding: 10px 13px 12px;
+  }
+
+  .checkin-modal-inner {
+    gap: 8px;
+  }
+
+  .checkin-hero-card,
+  .checkin-action-card,
+  .checkin-receipt-card {
+    padding: 8px 10px;
+  }
+}

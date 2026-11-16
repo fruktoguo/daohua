@@ -743,6 +743,10 @@ public static class WebSocketEndpoint
                         var mailSummaryTask = mail is null
                             ? ValueTask.FromResult(new MailSummaryDto(0, 0, false))
                             : mail.GetSummaryAsync(session.PlayerId, isBot, session.AccountCreatedAt, cancellationToken);
+                        var checkin = context.RequestServices.GetService<Checkin.CheckinRuntime>();
+                        var checkinSummaryTask = checkin is null
+                            ? ValueTask.FromResult(new CheckinSummaryDto(false, string.Empty, 0, 0, 0, null, IsBot: isBot))
+                            : checkin.GetSummaryAsync(session.PlayerId, isBot, cancellationToken);
                         // 在线存在感登记：世界/附近广播与好友在线状态都依赖它；登记是独立副作用，与上方读取并行。
                         // 迁地途中（EdgeId 非空）按「不在节点」登记，与 UpdateNodeAsync 口径一致。
                         var presenceTask = presence.RegisterAsync(session.PlayerId, displayName,
@@ -774,6 +778,9 @@ public static class WebSocketEndpoint
                         var mailSummary = await mailSummaryTask;
                         if (mail is not null)
                             await QueueJsonAsync(session, WireMessageType.MailSummary, Guid.NewGuid(), mailSummary, cancellationToken);
+                        var checkinSummary = await checkinSummaryTask;
+                        if (checkin is not null)
+                            await QueueJsonAsync(session, WireMessageType.CheckinSummary, Guid.NewGuid(), checkinSummary, cancellationToken);
                         handshaken = true;
                         }
                         break;

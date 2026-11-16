@@ -67,6 +67,13 @@ internal static class PostgresTestSchema
                         ALTER TABLE IF EXISTS social.party_members ADD COLUMN IF NOT EXISTS doudizhu_ready boolean NOT NULL DEFAULT false;
                         ALTER TABLE IF EXISTS social.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_channel_check;
                         ALTER TABLE IF EXISTS social.chat_messages ADD CONSTRAINT chat_messages_channel_check CHECK (channel IN ('world','nearby','friend','party','sect'));
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_start_day_index bigint NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_days integer NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_merit integer NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_days_mask smallint NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_key integer NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_days integer NOT NULL DEFAULT 0;
+                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_merit integer NOT NULL DEFAULT 0;
                         """, connection) { CommandTimeout = 60 };
                     await patch.ExecuteNonQueryAsync();
                     await using var updateVersions = new NpgsqlCommand($"""
@@ -85,7 +92,7 @@ internal static class PostgresTestSchema
                             identity.account_risk_events, identity.account_risk_signals,
                             identity.data_protection_keys,
                             game.player_state_heads, game.player_state_sections, game.player_action_queue,
-                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings, game.duel_logs,
+                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings, game.duel_logs, game.player_daily_checkins,
                             platform.compute_jobs, platform.section_flush_queue, platform.command_receipts,
                             platform.integration_outbox, platform.account_risk_policy, platform.account_risk_key,
                             social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
