@@ -281,6 +281,22 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   # 旧版本进程在迁移窗口内仍会按旧标签写存档，导致新版本加载玩家时
   # 抛 'section schema 版本不受支持' 并无限重连（生产事故 2026-10-22）。
   sudo systemctl stop daohua-ccr-auto-update.timer
+  # 若 compose.prod.yaml 调整了 db 参数（例如关闭 archive_mode=off 并移除 WAL 挂载），
+  # 需先单服务收敛 daohua-db 并等待就绪，再停写迁移并替换 app/compute。
+  sudo docker compose --env-file /opt/daohua/daohua.env -f /opt/daohua/compose.prod.yaml up -d --no-deps db
+  db_healthy=0
+  for db_attempt in {1..30}; do
+    db_state=\"\$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' daohua-db 2>/dev/null || true)\"
+    if [[ \"\$db_state\" == healthy ]]; then
+      db_healthy=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ \"\$db_healthy\" != 1 ]]; then
+    printf 'daohua-db 未在 60 秒内恢复 healthy: %s\n' \"\$db_state\" >&2
+    exit 1
+  fi
   sudo env \\
     DAOHUA_DIR=/opt/daohua \\
     EXPECTED_SCHEMA_VERSION='$EXPECTED_SCHEMA_VERSION' \\
@@ -309,7 +325,12 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo systemctl enable --now daohua-db-backup.timer
   sudo systemctl enable --now daohua-base-backup.timer
   sudo systemctl enable --now daohua-ledger-archive.timer
-  sudo systemctl enable --now daohua-wal-archive.timer
+  sudo systemctl disable --now daohua-wal-archive.timer 2>/dev/null || true
+  sudo find /opt/daohua/wal-archive -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
+  sudo install -d -m 0755 /etc/systemd/journald.conf.d
+  printf '[Journal]\nSystemMaxUse=200M\nMaxRetentionSec=7day\n' | sudo tee /etc/systemd/journald.conf.d/daohua-size-cap.conf >/dev/null
+  sudo systemctl restart systemd-journald 2>/dev/null || true
+  sudo docker image prune -f --filter "until=24h" >/dev/null 2>&1 || true
 "
 
 if [[ "$INSTALL_CADDY" == "1" ]]; then

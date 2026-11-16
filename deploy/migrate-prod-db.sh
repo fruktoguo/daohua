@@ -187,6 +187,12 @@ else
   [[ -s "$dump_path" ]] || die "备份文件为空：${dump_path}"
   printf '%s\n' "$dump_path" > "${BACKUP_DIR}/latest"
   log "备份完成（$(du -h "$dump_path" | cut -f1)）"
+  # 仅保留最近 5 份迁移前快照，防止长期累积打满磁盘。
+  mapfile -t old_dumps < <(ls -1t "${BACKUP_DIR}"/daohua-pre-migration-*.dump 2>/dev/null | tail -n +6 || true)
+  if (( ${#old_dumps[@]} > 0 )); then
+    rm -f -- "${old_dumps[@]}"
+    log "已清理 ${#old_dumps[@]} 份过期迁移前备份（保留最近 5 份）。"
+  fi
 fi
 
 # ------------------------------------------------------------------------------

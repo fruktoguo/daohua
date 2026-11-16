@@ -39,22 +39,28 @@ public sealed record ServerOptions(
     public ServerProcessRole ProcessRole { get; init; } = ServerProcessRole.Api;
     /// <summary>历史过期数据单次清理批次大小</summary>
     public int RetentionBatchSize { get; init; } = 256;
-    /// <summary>留存清理周期；高频结算流水会持续写入，周期过长会追不上生成速率。</summary>
-    public TimeSpan RetentionInterval { get; init; } = TimeSpan.FromHours(1);
+    /// <summary>留存清理周期；每 5 分钟多批排空超期流水与日志，确保清理速率远高于写入速率。</summary>
+    public TimeSpan RetentionInterval { get; init; } = TimeSpan.FromMinutes(5);
     /// <summary>已投递的 Outbox 消息保留期限</summary>
     public TimeSpan DeliveredOutboxRetention { get; init; } = TimeSpan.FromDays(7);
     /// <summary>会话凭据最长保留期限</summary>
     public TimeSpan SessionRetention { get; init; } = TimeSpan.FromDays(7);
     /// <summary>审计日志最长保留期限</summary>
     public TimeSpan AuditRetention { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>白名单业务流水与日志（坊市/商店/斗法/跨玩家交互）热表统一保留期限</summary>
+    public TimeSpan LedgerRetention { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>短期瞬时幂等键（PersistLedger=false 防重用）保留期限</summary>
+    public TimeSpan TransientIdempotencyRetention { get; init; } = TimeSpan.FromHours(2);
     /// <summary>账号检测判定事件保留期，独立于需要长期归档的业务审计。</summary>
     public TimeSpan AccountRiskEventRetention { get; init; } = TimeSpan.FromDays(30);
     /// <summary>离线补算任务记录保留期限</summary>
-    public TimeSpan ComputeJobRetention { get; init; } = TimeSpan.FromDays(7);
+    public TimeSpan ComputeJobRetention { get; init; } = TimeSpan.FromDays(2);
     /// <summary>ASP.NET 数据保护密钥保留期限</summary>
     public TimeSpan DataProtectionKeyRetention { get; init; } = TimeSpan.FromDays(180);
     /// <summary>坊市结算认领凭证保留期限</summary>
     public TimeSpan SettlementClaimRetention { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>在线玩家纯模拟增量与脏分段定时安全检查点间隔（默认 10 分钟），仅在关键边界外作防长时崩溃兜底。</summary>
+    public TimeSpan OnlineCheckpointInterval { get; init; } = TimeSpan.FromMinutes(10);
 
     /// <summary>是否启用主服务 → ComputeNode 冷挂机派发链</summary>
     public bool ComputeNodeEnabled { get; init; }
@@ -130,14 +136,17 @@ public sealed record ServerOptions(
         var ecsShardCount = configuration.GetValue("Ecs:ShardCount", 1);
         var bootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true);
         var retentionBatch = configuration.GetValue("Storage:RetentionBatchSize", 256);
-        var retentionIntervalSeconds = configuration.GetValue("Storage:RetentionIntervalSeconds", 3600);
+        var retentionIntervalSeconds = configuration.GetValue("Storage:RetentionIntervalSeconds", 300);
         var outboxRetentionDays = configuration.GetValue("Storage:DeliveredOutboxRetentionDays", 7);
         var sessionRetentionDays = configuration.GetValue("Storage:SessionRetentionDays", 7);
         var auditRetentionDays = configuration.GetValue("Storage:AuditRetentionDays", 30);
+        var ledgerRetentionDays = configuration.GetValue("Storage:LedgerRetentionDays", 30);
+        var transientIdempotencyHours = configuration.GetValue("Storage:TransientIdempotencyRetentionHours", 2);
         var riskRetentionDays = configuration.GetValue("Storage:AccountRiskEventRetentionDays", 30);
-        var computeRetentionDays = configuration.GetValue("Storage:ComputeJobRetentionDays", 7);
+        var computeRetentionDays = configuration.GetValue("Storage:ComputeJobRetentionDays", 2);
         var dataProtectionRetentionDays = configuration.GetValue("Storage:DataProtectionKeyRetentionDays", 180);
         var settlementClaimRetentionDays = configuration.GetValue("Storage:SettlementClaimRetentionDays", 30);
+        var onlineCheckpointSeconds = configuration.GetValue("Storage:OnlineCheckpointIntervalSeconds", 600);
         var computeEnabled = configuration.GetValue("ComputeNode:Enabled", true);
         var computeToken = configuration["ComputeNode:Token"];
         var computeBatchSize = configuration.GetValue("ComputeNode:BatchSize", 64);
@@ -170,10 +179,13 @@ public sealed record ServerOptions(
         if (outboxRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:DeliveredOutboxRetentionDays 必须在 1..3650。");
         if (sessionRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SessionRetentionDays 必须在 1..3650。");
         if (auditRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:AuditRetentionDays 必须在 1..3650。");
+        if (ledgerRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:LedgerRetentionDays 必须在 1..3650。");
+        if (transientIdempotencyHours is < 1 or > 168) throw new InvalidOperationException("Storage:TransientIdempotencyRetentionHours 必须在 1..168。");
         if (riskRetentionDays is < 1 or > 365) throw new InvalidOperationException("Storage:AccountRiskEventRetentionDays 必须在 1..365。");
         if (computeRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:ComputeJobRetentionDays 必须在 1..3650。");
         if (dataProtectionRetentionDays is < 30 or > 3650) throw new InvalidOperationException("Storage:DataProtectionKeyRetentionDays 必须在 30..3650。");
         if (settlementClaimRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SettlementClaimRetentionDays 必须在 1..3650。");
+        if (onlineCheckpointSeconds is < 1 or > 3600) throw new InvalidOperationException("Storage:OnlineCheckpointIntervalSeconds 必须在 1..3600。");
         if (computeBatchSize is < 1 or > 256) throw new InvalidOperationException("ComputeNode:BatchSize 必须在 1..256。");
         if (computeBatchMaxBytes is < 64 * 1024 or > 12L * 1024 * 1024)
             throw new InvalidOperationException("ComputeNode:BatchMaxBytes 必须在 64KiB..12MiB（帧体须低于链路 20MiB 上限）。");
@@ -225,10 +237,13 @@ public sealed record ServerOptions(
             DeliveredOutboxRetention = TimeSpan.FromDays(outboxRetentionDays),
             SessionRetention = TimeSpan.FromDays(sessionRetentionDays),
             AuditRetention = TimeSpan.FromDays(auditRetentionDays),
+            LedgerRetention = TimeSpan.FromDays(ledgerRetentionDays),
+            TransientIdempotencyRetention = TimeSpan.FromHours(transientIdempotencyHours),
             AccountRiskEventRetention = TimeSpan.FromDays(riskRetentionDays),
             ComputeJobRetention = TimeSpan.FromDays(computeRetentionDays),
             DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays),
             SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays),
+            OnlineCheckpointInterval = TimeSpan.FromSeconds(onlineCheckpointSeconds),
             ComputeNodeEnabled = computeEnabled,
             ComputeNodeToken = string.IsNullOrWhiteSpace(computeToken) ? null : computeToken.Trim(),
             ComputeNodeTokens = computeNodeTokens,

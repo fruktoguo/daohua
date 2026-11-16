@@ -43,15 +43,38 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     IActionParticipationRuntime? participationRuntime = null,
     IParticipationSessionStore? participationSessions = null,
     Server.Clean.Social.OnlinePresenceRegistry? presence = null,
-    Server.Clean.Social.PostgresZongmenRepository? zongmen = null) : IPlayerRuntime
+    Server.Clean.Social.PostgresZongmenRepository? zongmen = null,
+    ServerOptions? serverOptions = null,
+    IPlayerLifecycleAuditStore? lifecycleAudit = null,
+    IDuelLogRepository? duelLogs = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
     private readonly ConcurrentDictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>> _wallets = new();
-    // 每分段首次置脏时刻：FlushOwnedAsync 按 15s 脏龄去抖，没到龄的分段不进 durable 队列。
+    // 每分段首次置脏时刻：FlushOwnedAsync 按 _onlineCheckpointInterval（默认 10 分钟）安全检查点触发刷盘。
     private readonly ConcurrentDictionary<Guid, Dictionary<PlayerSectionKind, DateTimeOffset>> _dirtyAt = new();
     // 已提交命令待落库的回执：随下一次 section 入队同事务写入，保证回执不先于状态生效。
     private readonly ConcurrentDictionary<Guid, List<CommandReceipt>> _pendingReceipts = new();
+    // 在线推演期间仅在内存累积、尚未提交持久化钱包的资产差量（严禁未落盘前单独推进持久化 LastSimulatedAt）。
+    private readonly ConcurrentDictionary<Guid, Dictionary<AssetKey, double>> _pendingSimulationDeltas = new();
+    // 当前未落盘在线模拟增量的起始时间，用于生成稳定检查点幂等键。
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _pendingSimulationFromAt = new();
+    // 上一次将玩家状态刷入持久化队列时的模拟时钟时刻，用于按游戏推进跨度触发 10 分钟检查点。
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastCheckpointSimAt = new();
+    // 上一次将玩家状态刷入持久化队列时的墙钟时刻，用于后台 flush loop 的 10 分钟兜底检查点。
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastCheckpointWallAt = new();
+    // 最近一次提交或入队给持久化存储的状态版本号，防止同版本写穿或 CAS 冲突。
+    private readonly ConcurrentDictionary<Guid, long> _lastPersistedStateVersion = new();
+    // 新建角色或刚由存储装载但尚未产生本次在线连接审计的待记录标记。
+    private readonly ConcurrentDictionary<Guid, byte> _needsInitialOnlineAudit = new();
+    // 本进程内撮合生成的斗法上下文（双方战力、节点与暂存清单），用于结算写入 game.duel_logs。
+    private readonly ConcurrentDictionary<string, ActiveDuelMetadata> _activeDuels = new(StringComparer.Ordinal);
+    // 已提交斗法日志的 duelId 去重集合，防止主从双方先后完成回放时重复落库。
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _recordedDuels = new(StringComparer.Ordinal);
+    private readonly TimeSpan _onlineCheckpointInterval =
+        serverOptions?.OnlineCheckpointInterval > TimeSpan.Zero
+            ? serverOptions.OnlineCheckpointInterval
+            : TimeSpan.FromMinutes(10);
     // 钱包失效标记（值无意义，键存在即需重读）：市场外部入账 NotifyMarketWalletCredited 只负责打标。
     private readonly ConcurrentDictionary<Guid, byte> _walletReloadRequired = new();
     // COMMIT 无法精确重放确认时保留租约与错误证据，拒绝装载、推进和刷盘，防止不确定终态覆盖 durable 状态。
@@ -230,6 +253,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
                 _loaded[playerId] = snapshot;
                 _publishedVersions.GetOrAdd(playerId, static _ => new RecentPublished()).Record(snapshot.StateVersion);
+                _needsInitialOnlineAudit.TryRemove(playerId, out _);
+                await TryRecordLifecycleAuditAsync(playerId, snapshot, isOnline: true, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
+            }
+            else if (_needsInitialOnlineAudit.TryRemove(playerId, out _))
+            {
+                await TryRecordLifecycleAuditAsync(playerId, snapshot, isOnline: true, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
             }
             return snapshot;
         }
@@ -273,11 +302,18 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 new PlayerId(playerId), new AssetKey(new ItemId(row.AssetId), row.Variant), row.Quantity, row.Version)).ToArray();
             ecs.CreatePlayer(state, balances);
             if (bundle.Sections.Count == 0)
+            {
                 foreach (var section in Enum.GetValues<PlayerSectionKind>()) ecs.MarkDirty(playerId, section);
+                _needsInitialOnlineAudit[playerId] = 0;
+            }
             _wallets[playerId] = balanceRows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
             _dirtyAt[playerId] = [];
             _pendingReceipts[playerId] = [];
+            _pendingSimulationDeltas[playerId] = [];
+            _lastPersistedStateVersion[playerId] = bundle.Sections.Count == 0 ? 0 : bundle.Head.StateVersion;
             var before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            _lastCheckpointSimAt[playerId] = before.LastSimulatedAt;
+            _lastCheckpointWallAt[playerId] = DateTimeOffset.UtcNow;
             IReadOnlyList<LogEventDto>? logs = null;
             var target = _simulationClock.UtcNow;
             // 先消费会话权威结算，再推进个人行动；成员从不恢复同场战斗。
@@ -301,10 +337,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             if (target > before.State.LastSimulatedAt)
             {
                 var loadDirtyBefore = ecs.GetDirtySections(playerId);
+                var duelBeforeLoad = GetActiveDuelPlayback(before);
                 await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
                 await RefreshNodeBuildingsAsync(playerId, ToSnapshot(ecs.ExportSnapshot(playerId)).State.World, target, cancellationToken).ConfigureAwait(false);
                 var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
                 logs = (await CommitSimulationAsync(playerId, before, advanced, null, loadDirtyBefore, cancellationToken).ConfigureAwait(false)).Logs;
+                if (duelBeforeLoad is not null && advanced.State.Duel.ActiveDuelId is null)
+                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeLoad, forfeited: false, advanced.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -331,6 +370,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             _logs.TryRemove(playerId, out _);
             _dirtyAt.TryRemove(playerId, out _);
             _pendingReceipts.TryRemove(playerId, out _);
+            ClearBufferingState(playerId);
             _walletReloadRequired.TryRemove(playerId, out _);
             _recentRequests.TryRemove(playerId, out _);
             _attributeRevisions.TryRemove(playerId, out _);
@@ -435,6 +475,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     ? !published.Contains(expectedStateVersion)
                     : entryStateVersion != expectedStateVersion))
                 return new PlayerCommandResult(false, "STATE_VERSION_CONFLICT", "玩家状态版本已变化。", before);
+
+            // 任何显式玩家命令进入前，先把在线推进缓冲的未落盘资产与脏分段原子提交到持久层，
+            // 确保后续扣费/交易/推演与数据库权威余额严格一致。
+            if (HasPendingSimulationDeltas(playerId))
+            {
+                await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            }
+            var duelBeforeCommand = GetActiveDuelPlayback(before);
 
             try
             {
@@ -703,7 +752,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             new EconomyTransactionRequest(
                                 requestId, $"ability-learn:{playerId:D}:{requestId:D}", command, playerId,
                                 [new Server.Clean.AssetDelta(playerId, itemId, string.Empty, -learnQuantity)], DateTimeOffset.UtcNow,
-                                JsonSerializer.SerializeToUtf8Bytes(new { abilityId = abilityId.Value, quantity = learnQuantity })),
+                                JsonSerializer.SerializeToUtf8Bytes(new { abilityId = abilityId.Value, quantity = learnQuantity }),
+                                PersistLedger: false),
                             learnReceipt, cancellationToken).ConfigureAwait(false);
                         receiptAlreadyCommitted = true;
                         break;
@@ -755,7 +805,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 new EconomyTransactionRequest(
                                     requestId, $"item-use:{playerId:D}:{requestId:D}", command, playerId,
                                     [new Server.Clean.AssetDelta(playerId, stoneKey.Value, string.Empty, -useQuantity)], DateTimeOffset.UtcNow,
-                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = stoneKey.Value, quantity = useQuantity })),
+                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = stoneKey.Value, quantity = useQuantity }),
+                                    PersistLedger: false),
                                 useReceipt, cancellationToken).ConfigureAwait(false);
                             receiptAlreadyCommitted = true;
                             break;
@@ -801,7 +852,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 new EconomyTransactionRequest(
                                     requestId, $"item-use:{playerId:D}:{requestId:D}", command, playerId,
                                     deltas, DateTimeOffset.UtcNow,
-                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = bagKey.Value, quantity = useQuantity })),
+                                    JsonSerializer.SerializeToUtf8Bytes(new { itemId = bagKey.Value, quantity = useQuantity }),
+                                    PersistLedger: false),
                                 useReceipt, cancellationToken).ConfigureAwait(false);
                             receiptAlreadyCommitted = true;
                             break;
@@ -939,7 +991,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                         JsonSerializer.SerializeToUtf8Bytes(new
                                         {
                                             action = gateAction, cost = rerollCost, rerollCount = nextRerollCount
-                                        })),
+                                        }),
+                                        PersistLedger: false),
                                     CreateReceipt(playerId, requestId, command, payloadHash, rerollSnapshot.StateVersion),
                                     cancellationToken).ConfigureAwait(false);
                                 receiptAlreadyCommitted = true;
@@ -1348,7 +1401,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             disposeDeltas,
                             disposeNow,
                             JsonSerializer.SerializeToUtf8Bytes(new { itemId = disposeItemId, variant, quantity = disposeQuantity }),
-                            Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)]),
+                            Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)],
+                            PersistLedger: false),
                             cancellationToken).ConfigureAwait(false);
                         if (!disposeResult.Applied)
                             return new PlayerCommandResult(false, "TRANSACTION_REJECTED", "物品处置事务未提交。", before);
@@ -1579,7 +1633,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore,
                             new EconomyTransactionRequest(requestId, $"tutorial-skip:{playerId:D}:{requestId:D}", command, playerId,
                                 skipGrants.Select(pair => new Server.Clean.AssetDelta(playerId, pair.Key.Value, string.Empty, pair.Value)).ToArray(),
-                                DateTimeOffset.UtcNow, JsonSerializer.SerializeToUtf8Bytes(new { granted = skipGrants.Count })),
+                                DateTimeOffset.UtcNow, JsonSerializer.SerializeToUtf8Bytes(new { granted = skipGrants.Count }),
+                                PersistLedger: false),
                             CreateReceipt(playerId, requestId, command, payloadHash, skipSnapshot.StateVersion), cancellationToken).ConfigureAwait(false);
                         receiptAlreadyCommitted = true;
                         if (skipGrants.Count > 0) tutorialSkipLogs = [AppendTutorialSkipLog(playerId, skipGrants)];
@@ -1679,7 +1734,19 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                     }
                 if (forfeit is { } resolvedForfeit)
+                {
+                    if (duelBeforeCommand is not null)
+                        await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: true, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
+                    if (ecs.GetDirtySections(playerId).Length > 0 || HasPendingSimulationDeltas(playerId))
+                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
+                }
+                else if (duelBeforeCommand is not null && after.State.Duel.ActiveDuelId is null)
+                {
+                    await TryRecordDuelCompletionAsync(playerId, before, duelBeforeCommand, forfeited: false, after.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
+                    if (ecs.GetDirtySections(playerId).Length > 0 || HasPendingSimulationDeltas(playerId))
+                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                }
                 return new PlayerCommandResult(true, "OK", customNotice ?? SuccessNotice(command), after, outcome.Simulation, outcome.Logs, customData);
             }
             catch (DomainException exception)
@@ -1771,6 +1838,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var notifications = new List<RuntimeNotification>();
         Dictionary<Guid, PlayerRuntimeSnapshot>? before = null;
         Dictionary<Guid, PlayerSectionKind[]>? dirtyBefore = null;
+        Dictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>>? walletsBeforeBatch = null;
+        Dictionary<Guid, Dictionary<AssetKey, double>>? pendingBeforeBatch = null;
+        Dictionary<Guid, DateTimeOffset?>? pendingFromBeforeBatch = null;
         var uncommitted = ids.ToHashSet();
         var acquired = 0;
         try
@@ -1836,6 +1906,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             ids = ids.Where(id => !failedMembers.Contains(id)).ToArray();
             uncommitted.ExceptWith(failedMembers);
             before = ids.ToDictionary(id => id, id => ToSnapshot(ecs.ExportSnapshot(id)));
+            walletsBeforeBatch = ids.ToDictionary(id => id, id => new Dictionary<AssetKey, AssetBalanceRecord>(_wallets[id]));
+            pendingBeforeBatch = ids.ToDictionary(id => id, id =>
+                _pendingSimulationDeltas.TryGetValue(id, out var map) && map.Count > 0
+                    ? new Dictionary<AssetKey, double>(map)
+                    : new Dictionary<AssetKey, double>());
+            pendingFromBeforeBatch = ids.ToDictionary(id => id, id =>
+                _pendingSimulationFromAt.TryGetValue(id, out var fromAt) ? (DateTimeOffset?)fromAt : null);
             var marksBefore = ids.ToDictionary(id => id, ecs.GetDirtyMarks);
             dirtyBefore = ids.ToDictionary(id => id, ecs.GetDirtySections);
             foreach (var playerId in walletsSynced.Except(failedMembers)) ecs.MarkExternalStateChanged(playerId);
@@ -1871,6 +1948,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     && TouchedSectionsSince(marksBefore[playerId], ecs.GetDirtyMarks(playerId)).Count == 0)
                 {
                     ecs.DrainSimulationResult(playerId);
+                    if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
+                        && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
+                    {
+                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                        _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
+                    }
                     uncommitted.Remove(playerId);
                     continue;
                 }
@@ -1878,13 +1961,30 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 if (after.StateVersion == before[playerId].StateVersion && after.LastSimulatedAt == before[playerId].LastSimulatedAt)
                 {
                     ecs.DrainSimulationResult(playerId);
+                    if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
+                        && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
+                    {
+                        await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                        _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
+                    }
                     uncommitted.Remove(playerId);
                     continue;
                 }
-                var outcome = await CommitSimulationAsync(playerId, before[playerId], after, null, dirtyBefore[playerId], cancellationToken).ConfigureAwait(false);
-                // 提交内部可能因纯时钟推进补推进状态版本（MarkExternalStateChanged）：仅版本越过本地 after
-                // 时才需要重导出捕获终态；常规变更路径直接复用 after，省一次全量导出。
-                if (ecs.GetStateVersion(playerId) != after.StateVersion)
+                // 在线模拟推进不再每 Tick 写 PostgreSQL：结果与脏段暂存内存并同步内存钱包/WS 推流，
+                // 仅当 10 分钟安全检查点到期或 PVP 斗法结束时才原子合批落库。
+                CommitOutcome outcome;
+                try
+                {
+                    outcome = await BufferOnlineSimulationOwned(
+                        playerId, before[playerId], after, dirtyBefore[playerId], target, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    uncommitted.Remove(playerId);
+                    throw;
+                }
+                // 检查点刷盘、钱包同步或时钟补推可能推进状态版本/资产版本号：变更后重导出终态。
+                if (outcome.Flushed || ecs.GetStateVersion(playerId) != after.StateVersion)
                     after = ToSnapshot(ecs.ExportSnapshot(playerId));
                 var advanceRevision = ecs.AttributeRevision(playerId);
                 var advanceRevisionBefore = _attributeRevisions.GetValueOrDefault(playerId, advanceRevision);
@@ -1915,7 +2015,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     if (_fencedCommits.ContainsKey(playerId)
                         || (_walletReloadRequired.ContainsKey(playerId)
                             && _loaded[playerId].LastSimulatedAt > before[playerId].LastSimulatedAt)) continue;
-                    RestoreUncommittedPlayer(playerId, before[playerId], dirtyBefore![playerId]);
+                    RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore![playerId],
+                        walletsBeforeBatch![playerId], pendingBeforeBatch![playerId], pendingFromBeforeBatch![playerId]);
                 }
             throw;
         }
@@ -2043,6 +2144,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             }
             // 应战方挂载成功即退出候选池：斗法期间不能被第二场撮合重复拉走。
             candidates.RemoveAll(candidate => candidate.PlayerId == picked.PlayerId);
+            if (_activeDuels.Count > 4096) _activeDuels.Clear();
+            _activeDuels[duelIdText] = new ActiveDuelMetadata(
+                duelIdText,
+                seekerId, initiatorMirror.DisplayName, initiatorMirror.Power,
+                picked.PlayerId, defenderMirror.DisplayName, defenderMirror.Power,
+                seekerNodeId, script.DurationSeconds,
+                script.InitiatorStagedItems, script.DefenderStagedItems);
             // 撮合成立才补「斗法遭遇」日志：匹配等待与静默回退阶段不下发提示（总纲 §7.10.2）。
             notifications.Add(new RuntimeNotification(seekerId,
                 [AppendDuelMatchedLog(seekerId, defenderMirror.DisplayName)]));
@@ -2104,15 +2212,19 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 return;
             }
             await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
+            var wasOnline = snapshot.State.Presence == PresenceState.Online;
+            var offlineAt = offlineSince ?? _simulationClock.UtcNow;
             if (flush)
             {
-                if (snapshot.State.Presence == PresenceState.Online)
-                    ecs.SetPresence(playerId, PresenceState.Offline, offlineSince ?? _simulationClock.UtcNow);
+                if (wasOnline)
+                    ecs.SetPresence(playerId, PresenceState.Offline, offlineAt);
                 ecs.MarkDirty(playerId, PlayerSectionKind.Progression);
                 var offline = ToSnapshot(ecs.ExportSnapshot(playerId));
                 _loaded[playerId] = snapshot = offline;
                 TrackDirty(playerId);
                 await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                if (wasOnline)
+                    await TryRecordLifecycleAuditAsync(playerId, snapshot, isOnline: false, offlineAt, cancellationToken).ConfigureAwait(false);
             }
             if (!ecs.RemovePlayer(playerId)) throw new InvalidOperationException($"ECS 玩家实体不存在：{playerId:D}");
             RuntimeInstrumentation.Count("lifecycle.player_unloaded");
@@ -2122,6 +2234,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             _recentRequests.TryRemove(playerId, out _);
             _dirtyAt.TryRemove(playerId, out _);
             _pendingReceipts.TryRemove(playerId, out _);
+            ClearBufferingState(playerId);
+            ClearBufferingState(playerId);
             _walletReloadRequired.TryRemove(playerId, out _);
             _attributeRevisions.TryRemove(playerId, out _);
             _publishedVersions.TryRemove(playerId, out _);
@@ -2292,26 +2406,79 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         TrackDirty(playerId);
         var dirty = ecs.GetDirtySections(playerId);
         var pending = _pendingReceipts[playerId];
-        if (dirty.Length == 0 && pending.Count == 0) return;
-        var now = DateTimeOffset.UtcNow;
-        var eligible = dirty.Where(section => force || pending.Count > 0
-            || now - _dirtyAt[playerId][section] >= TimeSpan.FromSeconds(15)).ToHashSet();
-        if (eligible.Count == 0 && pending.Count == 0) return;
+        var hasPendingDeltas = HasPendingSimulationDeltas(playerId);
+        if (dirty.Length == 0 && pending.Count == 0 && !hasPendingDeltas) return;
+        var wallNow = DateTimeOffset.UtcNow;
+        var checkpointDue = wallNow - _lastCheckpointWallAt.GetValueOrDefault(playerId, wallNow) >= _onlineCheckpointInterval;
+        if (!force && pending.Count == 0 && !checkpointDue) return;
+        var eligible = dirty.ToHashSet();
+        if (hasPendingDeltas) eligible.Add(PlayerSectionKind.Progression);
         var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
-        var writes = SectionCodec.EncodeAggregate(snapshot.State, eligible, now);
+        var bumpedVersion = false;
+        if ((eligible.Count > 0 || hasPendingDeltas)
+            && snapshot.StateVersion <= _lastPersistedStateVersion.GetValueOrDefault(playerId, 0))
+        {
+            ecs.MarkExternalStateChanged(playerId);
+            snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+            bumpedVersion = true;
+        }
+        var writes = SectionCodec.EncodeAggregate(snapshot.State, eligible, wallNow);
+        var pendingDeltas = PeekPendingSimulationDeltas(playerId, out var fromAt);
+        if (pendingDeltas.Length > 0)
+        {
+            var request = SimulationEconomyTransaction.CreateCheckpoint(
+                playerId, fromAt, snapshot.LastSimulatedAt, snapshot.StateVersion, pendingDeltas, simulationTransactionIdentity)
+                with { Sections = writes, Receipts = pending.ToArray() };
+            var result = await CommitWithConfirmationAsync(playerId, request, cancellationToken).ConfigureAwait(false);
+            if (!result.Applied) throw new InvalidOperationException("玩家检查点资产与状态事务未提交。");
+            var writtenKinds = writes.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
+            ecs.AcknowledgeDirtySections(playerId, writtenKinds);
+            foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
+            pending.Clear();
+            ClearPendingSimulationDeltas(playerId);
+            MarkCheckpointSynced(playerId, snapshot);
+            try { await SyncWalletAfterCommitAsync(playerId, result, cancellationToken).ConfigureAwait(false); }
+            catch (Exception exception)
+            {
+                _walletReloadRequired[playerId] = 0;
+                _logger.LogError(exception, "玩家检查点已提交但钱包同步失败 player={PlayerId} transaction={TransactionId}", playerId, result.TransactionId);
+                throw;
+            }
+            if (bumpedVersion && _loaded.TryGetValue(playerId, out var currentLoaded))
+                _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId)) with
+                {
+                    TouchedSections = currentLoaded.TouchedSections,
+                    WireAttributesChanged = currentLoaded.WireAttributesChanged
+                };
+            return;
+        }
+
+        if (writes.Count == 0 && pending.Count == 0)
+        {
+            ClearPendingSimulationDeltas(playerId);
+            return;
+        }
         try
         {
             await sections.EnqueueSectionsAsync(writes, pending.ToArray(), cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            // durable queue 失败时保留原脏集合和 receipt，下一次非强制刷新也能立即重试。
-            foreach (var section in eligible) _dirtyAt[playerId][section] = now.Subtract(TimeSpan.FromSeconds(15));
+            // durable queue 失败时保留原脏集合、缓冲状态与 receipt，下一次刷新可立即重试。
+            foreach (var section in eligible) _dirtyAt[playerId][section] = wallNow;
             throw;
         }
         ecs.AcknowledgeDirtySections(playerId, eligible);
         foreach (var section in eligible) _dirtyAt[playerId].Remove(section);
         pending.Clear();
+        ClearPendingSimulationDeltas(playerId);
+        MarkCheckpointSynced(playerId, snapshot);
+        if (bumpedVersion && _loaded.TryGetValue(playerId, out var syncedLoaded))
+            _loaded[playerId] = snapshot with
+            {
+                TouchedSections = syncedLoaded.TouchedSections,
+                WireAttributesChanged = syncedLoaded.WireAttributesChanged
+            };
     }
 
     private void TrackDirty(Guid playerId)
@@ -2356,6 +2523,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _wallets.TryRemove(playerId, out _);
         _dirtyAt.TryRemove(playerId, out _);
         _pendingReceipts.TryRemove(playerId, out _);
+        ClearBufferingState(playerId);
         _walletReloadRequired.TryRemove(playerId, out _);
         _logs.TryRemove(playerId, out _);
         _recentRequests.TryRemove(playerId, out _);
@@ -2428,25 +2596,31 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return ecs.ApplyNodeBuildingProjection(playerId, new(view.Version, view.Buildings, effects, world.NodeId, usages), now);
     }
 
-    private sealed record CommitOutcome(IReadOnlyList<LogEventDto>? Logs, SimulationResult? Simulation);
+    private sealed record CommitOutcome(IReadOnlyList<LogEventDto>? Logs, SimulationResult? Simulation, bool Flushed = false);
 
     private async ValueTask<CommitOutcome> CommitSimulationAsync(Guid playerId, PlayerRuntimeSnapshot before,
         PlayerRuntimeSnapshot after, CommandReceipt? receipt, IEnumerable<PlayerSectionKind> dirtySectionsBefore,
         CancellationToken cancellationToken)
     {
         var simulation = ecs.DrainSimulationResult(playerId);
-        if (simulation is not null && (after.LastSimulatedAt != before.LastSimulatedAt
-            || after.StateVersion != before.StateVersion || simulation.AssetDeltas.Count > 0))
-            if (simulation.AssetDeltas.Count > 0)
-            {
-                var transaction = SimulationEconomyTransaction.Create(playerId, simulation, simulationTransactionIdentity);
-                await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken, after).ConfigureAwait(false);
-            }
-            else
-            {
-                // 纯时钟与状态推进（零资产变动）：直接分段与回执队列落盘，严禁向不可变资产流水表（economy.transactions）写入空流水。
-                await CommitPlayerSectionsAsync(playerId, before, dirtySectionsBefore, receipt, cancellationToken, after).ConfigureAwait(false);
-            }
+        var bufferedDeltas = PeekPendingSimulationDeltas(playerId, out var bufferedFromAt);
+        var mergedDeltas = MergeSimulationDeltas(playerId, bufferedDeltas, simulation?.AssetDeltas);
+        if (mergedDeltas.Length > 0)
+        {
+            var transaction = bufferedDeltas.Length > 0
+                ? SimulationEconomyTransaction.CreateCheckpoint(
+                    playerId, bufferedFromAt, after.LastSimulatedAt, after.StateVersion, mergedDeltas, simulationTransactionIdentity)
+                : SimulationEconomyTransaction.Create(playerId, simulation!, simulationTransactionIdentity);
+            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken, after).ConfigureAwait(false);
+            ClearPendingSimulationDeltas(playerId);
+        }
+        else if ((simulation is not null || bufferedDeltas.Length > 0)
+            && (after.LastSimulatedAt != before.LastSimulatedAt || after.StateVersion != before.StateVersion || bufferedDeltas.Length > 0))
+        {
+            // 纯时钟与状态推进（或正负缓冲恰好抵消为零）：直接分段与回执队列落盘，严禁向不可变资产流水表写入空流水。
+            await CommitPlayerSectionsAsync(playerId, before, dirtySectionsBefore, receipt, cancellationToken, after).ConfigureAwait(false);
+            ClearPendingSimulationDeltas(playerId);
+        }
         else
         {
             if (receipt is not null) _pendingReceipts[playerId].Add(receipt);
@@ -2469,14 +2643,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var dirtyBefore = dirtySectionsBefore.ToArray();
         var dirty = ecs.GetDirtySections(playerId).ToHashSet();
         var after = afterSnapshot ?? ToSnapshot(ecs.ExportSnapshot(playerId));
+        var minNextVersion = Math.Max(before.StateVersion, _lastPersistedStateVersion.GetValueOrDefault(playerId, 0));
         if (after.LastSimulatedAt != before.LastSimulatedAt)
         {
-            if (after.StateVersion == before.StateVersion)
+            if (after.StateVersion <= minNextVersion)
             {
                 ecs.MarkExternalStateChanged(playerId);
                 after = ToSnapshot(ecs.ExportSnapshot(playerId));
             }
             dirty.Add(PlayerSectionKind.Progression);
+        }
+        else if (dirty.Count > 0 && after.StateVersion <= _lastPersistedStateVersion.GetValueOrDefault(playerId, 0))
+        {
+            ecs.MarkExternalStateChanged(playerId);
+            after = ToSnapshot(ecs.ExportSnapshot(playerId));
         }
         var writes = SectionCodec.EncodeAggregate(after.State, dirty, DateTimeOffset.UtcNow);
         var receipts = _pendingReceipts[playerId].ToList();
@@ -2494,6 +2674,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         ecs.AcknowledgeDirtySections(playerId, writtenKinds);
         foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
         _pendingReceipts[playerId].Clear();
+        MarkCheckpointSynced(playerId, after);
         _loaded[playerId] = after;
     }
 
@@ -2507,14 +2688,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         var dirtyBefore = dirtySectionsBefore.ToArray();
         var dirty = ecs.GetDirtySections(playerId).ToHashSet();
         var after = afterSnapshot ?? ToSnapshot(ecs.ExportSnapshot(playerId));
+        var minNextVersion = Math.Max(before.StateVersion, _lastPersistedStateVersion.GetValueOrDefault(playerId, 0));
         if (after.LastSimulatedAt != before.LastSimulatedAt)
         {
-            if (after.StateVersion == before.StateVersion)
+            if (after.StateVersion <= minNextVersion)
             {
                 ecs.MarkExternalStateChanged(playerId);
                 after = ToSnapshot(ecs.ExportSnapshot(playerId));
             }
             dirty.Add(PlayerSectionKind.Progression);
+        }
+        else if (dirty.Count > 0 && after.StateVersion <= _lastPersistedStateVersion.GetValueOrDefault(playerId, 0))
+        {
+            ecs.MarkExternalStateChanged(playerId);
+            after = ToSnapshot(ecs.ExportSnapshot(playerId));
         }
         var writes = SectionCodec.EncodeAggregate(after.State, dirty, DateTimeOffset.UtcNow);
         var receipts = _pendingReceipts[playerId].ToList();
@@ -2536,6 +2723,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         ecs.AcknowledgeDirtySections(playerId, writtenKinds);
         foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
         _pendingReceipts[playerId].Clear();
+        MarkCheckpointSynced(playerId, after);
         _loaded[playerId] = after;
         try { await SyncWalletAfterCommitAsync(playerId, result, cancellationToken).ConfigureAwait(false); }
         catch (Exception exception)
@@ -2647,8 +2835,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _wallets.TryRemove(playerId, out _);
         _dirtyAt.TryRemove(playerId, out _);
         _pendingReceipts.TryRemove(playerId, out _);
+        ClearBufferingState(playerId);
         _walletReloadRequired.TryRemove(playerId, out _);
-        _dirtyAt.TryRemove(playerId, out _);
         _recentRequests.TryRemove(playerId, out _);
         _attributeRevisions.TryRemove(playerId, out _);
         _publishedVersions.TryRemove(playerId, out _);
@@ -2662,9 +2850,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>从存储权威重读钱包并同步 ECS 库存组件；返回重读前后余额是否变化。</summary>
+    /// <summary>从存储权威重读钱包并同步 ECS 库存组件；重读前先提交在线缓冲差量，防止未落盘收益被覆盖。</summary>
     private async ValueTask<bool> ReloadWalletAsync(Guid playerId, CancellationToken cancellationToken)
     {
+        if (HasPendingSimulationDeltas(playerId))
+            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
         _walletReloadRequired.TryRemove(playerId, out _);
         try
         {
@@ -2737,8 +2927,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var applied = false;
             ecs.MutatePlayer(forfeit.PeerId, aggregate => applied = aggregate.ApplyPeerForfeit(forfeit.DuelId));
             if (!applied) return;
-            // 对手门外的标脏必须进刷盘轨道：若对方此后无操作，判胜结果不能丢在内存脏集里。
+            // 对手门外的标脏必须立即入刷盘轨道：若对方此后无操作，判胜结果不能仅滞留内存。
             TrackDirty(forfeit.PeerId);
+            await FlushOwnedAsync(forfeit.PeerId, force: true, cancellationToken).ConfigureAwait(false);
             var peerAfter = ToSnapshot(ecs.ExportSnapshot(forfeit.PeerId));
             _loaded[forfeit.PeerId] = peerAfter;
             notifications.Add(new RuntimeNotification(forfeit.PeerId, null, peerAfter));
@@ -2885,6 +3076,317 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             return new PlayerCommandResult(false, "ITEM_ENHANCE_LOCKED", $"正处于强化锁定中的装备无法{operationVerb}，请先取消强化。", before);
         return null;
     }
+
+    private async ValueTask<CommitOutcome> BufferOnlineSimulationOwned(
+        Guid playerId,
+        PlayerRuntimeSnapshot beforeSnapshot,
+        PlayerRuntimeSnapshot afterSnapshot,
+        PlayerSectionKind[] dirtySectionsBefore,
+        DateTimeOffset target,
+        CancellationToken cancellationToken)
+    {
+        var walletBackup = new Dictionary<AssetKey, AssetBalanceRecord>(_wallets[playerId]);
+        var hadPendingFrom = _pendingSimulationFromAt.TryGetValue(playerId, out var prevFrom);
+        var pendingBackup = _pendingSimulationDeltas.TryGetValue(playerId, out var prevMap)
+            ? new Dictionary<AssetKey, double>(prevMap)
+            : new Dictionary<AssetKey, double>();
+
+        var simulation = ecs.DrainSimulationResult(playerId);
+        if (simulation is { AssetDeltas.Count: > 0 })
+        {
+            var pendingMap = _pendingSimulationDeltas.GetOrAdd(playerId, static _ => []);
+            if (!hadPendingFrom || pendingBackup.Count == 0)
+                _pendingSimulationFromAt[playerId] = beforeSnapshot.LastSimulatedAt;
+
+            var wallet = _wallets[playerId];
+            foreach (var delta in simulation.AssetDeltas)
+            {
+                var nextPending = pendingMap.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
+                if (Math.Abs(nextPending) <= 1e-12) pendingMap.Remove(delta.Asset);
+                else pendingMap[delta.Asset] = nextPending;
+
+                if (wallet.TryGetValue(delta.Asset, out var existing))
+                    wallet[delta.Asset] = existing with { Quantity = existing.Quantity + delta.QuantityDelta };
+                else
+                    wallet[delta.Asset] = new AssetBalanceRecord(
+                        playerId, delta.Asset.ItemId.Value, delta.Asset.Variant, delta.QuantityDelta, 0);
+            }
+            SyncEcsWallet(playerId);
+        }
+
+        TrackDirty(playerId);
+        var duelBefore = GetActiveDuelPlayback(beforeSnapshot);
+        var duelCompleted = duelBefore is not null && afterSnapshot.State.Duel.ActiveDuelId is null;
+        var lastSimCheckpoint = _lastCheckpointSimAt.GetValueOrDefault(playerId, beforeSnapshot.LastSimulatedAt);
+        var checkpointDue = target - lastSimCheckpoint >= _onlineCheckpointInterval;
+
+        var flushed = false;
+        if (duelCompleted || checkpointDue)
+        {
+            try
+            {
+                await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                flushed = true;
+                if (duelCompleted)
+                    await TryRecordDuelCompletionAsync(
+                        playerId, beforeSnapshot, duelBefore!, forfeited: false, afterSnapshot.LastSimulatedAt, cancellationToken).ConfigureAwait(false);
+            }
+            catch (EconomyCommitOutcomeUnknownException)
+            {
+                throw;
+            }
+            catch
+            {
+                RestoreBufferingForRollback(playerId, beforeSnapshot, dirtySectionsBefore,
+                    walletBackup, pendingBackup, hadPendingFrom ? prevFrom : null);
+                throw;
+            }
+        }
+
+        var events = ecs.DrainSimulationEvents(playerId);
+        var logs = events.Count == 0 ? null : SimulationLogMapper.ToLogEvents(events, gameData,
+            _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity)), LogBufferCapacity);
+        return new(logs, simulation, flushed);
+    }
+
+    private void ClearBufferingState(Guid playerId)
+    {
+        _pendingSimulationDeltas.TryRemove(playerId, out _);
+        _pendingSimulationFromAt.TryRemove(playerId, out _);
+        _lastCheckpointSimAt.TryRemove(playerId, out _);
+        _lastCheckpointWallAt.TryRemove(playerId, out _);
+        _lastPersistedStateVersion.TryRemove(playerId, out _);
+        _needsInitialOnlineAudit.TryRemove(playerId, out _);
+    }
+
+    private void MarkCheckpointSynced(Guid playerId, PlayerRuntimeSnapshot snapshot)
+    {
+        _lastPersistedStateVersion[playerId] = snapshot.StateVersion;
+        _lastCheckpointSimAt[playerId] = snapshot.LastSimulatedAt;
+        _lastCheckpointWallAt[playerId] = DateTimeOffset.UtcNow;
+    }
+
+    private bool HasPendingSimulationDeltas(Guid playerId)
+        => _pendingSimulationDeltas.TryGetValue(playerId, out var map) && map.Count > 0;
+
+    private Server.Clean.AssetDelta[] PeekPendingSimulationDeltas(Guid playerId, out DateTimeOffset fromAt)
+    {
+        fromAt = _pendingSimulationFromAt.TryGetValue(playerId, out var savedFrom)
+            ? savedFrom
+            : (_loaded.TryGetValue(playerId, out var loaded) ? loaded.LastSimulatedAt : _simulationClock.UtcNow);
+        if (!_pendingSimulationDeltas.TryGetValue(playerId, out var map) || map.Count == 0)
+            return [];
+        return map
+            .Where(pair => Math.Abs(pair.Value) > 1e-12)
+            .Select(pair => new Server.Clean.AssetDelta(playerId, pair.Key.ItemId.Value, pair.Key.Variant, pair.Value))
+            .ToArray();
+    }
+
+    private void ClearPendingSimulationDeltas(Guid playerId)
+    {
+        if (_pendingSimulationDeltas.TryGetValue(playerId, out var map)) map.Clear();
+        _pendingSimulationFromAt.TryRemove(playerId, out _);
+    }
+
+    private static Server.Clean.AssetDelta[] MergeSimulationDeltas(Guid playerId,
+        Server.Clean.AssetDelta[] buffered, IReadOnlyList<Domain.Economy.AssetDelta>? liveDeltas)
+    {
+        if (buffered.Length == 0 && (liveDeltas is null || liveDeltas.Count == 0)) return [];
+        var merged = new Dictionary<(Guid PlayerId, string AssetId, string Variant), double>();
+        foreach (var delta in buffered)
+        {
+            var key = (delta.PlayerId, delta.AssetId, delta.Variant);
+            merged[key] = merged.GetValueOrDefault(key) + delta.Delta;
+        }
+        if (liveDeltas is not null)
+        {
+            foreach (var delta in liveDeltas)
+            {
+                var key = (delta.PlayerId.Value, delta.Asset.ItemId.Value, delta.Asset.Variant);
+                merged[key] = merged.GetValueOrDefault(key) + delta.QuantityDelta;
+            }
+        }
+        return merged
+            .Where(pair => Math.Abs(pair.Value) > 1e-12)
+            .Select(pair => new Server.Clean.AssetDelta(pair.Key.PlayerId, pair.Key.AssetId, pair.Key.Variant, pair.Value))
+            .ToArray();
+    }
+
+    private void RestoreBufferingForRollback(
+        Guid playerId,
+        PlayerRuntimeSnapshot before,
+        IEnumerable<PlayerSectionKind> dirtyBefore,
+        Dictionary<AssetKey, AssetBalanceRecord> walletBackup,
+        Dictionary<AssetKey, double> pendingBackup,
+        DateTimeOffset? pendingFromBackup)
+    {
+        _wallets[playerId] = new Dictionary<AssetKey, AssetBalanceRecord>(walletBackup);
+        _pendingSimulationDeltas[playerId] = new Dictionary<AssetKey, double>(pendingBackup);
+        if (pendingFromBackup is { } fromAt && pendingBackup.Count > 0)
+            _pendingSimulationFromAt[playerId] = fromAt;
+        else
+            _pendingSimulationFromAt.TryRemove(playerId, out _);
+        RestoreUncommittedPlayer(playerId, before, dirtyBefore);
+    }
+
+    private static DuelPlaybackState? GetActiveDuelPlayback(PlayerRuntimeSnapshot snapshot)
+    {
+        var activeDuelId = snapshot.State.Duel.ActiveDuelId;
+        var duel = snapshot.State.Actions.Count > 0 ? snapshot.State.Actions[0].Expedition?.Duel : null;
+        return duel is not null && !duel.Resolved && activeDuelId == duel.DuelId ? duel : null;
+    }
+
+    private async ValueTask TryRecordLifecycleAuditAsync(Guid playerId, PlayerRuntimeSnapshot snapshot,
+        bool isOnline, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        if (lifecycleAudit is null) return;
+        try
+        {
+            var accountId = snapshot.State.AccountId.Value;
+            var nodeId = snapshot.State.World.NodeId;
+            if (isOnline)
+                await lifecycleAudit.RecordOnlineAsync(playerId, accountId, snapshot.DisplayName, nodeId, occurredAt, cancellationToken).ConfigureAwait(false);
+            else
+                await lifecycleAudit.RecordOfflineAsync(playerId, accountId, snapshot.DisplayName, nodeId, occurredAt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception, "玩家上下线白名单审计落库失败 player={PlayerId} isOnline={IsOnline}", playerId, isOnline);
+        }
+    }
+
+    private async ValueTask TryRecordDuelCompletionAsync(Guid viewerPlayerId, PlayerRuntimeSnapshot beforeSnapshot,
+        DuelPlaybackState duelBefore, bool forfeited, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        if (duelLogs is null) return;
+        if (_recordedDuels.Count > 4096) _recordedDuels.Clear();
+        if (!_recordedDuels.TryAdd(duelBefore.DuelId, occurredAt)) return;
+        try
+        {
+            _ = Guid.TryParse(duelBefore.OpponentPlayerId, out var opponentId);
+            Guid initiatorId, targetId;
+            string initiatorName, targetName, nodeId;
+            double initiatorPower, targetPower, duration;
+            IReadOnlyList<DuelStagedItem> initiatorStaged, targetStaged;
+            if (_activeDuels.TryRemove(duelBefore.DuelId, out var meta))
+            {
+                initiatorId = meta.InitiatorPlayerId;
+                initiatorName = meta.InitiatorName;
+                initiatorPower = meta.InitiatorPower;
+                targetId = meta.TargetPlayerId;
+                targetName = meta.TargetName;
+                targetPower = meta.TargetPower;
+                nodeId = meta.NodeId;
+                duration = meta.DurationSeconds;
+                initiatorStaged = meta.InitiatorStaged;
+                targetStaged = meta.TargetStaged;
+            }
+            else if (duelBefore.ViewerIsInitiator)
+            {
+                initiatorId = viewerPlayerId;
+                initiatorName = beforeSnapshot.DisplayName;
+                targetId = opponentId;
+                targetName = duelBefore.OpponentName;
+                initiatorPower = 0;
+                targetPower = 0;
+                nodeId = beforeSnapshot.State.World.NodeId;
+                duration = duelBefore.DurationSeconds;
+                initiatorStaged = duelBefore.SelfStagedSnapshot;
+                targetStaged = duelBefore.OpponentStagedSnapshot;
+            }
+            else
+            {
+                initiatorId = opponentId;
+                initiatorName = duelBefore.OpponentName;
+                targetId = viewerPlayerId;
+                targetName = beforeSnapshot.DisplayName;
+                initiatorPower = 0;
+                targetPower = 0;
+                nodeId = beforeSnapshot.State.World.NodeId;
+                duration = duelBefore.DurationSeconds;
+                initiatorStaged = duelBefore.OpponentStagedSnapshot;
+                targetStaged = duelBefore.SelfStagedSnapshot;
+            }
+
+            string outcome;
+            Guid? winnerPlayerId;
+            if (forfeited)
+            {
+                if (duelBefore.ViewerIsInitiator)
+                {
+                    outcome = "target_win";
+                    winnerPlayerId = targetId;
+                }
+                else
+                {
+                    outcome = "initiator_win";
+                    winnerPlayerId = initiatorId;
+                }
+            }
+            else if (duelBefore.ViewerOutcome == CombatOutcome.Draw)
+            {
+                outcome = "draw";
+                winnerPlayerId = null;
+            }
+            else if ((duelBefore.ViewerOutcome == CombatOutcome.PlayerWon && duelBefore.ViewerIsInitiator)
+                     || (duelBefore.ViewerOutcome == CombatOutcome.EnemyWon && !duelBefore.ViewerIsInitiator))
+            {
+                outcome = "initiator_win";
+                winnerPlayerId = initiatorId;
+            }
+            else
+            {
+                outcome = "target_win";
+                winnerPlayerId = targetId;
+            }
+
+            static IReadOnlyList<DuelItemDeltaEntry> ToEntries(IReadOnlyList<DuelStagedItem> items) =>
+                items.GroupBy(item => item.ItemId, StringComparer.Ordinal)
+                    .Select(group => new DuelItemDeltaEntry(group.Key, group.Sum(item => item.Quantity)))
+                    .Where(entry => entry.Quantity > 0)
+                    .ToArray();
+
+            IReadOnlyList<DuelItemDeltaEntry> initiatorGains = [];
+            IReadOnlyList<DuelItemDeltaEntry> initiatorLosses = [];
+            IReadOnlyList<DuelItemDeltaEntry> targetGains = [];
+            IReadOnlyList<DuelItemDeltaEntry> targetLosses = [];
+            if (outcome == "initiator_win")
+            {
+                initiatorGains = ToEntries(targetStaged);
+                targetLosses = initiatorGains;
+            }
+            else if (outcome == "target_win")
+            {
+                targetGains = ToEntries(initiatorStaged);
+                initiatorLosses = targetGains;
+            }
+
+            await duelLogs.RecordAsync(new DuelLogEntry(
+                duelBefore.DuelId,
+                initiatorId, initiatorName, initiatorPower,
+                targetId, targetName, targetPower,
+                nodeId, winnerPlayerId, outcome, forfeited,
+                initiatorGains, initiatorLosses, targetGains, targetLosses,
+                duration, occurredAt), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception, "PVP 斗法收益日志落库失败 duelId={DuelId}", duelBefore.DuelId);
+        }
+    }
+
+    private sealed record ActiveDuelMetadata(
+        string DuelId,
+        Guid InitiatorPlayerId,
+        string InitiatorName,
+        double InitiatorPower,
+        Guid TargetPlayerId,
+        string TargetName,
+        double TargetPower,
+        string NodeId,
+        double DurationSeconds,
+        IReadOnlyList<DuelStagedItem> InitiatorStaged,
+        IReadOnlyList<DuelStagedItem> TargetStaged);
 
     private PlayerRuntimeSnapshot ToSnapshot(EcsPlayerSnapshot snapshot)
         => new(snapshot.PlayerId, snapshot.State.AccountId.Value.ToString("D"), snapshot.State.DisplayName,

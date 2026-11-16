@@ -235,30 +235,86 @@ public sealed class EconomyCommitTests
             "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id IN (SELECT transaction_id FROM economy.transactions WHERE actor_id=$1 AND transaction_type='simulation.concurrent')",
             player)));
     }
-    /// <summary>两级留存体系测试：短期流水（item.sell/simulation.reward 等）2 小时后连带明细级联清理；长期流水（market/shop.buy）保留 14 天。</summary>
+    /// <summary>两层持久化 + 5 类白名单留存测试：非白名单流水立即排空，5 类白名单/斗法日志/上下线审计/坊市与终态冻结保留 30 天（活跃挂单/活跃冻结永不删除）。</summary>
     [Fact]
-    public async Task TwoTierRetention_DeletesVolatileTransactionsPastTwoHoursAndKeepsMarketUntilFourteenDays()
+    public async Task WhitelistRetention_DrainsNonWhitelistImmediatelyAndRetainsWhitelistThirtyDays()
     {
         var (source, repository, player) = await ArrangeAsync();
         await using var ownedSource = source;
+        var peer = Guid.NewGuid();
+        await Sql(source,
+            "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,invite_code,created_at,last_seen_at,status) VALUES ($1,$2,$3,$3,(left(replace($1::text,'-',''),16)),now(),now(),1)",
+            peer, player, peer.ToString());
         var now = DateTimeOffset.UtcNow;
 
         var shortTx1 = Guid.NewGuid();
         var shortTx2 = Guid.NewGuid();
         var marketTx = Guid.NewGuid();
+        var shopTx = Guid.NewGuid();
+        var mailTx = Guid.NewGuid();
+        var doudizhuTx = Guid.NewGuid();
 
-        // 1. 写入带有明细行的 item.sell、simulation.reward 和 market 事务
+        // 1. 写入非白名单事务（item.sell / simulation.reward）与白名单事务（market / shop.buy / mail.claim / doudizhu.settlement）
         await repository.CommitAsync(new EconomyTransactionRequest(shortTx1, $"sell:{shortTx1:D}", "item.sell", player,
             [new(player, "currency.spirit-stone", "", 10)], OccurredAt: now));
         await repository.CommitAsync(new EconomyTransactionRequest(shortTx2, $"sim:{shortTx2:D}", "simulation.reward", player,
             [new(player, "item.ore", "", 2)], OccurredAt: now));
         await repository.CommitAsync(new EconomyTransactionRequest(marketTx, $"mkt:{marketTx:D}", "market", player,
             [new(player, "item.sword", "", 1)], OccurredAt: now));
+        await repository.CommitAsync(new EconomyTransactionRequest(shopTx, $"shop:{shopTx:D}", "shop.buy", player,
+            [new(player, "item.awakening-stone", "", 1)], OccurredAt: now));
+        await repository.CommitAsync(new EconomyTransactionRequest(mailTx, $"mail:{mailTx:D}", "mail.claim", player,
+            [new(player, "currency.spirit-stone", "", 50)], OccurredAt: now));
+        await repository.CommitAsync(new EconomyTransactionRequest(doudizhuTx, $"ddz:{doudizhuTx:D}", "doudizhu.settlement", player,
+            [new(player, "currency.spirit-stone", "", 30)], OccurredAt: now));
 
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx1));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+        // 2. 写入上下线审计（验证 accountId=Guid.Empty 时自动关联真实 account_id）与 PVP 斗法日志（验证幂等写入）
+        var lifecycleRepo = new PostgresPlayerLifecycleAuditRepository(source);
+        await lifecycleRepo.RecordOnlineAsync(player, Guid.Empty, "主角", "node.yunxi-village", now);
+        await lifecycleRepo.RecordOfflineAsync(player, Guid.Empty, "主角", "node.yunxi-village", now.AddMinutes(1));
+        Assert.Equal(2L, await Scalar(source,
+            "SELECT count(*) FROM identity.audit_events WHERE actor_id=$1 AND target_id=$1 AND event_type IN ('player.online','player.offline')",
+            player));
+
+        var duelRepo = new PostgresDuelLogRepository(source);
+        var duelId = $"duel-{Guid.NewGuid():N}";
+        var duelEntry = new DuelLogEntry(
+            duelId, player, "主角", 150, peer, "对手", 140,
+            "node.yunxi-village", player, "initiator_win", false,
+            [new("item.test-herb", 2)], [], [], [new("item.test-herb", 2)],
+            12.5, now);
+        await duelRepo.RecordAsync(duelEntry);
+        await duelRepo.RecordAsync(duelEntry);
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM game.duel_logs WHERE duel_id=$1", duelId));
+
+        // 3. 写入坊市挂单（1 active + 2 filled）、成交、冻结预占与商店每日限购
+        var activeOrderId = Guid.NewGuid();
+        var buyOrderId = Guid.NewGuid();
+        var sellOrderId = Guid.NewGuid();
+        var tradeId = Guid.NewGuid();
+        var baseSeq = Convert.ToInt64(await Scalar(source, "SELECT COALESCE(max(sequence), 0) FROM market.orders WHERE partition_id = 0"));
+        await Sql(source, """
+            INSERT INTO market.orders (order_id, partition_id, owner_player_id, side, asset_id, variant, price, quantity, filled_quantity, status, version, sequence, idempotency_key, created_at, expires_at, updated_at)
+            VALUES
+              ($1, 0, $4, 'sell', 'item.ore', '', 10, 1, 0, 'active', 1, $11, $7, $6, $8, $6),
+              ($2, 0, $4, 'buy',  'item.ore', '', 10, 1, 1, 'filled', 2, $12, $9, $6, $8, $6),
+              ($3, 0, $5, 'sell', 'item.ore', '', 10, 1, 1, 'filled', 2, $13, $10, $6, $8, $6)
+            """, activeOrderId, buyOrderId, sellOrderId, player, peer, now, $"ord-a:{activeOrderId:D}", now.AddDays(1), $"ord-b:{buyOrderId:D}", $"ord-s:{sellOrderId:D}", baseSeq + 1, baseSeq + 2, baseSeq + 3);
+        await Sql(source, """
+            INSERT INTO market.trades (trade_id, partition_id, buy_order_id, sell_order_id, buyer_id, seller_id, asset_id, variant, price, quantity, seller_tax, traded_at)
+            VALUES ($1, 0, $2, $3, $4, $5, 'item.ore', '', 10, 1, 1, $6)
+            """, tradeId, buyOrderId, sellOrderId, player, peer, now);
+        var activeResId = Guid.NewGuid();
+        var consumedResId = Guid.NewGuid();
+        await Sql(source, """
+            INSERT INTO economy.reservations (reservation_id, order_id, player_id, asset_id, variant, side, quantity, reserved_value, status, created_at, updated_at)
+            VALUES
+              ($1, $3, $5, 'item.ore', '', 'sell', 1, 0, 'active', $6, $6),
+              ($2, $4, $5, 'currency.spirit-stone', '', 'buy', 10, 10, 'consumed', $6, $6)
+            """, activeResId, consumedResId, activeOrderId, buyOrderId, player, now);
+        await Sql(source,
+            "INSERT INTO economy.shop_daily_purchases (player_id, offer_id, day_index, quantity, updated_at) VALUES ($1, 'shop.awakening-stone.daily-100', 100, 1, $2)",
+            player, now);
 
         var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -266,32 +322,44 @@ public sealed class EconomyCommitTests
         }).Build());
         var retention = new PostgresRetentionRepository(source, options, NullLogger<PostgresRetentionRepository>.Instance);
 
-        // 2. 模拟 1 小时后：未满 2 小时，全部保留
-        await retention.PruneAsync(now.AddHours(1), CancellationToken.None);
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
+        // 4. 5 分钟后：非白名单历史流水（item.sell / simulation.reward）及其明细被立即排空；白名单与业务热数据完整保留
+        await retention.PruneAsync(now.AddMinutes(5), CancellationToken.None);
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id IN ($1,$2)", shortTx1, shortTx2));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id IN ($1,$2)", shortTx1, shortTx2));
+        Assert.Equal(4L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id IN ($1,$2,$3,$4)", marketTx, shopTx, mailTx, doudizhuTx));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM game.duel_logs WHERE duel_id=$1", duelId));
+        Assert.Equal(2L, await Scalar(source, "SELECT count(*) FROM identity.audit_events WHERE actor_id=$1 AND event_type IN ('player.online','player.offline')", player));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM market.trades WHERE trade_id=$1", tradeId));
+        Assert.Equal(3L, await Scalar(source, "SELECT count(*) FROM market.orders WHERE order_id IN ($1,$2,$3)", activeOrderId, buyOrderId, sellOrderId));
+        Assert.Equal(2L, await Scalar(source, "SELECT count(*) FROM economy.reservations WHERE reservation_id IN ($1,$2)", activeResId, consumedResId));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.shop_daily_purchases WHERE player_id=$1", player));
 
-        // 3. 模拟 3 小时后：短期流水（item.sell 与 simulation.reward）连带其明细行被级联清理；长期流水（market）完整保留
-        await retention.PruneAsync(now.AddHours(3), CancellationToken.None);
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx1));
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx1));
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", shortTx2));
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", shortTx2));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
-        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", marketTx));
+        // 5. 第 29 天（未满 30 天）：全部白名单与关联记录依然完整保留
+        await retention.PruneAsync(now.AddDays(29), CancellationToken.None);
+        Assert.Equal(4L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id IN ($1,$2,$3,$4)", marketTx, shopTx, mailTx, doudizhuTx));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM game.duel_logs WHERE duel_id=$1", duelId));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM market.trades WHERE trade_id=$1", tradeId));
 
-        // 4. 模拟 15 天后：长期流水（market）也被滚动清理
-        await retention.PruneAsync(now.AddDays(15), CancellationToken.None);
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", marketTx));
-        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id=$1", marketTx));
+        // 6. 第 31 天（超过 30 天）：白名单账本、斗法日志、上下线审计、坊市成交与终态无引用挂单、终态冻结与商店限购全数清理，活跃单/活跃冻结永不删除
+        await retention.PruneAsync(now.AddDays(31), CancellationToken.None);
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id IN ($1,$2,$3,$4)", marketTx, shopTx, mailTx, doudizhuTx));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id IN ($1,$2,$3,$4)", marketTx, shopTx, mailTx, doudizhuTx));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM game.duel_logs WHERE duel_id=$1", duelId));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM identity.audit_events WHERE actor_id=$1 AND event_type IN ('player.online','player.offline')", player));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM market.trades WHERE trade_id=$1", tradeId));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM market.orders WHERE order_id IN ($1,$2)", buyOrderId, sellOrderId));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM market.orders WHERE order_id=$1", activeOrderId));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.reservations WHERE reservation_id=$1", consumedResId));
+        Assert.Equal(1L, await Scalar(source, "SELECT count(*) FROM economy.reservations WHERE reservation_id=$1", activeResId));
+        Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.shop_daily_purchases WHERE player_id=$1", player));
     }
 
-    /// <summary>PersistLedger=false 瞬时经济防重：不写流水账本、同幂等键重放命中短期幂等表不重复加减余额，且 24 小时后由留存任务批量清理。</summary>
+    /// <summary>PersistLedger=false 瞬时经济防重：不写流水账本、同幂等键重放命中短期幂等表不重复加减余额，且 2 小时后由留存任务批量清理。</summary>
     [Fact]
-    public async Task PersistLedgerFalse_TransientIdempotency_PreventsDuplicateDeltaAndPrunesAfter24Hours()
+    public async Task PersistLedgerFalse_TransientIdempotency_PreventsDuplicateDeltaAndPrunesAfterTwoHours()
     {
         var (source, repository, player) = await ArrangeAsync();
+        await using var ownedSource = source;
         await Sql(source, "INSERT INTO economy.player_asset_balances VALUES ($1,'item.test-herb','',10,1,now())", player);
         var now = DateTimeOffset.UtcNow;
         var key = $"transient:{Guid.NewGuid():N}";
@@ -325,11 +393,11 @@ public sealed class EconomyCommitTests
         }).Build());
         var retention = new PostgresRetentionRepository(source, options, NullLogger<PostgresRetentionRepository>.Instance);
 
-        await retention.PruneAsync(now.AddHours(23), CancellationToken.None);
+        await retention.PruneAsync(now.AddMinutes(110), CancellationToken.None);
         Assert.Equal(1L, await Scalar(source,
             "SELECT count(*) FROM economy.transient_idempotency WHERE player_id=$1 AND idempotency_key=$2", player, key));
 
-        var pruned = await retention.PruneAsync(now.AddHours(25), CancellationToken.None);
+        var pruned = await retention.PruneAsync(now.AddHours(3), CancellationToken.None);
         Assert.True(pruned.TransientIdempotency >= 1);
         Assert.Equal(0L, await Scalar(source,
             "SELECT count(*) FROM economy.transient_idempotency WHERE player_id=$1 AND idempotency_key=$2", player, key));

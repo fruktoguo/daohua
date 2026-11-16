@@ -79,7 +79,8 @@ public static class PostgresSchema
     /// progression 增 duelWins/duelLosses、settings 增 publicLoadoutVisible（均可缺省解码），玩家载荷标签推进至 v43。
     /// v55：identity.accounts 增 is_bot boolean NOT NULL DEFAULT false（标记市场机器人账号，屏蔽附近玩家列表与全服排行榜）；玩家载荷标签保持 v43 不变。
     /// v56：双轨邮件系统（social.broadcast_mails / social.player_mail_states / social.player_mails）；玩家载荷标签保持 v43 不变。
-    public const int Version = 56;
+    /// v57：持久化白名单治理与高频落盘根治（新增 game.duel_logs 斗法完整收益日志表、ix_shop_daily_purchases_updated 留存清理索引、状态/队列/临时幂等表 fillfactor 与 autovacuum 调优）；玩家载荷标签保持 v43 不变。
+    public const int Version = 57;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -287,6 +288,32 @@ public static class PostgresSchema
         PRIMARY KEY (node_id, building_id)
     );
 
+    -- PVP 斗法完整收益日志：仅记录双人斗法参战双方、节点、胜负/认输标识与双方本场得失物品，30 天滚动留存。
+    CREATE TABLE IF NOT EXISTS game.duel_logs (
+        duel_log_id uuid PRIMARY KEY,
+        duel_id varchar(96) NOT NULL,
+        initiator_player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+        initiator_name varchar(64) NOT NULL,
+        initiator_power double precision NOT NULL DEFAULT 0,
+        target_player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+        target_name varchar(64) NOT NULL,
+        target_power double precision NOT NULL DEFAULT 0,
+        node_id varchar(128) NOT NULL,
+        winner_player_id uuid NULL,
+        outcome varchar(24) NOT NULL CHECK (outcome IN ('initiator_win', 'target_win', 'draw')),
+        forfeited boolean NOT NULL DEFAULT false,
+        initiator_gains jsonb NOT NULL DEFAULT '[]'::jsonb,
+        initiator_losses jsonb NOT NULL DEFAULT '[]'::jsonb,
+        target_gains jsonb NOT NULL DEFAULT '[]'::jsonb,
+        target_losses jsonb NOT NULL DEFAULT '[]'::jsonb,
+        duration_seconds double precision NOT NULL DEFAULT 0,
+        occurred_at timestamptz NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_duel_logs_duel_id ON game.duel_logs(duel_id);
+    CREATE INDEX IF NOT EXISTS ix_duel_logs_occurred ON game.duel_logs(occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_duel_logs_initiator ON game.duel_logs(initiator_player_id, occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_duel_logs_target ON game.duel_logs(target_player_id, occurred_at DESC);
+
     CREATE TABLE IF NOT EXISTS economy.player_asset_balances (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
         asset_id varchar(128) NOT NULL,
@@ -356,8 +383,10 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL,
         PRIMARY KEY (player_id, offer_id, day_index)
     );
+    CREATE INDEX IF NOT EXISTS ix_shop_daily_purchases_updated
+        ON economy.shop_daily_purchases(updated_at);
 
-    -- 瞬时经济事务短期幂等防重表：仅承载 PersistLedger=false 的幂等键去重，由留存任务按 24 小时滚动清理。
+    -- 瞬时经济事务短期幂等防重表：仅承载 PersistLedger=false 的幂等键去重，由留存任务按 2 小时滚动清理。
     CREATE TABLE IF NOT EXISTS economy.transient_idempotency (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
         idempotency_key varchar(200) NOT NULL,
@@ -761,6 +790,12 @@ public static class PostgresSchema
     CREATE INDEX IF NOT EXISTS ix_player_mails_expires
         ON social.player_mails(expires_at);
 
+    -- 高频状态覆盖表与瞬时防重队列调优 fillfactor 与 autovacuum，降低页面分裂与膨胀写放大。
+    ALTER TABLE game.player_state_heads SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+    ALTER TABLE game.player_state_sections SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+    ALTER TABLE platform.section_flush_queue SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_cost_limit = 1000);
+    ALTER TABLE economy.transient_idempotency SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_cost_limit = 1000);
+
     CREATE TABLE IF NOT EXISTS platform.schema_version (
         version integer PRIMARY KEY,
         applied_at timestamptz NOT NULL
@@ -768,7 +803,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

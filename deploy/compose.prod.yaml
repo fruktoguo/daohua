@@ -31,12 +31,9 @@ services:
       - synchronous_commit=on
       - -c
       - wal_compression=on
+      # 2c4g/40g 单机关闭连续 WAL 归档，避免 WAL 段滞留占满根分区；长期留档由整点备份 + 异地同步承担。
       - -c
-      - archive_mode=on
-      - -c
-      - archive_timeout=300s
-      - -c
-      - archive_command=/usr/local/bin/postgres-wal-archive.sh %p %f
+      - archive_mode=off
       - -c
       - checkpoint_timeout=15min
       - -c
@@ -51,8 +48,6 @@ services:
       - autovacuum_max_workers=2
     volumes:
       - daohua-postgres:/var/lib/postgresql/data
-      - ${WAL_ARCHIVE_DIR:-/opt/daohua/wal-archive}:/var/lib/postgresql/wal-archive
-      - /opt/daohua/postgres-wal-archive.sh:/usr/local/bin/postgres-wal-archive.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_BOOTSTRAP_USER:?需要设置 DB_BOOTSTRAP_USER} -d daohua"]
       interval: 10s
@@ -95,13 +90,15 @@ services:
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"
       Storage__OutboxPollIntervalMilliseconds: "1000"
-      # 战斗掉落/参与结算等无明细流水持续高速写入，批上限 10000 且周期 600s 才能压住积压。
+      # 两层持久化 + 5 类白名单统一 30 天留存、2 小时瞬时幂等与 10 分钟在线安全检查点，保证 2c4g/40g 热库有界。
       Storage__RetentionBatchSize: "2048"
-      Storage__RetentionIntervalSeconds: "600"
+      Storage__RetentionIntervalSeconds: "300"
+      Storage__LedgerRetentionDays: "30"
+      Storage__AuditRetentionDays: "30"
+      Storage__TransientIdempotencyRetentionHours: "2"
+      Storage__OnlineCheckpointIntervalSeconds: "600"
       Storage__DeliveredOutboxRetentionDays: "7"
       Storage__SessionRetentionDays: "7"
-      # 审计记录由 market-ledger-archive.sh 按月归档；此值仅作为最终兜底保留期限。
-      Storage__AuditRetentionDays: "3650"
       Storage__ComputeJobRetentionDays: "2"
       Storage__DataProtectionKeyRetentionDays: "180"
       Server__MaxWebSocketMessageBytes: "1048576"

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# 将已超过热数据窗口的成交与审计记录按 UTC 月份移动到分区归档表。
-# 每个月份在同一事务内完成“删除在线表 + 写入归档分区”，可重复执行且不丢数据。
+# 清理超过热数据留存窗口（默认 30 天）的历史分区归档表（*_archive_YYYYMM）。
+# 热表数据统一由 PostgresRetentionWorker 按 30 天直接回收；长期留档由整点备份与异地同步承担，
+# 避免本地分区归档表在 2c4g/40g 机器上长期累积耗尽磁盘。
 
 set -Eeuo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
-ARCHIVE_BEFORE_DAYS="${ARCHIVE_BEFORE_DAYS:-90}"
+ARCHIVE_BEFORE_DAYS="${ARCHIVE_BEFORE_DAYS:-30}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
 
 [[ "$ARCHIVE_BEFORE_DAYS" =~ ^[1-9][0-9]*$ ]] || { printf 'ARCHIVE_BEFORE_DAYS 必须是正整数。\n' >&2; exit 2; }
@@ -25,83 +26,29 @@ compose exec -T db sh -ceu '
   exec psql -v ON_ERROR_STOP=1 --username="${POSTGRES_USER:?POSTGRES_USER 未注入}" \
     --dbname="${POSTGRES_DB:?POSTGRES_DB 未注入}" -v before_days="$1"
 ' sh "$ARCHIVE_BEFORE_DAYS" <<'SQL'
-BEGIN;
-CREATE TABLE IF NOT EXISTS market.trades_archive (
-    trade_id uuid NOT NULL,
-    partition_id integer NOT NULL,
-    buy_order_id uuid NOT NULL,
-    sell_order_id uuid NOT NULL,
-    buyer_id uuid NOT NULL,
-    seller_id uuid NOT NULL,
-    asset_id varchar(128) NOT NULL,
-    variant varchar(128) NOT NULL DEFAULT '',
-    price double precision NOT NULL,
-    quantity double precision NOT NULL,
-    seller_tax double precision NOT NULL,
-    traded_at timestamptz NOT NULL
-) PARTITION BY RANGE (traded_at);
-CREATE INDEX IF NOT EXISTS ix_market_trades_archive_time ON market.trades_archive (traded_at DESC);
-CREATE TABLE IF NOT EXISTS identity.audit_events_archive (
-    event_id uuid NOT NULL,
-    actor_id uuid NULL,
-    event_type varchar(96) NOT NULL,
-    target_id uuid NULL,
-    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
-    occurred_at timestamptz NOT NULL
-) PARTITION BY RANGE (occurred_at);
-CREATE INDEX IF NOT EXISTS ix_audit_events_archive_time ON identity.audit_events_archive (occurred_at DESC);
-COMMIT;
-
 SELECT set_config('daohua.archive_before_days', :'before_days', false);
 
-DO $archive$
+DO $prune_partitions$
 DECLARE
-    cutoff timestamptz := date_trunc('day', now() - make_interval(days => current_setting('daohua.archive_before_days')::integer));
-    month_start date;
-    month_end date;
-    suffix text;
-    moved_trades bigint;
-    moved_audit bigint;
+    cutoff date := (now() - make_interval(days => current_setting('daohua.archive_before_days')::integer))::date;
+    rec record;
+    part_end date;
 BEGIN
-    FOR month_start IN
-        SELECT generate_series(
-            date_trunc('month', least(
-                COALESCE((SELECT min(traded_at) FROM market.trades), cutoff),
-                COALESCE((SELECT min(occurred_at) FROM identity.audit_events), cutoff)
-            ))::date,
-            date_trunc('month', cutoff)::date - 1,
-            interval '1 month'
-        )::date
+    FOR rec IN
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE (schemaname = 'market' AND tablename ~ '^trades_archive_[0-9]{6}$')
+           OR (schemaname = 'identity' AND tablename ~ '^audit_events_archive_[0-9]{6}$')
+        ORDER BY schemaname, tablename
     LOOP
-        month_end := (month_start + interval '1 month')::date;
-        EXIT WHEN month_start >= cutoff::date;
-        suffix := to_char(month_start, 'YYYYMM');
-        EXECUTE format('CREATE TABLE IF NOT EXISTS market.trades_archive_%s PARTITION OF market.trades_archive FOR VALUES FROM (%L) TO (%L)', suffix, month_start, month_end);
-        EXECUTE format('CREATE TABLE IF NOT EXISTS identity.audit_events_archive_%s PARTITION OF identity.audit_events_archive FOR VALUES FROM (%L) TO (%L)', suffix, month_start, month_end);
-        EXECUTE format($sql$
-            WITH moved AS (
-                DELETE FROM market.trades
-                WHERE traded_at >= %L AND traded_at < %L
-                RETURNING trade_id, partition_id, buy_order_id, sell_order_id, buyer_id, seller_id, asset_id, variant, price, quantity, seller_tax, traded_at
-            )
-            INSERT INTO market.trades_archive
-            SELECT * FROM moved
-        $sql$, month_start, month_end);
-        GET DIAGNOSTICS moved_trades = ROW_COUNT;
-        EXECUTE format($sql$
-            WITH moved AS (
-                DELETE FROM identity.audit_events
-                WHERE occurred_at >= %L AND occurred_at < %L
-                RETURNING event_id, actor_id, event_type, target_id, payload, occurred_at
-            )
-            INSERT INTO identity.audit_events_archive
-            SELECT * FROM moved
-        $sql$, month_start, month_end);
-        GET DIAGNOSTICS moved_audit = ROW_COUNT;
-        RAISE NOTICE '已归档月份 % trades=% audit=%', suffix, moved_trades, moved_audit;
+        part_end := (to_date(right(rec.tablename, 6), 'YYYYMM') + interval '1 month')::date;
+        IF part_end <= cutoff THEN
+            EXECUTE format('DROP TABLE IF EXISTS %I.%I', rec.schemaname, rec.tablename);
+            RAISE NOTICE '已删除过期历史分区 %.%', rec.schemaname, rec.tablename;
+        END IF;
     END LOOP;
 END
-$archive$;
+$prune_partitions$;
 SQL
 
-printf '市场成交与审计分区归档完成（热数据窗口 %s 天）。\n' "$ARCHIVE_BEFORE_DAYS"
+printf '超过 %s 天的历史归档分区清理完成。\n' "$ARCHIVE_BEFORE_DAYS"

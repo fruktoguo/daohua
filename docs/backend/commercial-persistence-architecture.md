@@ -250,11 +250,11 @@ game.player_state_heads.state_version 是玩家的持久化提交头。一次刷
 
 | 场景 | 保存策略 | 数据损失上限 |
 | --- | --- | --- |
-| 普通在线模拟 | 同一玩家同一 section 最多每 15 秒合并写一次 | 纯模拟状态不超过 15 秒 |
-| 行动完成且产生资产 | 资产/流水立即事务提交；相关 section 进入同一 latest-only 队列安全点 | 资产 RPO 为 0；纯模拟 section 仍按 15 秒窗口 |
-| 下单、撤单、成交、领取 | 订单、冻结、余额和流水同一事务；确有外部副作用时再同事务追加 outbox | RPO 为 0 |
-| 登出、连接迁移、维护 | 先完成强制 section flush，再释放玩家所有权 | 正常关闭不丢脏状态 |
-| 进程崩溃 | 从最近 section、行动队列和 last_simulated_at 确定性补算 | 只承担约定的 15 秒模拟 RPO |
+| 普通在线模拟 | 在线常规 `AdvanceAllAsync` 纯内存推进，脏 section 与资产增量于内存缓冲合并，最长每 **10 分钟**（`Storage:OnlineCheckpointIntervalSeconds = 600`）原子刷盘一次 | 在线纯模拟状态与缓冲收益不超过 10 分钟（正常下线零丢失） |
+| 单人日常高频操作 | `ability.learn`、`item.use`、`progression.heaven_gate`、`item.discard`、`item.sell`、`tutorial.skip`、`simulation.reward` 设 `PersistLedger = false`，只更新状态/余额表与短期幂等键，不写不可变流水 | RPO 为 0（零冗余流水写入） |
+| 5 类白名单关键事务 | 坊市下单/成交/认领、系统商店购买/功德解锁、登入上线/下线、PVP 斗法结伴/认输损益（`game.duel_logs`）、邮件领奖与跨玩家/宗门/组队交互立即落库并强制先刷清内存缓冲 | RPO 为 0 |
+| 登出、离线重算、停机、读库前 | 先原子合并刷清内存缓冲资产增量与脏 section，再释放所有权或执行读库命令 | 正常关闭与切边界不丢任何状态或资产 |
+| 进程崩溃 | 从最近原子提交头、section、余额、行动队列和 `last_simulated_at` 确定性补算 | 只承担最多 10 分钟的在线纯模拟增量（绝不会单边推进 `LastSimulatedAt` 而漏掉缓冲收益） |
 | 数据库不可用 | 关键资产路径 fail-closed；普通模拟进入有界降级，队列超龄则停止新登录/风险操作 | 不静默吞掉持久化失败 |
 
 ### 5. 恢复流程
@@ -343,19 +343,19 @@ platform.section_flush_queue 是 latest-only 状态队列：
 - 仅用于前端展示的滚动消息；
 - 已经能从 section 和时间戳重建的模拟中间态。
 
-### 3. 日志与消息留存
+### 3. 日志与消息留存（5 类白名单 + 统一 30 天热表保留）
 
-| 数据 | 本地策略 | 远端策略 |
+| 数据 | 本地策略 | 远端/备份策略 |
 | --- | --- | --- |
-| 应用结构化日志 | 仅错误、警告和采样信息；单机总量硬上限约 100MB | OTLP/日志平台按环境保留 7–30 天 |
-| 审计事件 | 安全、管理员和资产争议事件；热留 30 天 | 压缩归档 365 天或按合规要求 |
+| 应用结构化日志 | 仅错误、警告和采样信息；systemd journald 上限 `200MB`、Docker `json-file` 按配额轮转 | — |
+| 白名单日志与账本（仅 5 类） | ① 坊市挂单与成交（`market.trades` / 终态无引用 `market.orders` / `market.settlement_claims`）；② 系统商店与功德解锁（`shop.buy` / `player.unlock_avatar` / `economy.shop_daily_purchases`）；③ 玩家登入上线/下线审计（`identity.audit_events`）；④ 完整 PVP 斗法日志（`game.duel_logs`）；⑤ 邮件与跨玩家/宗门/组队消耗品交互流水（`mail.claim` / `participation.assets` / `building.contribute` / `invitation.*` / `doudizhu.settlement` / `zongmen.*` / `ops.*`；组队战斗个人掉落结算 `participation.settlement` 走 `PersistLedger = false`）。**热表统一保留 30 天**，超期自动删除 | 整点逻辑备份 + 每日基线 + 计算节点异地冷备份 |
+| 短期防重幂等键 | `economy.transient_idempotency`（`PersistLedger = false` 检查点去重）仅保留 **2 小时** | 不归档 |
+| 非白名单历史流水 | 单人采集/制造/战斗/强化/分解/出售/跳过教程等非白名单 `economy.transactions` 一经清理即刻排空，禁止再新增写入 | — |
 | WebSocket 消息 | 只在前端内存环形缓冲保留最近 100 条用于诊断 | 不归档 |
-| 聊天/滚动消息 | 本项目基线不持久化 | 若未来成为玩法，再单独设计容量与合规策略 |
+| 聊天/滚动消息 | 仅内存/近期保留，不膨胀长期流水表 | — |
 | 战斗 Tick/伤害事件 | 不持久化 | 由确定性状态重算 |
-| Trace | 本地不落盘；正常采样 1%，错误/慢请求 100% | 远端短期保留 |
-| Metrics | 不写本地数据库 | 远端指标平台 |
 
-实现中的 `PostgresRetentionWorker` 每小时以小批量清理六类数据：已投递 outbox、过期/已撤销会话、旧审计事件、已结束冷挂机任务、过期 Data Protection key、过期 `market.settlement_claims` 领取游标。过期命令回执 `platform.command_receipts` 由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理，不归属 retention worker。它不删除余额、订单、成交或未投递 outbox；`market.trades` 作为权威业务流水按备份/远端归档流程保留，不能把成交流水当作普通日志随意清空。
+实现中的 `PostgresRetentionWorker` 每 **5 分钟**执行多批排空（单轮最多 8 批）：即时清理超过 **2 小时**的 `economy.transient_idempotency` 与非白名单 `economy.transactions`，并按 **30 天**统一滚动删除白名单流水/审计/`game.duel_logs`/`market.trades`/无活跃引用的终态 `market.orders`/终态 `economy.reservations`/`economy.shop_daily_purchases`/`identity.account_risk_events`/`market.settlement_claims`，已结束冷挂机任务 `platform.compute_jobs` 保留 **2 天**。过期命令回执 `platform.command_receipts` 仍由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理。
 
 ---
 
@@ -365,15 +365,15 @@ platform.section_flush_queue 是 latest-only 状态队列：
 
 | 项目 | 硬上限/目标 | 处理原则 |
 | --- | ---: | --- |
-| PostgreSQL 数据与索引 | ≤ 12GB | 超过 60% 预警；优先归档流水和清理派生数据，不删除权威当前状态。 |
-| PostgreSQL WAL | ≤ 2GB | 设置 checkpoint、归档告警和保留上限；WAL 归档失败时提高告警等级。 |
-| 备份暂存 | ≤ 1GB | 本地只保留正在上传/校验的少量文件，长期备份在 COS/S3。 |
-| Docker 镜像与层 | ≤ 6GB | 定期清理未引用层；镜像不得携带 data、快照或源码。 |
-| 应用/容器日志 | ≤ 100MB | 超限立即轮转并告警，禁止无限增长。 |
+| PostgreSQL 数据与索引 | ≤ 12GB | 超过 60% 预警；30 天留存自动回收白名单日志与流水，不删除权威当前状态。 |
+| PostgreSQL WAL | ≤ 2GB | 单机禁用连续 `archive_mode`（`archive_mode=off`），依靠 `checkpoint_timeout` + `max_wal_size=1GB` 自循环回收。 |
+| 备份暂存 | ≤ 1GB | 本地只保留热备保留窗口（6 小时 / 3 天 / 1 基线 / 5 份 pre-migration），长期备份由计算节点同步。 |
+| Docker 镜像与层 | ≤ 6GB | 部署与自动更新后清理历史悬空镜像；镜像不得携带 data、快照或源码。 |
+| 应用/容器日志 | ≤ 100MB | Docker `json-file` 限额 + host journald 200M 上限。 |
 | 临时文件与压缩工作区 | ≤ 1GB | 任务完成后删除；失败保留最小诊断信息。 |
 | 系统与安全余量 | ≥ 18GB | 任何清理策略都不得侵占这部分余量。 |
 
-磁盘占用达到 60% 预警、75% 严重、85% 保护模式。保护模式下暂停非关键归档和新批量任务，但不删除权威快照、资产余额、订单或流水。
+磁盘占用达到 60% 预警、75% 严重、85% 保护模式。保护模式下暂停非关键归档和新批量任务，但不删除权威快照、资产余额或活跃订单。
 
 ### 2. PostgreSQL 基线参数方向
 
@@ -392,27 +392,26 @@ wal_compression = on
 checkpoint_timeout = 15min
 checkpoint_completion_target = 0.9
 max_wal_size = 1GB
+archive_mode = off
 autovacuum = on
 ~~~
 
-高频队列表和按月流水表分别设置合理的 autovacuum 参数；不要用全局激进 vacuum 把 CPU 和 WAL 打满。
+高频队列表和状态表设置紧凑 `fillfactor` 与积极的 `autovacuum` 阈值；不要用全局激进 vacuum 把 CPU 和 WAL 打满。
 
 ### 3. 写放大控制
 
 核心控制量是：
 
 ~~~text
-section 写入量
-  = 脏玩家数 × 平均脏 section 数 ÷ 合并间隔
+在线模拟与常规状态写入量
+  = 脏在线玩家数 × 平均脏 section 数 ÷ 10 分钟检查点（外加少量关键边界强刷）
 
-可靠事件写入量
-  = 资产/市场/外部副作用的真实业务次数
+可靠白名单日志写入量
+  = 市场交易 / 商店功德消费 / 登入登出 / PVP 斗法 / 邮件与跨玩家社交的真实业务次数
 
 禁止项
-  = 逐 Tick 快照 + 逐消息日志 + Redis AOF 镜像 + 重复双写
+  = 每 Tick 落盘 + 单人采集制造战斗掉落写 economy.transactions + 连续本地 WAL 归档堆积
 ~~~
-
-在 500 名峰值在线玩家、15 秒 section 合并间隔下，写入量由“脏 section 数”决定，而不是由网络消息总数决定。最终门禁必须在真实 PostgreSQL、WAL 和 Worker 上测量，不以纯内存基准冒充生产容量。
 
 ---
 

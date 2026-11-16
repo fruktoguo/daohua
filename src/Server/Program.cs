@@ -124,6 +124,8 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<IAssetBalanceRepository, PostgresAssetRepository>();
     builder.Services.AddSingleton<IEconomyTransactionStore, PostgresEconomyRepository>();
     builder.Services.AddSingleton<IPlayerOwnershipStore, PostgresPlayerOwnershipRepository>();
+    builder.Services.AddSingleton<IPlayerLifecycleAuditStore, PostgresPlayerLifecycleAuditRepository>();
+    builder.Services.AddSingleton<IDuelLogRepository, PostgresDuelLogRepository>();
     builder.Services.AddSingleton<PostgresMarketRepository>();
     builder.Services.AddSingleton<ShopPurchaseRepository>();
     builder.Services.AddSingleton<IMarketTransactionStore>(sp => sp.GetRequiredService<PostgresMarketRepository>());

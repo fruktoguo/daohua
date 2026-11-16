@@ -47,4 +47,18 @@ public static class SimulationEconomyTransaction
             result.To, JsonSerializer.SerializeToUtf8Bytes(new { result.StateVersion, result.To }),
             PersistLedger: false);
     }
+
+    /// <summary>
+    /// 生成在线缓冲检查点或关键边界合并刷盘用的无账本经济事务请求。
+    /// </summary>
+    public static EconomyTransactionRequest CreateCheckpoint(Guid playerId, DateTimeOffset from, DateTimeOffset to,
+        long stateVersion, IReadOnlyList<AssetDelta> deltas, ISimulationTransactionIdentity? identity = null)
+    {
+        var key = $"sim-ckpt:{playerId:D}:{stateVersion}:{from.ToUnixTimeMilliseconds()}:{to.ToUnixTimeMilliseconds()}";
+        return new EconomyTransactionRequest(
+            identity?.Create(key) ?? Guid.NewGuid(), key, "simulation.reward", playerId,
+            deltas,
+            to, JsonSerializer.SerializeToUtf8Bytes(new { StateVersion = stateVersion, From = from, To = to }),
+            PersistLedger: false);
+    }
 }

@@ -85,7 +85,7 @@ internal static class PostgresTestSchema
                             identity.account_risk_events, identity.account_risk_signals,
                             identity.data_protection_keys,
                             game.player_state_heads, game.player_state_sections, game.player_action_queue,
-                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings,
+                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings, game.duel_logs,
                             platform.compute_jobs, platform.section_flush_queue, platform.command_receipts,
                             platform.integration_outbox, platform.account_risk_policy, platform.account_risk_key,
                             social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,

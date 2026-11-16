@@ -1,0 +1,697 @@
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
+using DaoHua.Ecs;
+using Domain.Combat;
+using Domain.Common;
+using Domain.GameData;
+using Domain.Persistence;
+using Domain.Player;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Protocol;
+using Server.Clean;
+using Xunit;
+using StoredHead = Domain.Persistence.PlayerStateHead;
+
+namespace Server.Tests;
+
+/// <summary>
+/// 两层持久化与 5 类白名单运行时契约回归测试：
+/// 1. 在线模拟推进仅在内存缓冲（零每 Tick 写库），满 10 分钟检查点或关键边界一次性原子合批刷盘（PersistLedger=false）；
+/// 2. 6 类单人日常命令设为 PersistLedger=false，shop.buy 与 player.unlock_avatar 严格设为 PersistLedger=true；
+/// 3. 上线/离线生命周期审计（含新建角色首连、重连防重、卸载离线）；
+/// 4. PVP 斗法自然结算与中途弃战均幂等写入 game.duel_logs 并立即强制刷盘。
+/// </summary>
+public sealed class PersistenceGovernanceRuntimeTests
+{
+    private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task OnlineAdvance_BuffersInMemoryWithZeroPerTickWrites_AndFlushesAtomicallyAtTenMinuteCheckpointAndBoundaries()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+        sections.Seed(CreateOfflineBundle(playerId, "缓冲道友", catalog.Fingerprint, skipTutorial: true));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(),
+            serverOptions: CreateOptions(600));
+
+        await adapter.LoadAsync(playerId);
+        await adapter.FlushAsync(playerId, force: true);
+
+        var enqReq = Guid.NewGuid();
+        var enqueueResult = await adapter.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                enqReq.ToString("D"), "explore.gather-ningxue-grass", -1), ProtocolJson.Options),
+            0, enqReq);
+        Assert.True(enqueueResult.Success, enqueueResult.Message);
+        await adapter.FlushAsync(playerId, force: true);
+
+        var sectionsAfterEnqueue = sections.EnqueueCount;
+        Assert.Empty(economy.Requests);
+
+        // 1. +37s 与 +74s（未满 10 分钟检查点）：零 DB 写入，内存钱包与快照实时可见采集收益
+        clock.Advance(TimeSpan.FromSeconds(37));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        clock.Advance(TimeSpan.FromSeconds(37));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+
+        Assert.Empty(economy.Requests);
+        Assert.Equal(sectionsAfterEnqueue, sections.EnqueueCount);
+        var loadedMid = adapter.TryGetLoaded(playerId)!;
+        var grassQtyMid = loadedMid.Assets.Single(a => a.AssetId == "item.ningxue-grass").Quantity;
+        Assert.True(grassQtyMid > 0, "在线模拟收益应实时反映在内存钱包/快照中");
+        Assert.Empty(await assets.LoadBalancesAsync(playerId));
+
+        // 2. 推至 +600s（满 10 分钟安全检查点）：原子合批提交 CreateCheckpoint（PersistLedger=false）与 Progression 分段
+        clock.UtcNow = Epoch.AddMinutes(10);
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+
+        var checkpointReq = Assert.Single(economy.Requests);
+        Assert.False(checkpointReq.PersistLedger);
+        Assert.StartsWith("sim-ckpt:", checkpointReq.IdempotencyKey, StringComparison.Ordinal);
+        Assert.Contains(checkpointReq.Sections!, s => s.SectionKind == PlayerSectionKinds.Progression);
+        var grassPersistedAtCheckpoint = (await assets.LoadBalancesAsync(playerId))
+            .Single(b => b.AssetId == "item.ningxue-grass").Quantity;
+        Assert.True(grassPersistedAtCheckpoint > grassQtyMid);
+
+        // 3. 检查点刷盘失败（IOException）：内存钱包、缓冲差量与时钟完整回滚
+        clock.UtcNow = Epoch.AddMinutes(20);
+        economy.FailNextCommit = true;
+        await Assert.ThrowsAsync<IOException>(async () => await adapter.AdvanceAllAsync(clock.UtcNow));
+        Assert.Equal(Epoch.AddMinutes(10), adapter.TryGetLoaded(playerId)!.LastSimulatedAt);
+        Assert.Equal(grassPersistedAtCheckpoint,
+            adapter.TryGetLoaded(playerId)!.Assets.Single(a => a.AssetId == "item.ningxue-grass").Quantity);
+
+        // 4. 在 +20m37s（新周期内，尚未到 +30m 检查点）触发新采集后再执行 item.sell：
+        // 命令前必须先将未落盘采集增量经 sim-ckpt 刷库，再执行 item.sell，二者均 PersistLedger=false 且余额严格一致。
+        clock.UtcNow = Epoch.AddMinutes(10).AddSeconds(37);
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        Assert.Single(economy.Requests);
+
+        var grassBeforeSell = adapter.TryGetLoaded(playerId)!.Assets.Single(a => a.AssetId == "item.ningxue-grass").Quantity;
+        Assert.True(grassBeforeSell > grassPersistedAtCheckpoint);
+
+        var sellReqId = Guid.NewGuid();
+        var sellResult = await adapter.ExecuteAsync(playerId, "item.sell",
+            JsonSerializer.SerializeToElement(new { itemId = "item.ningxue-grass", variant = "", quantity = 1 }),
+            0, sellReqId);
+        Assert.True(sellResult.Success, sellResult.Message);
+
+        Assert.Equal(3, economy.Requests.Count);
+        Assert.StartsWith("sim-ckpt:", economy.Requests[1].IdempotencyKey, StringComparison.Ordinal);
+        Assert.False(economy.Requests[1].PersistLedger);
+        Assert.Equal("item.sell", economy.Requests[2].TransactionType);
+        Assert.False(economy.Requests[2].PersistLedger);
+
+        var dbBalances = await assets.LoadBalancesAsync(playerId);
+        Assert.Equal(grassBeforeSell - 1, dbBalances.Single(b => b.AssetId == "item.ningxue-grass").Quantity);
+        Assert.Equal(5, dbBalances.Single(b => b.AssetId == "currency.spirit-stone").Quantity);
+    }
+
+    [Fact]
+    public async Task SinglePlayerDailyCommands_SetPersistLedgerFalse_WhileShopBuyAndUnlockAvatarPersistLedgerTrue()
+    {
+        var playerId = Guid.NewGuid();
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        assets.Seed(playerId, ("item.tome.heavy-slash", "", 1));
+        assets.Seed(playerId, ("item.ningxue-grass", "", 3));
+        assets.Seed(playerId, ("item.gongde-bound", "", 10000));
+        var economy = new RecordingEconomy(sections, assets);
+        sections.Seed(CreateOfflineBundle(playerId, "白名单命令测试", catalog.Fingerprint, skipTutorial: false));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock);
+        await adapter.LoadAsync(playerId);
+
+        // 单人日常 1: tutorial.skip -> PersistLedger=false
+        var skipResult = await adapter.ExecuteAsync(playerId, "tutorial.skip",
+            JsonSerializer.SerializeToElement(new { }), 0, Guid.NewGuid());
+        Assert.True(skipResult.Success, skipResult.Message);
+        Assert.Equal("tutorial.skip", economy.Requests[^1].TransactionType);
+        Assert.False(economy.Requests[^1].PersistLedger);
+
+        // 单人日常 2: ability.learn -> PersistLedger=false
+        var learnResult = await adapter.ExecuteAsync(playerId, "ability.learn",
+            JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash" }), 0, Guid.NewGuid());
+        Assert.True(learnResult.Success, learnResult.Message);
+        Assert.Equal("ability.learn", economy.Requests[^1].TransactionType);
+        Assert.False(economy.Requests[^1].PersistLedger);
+
+        // 单人日常 3 & 4: item.sell & item.discard -> PersistLedger=false
+        var sellResult = await adapter.ExecuteAsync(playerId, "item.sell",
+            JsonSerializer.SerializeToElement(new { itemId = "item.ningxue-grass", variant = "", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.True(sellResult.Success, sellResult.Message);
+        Assert.Equal("item.sell", economy.Requests[^1].TransactionType);
+        Assert.False(economy.Requests[^1].PersistLedger);
+
+        var discardResult = await adapter.ExecuteAsync(playerId, "item.discard",
+            JsonSerializer.SerializeToElement(new { itemId = "item.ningxue-grass", variant = "", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.True(discardResult.Success, discardResult.Message);
+        Assert.Equal("item.discard", economy.Requests[^1].TransactionType);
+        Assert.False(economy.Requests[^1].PersistLedger);
+
+        // 白名单第 2 类: shop.buy -> PersistLedger=true
+        var buyResult = await adapter.ExecuteAsync(playerId, "shop.buy",
+            JsonSerializer.SerializeToElement(new { offerId = "shop.awakening-stone.daily-100", quantity = 1 }), 0, Guid.NewGuid());
+        Assert.True(buyResult.Success, buyResult.Message);
+        Assert.Equal("shop.buy", economy.Requests[^1].TransactionType);
+        Assert.True(economy.Requests[^1].PersistLedger);
+
+        // 白名单第 2 类: player.unlock_avatar -> PersistLedger=true
+        var avatarResult = await adapter.ExecuteAsync(playerId, "player.unlock_avatar",
+            JsonSerializer.SerializeToElement(new { avatar = "sword-immortal" }), 0, Guid.NewGuid());
+        Assert.True(avatarResult.Success, avatarResult.Message);
+        Assert.Equal("player.unlock_avatar", economy.Requests[^1].TransactionType);
+        Assert.True(economy.Requests[^1].PersistLedger);
+    }
+
+    [Fact]
+    public async Task PlayerLifecycleAudit_EmitsOnlineForReconnectAndBrandNewPlayer_WithoutDuplicateOnReattach_AndOfflineOnUnload()
+    {
+        var brandNewPlayerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+        var lifecycleAudit = new RecordingLifecycleAuditStore();
+
+        // 空分段新建档：PlayerAggregate.Create 默认就是 Presence=Online，首连也必须记录 player.online
+        sections.Seed(new PlayerStateBundle(
+            new PlayerIdentity(brandNewPlayerId, accountId, "初入仙途", Epoch),
+            new StoredHead(brandNewPlayerId, 0, SectionCodec.CurrentSchemaVersion, Epoch, catalog.Fingerprint, "", Epoch),
+            new Dictionary<string, StoredSection>(StringComparer.Ordinal),
+            []));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            lifecycleAudit: lifecycleAudit);
+
+        // 1. 新建角色首次连接 -> 写入 1 条 player.online
+        await adapter.AttachConnectionAsync(brandNewPlayerId);
+        Assert.Single(lifecycleAudit.Events, e => e.EventType == "player.online" && e.PlayerId == brandNewPlayerId && e.AccountId == accountId);
+
+        // 2. 同会话重复 AttachConnectionAsync -> 不重复刷审计
+        await adapter.AttachConnectionAsync(brandNewPlayerId);
+        Assert.Single(lifecycleAudit.Events, e => e.EventType == "player.online");
+
+        // 3. 真实卸载 RemoveAsync(flush: true) -> 写入 1 条 player.offline
+        clock.Advance(TimeSpan.FromMinutes(2));
+        await adapter.RemoveAsync(brandNewPlayerId, flush: true, offlineSince: clock.UtcNow);
+        Assert.Single(lifecycleAudit.Events, e => e.EventType == "player.offline" && e.PlayerId == brandNewPlayerId);
+
+        // 4. 离线重连 AttachConnectionAsync -> Offline 转 Online 再写 1 条 player.online
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await adapter.AttachConnectionAsync(brandNewPlayerId);
+        Assert.Equal(2, lifecycleAudit.Events.Count(e => e.EventType == "player.online"));
+        Assert.Single(lifecycleAudit.Events, e => e.EventType == "player.offline");
+    }
+
+    [Fact]
+    public async Task PvpDuel_NormalCompletionAndForfeit_RecordSingleDuelLogWithGainsLossesAndForceFlush()
+    {
+        var catalog = LoadIsolatedCatalog();
+        var clock = new MutableClock(Epoch);
+        var sections = new MultiPlayerSections();
+        var assets = new MultiPlayerAssets();
+        var economy = new RecordingEconomy(sections, assets);
+        var duelLogs = new RecordingDuelLogRepository();
+
+        var playerA = Guid.NewGuid();
+        var playerB = Guid.NewGuid();
+        sections.Seed(CreateDuelistBundle(playerA, "青云剑修", catalog.Fingerprint, "item.ningxue-grass", 3, equipSkill: true));
+        sections.Seed(CreateDuelistBundle(playerB, "云溪散修", catalog.Fingerprint, "item.peach-wood", 2, equipSkill: false));
+
+        using var ecs = new EcsGameRuntime(catalog, Epoch, duelAdvance: new DuelAdvanceOptions(MatchingEnabled: true));
+        await using var adapter = new EcsPlayerRuntimeAdapter(
+            ecs, sections, assets, economy, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
+            serverOptions: CreateOptions(600),
+            duelLogs: duelLogs);
+
+        await adapter.AttachConnectionAsync(playerA);
+        await adapter.AttachConnectionAsync(playerB);
+        await adapter.FlushAsync(playerA, force: true);
+        await adapter.FlushAsync(playerB, force: true);
+
+        // 入队同节点 PvP 讨伐
+        await EnqueueCombatAsync(adapter, playerA);
+        await EnqueueCombatAsync(adapter, playerB);
+
+        // 场景 A：推进直到撮合斗法，再推进至斗法自然结算
+        string? matchedDuelId = null;
+        for (var i = 0; i < 40; i++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(2));
+            await adapter.AdvanceAllAsync(clock.UtcNow);
+            matchedDuelId ??= adapter.TryGetLoaded(playerA)!.State.Duel.ActiveDuelId;
+            if (matchedDuelId is not null
+                && adapter.TryGetLoaded(playerA)!.State.Duel.ActiveDuelId is null
+                && adapter.TryGetLoaded(playerB)!.State.Duel.ActiveDuelId is null)
+            {
+                break;
+            }
+        }
+
+        Assert.False(string.IsNullOrEmpty(matchedDuelId));
+        var normalEntry = Assert.Single(duelLogs.Entries, e => e.DuelId == matchedDuelId);
+        Assert.False(normalEntry.Forfeited);
+        Assert.Equal("node.yunxi-village", normalEntry.NodeId);
+        Assert.Equal(playerA, normalEntry.WinnerPlayerId);
+        if (normalEntry.InitiatorPlayerId == playerA)
+        {
+            Assert.Equal("initiator_win", normalEntry.Outcome);
+            var gain = Assert.Single(normalEntry.InitiatorGains);
+            Assert.Equal("item.peach-wood", gain.ItemId);
+            Assert.Equal(2d, gain.Quantity);
+            var loss = Assert.Single(normalEntry.TargetLosses);
+            Assert.Equal("item.peach-wood", loss.ItemId);
+            Assert.Equal(2d, loss.Quantity);
+        }
+        else
+        {
+            Assert.Equal("target_win", normalEntry.Outcome);
+            var gain = Assert.Single(normalEntry.TargetGains);
+            Assert.Equal("item.peach-wood", gain.ItemId);
+            Assert.Equal(2d, gain.Quantity);
+            var loss = Assert.Single(normalEntry.InitiatorLosses);
+            Assert.Equal("item.peach-wood", loss.ItemId);
+            Assert.Equal(2d, loss.Quantity);
+        }
+        // 未满 10 分钟检查点，斗法结束时必须已触发持久化刷盘
+        Assert.True(adapter.TryGetLoaded(playerA)!.LastSimulatedAt < Epoch.AddMinutes(10));
+        Assert.Equal(adapter.TryGetLoaded(playerA)!.LastSimulatedAt,
+            SectionCodec.DecodeAggregate((await sections.LoadAsync(playerA))!).LastSimulatedAt);
+
+        // 场景 B：卸载场景 A 玩家避免串场撮合，再起一对玩家，撮合后主动认输弃战（queue.clear）
+        await adapter.RemoveAsync(playerA, flush: true, offlineSince: clock.UtcNow);
+        await adapter.RemoveAsync(playerB, flush: true, offlineSince: clock.UtcNow);
+
+        var playerC = Guid.NewGuid();
+        var playerD = Guid.NewGuid();
+        clock.Advance(TimeSpan.FromSeconds(5));
+        sections.Seed(CreateDuelistBundle(playerC, "弃战测试甲", catalog.Fingerprint, "item.ningxue-grass", 4, equipSkill: true, at: clock.UtcNow));
+        sections.Seed(CreateDuelistBundle(playerD, "受降测试乙", catalog.Fingerprint, "item.peach-wood", 2, equipSkill: true, at: clock.UtcNow));
+        await adapter.AttachConnectionAsync(playerC);
+        await adapter.AttachConnectionAsync(playerD);
+        await adapter.FlushAsync(playerC, force: true);
+        await adapter.FlushAsync(playerD, force: true);
+        await EnqueueCombatAsync(adapter, playerC);
+        await EnqueueCombatAsync(adapter, playerD);
+
+        string? forfeitDuelId = null;
+        for (var i = 0; i < 60; i++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await adapter.AdvanceAllAsync(clock.UtcNow);
+            forfeitDuelId = adapter.TryGetLoaded(playerC)!.State.Duel.ActiveDuelId;
+            if (!string.IsNullOrEmpty(forfeitDuelId)) break;
+        }
+        Assert.False(string.IsNullOrEmpty(forfeitDuelId));
+
+        var writesBeforeForfeit = sections.WriteCountFor(playerC) + sections.WriteCountFor(playerD);
+        var clearResult = await adapter.ExecuteAsync(playerC, "queue.clear",
+            JsonSerializer.SerializeToElement(new { }), 0, Guid.NewGuid());
+        Assert.True(clearResult.Success, clearResult.Message);
+
+        var forfeitEntry = Assert.Single(duelLogs.Entries, e => e.DuelId == forfeitDuelId);
+        Assert.True(forfeitEntry.Forfeited);
+        Assert.Equal(playerD, forfeitEntry.WinnerPlayerId);
+        var forfeiterLosses = forfeitEntry.InitiatorPlayerId == playerC
+            ? forfeitEntry.InitiatorLosses
+            : forfeitEntry.TargetLosses;
+        var lostItem = Assert.Single(forfeiterLosses);
+        Assert.Equal("item.ningxue-grass", lostItem.ItemId);
+        Assert.Equal(4d, lostItem.Quantity);
+        // 弃战方与在线对手双侧都必须立即刷盘落库
+        Assert.True(sections.WriteCountFor(playerC) + sections.WriteCountFor(playerD) > writesBeforeForfeit);
+        Assert.Null(SectionCodec.DecodeAggregate((await sections.LoadAsync(playerC))!).Duel.ActiveDuelId);
+        var dPersistedDuel = SectionCodec.DecodeAggregate((await sections.LoadAsync(playerD))!).Actions.FirstOrDefault()?.Expedition?.Duel;
+        Assert.NotNull(dPersistedDuel);
+        Assert.True(dPersistedDuel!.Forfeited);
+        Assert.True(dPersistedDuel.Resolved);
+    }
+
+    private static async Task EnqueueCombatAsync(EcsPlayerRuntimeAdapter adapter, Guid playerId)
+    {
+        var reqId = Guid.NewGuid();
+        var result = await adapter.ExecuteAsync(playerId, "action.enqueue",
+            JsonSerializer.SerializeToElement(new ActionIntentRequest(
+                reqId.ToString("D"), "combat.hunt-qi-beast", -1, PvpEnabled: true), ProtocolJson.Options),
+            0, reqId);
+        Assert.True(result.Success, result.Message);
+    }
+
+    private static PlayerStateBundle CreateOfflineBundle(Guid playerId, string name, string fingerprint, bool skipTutorial)
+    {
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(playerId), name, Epoch, fingerprint);
+        if (skipTutorial) aggregate.SkipTutorial();
+        aggregate.SetPresence(PresenceState.Offline, Epoch);
+        return BundleFromState(aggregate.ExportState());
+    }
+
+    private static PlayerStateBundle CreateDuelistBundle(
+        Guid playerId, string name, string fingerprint, string stagedItemId, double stagedQuantity,
+        bool equipSkill, DateTimeOffset? at = null)
+    {
+        var start = at ?? Epoch;
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(playerId), name, start, fingerprint);
+        aggregate.SkipTutorial();
+        aggregate.Duel.EncounterCharges = 2;
+        aggregate.StageItem(new ItemId(stagedItemId), stagedQuantity, start.ToUnixTimeSeconds());
+        if (equipSkill)
+        {
+            aggregate.LearnAbility(new AbilityId("ability.heavy-slash"));
+            if (aggregate.Loadout.AbilitySlots.Count == 0)
+                aggregate.Loadout.AbilitySlots.Add(new PlayerAbilitySlot("ability.heavy-slash", 1));
+            else
+                aggregate.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.heavy-slash", 1);
+        }
+        aggregate.SetPresence(PresenceState.Offline, start);
+        return BundleFromState(aggregate.ExportState());
+    }
+
+    private static ServerOptions CreateOptions(int onlineCheckpointSeconds) =>
+        ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = "Host=unused;Database=unused",
+            ["Storage:OnlineCheckpointIntervalSeconds"] = onlineCheckpointSeconds.ToString()
+        }).Build());
+
+    private static PlayerStateBundle BundleFromState(PlayerAggregateState state)
+    {
+        var writes = SectionCodec.EncodeAggregateFull(state, state.LastSimulatedAt);
+        var map = writes.ToDictionary(
+            w => w.SectionKind,
+            w => new StoredSection(w.PlayerId, w.SectionKind, w.StateVersion, w.SchemaVersion, w.Codec, w.Payload.ToArray(), w.RawBytes, w.Checksum, w.UpdatedAt),
+            StringComparer.Ordinal);
+        var head = new StoredHead(state.PlayerId.Value, state.StateVersion, SectionCodec.CurrentSchemaVersion,
+            state.LastSimulatedAt, state.GameDataFingerprint, SectionCodec.ComputeHeadChecksum(map.Values), state.LastSimulatedAt);
+        return new PlayerStateBundle(new PlayerIdentity(state.PlayerId.Value, state.AccountId.Value, state.DisplayName, state.CreatedAt),
+            head, map, []);
+    }
+
+    private static GameDataCatalog LoadIsolatedCatalog()
+    {
+        string[] stablePaths =
+        [
+            "duel.json",
+            "expected-attributes.json",
+            "actions/gathering.json",
+            "actions/world.json",
+            "items/materials.json",
+            "shop/offers.json"
+        ];
+        var assembly = typeof(GameDataCatalog).Assembly;
+        var docs = assembly.GetManifestResourceNames()
+            .Select(name => name.Replace('\\', '/'))
+            .Zip(assembly.GetManifestResourceNames())
+            .Where(pair => stablePaths.Any(path =>
+                pair.First.EndsWith(path, StringComparison.OrdinalIgnoreCase)
+                || pair.First.EndsWith(path.Replace('/', '.'), StringComparison.OrdinalIgnoreCase)))
+            .Select(pair =>
+            {
+                using var stream = assembly.GetManifestResourceStream(pair.Second)!;
+                var bytes = new byte[stream.Length];
+                var read = stream.Read(bytes, 0, bytes.Length);
+                return (ReadOnlyMemory<byte>)bytes.AsMemory(0, read);
+            })
+            .ToList();
+
+        Assert.Equal(stablePaths.Length, docs.Count);
+
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "map.qingyun-mountains",
+            "name": "青云仙山",
+            "description": "测试最小地图",
+            "nodes": [
+              {
+                "id": "node.yunxi-village",
+                "name": "云溪村",
+                "description": "起点节点",
+                "x": 20,
+                "y": 65,
+                "availableActionIds": ["explore.gather-ningxue-grass", "combat.hunt-qi-beast"]
+              }
+            ],
+            "edges": []
+          }
+        ]
+        """));
+
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "ability.heavy-slash",
+            "name": "重斩",
+            "description": "重剑破空。",
+            "style": "sword",
+            "tier": 1,
+            "category": "physical",
+            "element": "metal",
+            "cooldownMilliseconds": 3000,
+            "castMilliseconds": 500,
+            "damageRatio": 1.5,
+            "flatDamage": 15,
+            "manaCost": 0.0,
+            "rootAttribute": "agility",
+            "discipline": "spell"
+          }
+        ]
+        """));
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "item.tome.heavy-slash",
+            "name": "《重斩秘籍》",
+            "description": "测试秘籍",
+            "kind": "consumable",
+            "category": "manual",
+            "sellPrice": 100,
+            "subCategory": "manualTome",
+            "level": 1
+          }
+        ]
+        """));
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "enemy.test-beast",
+            "name": "测试灵兽",
+            "visual": { "renderer": "text", "source": "兽" },
+            "level": 1,
+            "budgetCost": 10,
+            "weights": { "hp": 0.5, "ad": 0.3, "armor": 0.5, "hit": 1.0, "eva": 1.0 },
+            "abilities": []
+          }
+        ]
+        """));
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "encounter.test-qi-beast",
+            "name": "测试遭遇",
+            "minBudget": 10,
+            "maxBudget": 15,
+            "randomSpawns": [{ "enemyId": "enemy.test-beast", "weight": 1, "strength": 15 }]
+          }
+        ]
+        """));
+        docs.Add(Encoding.UTF8.GetBytes("""
+        [
+          {
+            "id": "combat.hunt-qi-beast",
+            "name": "讨伐 青云仙山",
+            "description": "测试讨伐行动",
+            "type": "combat",
+            "level": 1,
+            "durationSeconds": 0,
+            "executionKind": "combatEncounter",
+            "combatEncounterId": "encounter.test-qi-beast",
+            "availableNodeIds": ["node.yunxi-village"]
+          }
+        ]
+        """));
+
+        return GameDataCatalog.Parse(docs);
+    }
+
+    private sealed class MutableClock(DateTimeOffset initial) : IPlayerSimulationClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = initial;
+        public bool IsDeterministic => true;
+        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
+        public void Advance(TimeSpan delta) => UtcNow = UtcNow.Add(delta);
+    }
+
+    private sealed class MultiPlayerSections : IPlayerStateRepository
+    {
+        private readonly ConcurrentDictionary<Guid, PlayerIdentity> _identities = new();
+        private readonly ConcurrentDictionary<Guid, string> _fingerprints = new();
+        private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastSimulatedAt = new();
+        private readonly ConcurrentDictionary<Guid, Dictionary<string, StoredSection>> _sections = new();
+        private readonly ConcurrentDictionary<Guid, int> _writesByPlayer = new();
+        public int EnqueueCount { get; private set; }
+        public int WriteCountFor(Guid playerId) => _writesByPlayer.GetValueOrDefault(playerId);
+
+        public void Seed(PlayerStateBundle bundle)
+        {
+            _identities[bundle.Identity.PlayerId] = bundle.Identity;
+            _fingerprints[bundle.Identity.PlayerId] = bundle.Head.GameDataFingerprint;
+            _lastSimulatedAt[bundle.Identity.PlayerId] = bundle.Head.LastSimulatedAt;
+            _sections[bundle.Identity.PlayerId] = new Dictionary<string, StoredSection>(bundle.Sections, StringComparer.Ordinal);
+        }
+
+        public ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
+        {
+            if (!_identities.TryGetValue(playerId, out var identity) || !_sections.TryGetValue(playerId, out var map))
+                return ValueTask.FromResult<PlayerStateBundle?>(null);
+            var fingerprint = _fingerprints.GetValueOrDefault(playerId, "test-fp");
+            var simAt = _lastSimulatedAt.GetValueOrDefault(playerId, Epoch);
+            if (map.Count == 0)
+            {
+                return ValueTask.FromResult<PlayerStateBundle?>(new PlayerStateBundle(
+                    identity,
+                    new StoredHead(playerId, 0, SectionCodec.CurrentSchemaVersion, simAt, fingerprint, "", simAt),
+                    new Dictionary<string, StoredSection>(StringComparer.Ordinal),
+                    []));
+            }
+            var version = map.Values.Max(s => s.StateVersion);
+            var head = new StoredHead(playerId, version, SectionCodec.CurrentSchemaVersion,
+                simAt, fingerprint, SectionCodec.ComputeHeadChecksum(map.Values), map.Values.Max(s => s.UpdatedAt));
+            return ValueTask.FromResult<PlayerStateBundle?>(
+                new PlayerStateBundle(identity, head, new Dictionary<string, StoredSection>(map, StringComparer.Ordinal), []));
+        }
+
+        public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
+            => EnqueueSectionsAsync(sections, [], cancellationToken);
+
+        public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts,
+            CancellationToken cancellationToken = default)
+        {
+            EnqueueCount++;
+            foreach (var write in sections)
+            {
+                if (write.LastSimulatedAt is { } simAt) _lastSimulatedAt[write.PlayerId] = simAt;
+                var map = _sections.GetOrAdd(write.PlayerId, _ => new Dictionary<string, StoredSection>(StringComparer.Ordinal));
+                map[write.SectionKind] = new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion,
+                    write.SchemaVersion, write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt);
+                _writesByPlayer.AddOrUpdate(write.PlayerId, 1, (_, c) => c + 1);
+            }
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
+    }
+
+    private sealed class MultiPlayerAssets : IAssetBalanceRepository
+    {
+        private readonly ConcurrentDictionary<Guid, Dictionary<(string AssetId, string Variant), (double Quantity, long Version)>> _data = new();
+
+        public void Seed(Guid playerId, params (string AssetId, string Variant, double Quantity)[] rows)
+        {
+            var map = _data.GetOrAdd(playerId, _ => new());
+            foreach (var (assetId, variant, qty) in rows) map[(assetId, variant)] = (qty, 1);
+        }
+
+        public IReadOnlyList<AssetBalanceRecord> Apply(IReadOnlyList<AssetDelta> deltas)
+        {
+            var changed = new List<AssetBalanceRecord>();
+            foreach (var d in deltas)
+            {
+                var map = _data.GetOrAdd(d.PlayerId, _ => new());
+                var key = (d.AssetId, d.Variant);
+                var current = map.GetValueOrDefault(key);
+                var next = (Quantity: current.Quantity + d.Delta, Version: current.Version + 1);
+                if (next.Quantity < -1e-9) throw new InvalidOperationException($"余额不足 {d.AssetId}");
+                map[key] = next;
+                changed.Add(new AssetBalanceRecord(d.PlayerId, d.AssetId, d.Variant, next.Quantity, next.Version));
+            }
+            return changed;
+        }
+
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default)
+        {
+            if (!_data.TryGetValue(playerId, out var map))
+                return ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
+            return ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(
+                map.Where(p => p.Value.Quantity > 0 || p.Value.Version > 0)
+                    .Select(p => new AssetBalanceRecord(playerId, p.Key.AssetId, p.Key.Variant, p.Value.Quantity, p.Value.Version))
+                    .ToArray());
+        }
+    }
+
+    private sealed class RecordingEconomy(MultiPlayerSections sections, MultiPlayerAssets assets) : IEconomyTransactionStore
+    {
+        public List<EconomyTransactionRequest> Requests { get; } = [];
+        public bool FailNextCommit { get; set; }
+
+        public async ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            if (FailNextCommit)
+            {
+                FailNextCommit = false;
+                throw new IOException("模拟检查点刷盘瞬断");
+            }
+            Requests.Add(request);
+            var updated = assets.Apply(request.Deltas);
+            if (request.Sections is { Count: > 0 } || request.Receipts is { Count: > 0 })
+                await sections.EnqueueSectionsAsync(request.Sections ?? [], request.Receipts ?? [], cancellationToken).ConfigureAwait(false);
+            return new EconomyTransactionResult(
+                request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload, updated);
+        }
+    }
+
+    private sealed class RecordingLifecycleAuditStore : IPlayerLifecycleAuditStore
+    {
+        public sealed record AuditRecord(string EventType, Guid PlayerId, Guid AccountId, string DisplayName, string? NodeId, DateTimeOffset OccurredAt);
+        public List<AuditRecord> Events { get; } = [];
+
+        public ValueTask RecordOnlineAsync(Guid playerId, Guid accountId, string displayName, string? nodeId,
+            DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+        {
+            Events.Add(new AuditRecord("player.online", playerId, accountId, displayName, nodeId, occurredAt));
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask RecordOfflineAsync(Guid playerId, Guid accountId, string displayName, string? nodeId,
+            DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+        {
+            Events.Add(new AuditRecord("player.offline", playerId, accountId, displayName, nodeId, occurredAt));
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingDuelLogRepository : IDuelLogRepository
+    {
+        public List<DuelLogEntry> Entries { get; } = [];
+
+        public ValueTask RecordAsync(DuelLogEntry entry, CancellationToken cancellationToken = default)
+        {
+            if (!Entries.Any(e => e.DuelId == entry.DuelId))
+                Entries.Add(entry);
+            return ValueTask.CompletedTask;
+        }
+    }
+}

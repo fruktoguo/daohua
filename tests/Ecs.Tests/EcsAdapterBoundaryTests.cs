@@ -10,6 +10,7 @@ using Domain.Player;
 using Domain.Simulation;
 using Domain.Social;
 using Domain.World;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
@@ -237,6 +238,12 @@ public sealed class EcsAdapterBoundaryTests
         await AdvanceAsync(fixture, Epoch.AddSeconds(20), batch);
         // 零资产变动时钟推进直接走分段落盘，不向经济事务提交请求
         Assert.Empty(fixture.Economy.Requests);
+        if (batch)
+        {
+            var beforeFlush = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
+            Assert.Equal(Epoch, beforeFlush.LastSimulatedAt);
+            await adapter.FlushAsync(fixture.PlayerId, true);
+        }
         var persisted = SectionCodec.DecodeAggregate((await fixture.Sections.LoadAsync(fixture.PlayerId))!);
         Assert.Equal(Epoch.AddSeconds(20), persisted.LastSimulatedAt);
         Assert.Empty(fixture.Ecs.GetDirtySections(fixture.PlayerId));
@@ -436,7 +443,13 @@ public sealed class EcsAdapterBoundaryTests
     [InlineData(true)]
     public async Task FailedSimulationPreservesSnapshotLogsAndSequenceUntilRetry(bool batch)
     {
-        var fixture = CreateFixture();
+        var options = ServerOptions.From(new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Storage:ConnectionString"] = "Host=unused;Database=unused",
+                ["Storage:OnlineCheckpointIntervalSeconds"] = "1"
+            }).Build());
+        var fixture = CreateOwnedFixture(Epoch, null, true, null, null, options);
         await using var adapter = fixture.Adapter;
         var seed = await EnqueueGatheringAsync(fixture);
         var expectedPlayer = PlayerAggregate.Restore(seed.State);
@@ -972,6 +985,11 @@ public sealed class EcsAdapterBoundaryTests
 
     private static Fixture CreateOwnedFixture(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
         IPlayerOwnershipStore? ownership, DuelAdvanceOptions? duelAdvance, params AssetBalanceRecord[] balances)
+        => CreateOwnedFixture(clockAt, initialAction, skipTutorial, ownership, duelAdvance, serverOptions: null, balances);
+
+    private static Fixture CreateOwnedFixture(DateTimeOffset clockAt, string? initialAction, bool skipTutorial,
+        IPlayerOwnershipStore? ownership, DuelAdvanceOptions? duelAdvance, ServerOptions? serverOptions,
+        params AssetBalanceRecord[] balances)
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.Parse("10000000-0000-4000-8000-000000000023");
@@ -991,7 +1009,8 @@ public sealed class EcsAdapterBoundaryTests
         var clock = new FixedClock(clockAt);
         var ecs = new EcsGameRuntime(catalog, Epoch, duelAdvance: duelAdvance);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
-            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(), ownership: ownership);
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(),
+            ownership: ownership, serverOptions: serverOptions);
         return new Fixture(playerId, adapter, sections, economy, catalog, initialState, ecs, assets);
     }
 

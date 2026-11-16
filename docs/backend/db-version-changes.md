@@ -181,3 +181,79 @@
   ```
 - 【离线脚本 / 人工步骤】：无。
 
+---
+
+## v56 -> v57
+
+- **提交/阶段**：持久化白名单规范与高频落盘根治（`TASK-20261116-06`）
+- **玩家分段载荷版本**：`43 -> 43`（无变化：八分段结构与编码格式不变）
+- **迁移脚本状态**：已有 `migrations/0057_v56_to_v57.sql`
+
+### 1. 变了什么
+- **新增结构**：
+  1. `game.duel_logs`（PVP 斗法完整收益日志表）：记录 `duel_log_id`、`duel_id`（唯一索引保证同一场斗法幂等落库）、`initiator_player_id` / `target_player_id`（外键 `ON DELETE CASCADE`）、`initiator_name` / `target_name`、`initiator_power` / `target_power`、`node_id`、`winner_player_id`、`outcome`（`initiator_win` / `target_win` / `draw`）、`forfeited`、`initiator_gains jsonb` / `initiator_losses jsonb` / `target_gains jsonb` / `target_losses jsonb`、`duration_seconds`、`occurred_at`；并建 `ix_duel_logs_occurred`、`ix_duel_logs_initiator`、`ix_duel_logs_target` 与 `ux_duel_logs_duel_id`。
+  2. `economy.shop_daily_purchases` 新增时间索引 `ix_shop_daily_purchases_updated(updated_at)`，支撑 30 天超期限购流水清理。
+  3. 高频更新状态/队列/临时幂等表设置存储与清理参数（`player_state_heads` / `player_state_sections` `fillfactor = 80`，`section_flush_queue` / `transient_idempotency` `fillfactor = 70` 及更积极的 `autovacuum` 阈值），抑制 HOT 更新膨胀。
+- **权限矩阵**：`deploy/postgres-local-roles.sql` 向 `daohua_api` 与 `daohua_worker` 授予 `game.duel_logs` 读写删权限。
+- **行为与留存策略**：
+  - 高频单人模拟/行动（采集、制造、强化、秘术、PVE、`ability.learn`、`item.use`、`heaven_gate`、`item.discard`、`item.sell`、`tutorial.skip`）统一 `PersistLedger = false`，不再写入 `economy.transactions`；在线 `AdvanceAllAsync` 在内存缓冲资产增量，于关键边界（登入补算、下线、停机、库交互前对账、斗法结束）或每 **10 分钟**（`OnlineCheckpointIntervalSeconds = 600`）原子刷盘。
+  - `PostgresRetentionWorker` 改为每 **5 分钟**多批清理：`economy.transient_idempotency` 保留 **2 小时**，非白名单 `economy.transactions` 即刻排空，5 类白名单账本/日志（含 `market.trades`、`market.orders` 已完结无引用行、`game.duel_logs`、`identity.audit_events` 等）统一保留 **30 天**，已完结冷挂机任务 `platform.compute_jobs` 保留 **2 天**。
+
+### 2. 是否需要处理存量数据
+- **表结构与历史冗余流水清理**：
+  - 既有库需要创建 `game.duel_logs`、索引与 `ix_shop_daily_purchases_updated`，并授予 `daohua_api` / `daohua_worker` 权限。
+  - 存量历史上写入的 `simulation.reward`、`item.discard`、`item.sell`、`ability.learn`、`item.use`、`heaven_gate` 等非白名单 `economy.transactions` 行将在升级后由 `PostgresRetentionWorker` 每 5 分钟自动分批清理（级联清理 `economy.transaction_lines`），无需全表锁删；`market.trades_archive_*` / `audit_events_archive_*` 超 30 天历史归档分区由 `market-ledger-archive.sh` 自动清理。
+  - 存量玩家八分段载荷保持 `v43`，无需转换或重置玩家存档。
+
+### 3. 如果要处理，怎么处理
+- 【合入合并迁移脚本的 SQL 指引】：
+  ```sql
+  CREATE TABLE IF NOT EXISTS game.duel_logs (
+      duel_log_id uuid PRIMARY KEY,
+      duel_id varchar(96) NOT NULL,
+      initiator_player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+      initiator_name varchar(64) NOT NULL,
+      initiator_power double precision NOT NULL DEFAULT 0,
+      target_player_id uuid NOT NULL REFERENCES identity.players(player_id) ON DELETE CASCADE,
+      target_name varchar(64) NOT NULL,
+      target_power double precision NOT NULL DEFAULT 0,
+      node_id varchar(128) NOT NULL,
+      winner_player_id uuid NULL,
+      outcome varchar(24) NOT NULL CHECK (outcome IN ('initiator_win', 'target_win', 'draw')),
+      forfeited boolean NOT NULL DEFAULT false,
+      initiator_gains jsonb NOT NULL DEFAULT '[]'::jsonb,
+      initiator_losses jsonb NOT NULL DEFAULT '[]'::jsonb,
+      target_gains jsonb NOT NULL DEFAULT '[]'::jsonb,
+      target_losses jsonb NOT NULL DEFAULT '[]'::jsonb,
+      duration_seconds double precision NOT NULL DEFAULT 0,
+      occurred_at timestamptz NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_duel_logs_duel_id ON game.duel_logs(duel_id);
+  CREATE INDEX IF NOT EXISTS ix_duel_logs_occurred ON game.duel_logs(occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS ix_duel_logs_initiator ON game.duel_logs(initiator_player_id, occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS ix_duel_logs_target ON game.duel_logs(target_player_id, occurred_at DESC);
+
+  CREATE INDEX IF NOT EXISTS ix_shop_daily_purchases_updated
+      ON economy.shop_daily_purchases(updated_at);
+
+  ALTER TABLE game.player_state_heads SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+  ALTER TABLE game.player_state_sections SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
+  ALTER TABLE platform.section_flush_queue SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_cost_limit = 1000);
+  ALTER TABLE economy.transient_idempotency SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_cost_limit = 1000);
+
+  DO $$
+  BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_bootstrap') THEN
+          EXECUTE 'ALTER TABLE game.duel_logs OWNER TO daohua_bootstrap';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_api') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON game.duel_logs TO daohua_api';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daohua_worker') THEN
+          EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON game.duel_logs TO daohua_worker';
+      END IF;
+  END $$;
+  ```
+- 【离线脚本 / 人工步骤】：若生产此前运行历史大量积累导致 `economy.transactions` 存在数百万旧非白名单流水，可在发版低峰观察 `PostgresRetentionWorker` 5 分钟批次自然排空并触发一次 `VACUUM (ANALYZE) economy.transactions, economy.transaction_lines;` 回收物理页。
+
+

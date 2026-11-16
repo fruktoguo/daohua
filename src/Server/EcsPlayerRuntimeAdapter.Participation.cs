@@ -27,6 +27,8 @@ public sealed partial class EcsPlayerRuntimeAdapter
         var pending = advanceSession
             ? await participationRuntime.AdvanceForMemberAsync(playerId, target, cancellationToken).ConfigureAwait(false)
             : await participationRuntime.LoadPendingAsync(playerId, cancellationToken).ConfigureAwait(false);
+        if (pending.Count > 0 && HasPendingSimulationDeltas(playerId))
+            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
         var sessions = new Dictionary<string, PartySessionRecord>(StringComparer.Ordinal);
         foreach (var sessionId in pending.Select(item => item.SessionId).Distinct())
             sessions[sessionId] = await socialRepository.GetPartySessionAsync(sessionId, cancellationToken).ConfigureAwait(false)

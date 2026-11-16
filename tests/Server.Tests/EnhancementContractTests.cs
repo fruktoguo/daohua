@@ -540,6 +540,8 @@ public sealed class EnhancementContractTests
 
         clock.Advance(TimeSpan.FromSeconds(10));
         await runtime.AdvanceAllAsync(clock.UtcNow);
+        Assert.Empty(economy.Requests);
+        await runtime.FlushAsync(playerId, true);
         Assert.Equal(-2, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.beast-hide").Delta);
         Assert.Equal(36, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone").Delta);
 
@@ -554,6 +556,8 @@ public sealed class EnhancementContractTests
 
         clock.Advance(TimeSpan.FromSeconds(5));
         await runtime.AdvanceAllAsync(clock.UtcNow);
+        Assert.Single(economy.Requests);
+        await runtime.FlushAsync(playerId, true);
         Assert.Equal("+5", Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Variant);
         Assert.Equal(-1, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Delta);
         Assert.Equal(6006, Assert.Single(economy.LastRequest.Deltas, d => d.AssetId == "currency.spirit-stone").Delta);
@@ -602,6 +606,8 @@ public sealed class EnhancementContractTests
 
         clock.Advance(TimeSpan.FromSeconds(12));
         await runtime.AdvanceAllAsync(clock.UtcNow);
+        Assert.Empty(economy.Requests);
+        await runtime.FlushAsync(playerId, true);
 
         Assert.Single(economy.Requests);
         Assert.Equal(-1, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "equipment.qingfeng-sword").Delta);
@@ -636,6 +642,8 @@ public sealed class EnhancementContractTests
 
         clock.Advance(TimeSpan.FromSeconds(80));
         await runtime.AdvanceAllAsync(clock.UtcNow);
+        Assert.Empty(economy.Requests);
+        await runtime.FlushAsync(playerId, true);
 
         Assert.Equal(-10, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.fragment.heavy-slash").Delta);
         var tomeReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "item.tome.heavy-slash");
@@ -669,6 +677,8 @@ public sealed class EnhancementContractTests
 
         clock.Advance(TimeSpan.FromSeconds(8));
         await runtime.AdvanceAllAsync(clock.UtcNow);
+        Assert.Empty(economy.Requests);
+        await runtime.FlushAsync(playerId, true);
 
         Assert.Equal(-1, Assert.Single(economy.LastRequest!.Deltas, d => d.AssetId == "item.fragment.heavy-slash").Delta);
         var tomeReward = economy.LastRequest.Deltas.SingleOrDefault(d => d.AssetId == "item.tome.heavy-slash");

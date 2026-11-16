@@ -146,6 +146,7 @@ fi
 
 if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
   rm -f "$FAILED_IMAGE_FILE"
+  docker image prune -f --filter "until=24h" >/dev/null 2>&1 || true
   printf '镜像更新成功: %s\n' "$candidate_marker"
   exit 0
 fi

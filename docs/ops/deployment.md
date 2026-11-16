@@ -119,7 +119,7 @@ scripts/deploy-prod.sh \
 
 脚本会只读检查远端 Docker/Compose/权限，校验 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅数据库初始化）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN`、`BACKUP_TOKEN` 与 `CHAT_IMAGE_SECRET`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对 digest 镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
 
-部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）、`daohua-ledger-archive.timer`（每日流水分区归档）和 `daohua-wal-archive.timer`（每小时 WAL 巡检/轮转）。任一定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
+部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）和 `daohua-ledger-archive.timer`（每日清理超过 30 天的遗留归档分区）；单机生产默认禁用连续 WAL 归档并停用 `daohua-wal-archive.timer`，避免 WAL 积压占满 40G 根分区。任一启用的定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
 部署脚本在替换镜像前会强制执行一次数据库迁移闸门（`/opt/daohua/migrate-prod-db.sh`）：
 
@@ -146,9 +146,9 @@ ssh yuohira 'curl -fsS http://127.0.0.1:15128/readyz'
 
 ## 备份、恢复与硬盘控制
 
-当前备份链路同时保留三类证据：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，hourly 24 / daily 7 / weekly 4）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线；PostgreSQL `archive_mode=on`、`archive_timeout=300s` 通过 `postgres-wal-archive.sh` 将 WAL 段、时间线历史 `.history` 和备份历史 `.backup` 压缩后原子写入 `${WAL_ARCHIVE_DIR}/<原名>.gz`。重试须确认解压内容一致；PITR 的 `restore_command` 使用 `gzip -dc` 还原原始字节。`wal-archive.sh` 每小时巡检权限与 gzip 完整性并默认保留 8 天归档。禁止手动删除 `pg_wal`：积压必须恢复归档后由 PostgreSQL 自行回收。备份长期归档应转移到 COS/S3 兼容对象存储，本地只保留恢复窗口内的最小副本。
+当前备份链路保留两类本机热证据并同步到计算节点：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，本地热保留最近 6 小时 / 3 天日备，完整历史由计算节点 `BackupArchiveWorker` / `backup-pull-sync.sh` 拉取长期归档）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线（本地保留最新 1 份）。单机 `2c4g/40g` 生产默认关闭连续 WAL 归档（`archive_mode=off`）并移除旧的 `wal-archive` 挂载，禁止手动删除 `pg_wal`。
 
-验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump、物理备份 `backup_manifest`（`pg_verifybackup`）和 WAL 文件权限/完整性。追加 `VERIFY_BACKUP_ISOLATED_RESTORE=1` 时启动隔离恢复实例并检查 ready 与最小业务 SQL；否则仅能报告格式/manifest通过。隔离实例使用 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`，库名与运行中数据库的 `POSTGRES_DB` 一致；恢复载荷挂载于 `/var/lib/postgresql/data` 时必须显式指定同路径的 `PGDATA`，不允许 PostgreSQL 18 默认新建 `18/docker` 空库冒充恢复。PITR 恢复只能在隔离目录执行：
+验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump 与物理备份 `backup_manifest`（`pg_verifybackup`）。追加 `VERIFY_BACKUP_ISOLATED_RESTORE=1` 时启动隔离恢复实例并检查 ready 与最小业务 SQL；否则仅能报告格式/manifest通过。隔离实例使用 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`，库名与运行中数据库的 `POSTGRES_DB` 一致；恢复载荷挂载于 `/var/lib/postgresql/data` 时必须显式指定同路径的 `PGDATA`，不允许 PostgreSQL 18 默认新建 `18/docker` 空库冒充恢复。如需对独立基线目录做恢复演练：
 
 ```bash
 sudo /opt/daohua/pitr-restore.sh \
@@ -159,9 +159,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 脚本默认只准备恢复目录并暂停在目标时间；需要临时实例时追加 `--start`（`127.0.0.1:15432`），完成核对后手工 `docker rm -f daohua-pitr-restore`。任何生产恢复都必须单独获得明确许可，恢复前先制作当前状态备份、停止应用并验证目标归档。
 
-市场成交与审计属于长期权威流水，不由在线 retention worker 删除：`market-ledger-archive.sh` 每日把超过 90 天的 `market.trades` 和 `identity.audit_events` 按 UTC 月份在事务内移动到 `market.trades_archive_YYYYMM` / `identity.audit_events_archive_YYYYMM` 分区表；归档分区可独立 `pg_dump --table` 后上传对象存储，再按合规保留期删除。生产 `Storage__AuditRetentionDays=3650` 仅作最终兜底，不能替代分区归档。
-
-服务端每小时执行 `PostgresRetentionWorker`，小批量清理七类数据：已投递 outbox、过期会话、旧审计事件、账号检测事件、已结束冷挂机任务、过期 Data Protection key，以及超过 `Storage:SettlementClaimRetentionDays`（默认 30 天）的 `market.settlement_claims`。过期命令回执不属于该 worker，由独立的 `CommandReceiptCleanupWorker` 每 10 分钟清理。两类 worker 都不会删除余额、订单、成交或未投递 outbox。Docker `json-file` 日志按 Compose 上限轮转，WebSocket/聊天/战斗 Tick 不写数据库。
+线上传输与日志遵循严格 5 类白名单 + 统一 **30 天**滚动留存：历史遗留分区由 `market-ledger-archive.sh` 每日自动扫描清理超过 30 天的 `*_archive_*` 分区；实时热表统一交由 `PostgresRetentionWorker`（每 **5 分钟**执行多批排空）清理：即刻清理非白名单 `economy.transactions` 与超过 2 小时的 `economy.transient_idempotency`，并按 **30 天**滚动清理白名单流水、`game.duel_logs`、`market.trades`、无活跃引用且已完结 `market.orders`、终态 `economy.reservations`、`economy.shop_daily_purchases`、`identity.audit_events`、`identity.account_risk_events`、`market.settlement_claims`，已结束冷挂机任务 `platform.compute_jobs` 保留 **2 天**。过期命令回执由 `CommandReceiptCleanupWorker` 独立清理。两类 worker 绝不删除当前余额、未完结订单或未投递 outbox。Docker `json-file` 日志与宿主机 systemd journal（`200M` 上限）均受配额约束，单人日常模拟与战斗 Tick 不直接写库。
 
 ## 健康与安全边界
 

@@ -557,6 +557,7 @@ public static class BenchDatabase
                 game.player_action_queue,
                 game.player_runtime_leases,
                 game.player_projection,
+                game.duel_logs,
                 economy.player_asset_balances,
                 economy.player_asset_instances,
                 economy.transaction_lines,

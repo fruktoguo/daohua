@@ -232,7 +232,10 @@ public sealed class SocialRuntime
                         malusMap.GetValueOrDefault(member.PlayerId, 0),
                         _presence.GetAvatar(member.PlayerId),
                         valuations.TryGetValue(member.PlayerId, out var v) ? v.ToDto() : null,
-                        member.DouDiZhuReady, member.SpiritStones))],
+                        member.DouDiZhuReady,
+                        _players?.TryGetLoaded(member.PlayerId)?.Assets is { } liveAssets
+                            ? (liveAssets.FirstOrDefault(asset => asset.AssetId == "currency.spirit-stone" && asset.Variant.Length == 0)?.Quantity ?? 0)
+                            : member.SpiritStones))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
@@ -410,8 +413,11 @@ public sealed class SocialRuntime
         PlayerCardAutoUseSlotDto[]? combatSlots = null;
         if (canViewLoadout)
         {
-            var availableBalances = _assetBalances is null
-                ? [] : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken);
+            var availableBalances = _players?.TryGetLoaded(targetId) is { } loadedTarget
+                ? loadedTarget.Assets
+                : (_assetBalances is null
+                    ? []
+                    : await _assetBalances.LoadBalancesAsync(targetId, cancellationToken));
             var offlineReserves = _participation is null
                 ? [] : await _participation.LoadOfflineReservesAsync(targetId, cancellationToken);
             var availableByItem = availableBalances.GroupBy(balance => balance.AssetId, StringComparer.Ordinal)
@@ -884,6 +890,8 @@ public sealed class SocialRuntime
                 if (_assetBalances is null) throw new InvalidOperationException("斗地主开局未装配权威资产余额仓储。");
                 foreach (var member in party.Members)
                 {
+                    if (_players is not null)
+                        await _players.FlushAsync(member.PlayerId, force: true, cancellationToken);
                     var balances = await _assetBalances.LoadBalancesAsync(member.PlayerId, cancellationToken);
                     var available = balances.FirstOrDefault(balance => balance.AssetId == "currency.spirit-stone" && balance.Variant.Length == 0)?.Quantity ?? 0;
                     if (available < party.DouDiZhuStake) return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
@@ -1008,6 +1016,9 @@ public sealed class SocialRuntime
     private async ValueTask<bool> PersistDouDiZhuUpdateAsync(DouDiZhuGameState updated, long expectedVersion,
         CancellationToken cancellationToken)
     {
+        if (updated.Phase == DouDiZhuGamePhase.Finished && updated.BaseStake > 0 && _players is not null)
+            foreach (var memberId in updated.PlayerIds)
+                await _players.FlushAsync(memberId, force: true, cancellationToken);
         var saved = updated.Phase == DouDiZhuGamePhase.Finished
             ? await _repository.TryCommitDouDiZhuGameAsync(updated, expectedVersion, cancellationToken)
             : await _repository.TrySaveDouDiZhuGameAsync(updated, expectedVersion, cancellationToken);

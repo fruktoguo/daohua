@@ -64,6 +64,11 @@ Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部�
 - 本地开发可以直接破坏代码和数据结构；只有实际操作远程/生产数据时才执行备份、审批和可恢复性检查，这属于数据安全要求，不得反向变成代码兼容层。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
+- **两层持久化与 5 类白名单日志规范（硬规则）**：
+  - 玩家状态与钱包表（`game.player_state_heads` / `player_state_sections` / `economy.player_asset_balances`）只承载当前最新状态与余额，禁止沉淀单人高频过程历史。日常单人高频行为（采集、制造、炼器、强化、秘术、修炼、旅行、PVE 战斗与掉落、`ability.learn`、`item.use`、`progression.heaven_gate`、`item.discard`、`item.sell`、`tutorial.skip`）必须走内存模拟 + WebSocket 推流或 `PersistLedger = false`，禁止写入不可变账本（`economy.transactions` / `transaction_lines`），且在线模拟增量随脏状态每 **10 分钟**（`Storage:OnlineCheckpointIntervalSeconds = 600`）或关键生命周期边界（上线补算、下线、停机、库交易前对账、PVP 斗法结算）同事务原子落盘，禁止每 Tick 写库或单边推进 `LastSimulatedAt`。
+  - 完整持久化账本与行为日志**严格限于 5 类白名单**：① 坊市挂单与成交（`market` / `market.orders` / `market.trades` / `market.settlement_claims`）；② 系统商店购买与绑定功德消费日志（`shop.buy` / `player.unlock_avatar` / `economy.shop_daily_purchases`）；③ 玩家账号及角色登入、上线与离线审计（`identity.audit_events` 中的 `auth.account.*`、`player.online`、`player.offline`）；④ 完整 PVP 斗法日志（`game.duel_logs`，记录双方、节点、胜负/认输与双方损益明细）；⑤ 邮件领奖与跨玩家/宗门/组队消耗品/运营发放资产交互（`mail.claim` / `participation.assets` / `building.contribute` / `invitation.*` / `doudizhu.settlement` / `zongmen.*` / `ops.*`；组队讨伐战斗个人掉落结算 `participation.settlement` 沿用 `PersistLedger = false` 不入流水表）。
+  - **统一 30 天流水留存与 2 小时幂等键回收**：`PostgresRetentionWorker` 每 **5 分钟**执行多批排空，`economy.transient_idempotency` 保留 **2 小时**，所有上述白名单日志与历史事务流水（包括 `market.trades`、无活跃引用的终态 `market.orders`、`game.duel_logs`、`identity.audit_events` 等）线上热表统一保留 **30 天**，期满自动删除；长期留档由整点逻辑备份与算力节点异地同步承担。
+  - `2c4g/40g` 单机生产数据库关闭连续 WAL 归档（`archive_mode=off`），避免 WAL 段堆积打满根分区。
 - 市场账本使用 PostgreSQL Serializable 事务、行锁及带 fence 的分区租约；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
 - 远程个人设备只能作为高延迟冷挂机计算节点，经 compute-link WebSocket **反向拨入**主服 `/internal/compute-link`（节点多为无公网 NAT 设备，只拨出不监听；节点本地 HTTP 口仅作调试）；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。

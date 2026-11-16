@@ -451,12 +451,12 @@ public sealed class ParticipationPersistenceTests
         Assert.True((await retention.PruneAsync(endedAt.AddMinutes(1))).ParticipationInboxes >= 2);
         Assert.Equal(0L, await fixture.ScalarAsync("SELECT count(*) FROM social.party_session_inbox WHERE session_id=$1 AND consumed_at IS NOT NULL", fixture.SessionId));
         Assert.Equal(3, (await fixture.Store.LoadPendingAsync(fixture.Players[1])).Count);
-        Assert.Equal(3L, await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE actor_id=$1 AND transaction_type='participation.retention-test'", fixture.Players[0]));
+        Assert.Equal(3L, await fixture.ScalarAsync("SELECT count(*) FROM economy.transactions WHERE actor_id=$1 AND transaction_type='participation.assets'", fixture.Players[0]));
 
         async Task ConsumeAsync(long sequence)
         {
             var id = Guid.NewGuid();
-            await fixture.Economy.CommitAsync(new(id, $"participation:retention:{id:D}", "participation.retention-test", fixture.Players[0], [],
+            await fixture.Economy.CommitAsync(new(id, $"participation:retention:{id:D}", "participation.assets", fixture.Players[0], [],
                 ParticipationReceipt: new(fixture.SessionId, fixture.Players[0], sequence)));
         }
     }
