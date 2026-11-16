@@ -1432,28 +1432,29 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Contains(PlayerSectionKind.Loadout, player.DirtySections);
         Assert.Contains(PlayerSectionKind.Progression, player.DirtySections);
 
-        // 2) 秘法转化排队行动（消耗残卷，1 级 8 秒 → 技艺经验 16、神识 16、底蕴 +16）
+        // 2) 秘法转化排队行动（消耗残卷，按物品真实等级与 8 秒时长推导技艺经验、神识与等额底蕴）
         var fragment = new ItemId("item.fragment.heavy-slash");
         var convert = catalog.Actions.Get(new ActionId(SecretArtRules.ConvertActionId));
+        var (expectedTechExp, expectedConsciousnessExp) = SecretArtRules.ComputeYieldExperience(catalog, fragment.Value, convert.DurationSeconds);
         var wallet = CreateWallet(player, (new AssetKey(fragment), 2));
         player.Enqueue(new ActionIntent(convert.Id, 1, TargetItemId: fragment.Value), Baseline, catalog.Actions);
         var convertRes = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(convert.DurationSeconds), catalog, wallet);
         convertRes.AssetDeltas.ToList().ForEach(wallet.Apply);
 
-        Assert.Equal(16, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
-        Assert.Equal(56, player.Progression.Foundation);
-        Assert.Equal(16, player.Loadout.CoreAttributes.ConsciousnessExp);
+        Assert.Equal(expectedTechExp, player.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement]);
+        Assert.Equal(40 + expectedTechExp, player.Progression.Foundation);
+        Assert.Equal(expectedConsciousnessExp, player.Loadout.CoreAttributes.ConsciousnessExp);
         Assert.Equal(100, player.Progression.Experience);
 
-        // 3) 用积攒的 56 点底蕴去打坐修炼（引气入体 10s：基础 10 点修为，底蕴按 1:1 兑换放大）
+        // 3) 用积攒的底蕴去打坐修炼（引气入体 10s：基础 10 点修为，底蕴按 1:1 兑换放大）
         var drawQi = catalog.Actions.Get(new ActionId("cultivation.draw-qi"));
         player.Enqueue(new ActionIntent(drawQi.Id, 1), Baseline.AddSeconds(convert.DurationSeconds), catalog.Actions);
         var cultRes = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(convert.DurationSeconds + drawQi.DurationSeconds), catalog, wallet);
         cultRes.AssetDeltas.ToList().ForEach(wallet.Apply);
 
-        // 打坐消耗底蕴 1:1 放大修为，剩余底蕴严格减少（至少比打坐前 56 减少）
+        // 打坐消耗底蕴 1:1 放大修为，剩余底蕴严格减少
         Assert.True(player.Progression.Experience > 110, $"预期底蕴放大打坐修为，实际 Experience={player.Progression.Experience}");
-        Assert.True(player.Progression.Foundation < 56, $"预期底蕴被打坐消耗，实际 Foundation={player.Progression.Foundation}");
+        Assert.True(player.Progression.Foundation < 40 + expectedTechExp, $"预期底蕴被打坐消耗，实际 Foundation={player.Progression.Foundation}");
     }
 
     private static GameDataCatalog CreateMinimalCatalog(

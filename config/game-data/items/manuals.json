@@ -7,7 +7,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.fragment.heavy-slash",
@@ -17,7 +18,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.tome.chain-strike",
@@ -27,7 +29,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 8,
+    "tier": 1
   },
   {
     "id": "item.fragment.chain-strike",
@@ -37,7 +40,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 8,
+    "tier": 1
   },
   {
     "id": "item.tome.palm-lightning",
@@ -47,7 +51,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.fragment.palm-lightning",
@@ -57,7 +62,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.tome.ganlu",
@@ -67,7 +73,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.fragment.ganlu",
@@ -77,7 +84,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.tome.blazing-blast",
@@ -87,7 +95,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 3,
+    "tier": 1
   },
   {
     "id": "item.fragment.blazing-blast",
@@ -97,7 +106,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 3,
+    "tier": 1
   },
   {
     "id": "item.tome.taunt",
@@ -107,7 +117,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 5,
+    "tier": 1
   },
   {
     "id": "item.fragment.taunt",
@@ -117,7 +128,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 5,
+    "tier": 1
   },
   {
     "id": "item.tome.heavy-clouds",
@@ -128,7 +140,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 20
   },
   {
     "id": "item.fragment.heavy-clouds",
@@ -139,7 +151,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 20
   },
   {
     "id": "item.tome.qingping-melody",
@@ -172,7 +184,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 16
   },
   {
     "id": "item.fragment.lightning-attraction",
@@ -183,7 +195,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 16
   },
   {
     "id": "item.tome.pozhen-melody",
@@ -216,7 +228,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 24
   },
   {
     "id": "item.fragment.star-piercer",
@@ -227,7 +239,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 24
   },
   {
     "id": "item.tome.tuna-gong",
@@ -237,7 +249,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.fragment.tuna-gong",
@@ -247,7 +260,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.tome.manniu-jin",
@@ -257,7 +271,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 8,
+    "tier": 1
   },
   {
     "id": "item.fragment.manniu-jin",
@@ -267,7 +282,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 8,
+    "tier": 1
   },
   {
     "id": "item.tome.tiebu-shan",
@@ -277,7 +293,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 5,
+    "tier": 1
   },
   {
     "id": "item.fragment.tiebu-shan",
@@ -287,7 +304,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 5,
+    "tier": 1
   },
   {
     "id": "item.tome.feiyan-gong",
@@ -297,7 +315,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.fragment.feiyan-gong",
@@ -307,7 +326,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 2,
+    "tier": 1
   },
   {
     "id": "item.tome.qingxin-jue",
@@ -317,7 +337,8 @@
     "category": "manual",
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 3,
+    "tier": 1
   },
   {
     "id": "item.fragment.qingxin-jue",
@@ -327,7 +348,8 @@
     "category": "manual",
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 3,
+    "tier": 1
   },
   {
     "id": "item.tome.fenxue-gong",
@@ -338,7 +360,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 14
   },
   {
     "id": "item.fragment.fenxue-gong",
@@ -349,7 +371,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 14
   },
   {
     "id": "item.tome.xiaozhoutian-gong",
@@ -360,7 +382,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 20
   },
   {
     "id": "item.fragment.xiaozhoutian-gong",
@@ -371,7 +393,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 20
   },
   {
     "id": "item.tome.cunshen-jue",
@@ -382,7 +404,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 16
   },
   {
     "id": "item.fragment.cunshen-jue",
@@ -393,7 +415,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 16
   },
   {
     "id": "item.tome.lianjing-huaqi-jue",
@@ -423,10 +445,10 @@
     "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 3,
+    "tier": 2,
     "sellPrice": 500,
     "subCategory": "manualTome",
-    "level": 30
+    "level": 18
   },
   {
     "id": "item.fragment.xuanyuan-yiqi-gong",
@@ -434,12 +456,11 @@
     "description": "玄元一气，六合归真。\n玄门上乘筑基道书，采天地玄元始气以筑仙基，周天百骸形神兼修，无偏无颇。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 3,
+    "tier": 2,
     "sellPrice": 50,
     "subCategory": "manualFragment",
-    "level": 30
-  }
-  ,
+    "level": 18
+  },
   {
     "id": "item.tome.tide",
     "name": "《潮汐秘籍》",
@@ -449,7 +470,7 @@
     "tier": 1,
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 11
   },
   {
     "id": "item.fragment.tide",
@@ -460,7 +481,7 @@
     "tier": 1,
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 11
   },
   {
     "id": "item.tome.sui-gang",
@@ -471,7 +492,7 @@
     "tier": 1,
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 16
   },
   {
     "id": "item.fragment.sui-gang",
@@ -482,7 +503,7 @@
     "tier": 1,
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 16
   },
   {
     "id": "item.tome.zhanyu",
@@ -490,10 +511,10 @@
     "description": "剑出寒玉碎，身随流云移。\n剑修一脉轻身斩玉秘传剑谱，更载御风踏云、一剑横扫群敌之法。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
+    "tier": 3,
     "sellPrice": 100,
     "subCategory": "manualTome",
-    "level": 1
+    "level": 30
   },
   {
     "id": "item.fragment.zhanyu",
@@ -501,10 +522,10 @@
     "description": "剑出寒玉碎，身随流云移。\n剑修一脉轻身斩玉秘传残页，墨痕如剑气斩玉而生。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
+    "tier": 3,
     "sellPrice": 10,
     "subCategory": "manualFragment",
-    "level": 1
+    "level": 30
   },
   {
     "id": "item.tome.yueqian",
@@ -515,7 +536,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 28
   },
   {
     "id": "item.fragment.yueqian",
@@ -526,7 +547,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 28
   },
   {
     "id": "item.tome.huoyan-fengbao",
@@ -537,7 +558,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 18
+    "level": 27
   },
   {
     "id": "item.fragment.huoyan-fengbao",
@@ -548,7 +569,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 18
+    "level": 27
   },
   {
     "id": "item.tome.tianlei-po",
@@ -559,7 +580,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 20
+    "level": 28
   },
   {
     "id": "item.fragment.tianlei-po",
@@ -570,7 +591,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 20
+    "level": 28
   },
   {
     "id": "item.tome.zhuoxin",
@@ -581,7 +602,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 20
+    "level": 25
   },
   {
     "id": "item.fragment.zhuoxin",
@@ -592,7 +613,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 20
+    "level": 25
   },
   {
     "id": "item.tome.shunshan",
@@ -600,10 +621,10 @@
     "description": "电光火石间，步随剑影灭。\n剑修上乘刺杀剑诀，善借「移形」之势一剑定乾坤、破敌即再起。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 20
+    "level": 30
   },
   {
     "id": "item.fragment.shunshan",
@@ -611,10 +632,10 @@
     "description": "电光火石间，步随剑影灭。\n剑诀残叶，仅余一道凌厉至极的斜劈轨迹图。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 2,
+    "tier": 3,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 20
+    "level": 30
   },
   {
     "id": "item.tome.shangui-yao",
@@ -625,7 +646,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 20
+    "level": 28
   },
   {
     "id": "item.fragment.shangui-yao",
@@ -636,7 +657,7 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 20
+    "level": 28
   },
   {
     "id": "item.tome.pojun",
@@ -647,7 +668,7 @@
     "tier": 2,
     "sellPrice": 250,
     "subCategory": "manualTome",
-    "level": 20
+    "level": 27
   },
   {
     "id": "item.fragment.pojun",
@@ -658,6 +679,6 @@
     "tier": 2,
     "sellPrice": 25,
     "subCategory": "manualFragment",
-    "level": 20
+    "level": 27
   }
 ]
