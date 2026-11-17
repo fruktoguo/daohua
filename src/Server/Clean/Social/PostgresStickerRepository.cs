@@ -78,6 +78,8 @@ public sealed record StickerDeleteRequest(
 public sealed partial class PostgresStickerRepository(NpgsqlDataSource dataSource)
 {
     public const int MaxStickersPerPlayer = 100;
+    /// <summary>单角色软删除墓碑总量上限：超出按删除时刻升序物理淘汰最旧墓碑（响应侧本就只回最近 200 条）。</summary>
+    public const int MaxTombstonesPerPlayer = 200;
     public const int MaxUrlLength = 200;
     public const int MaxStickerIdLength = 64;
 
@@ -153,23 +155,7 @@ public sealed partial class PostgresStickerRepository(NpgsqlDataSource dataSourc
                     existing.Dirty = true;
                 }
             }
-            else
-            {
-                rows[stickerId] = new MutableRow
-                {
-                    StickerId = stickerId,
-                    Url = "https://deleted.invalid/",
-                    Sha256 = null,
-                    Mime = string.Empty,
-                    UseCount = 0,
-                    LastUsedAt = 0,
-                    AddedAt = deletedAt,
-                    UpdatedAt = deletedAt,
-                    NeedsReupload = false,
-                    DeletedAt = deletedAt,
-                    Dirty = true
-                };
-            }
+            // 不为数据库中从未存在的标识创建墓碑：否则客户端反复提交随机 stickerId 即可无限膨胀墓碑行。
         }
 
         // 2. 处理新增与更新（含旧临时 ID -> 正式 SHA256 ID 升级合并）
@@ -303,6 +289,7 @@ public sealed partial class PostgresStickerRepository(NpgsqlDataSource dataSourc
                 originalResponse);
         }
 
+        await EnforceTombstoneCapAsync(connection, transaction, playerId, rows, ct).ConfigureAwait(false);
         await PersistDirtyRowsAsync(connection, transaction, playerId, rows.Values, ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return BuildResponse(rows.Values, nowMs);
@@ -338,25 +325,10 @@ public sealed partial class PostgresStickerRepository(NpgsqlDataSource dataSourc
                 existing.NeedsReupload = false;
                 existing.Dirty = true;
             }
-            else
-            {
-                rows[stickerId] = new MutableRow
-                {
-                    StickerId = stickerId,
-                    Url = "https://deleted.invalid/",
-                    Sha256 = null,
-                    Mime = string.Empty,
-                    UseCount = 0,
-                    LastUsedAt = 0,
-                    AddedAt = deletedAt,
-                    UpdatedAt = deletedAt,
-                    NeedsReupload = false,
-                    DeletedAt = deletedAt,
-                    Dirty = true
-                };
-            }
+            // 不存在的服务端条目无需落墓碑：不存在的东西本来就没有可删状态。
         }
 
+        await EnforceTombstoneCapAsync(connection, transaction, playerId, rows, ct).ConfigureAwait(false);
         await PersistDirtyRowsAsync(connection, transaction, playerId, rows.Values, ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return BuildResponse(rows.Values, nowMs);
@@ -421,6 +393,32 @@ public sealed partial class PostgresStickerRepository(NpgsqlDataSource dataSourc
             };
         }
         return result;
+    }
+
+    /// <summary>单角色墓碑总量设限：超出 <see cref="MaxTombstonesPerPlayer"/> 时按删除时刻升序物理淘汰最旧墓碑。</summary>
+    private static async Task EnforceTombstoneCapAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid playerId,
+        Dictionary<string, MutableRow> rows,
+        CancellationToken ct)
+    {
+        var tombstoneCount = rows.Values.Count(r => r.DeletedAt is not null);
+        if (tombstoneCount <= MaxTombstonesPerPlayer) return;
+        var evictIds = rows.Values
+            .Where(r => r.DeletedAt is not null)
+            .OrderBy(r => r.DeletedAt!.Value)
+            .Take(tombstoneCount - MaxTombstonesPerPlayer)
+            .Select(r => r.StickerId)
+            .ToArray();
+        foreach (var id in evictIds) rows.Remove(id);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM social.player_stickers WHERE player_id = $1 AND sticker_id = ANY($2)",
+            connection,
+            transaction);
+        cmd.Parameters.AddWithValue(playerId);
+        cmd.Parameters.AddWithValue(evictIds);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task PersistDirtyRowsAsync(

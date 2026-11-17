@@ -96,10 +96,37 @@ function sha256File(file) {
   return hash.digest('hex')
 }
 
+/** 道具图标运行时规范尺寸（AGENTS.md §2：道具图标统一 48px WebP q90）。 */
+const ITEM_ICON_PIXELS = 48
+
+/** 解析 WebP 文件头返回 {width,height}；非 WebP 或头部截断返回 null（不阻断清单生成）。 */
+function webpPixelSize(file) {
+  let fd = null
+  try {
+    fd = fs.openSync(file, 'r')
+    const head = Buffer.alloc(64)
+    if (fs.readSync(fd, head, 0, 64, 0) < 30) return null
+    if (head.toString('ascii', 0, 4) !== 'RIFF' || head.toString('ascii', 8, 12) !== 'WEBP') return null
+    const tag = head.toString('ascii', 12, 16)
+    if (tag === 'VP8L') {
+      const bits = head.readUInt32LE(21)
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+    }
+    if (tag === 'VP8 ') return { width: head.readUInt16LE(26) & 0x3fff, height: head.readUInt16LE(28) & 0x3fff }
+    if (tag === 'VP8X') return { width: head.readUIntLE(24, 3) + 1, height: head.readUIntLE(27, 3) + 1 }
+    return null
+  } catch {
+    return null
+  } finally {
+    if (fd !== null) fs.closeSync(fd)
+  }
+}
+
 /**
  * 从 Vite .vite/manifest.json 提取 HD 图标别名。
  * 仅覆盖 assets/items 与 assets/buildings 两类已被 HD 画质包接管的目录；
  * glyphs/scenes 无 HD 母模，不产生别名（继续走 Web hash 资源）。
+ * 附门规：assets/items 源图标必须严格 48x48 WebP，违例直接构建失败（防止候选稿混入生产死重）。
  */
 function buildHdAliases(viteManifestPath) {
   if (!viteManifestPath || !fs.existsSync(viteManifestPath)) return null
@@ -111,6 +138,7 @@ function buildHdAliases(viteManifestPath) {
     return null
   }
   const aliases = {}
+  const violations = []
   for (const [key, info] of Object.entries(manifest)) {
     if (!info || typeof info.file !== 'string') continue
     const src = typeof info.src === 'string' ? info.src : key
@@ -119,7 +147,16 @@ function buildHdAliases(viteManifestPath) {
     const kind = m[1]
     const itemId = m[2].replace(/\.(webp|png|jpe?g|gif|svg)$/i, '')
     if (!itemId) continue
+    if (kind === 'items' && src.toLowerCase().endsWith('.webp')) {
+      const size = webpPixelSize(path.resolve(src))
+      if (size && (size.width !== ITEM_ICON_PIXELS || size.height !== ITEM_ICON_PIXELS))
+        violations.push(`${src} (${size.width}x${size.height})`)
+    }
     aliases[`/${info.file}`] = `/hd/${kind}/${itemId}.webp`
+  }
+  if (violations.length > 0) {
+    console.error(`[gen-asset-manifest] 道具图标尺寸违规（要求 ${ITEM_ICON_PIXELS}x${ITEM_ICON_PIXELS} WebP）:\n  ${violations.join('\n  ')}`)
+    process.exit(1)
   }
   return Object.keys(aliases).length > 0 ? aliases : null
 }

@@ -18,6 +18,7 @@ import { ChatEmojiPicker } from './ChatEmojiPicker'
 import { Icon } from './Icon'
 import { computeBlobSha256, uploadChatImage } from '../game/chatImageUploadService'
 import { chatStickerService, MAX_CUSTOM_STICKERS } from '../game/chatStickerService'
+import { useMountedTimeout } from '../hooks/useMountedTimeout'
 /** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
 const MAX_CHAT_BODY_LENGTH = 200
 
@@ -38,6 +39,7 @@ const ChatComposer = memo(function ChatComposer({
   hint?: string
 }): React.JSX.Element {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
   const [draft, setDraft] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -50,7 +52,7 @@ const ChatComposer = memo(function ChatComposer({
         const trimmed = prev.trim()
         return trimmed ? `${trimmed} ${text}` : text
       })
-      window.setTimeout(() => {
+      mountedTimeout(() => {
         const input = inputRef.current
         if (input) {
           input.focus()
@@ -59,7 +61,7 @@ const ChatComposer = memo(function ChatComposer({
         }
       }, 50)
     })
-  }, [])
+  }, [mountedTimeout])
   const handleInsertText = (text: string): void => {
     const input = inputRef.current
     if (!input) {
@@ -76,7 +78,7 @@ const ChatComposer = memo(function ChatComposer({
       return
     }
     setDraft(next)
-    window.setTimeout(() => {
+    mountedTimeout(() => {
       input.focus()
       const newPos = start + text.length
       input.setSelectionRange(newPos, newPos)

@@ -107,11 +107,8 @@ export function createSimulatorBridge(
       }
       startingWorker = instance
       const ownsInstance = () => startingWorker === instance || readyWorker === instance
-      const fail = (error: Error) => {
-        reject(error)
-        teardown(error, ticket)
-      }
-      readyTimer = setTimeout(() => fail(new Error('战斗预演内核加载超时。')), 300_000)
+      const fail = (error: Error) => teardown(error, ticket)
+      readyTimer = setTimeout(() => fail(new Error('战斗预演内核加载超时。')), 20_000)
       instance.addEventListener('error', (event) => {
         if (!ownsInstance()) return
         teardown(new Error(event.message || '战斗预演内核发生错误。'), ticket)

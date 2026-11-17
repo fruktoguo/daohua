@@ -305,7 +305,10 @@ public static class PlayerActionQueueRules
         ActionParticipationBinding? participation)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        if (intent is null || !intent.ActionId.IsValid || (!priority && (!double.IsFinite(intent.RepeatCount)
+        // 轮次与时长校验豁免仅限服务端受控的参与绑定插队（无限驻留队首直至散场）；
+        // 客户端普通 priority 插队与常规入队接受同一套校验，杜绝非法轮次驻留队列。
+        var isParticipation = priority && participation is { IsValid: true };
+        if (intent is null || !intent.ActionId.IsValid || (!isParticipation && (!double.IsFinite(intent.RepeatCount)
             || (intent.RepeatCount != -1 && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000
                 || intent.RepeatCount != Math.Floor(intent.RepeatCount))))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
@@ -325,7 +328,7 @@ public static class PlayerActionQueueRules
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
         var definition = catalog.Get(intent.ActionId);
         // 强化行动轮次时长由目标等级派生（5+t 恒正），配表 durationSeconds 为 0 不构成死循环。
-        if (!priority && intent.RepeatCount == -1 && definition.DurationSeconds <= 0
+        if (!isParticipation && intent.RepeatCount == -1 && definition.DurationSeconds <= 0
             && definition.ExecutionKind != ActionExecutionKind.CombatEncounter
             && definition.Kind != ActionKind.Enhancement)
             throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");

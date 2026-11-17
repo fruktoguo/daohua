@@ -40,9 +40,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return { hasError: true, error }
   }
 
+  private copiedTimer: number | undefined
+
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo })
     console.error('[ErrorBoundary] 捕获到未处理的渲染异常:', error, errorInfo)
+  }
+
+  override componentWillUnmount(): void {
+    window.clearTimeout(this.copiedTimer)
   }
 
   handleReset = (): void => {
@@ -73,7 +79,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (navigator.clipboard) {
       navigator.clipboard.writeText(content).then(() => {
         this.setState({ copied: true })
-        setTimeout(() => this.setState({ copied: false }), 3000)
+        window.clearTimeout(this.copiedTimer)
+        this.copiedTimer = window.setTimeout(() => this.setState({ copied: false }), 3000)
       }).catch(() => {
         // 剪贴板权限被拒或不可用时静默跳过：复制失败不应让降级屏自身再抛异常。
       })

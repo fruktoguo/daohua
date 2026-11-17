@@ -19,6 +19,7 @@ import {
   copyTextToClipboard,
   openProtocolUrl,
 } from './TopbarCommunityLinks'
+import { useMountedTimeout } from '../hooks/useMountedTimeout'
 
 
 /** 设置页面分类（账号、显示偏好、隐私、形象、引导、关于） */
@@ -118,6 +119,7 @@ function formatCooldown(seconds: number, t: (key: string, params?: Record<string
  */
 export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
   const [activeTab, setActiveTab] = useState<SettingsTab>('account')
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
@@ -175,7 +177,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
     const opened = openProtocolUrl(deepLink)
     const copied = await copyPromise
 
-    window.setTimeout(() => {
+    mountedTimeout(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
       }
@@ -187,7 +189,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
         useGameStore.getState().setNotice(t('app.topbar.qqLaunched', { group: OFFICIAL_QQ_GROUP }))
       }
     }, 600)
-  }, [t])
+  }, [mountedTimeout, t])
 
   const handleCopyQqOnly = useCallback(async () => {
     await copyTextToClipboard(OFFICIAL_QQ_GROUP)

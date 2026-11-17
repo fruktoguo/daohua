@@ -2,6 +2,7 @@ import { memo, useCallback } from 'react'
 import { useT } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import { FloatingTooltip } from './FloatingPopover'
+import { useMountedTimeout } from '../hooks/useMountedTimeout'
 
 /** 官方 QQ 群号 */
 export const OFFICIAL_QQ_GROUP = '940886387'
@@ -75,6 +76,7 @@ export function openProtocolUrl(url: string): boolean {
  */
 export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.JSX.Element {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
 
   const handleOpenQq = useCallback(async () => {
     const deepLink = resolveQqGroupLink()
@@ -84,7 +86,7 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
     const opened = openProtocolUrl(deepLink)
     const copied = await copyPromise
 
-    window.setTimeout(() => {
+    mountedTimeout(() => {
       // 若已切出至 QQ 客户端（浏览器进入后台），不弹出额外气泡打扰
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
@@ -97,7 +99,7 @@ export const TopbarCommunityLinks = memo(function TopbarCommunityLinks(): React.
         useGameStore.getState().setNotice(t('app.topbar.qqLaunched', { group: OFFICIAL_QQ_GROUP }))
       }
     }, 600)
-  }, [t])
+  }, [mountedTimeout, t])
 
   const handleDownloadClick = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
     if (typeof window !== 'undefined' && window.DaoHuaNative?.checkUpdate) {

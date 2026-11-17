@@ -7,10 +7,10 @@
 #   存档分段标签（game.player_state_sections / platform.section_flush_queue 的 schema_version）
 #   是 SectionCodec 的严格相等校验项。若旧版本进程在迁移窗口内继续写入，会把已被迁移推进的
 #   标签写回旧值，导致新版本进程加载该玩家时抛 `section schema 版本不受支持` 并反复重连。
-#   因此迁移必须在 app/compute 两个写者全部停止后执行，迁移完成再启动新镜像。
+#   因此迁移必须在 app/compute/persistence-worker 全部写者停止后执行，迁移完成再启动新镜像。
 #
 # 顺序契约（本脚本强制执行）：
-#   1. 校验平台版本、确认 app/compute 已停止（默认拒绝在运行中迁移）；
+#   1. 校验平台版本、确认全部存档写者已停止（默认拒绝在运行中迁移）；
 #   2. 备份全库（默认开启，可用 --skip-backup 跳过）；
 #   3. 按 platform.schema_version 链式应用 migrations/ 中落后脚本；
 #   4. 校验 platform.schema_version 达到代码要求，且存档标签已全部收敛到当前 SectionCodec 版本；
@@ -90,9 +90,15 @@ compose() {
   fi
 }
 
+# 全部存档写者容器：app / compute 之外还有 worker profile 下的持久化工作者，
+# 迁移窗口内它同样会把分段标签写回旧值，必须纳入停写与恢复清单。
+WRITER_CONTAINERS=(daohua-app daohua-compute daohua-persistence-worker)
+# 本次由本脚本停止的写者容器名列表：恢复时只拉起这些，不强行启动原本未运行的 worker。
+STOPPED_WRITER_NAMES=""
+
 writers_running() {
   local running=()
-  for name in daohua-app daohua-compute; do
+  for name in "${WRITER_CONTAINERS[@]}"; do
     if "$DOCKER" inspect --format '{{.State.Running}}' "$name" 2>/dev/null | grep -q '^true$'; then
       running+=("$name")
     fi
@@ -100,9 +106,23 @@ writers_running() {
   printf '%s\n' "${running[@]:-}"
 }
 
+service_for_container() {
+  case "$1" in
+    daohua-app) printf 'app' ;;
+    daohua-compute) printf 'compute-node' ;;
+    daohua-persistence-worker) printf 'persistence-worker' ;;
+  esac
+}
+
 stop_writers() {
-  log '停止 app 与 compute-node 写者（迁移窗口内不允许写入存档标签）'
-  compose stop app compute-node
+  local running services=() name
+  running="$(writers_running)"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && services+=("$(service_for_container "$name")")
+  done <<< "$running"
+  log '停止 app / compute-node / persistence-worker 写者（迁移窗口内不允许写入存档标签）'
+  ((${#services[@]} > 0)) && compose stop "${services[@]}"
+  STOPPED_WRITER_NAMES="$running"
   local remaining
   remaining="$(writers_running)"
   if [[ -n "$remaining" ]]; then
@@ -111,8 +131,13 @@ stop_writers() {
 }
 
 restart_writers() {
-  log '恢复 app 与 compute-node（使用当前 daohua.env 中的镜像）'
-  compose up -d app compute-node
+  local services=() name
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && services+=("$(service_for_container "$name")")
+  done <<< "${STOPPED_WRITER_NAMES:-}"
+  ((${#services[@]} > 0)) || return 0
+  log "恢复写者：${services[*]}（使用当前 daohua.env 中的镜像）"
+  compose up -d "${services[@]}"
 }
 
 # ------------------------------------------------------------------------------
@@ -155,15 +180,18 @@ if [[ -z "$required" ]]; then
 fi
 
 # 写者状态：默认要求已停止，避免迁移窗口内被旧版本覆盖标签。
+# --dry-run 只演练不执行：真实停写属于生产副作用，必须跳过且绝不恢复。
 running="$(writers_running)"
 if [[ -n "$running" ]]; then
   if [[ "$ALLOW_RUNNING" == "1" ]]; then
     warn "写者仍在运行：${running//$'\n'/, }；--allow-running 已强制继续（仅排障使用）。"
+  elif [[ "$DRY_RUN" == "1" ]]; then
+    warn "（--dry-run：写者仍在运行：${running//$'\n'/, }；实际执行时会先停止写者，本次演练不执行停写。）"
   elif [[ "$STOP_WRITERS" == "1" ]]; then
     stop_writers
     STOPPED_BY_US=1
   else
-    die "写者仍在运行：${running//$'\n'/, }。请先停止 app 与 compute 再迁移（或用 --no-stop-writers 明确表示由调用方负责）。"
+    die "写者仍在运行：${running//$'\n'/, }。请先停止 app、compute-node 与 persistence-worker 再迁移（或用 --no-stop-writers 明确表示由调用方负责）。"
   fi
 fi
 
@@ -289,14 +317,10 @@ if true; then
 fi
 
 # ------------------------------------------------------------------------------
-# 恢复写者
+# 恢复写者（--dry-run 从未停止写者，STOPPED_BY_US 恒 0，天然无需特判）
 # ------------------------------------------------------------------------------
 if [[ "${STOPPED_BY_US:-0}" == "1" ]]; then
-  if [[ "$DRY_RUN" == "1" ]]; then
-    warn '（--dry-run：迁移前已停止的写者需要人工恢复：docker compose up -d app compute）'
-  else
-    restart_writers
-  fi
+  restart_writers
 fi
 
 log '迁移流程结束。'

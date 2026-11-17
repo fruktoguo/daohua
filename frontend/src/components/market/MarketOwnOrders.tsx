@@ -10,6 +10,7 @@ import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketOrder } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
+import { useMountedTimeout } from '../../hooks/useMountedTimeout'
 
 /** 个人订单管理面板 Props */
 interface MarketOwnOrdersProps {
@@ -33,6 +34,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
   onChanged,
 }: MarketOwnOrdersProps): React.JSX.Element {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
   const catalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const setNotice = useGameStore(state => state.setNotice)
@@ -40,8 +42,8 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
     if (!gameClient.sendCommand('market.cancel', { orderId })) return
     setNotice(getT()('market.notice.cancelSubmitted'))
     // 延迟 120ms 再拉取：给服务端一个结算窗口消化撤单指令，避免立刻刷新读到旧快照。
-    window.setTimeout(onChanged, 120)
-  }, [onChanged, setNotice])
+    mountedTimeout(onChanged, 120)
+  }, [mountedTimeout, onChanged, setNotice])
 
   const shareOrder = useCallback((order: MarketOrder) => {
     const markup = buildOrderChatMarkup({

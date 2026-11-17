@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { calculateEquipmentSellPrice, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice } from '../../game/ids'
+import { calculateEquipmentSellPrice, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice, resolveProtectionUnitPrice } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook, MarketOrder } from '../../game/types'
@@ -10,6 +10,7 @@ import { gameClient } from '../../network/gameClient'
 import { ItemTile } from '../ItemDisplay'
 import { Modal } from '../Modal'
 import { getMarketPriceIncrement, isEquipmentInstrument, normalizeMarketPrice, resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
+import { useMountedTimeout } from '../../hooks/useMountedTimeout'
 
 /** 挂单单价上限：防止 ×2 步进无限放大导致总价显示失真（服务端仅要求有限正数）。 */
 const MARKET_ORDER_MAX_PRICE = 999_999_999
@@ -67,6 +68,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   onShowOrders,
 }: MarketOrderModalProps): React.JSX.Element | null {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
@@ -129,17 +131,20 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     [existingOrders, instrument, level],
   )
 
+  const itemsCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
   const vendorPrice = useMemo(() => {
     if (!instrument) return 2
     if (isEquipment) {
       const basePrice = instrument.sellPrice > 0
         ? instrument.sellPrice
         : resolveEquipmentBaseSellPrice(instrument.itemId, instrument.equipmentDefinition)
-      const recyclePrice = calculateEquipmentSellPrice(basePrice, level)
+      const protectionPrice = resolveProtectionUnitPrice(basePrice, instrument.equipmentDefinition, itemsCatalog, equipmentCatalog)
+      const recyclePrice = calculateEquipmentSellPrice(basePrice, protectionPrice, level)
       return Math.max(2, recyclePrice)
     }
     return Math.max(2, instrument.sellPrice ?? 2)
-  }, [instrument, isEquipment, level])
+  }, [instrument, isEquipment, level, itemsCatalog, equipmentCatalog])
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
   // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
   // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
@@ -299,9 +304,9 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     if (success) {
       setNotice(getT()(side === 'sell' ? 'market.notice.sellSubmitted' : 'market.notice.buySubmitted'))
       onClose()
-      window.setTimeout(onPlaced, 120)
+      mountedTimeout(onPlaced, 120)
     }
-  }, [availableAmount, blockingOrder, effectiveQuantity, equippedCount, instrument, isEquipment, level, onClose, onPlaced, price, setNotice, side, spiritAmount, vendorPrice])
+  }, [availableAmount, blockingOrder, effectiveQuantity, equippedCount, instrument, isEquipment, level, mountedTimeout, onClose, onPlaced, price, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 

@@ -248,6 +248,40 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 优先插队与常规入队接受同一套轮次校验：非整数/越界 RepeatCount 必须同样拒绝，
+    /// 仅服务端参与绑定插队保留豁免（防止客户端借 priority 写入永不归零的轮次）。
+    /// </summary>
+    [Fact]
+    public void EnqueuePriorityRejectsInvalidRepeatCount()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, Assert.Throws<DomainException>(() =>
+            player.EnqueuePriority(new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionCatalog.Default)).Code);
+        Assert.Equal(DomainErrorCode.InvalidArgument, Assert.Throws<DomainException>(() =>
+            player.EnqueuePriority(new ActionIntent(new ActionId("cultivation.draw-qi"), -99), Baseline, ActionCatalog.Default)).Code);
+        Assert.Equal(DomainErrorCode.InvalidArgument, Assert.Throws<DomainException>(() =>
+            player.EnqueuePriority(new ActionIntent(new ActionId("cultivation.draw-qi"), double.NaN), Baseline, ActionCatalog.Default)).Code);
+    }
+
+    /// <summary>
+    /// 零时长 + 无限轮次的优先插队同样按死循环拒入队，参与绑定插队不受此约束。
+    /// </summary>
+    [Fact]
+    public void EnqueuePriorityRejectsInfiniteZeroDurationAction()
+    {
+        var instant = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.instant"), "瞬时", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), [])
+        ]);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        var error = Assert.Throws<DomainException>(() =>
+            player.EnqueuePriority(new ActionIntent(new ActionId("test.instant"), -1), Baseline, instant));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
     /// <summary>非法小数或越界重复次数恢复时必须快速失败，不得静默丢弃行动。</summary>
     [Fact]
     public void RestoreRejectsInvalidRepeatCountsWithoutDroppingActions()

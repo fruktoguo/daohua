@@ -106,6 +106,7 @@ public sealed class ActionParticipationRuntime(
         online.UnionWith(_connectingMembers.Keys);
         Volatile.Write(ref _nextBoundaryTicks, 0);
         var sessions = await store.ListActiveAsync(cancellationToken);
+        PruneSessionState(sessions);
         List<Exception>? failures = null;
         foreach (var session in sessions)
         {
@@ -156,6 +157,7 @@ public sealed class ActionParticipationRuntime(
         var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
         online.UnionWith(_connectingMembers.Keys);
         var sessions = await store.ListActiveAsync(cancellationToken);
+        PruneSessionState(sessions);
         var advanced = new HashSet<Guid>();
         foreach (var session in sessions)
         {
@@ -261,6 +263,19 @@ public sealed class ActionParticipationRuntime(
             }
         }
         return result;
+    }
+
+    /// <summary>会话终态离开 ListActiveAsync 后回收会话级隔离/退避状态，防止字典随历史会话只增不减。</summary>
+    private void PruneSessionState(IReadOnlyList<ActionParticipationSessionRecord> activeSessions)
+    {
+        if (_fencedSessions.IsEmpty && _corruptSessions.IsEmpty && _sessionBackoffs.IsEmpty) return;
+        var activeIds = new HashSet<string>(activeSessions.Select(session => session.SessionId), StringComparer.Ordinal);
+        foreach (var sessionId in _fencedSessions.Keys)
+            if (!activeIds.Contains(sessionId)) _fencedSessions.TryRemove(sessionId, out _);
+        foreach (var sessionId in _corruptSessions.Keys)
+            if (!activeIds.Contains(sessionId)) _corruptSessions.TryRemove(sessionId, out _);
+        foreach (var sessionId in _sessionBackoffs.Keys)
+            if (!activeIds.Contains(sessionId)) _sessionBackoffs.TryRemove(sessionId, out _);
     }
 
     /// <inheritdoc />

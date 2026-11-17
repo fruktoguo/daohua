@@ -2997,11 +2997,9 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (connection !== 'online' || !hasReceivedSnapshot) { useZongmenStore.getState().reset(); return }
     const refresh = (): void => { void useZongmenStore.getState().refresh() }
-    const result = (): void => { useZongmenStore.setState({ pending: false }); refresh() }
     refresh()
     const timer = window.setInterval(refresh, 15_000)
-    window.addEventListener('daohua:zongmen-result', result)
-    return () => { window.clearInterval(timer); window.removeEventListener('daohua:zongmen-result', result) }
+    return () => { window.clearInterval(timer) }
   }, [connection, hasReceivedSnapshot, zongmenPlayerId])
 
   const tabBlocked = useAntiMultiOpenStore(state => state.tabBlocked)

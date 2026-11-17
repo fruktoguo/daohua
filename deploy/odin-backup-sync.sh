@@ -6,9 +6,10 @@
 # 特性:
 #   1. 443 端口绝对抗阻断: 绕过商业 VPN 对 SSH 22 端口的拦截，100% 稳定运行；
 #   2. X-Backup-Token 安全鉴权: 严格防护，无有效令牌返回 404；
-#   3. 断点续传与增量跳过: 已下载且对账无误的文件跳过，支持 curl 断点续传；
+#   3. 断点续传与增量跳过: 已下载且对账无误的文件跳过；数据文件经 .partial 原子落盘，
+#      哈希对不上的坏前缀直接删除整包重拉，杜绝续传死循环；
 #   4. SHA-256 全量对账: 下载后自动比对 hash，确保备份 100% 完整可用；
-#   5. 本地大容量留存: 保存在本地 /root/daohua-backups/ (360GB+ 空间)，充当主灾备池。
+#   5. 本地大容量留存: 保存在本地 /root/daohua-backups/ (360GB+ 空间)，按分类配额自动老化。
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -25,6 +26,10 @@ BACKUP_URL="${BACKUP_URL:-https://daohua.yuohira.com/internal/backups}"
 BACKUP_TOKEN="${BACKUP_TOKEN:-${DAOHUA_BACKUP_TOKEN:-}}"
 LOCAL_DIR="${LOCAL_DIR:-/root/daohua-backups}"
 LOCK_FILE="/tmp/odin-backup-sync.lock"
+LOCAL_HOURLY_KEEP="${LOCAL_HOURLY_KEEP:-72}"
+LOCAL_DAILY_KEEP="${LOCAL_DAILY_KEEP:-30}"
+LOCAL_WEEKLY_KEEP="${LOCAL_WEEKLY_KEEP:-24}"
+LOCAL_BASE_KEEP="${LOCAL_BASE_KEEP:-8}"
 
 if [[ -z "$BACKUP_TOKEN" ]]; then
   printf '错误: 未配置 BACKUP_TOKEN / DAOHUA_BACKUP_TOKEN（可在 %s 设置），拒绝执行备份拉取。\n' "$ENV_FILE" >&2
@@ -62,15 +67,40 @@ for category in hourly daily weekly base; do
       if [[ -n "$expected_hash" && "$expected_hash" == "$actual_hash" ]]; then
         continue
       fi
+      # 哈希对不上的历史文件是坏前缀：不得以 -C - 续传（坏段永久残留），删除后整包重拉。
+      rm -f -- "$local_file"
     fi
 
-    # 增量下载（支持断点续传）
     printf '拉取 %s/%s ...\n' "$category" "$file"
-    curl -s -f -C - -H "X-Backup-Token: $BACKUP_TOKEN" "$remote_file_url" -o "$local_file" || {
-      printf '警告: 下载失败 %s\n' "$file" >&2
-    }
+    if [[ "$file" != *.sha256 ]]; then
+      # 数据文件先落到 .partial 再原子替换：断点续传只作用于未决文件，已落盘副本不被半截流污染。
+      if curl -s -f -C - -H "X-Backup-Token: $BACKUP_TOKEN" "$remote_file_url" -o "${local_file}.partial"; then
+        mv -f -- "${local_file}.partial" "$local_file"
+      else
+        printf '警告: 下载失败 %s（保留 .partial 供下轮续传）\n' "$file" >&2
+      fi
+    else
+      # sha256 边车文件体积极小，直接覆盖式拉取即可。
+      curl -s -f -H "X-Backup-Token: $BACKUP_TOKEN" "$remote_file_url" -o "$local_file" || {
+        printf '警告: 下载失败 %s\n' "$file" >&2
+      }
+    fi
   done
 done
+
+# 本地灾备池老化：各分类按保留配额清理最旧副本（含 .sha256 边车），防止 360GB 灾备盘无限堆积。
+prune_category() {
+  local dir="$1" keep="$2" stale
+  local -a old=()
+  mapfile -t old < <(find "$dir" -maxdepth 1 -type f \( -name '*.dump' -o -name '*.tar.gz' \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | awk -v keep="$keep" 'NR>keep {print $2}')
+  for stale in "${old[@]:-}"; do
+    [[ -n "$stale" ]] && rm -f -- "$stale" "${stale}.sha256"
+  done
+}
+prune_category "$LOCAL_DIR/hourly" "$LOCAL_HOURLY_KEEP"
+prune_category "$LOCAL_DIR/daily" "$LOCAL_DAILY_KEEP"
+prune_category "$LOCAL_DIR/weekly" "$LOCAL_WEEKLY_KEEP"
+prune_category "$LOCAL_DIR/base" "$LOCAL_BASE_KEEP"
 
 printf '==> 开始执行本地 SHA-256 完整性校验...\n'
 verified=0

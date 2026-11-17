@@ -850,13 +850,17 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), cancellationToken);
                             continue;
                         }
+                        // 优先插队落位队首、常规入队落位队尾：回执 Id 与剩余轮次必须取自同一目标实例。
+                        var enqueuedAction = action.Priority
+                            ? actionResult.Snapshot.State.Actions.FirstOrDefault()
+                            : actionResult.Snapshot.State.Actions.LastOrDefault();
                         var actionResponse = actionResult.Success
                             ? new ActionIntentResponse(
                                 action.RequestId,
-                                actionResult.Snapshot.State.Actions.LastOrDefault()?.Id.ToString("D") ?? string.Empty,
+                                enqueuedAction?.Id.ToString("D") ?? string.Empty,
                                 action.ActionId,
                                 DateTimeOffset.UtcNow,
-                                actionResult.Snapshot.State.Actions.FirstOrDefault()?.RemainingRepeats ?? action.RepeatCount,
+                                enqueuedAction?.RemainingRepeats ?? action.RepeatCount,
                                 Accepted: true,
                                 Status: "queued",
                                 Message: null)

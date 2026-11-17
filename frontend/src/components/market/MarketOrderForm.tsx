@@ -16,6 +16,7 @@ import { resolveEquipmentBaseSellPrice } from '../../game/ids'
 
 import { getMarketPriceIncrement, normalizeMarketPrice } from '../../game/marketPricing'
 export { getMarketPriceIncrement, normalizeMarketPrice }
+import { useMountedTimeout } from '../../hooks/useMountedTimeout'
 
 /** 挂单表单组件 Props */
 interface MarketOrderFormProps {
@@ -44,6 +45,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
   onPlaced,
 }: MarketOrderFormProps): React.JSX.Element {
   const t = useT()
+  const mountedTimeout = useMountedTimeout()
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
@@ -121,8 +123,8 @@ export const MarketOrderForm = memo(function MarketOrderForm({
       variant: null,
     })) return
     setNotice(getT()('market.notice.orderSubmitted'))
-    window.setTimeout(onPlaced, 120)
-  }, [effectiveQuantity, itemId, onPlaced, price, quantityLimit, selectedAmount, setNotice, side, vendorPrice])
+    mountedTimeout(onPlaced, 120)
+  }, [effectiveQuantity, itemId, mountedTimeout, onPlaced, price, quantityLimit, selectedAmount, setNotice, side, vendorPrice])
 
   return (
     <form className="market-order-form" onSubmit={submitOrder}>

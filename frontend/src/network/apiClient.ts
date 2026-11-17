@@ -32,9 +32,9 @@ export function getCatalogFingerprint(): string | null {
 }
 
 /**
- * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法/可建造建筑）。
+ * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法/可建造建筑/Buff 词表/触发规约）。
  * 副作用：baseAttributes 拉取后注册进 combatConstants 锚点表，境界/属性推算依赖其结果。
- * items 端点失败时容忍为空列表（前端保留静态物品兜底），其余端点失败整体抛错。
+ * 任一端点失败或批量 ETag 不一致即整体抛错（旧版容忍空列表会导致词表在会话内永久为空）。
  */
 export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   actions: ActionDefinition[]
@@ -47,20 +47,36 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   buffs: TriggerBuffOption[]
   triggerSpec: TriggerSpec
 }> {
-  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec] = await Promise.all([
-    requestJson<ActionDefinition[]>('/api/v1/catalog/actions', { signal }),
-    requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
-    requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
-    requestJson<ItemDefinition[]>('/api/v1/catalog/items', { signal }).catch(() => [] as ItemDefinition[]),
-    requestJson<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal }),
-    requestJson<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal }),
-    requestJson<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal }),
-    requestJson<BuildingDefinition[]>('/api/v1/catalog/buildings', { signal }),
+  const load = (reload: boolean) => Promise.all([
+    requestJsonDetailed<ActionDefinition[]>('/api/v1/catalog/actions', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<ItemDefinition[]>('/api/v1/catalog/items', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<BuildingDefinition[]>('/api/v1/catalog/buildings', { signal, cache: reload ? 'reload' : undefined }),
     // Buff 词表与触发条件规约常量：服务端单一权威，前端条件编辑器不得另写一份。
-    requestJson<TriggerBuffOption[]>('/api/v1/catalog/buffs', { signal }).catch(() => [] as TriggerBuffOption[]),
-    requestJson<TriggerSpec>('/api/v1/catalog/triggers', { signal })
-      .catch(() => ({ maxTriggersPerList: 4, equalTolerance: 1e-6 }) as TriggerSpec),
+    requestJsonDetailed<TriggerBuffOption[]>('/api/v1/catalog/buffs', { signal, cache: reload ? 'reload' : undefined }),
+    requestJsonDetailed<TriggerSpec>('/api/v1/catalog/triggers', { signal, cache: reload ? 'reload' : undefined }),
   ])
+  let batch = await load(false)
+  // 10 路并发可能跨越发版窗口或命中部分旧缓存：ETag 不一致说明拿到半套新旧混拼装表，
+  // 必须整批 cache:reload 重拉对齐——混拼装表配单端点指纹照样能通过 Hello 校验跑歪数据。
+  if (batch.some(entry => entry.etag !== batch[0].etag)) {
+    batch = await load(true)
+    if (batch.some(entry => entry.etag !== batch[0].etag)) {
+      catalogFingerprint = null
+      throw new Error('游戏配表版本不一致，请稍后重试。')
+    }
+  }
+  catalogFingerprint = batch[0].etag
+  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec]
+    = batch.map(entry => entry.data) as [
+      ActionDefinition[], WorldMapDefinition[], CombatEncounterDefinition[], ItemDefinition[],
+      CombatEquipmentDefinition[], BaseAttributeAnchor[], CombatAbilityDefinition[],
+      BuildingDefinition[], TriggerBuffOption[], TriggerSpec,
+    ]
   registerBaseAttributeAnchors(baseAttributes)
   return { actions, maps, encounters, items, equipment, abilities, buildings, buffs, triggerSpec }
 }
@@ -106,6 +122,14 @@ async function parseError(response: Response): Promise<Error> {
  * 并转发调用方 AbortSignal；非 2xx 解析错误体抛出可读 Error，204 返回 undefined。
  */
 export async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await requestJsonDetailed<T>(path, init)).data
+}
+
+/**
+ * requestJson 的明细变体：额外返回规范化后的配表 ETag（catalog 指纹，剥离弱校验与压缩后缀）。
+ * 供 fetchGameCatalog 做批量 ETag 一致性校验；非 catalog 端点 etag 恒为 null。
+ */
+async function requestJsonDetailed<T>(path: string, init: RequestInit = {}): Promise<{ data: T; etag: string | null }> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -126,18 +150,18 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
       signal: controller.signal,
       headers,
       credentials: 'include',
-      cache: init.method && init.method !== 'GET' ? 'no-store' : 'no-cache',
+      cache: init.cache ?? (init.method && init.method !== 'GET' ? 'no-store' : 'no-cache'),
     })
     if (!response.ok) throw await parseError(response)
     // 配表端点的 ETag 即游戏数据指纹，随每次成功响应刷新，供 Hello 握手回传。
     // 压缩代理会改写 ETag 表示压缩变体（Caddy encode 追加 -zstd/-gzip 等后缀），
     // 指纹必须与传输层解耦：剥离编码后缀还原服务端权威值，否则握手恒 GAME_DATA_MISMATCH。
-    if (path.startsWith('/api/v1/catalog/')) {
-      const etag = response.headers.get('ETag')
-      if (etag) catalogFingerprint = etag.replace(/^(?:W\/)?"|"$/g, '').replace(/-(?:zstd|gzip|br|deflate)$/, '')
-    }
-    if (response.status === 204) return undefined as T
-    return response.json() as Promise<T>
+    const etag = path.startsWith('/api/v1/catalog/')
+      ? response.headers.get('ETag')?.replace(/^(?:W\/)?"|"$/g, '').replace(/-(?:zstd|gzip|br|deflate)$/, '') ?? null
+      : null
+    if (etag) catalogFingerprint = etag
+    if (response.status === 204) return { data: undefined as T, etag }
+    return { data: await response.json() as T, etag }
   } catch (error) {
     if (timedOut) throw new Error('网络请求超时，请稍后重试。')
     throw error

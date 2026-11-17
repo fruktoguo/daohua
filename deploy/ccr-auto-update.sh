@@ -165,6 +165,11 @@ if [[ ! -f "$MAINTENANCE_FLAG_FILE" ]]; then
   CREATED_MAINTENANCE_FLAG=1
 fi
 
+# 容器重建与数据库备份互斥：与 backup.sh / base-backup.sh 共用同一把备份锁，
+# 防止重建窗口内备份脚本读到半套新旧容器或把容器停等卡死自身。
+exec 8>"${BACKUP_LOCK_FILE:-/run/lock/daohua-db-backup.lock}"
+flock 8
+
 if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
   rm -f "$FAILED_IMAGE_FILE"
   docker container prune -f --filter "until=24h" >/dev/null 2>&1 || true

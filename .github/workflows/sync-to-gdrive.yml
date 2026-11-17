@@ -64,7 +64,8 @@ jobs:
             -x '.git/*' '*/.git/*' '*/.git' \
                'art/*' '*/bin/*' '*/obj/*' '*/node_modules/*' '*/dist/*' \
                'artifacts/*' '*/.vs/*' '*/.idea/*' '*/.vite/*' '*/coverage/*' \
-               'frontend/src/private-impl/*' 'data/*' '.env' '.env.local'
+               'frontend/src/private-impl/*' 'data/*' '.env' '.env.local' \
+               '.env.*' '*.env' '*.pem' '*.key'
           rm -f SNAPSHOT_META.txt
           ls -lh /tmp/daohua-latest.zip
 

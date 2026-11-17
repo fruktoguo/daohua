@@ -76,6 +76,15 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    rateLimiterOptions.AddPolicy("ops", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
     rateLimiterOptions.AddPolicy("upload", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("player_id") ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -148,6 +157,12 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.IParticipationAssetBoundary>(sp => sp.GetRequiredService<ActionParticipationRuntime>());
     builder.Services.AddSingleton<EcsPlayerRuntimeAdapter>();
     builder.Services.AddSingleton<IPlayerRuntime>(sp => sp.GetRequiredService<EcsPlayerRuntimeAdapter>());
+    // 节点建筑注册表与 TapTap 授权链只服务在线 API：PersistenceWorker 不解析它们，免建空转单例。
+    builder.Services.AddSingleton<NodeBuildingRegistry>();
+    builder.Services.Configure<DaoHua.Server.Clean.TapTap.TapTapOptions>(
+        builder.Configuration.GetSection(DaoHua.Server.Clean.TapTap.TapTapOptions.SectionName));
+    builder.Services.AddSingleton<DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector>();
+    builder.Services.AddHttpClient<DaoHua.Server.Clean.TapTap.TapTapAuthService>();
     builder.Services.AddSingleton<SessionRegistry>();
     // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
@@ -187,14 +202,9 @@ builder.Services.AddSingleton<PostgresSectionRepository>();
 builder.Services.AddSingleton<IPlayerStateRepository>(sp => sp.GetRequiredService<PostgresSectionRepository>());
 builder.Services.AddSingleton<PostgresNodeBuildingRepository>();
 builder.Services.AddSingleton<PostgresNodeActivityRepository>();
-builder.Services.AddSingleton<NodeBuildingRegistry>();
 builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
 builder.Services.AddSingleton<PostgresRetentionRepository>();
-builder.Services.Configure<DaoHua.Server.Clean.TapTap.TapTapOptions>(
-    builder.Configuration.GetSection(DaoHua.Server.Clean.TapTap.TapTapOptions.SectionName));
-builder.Services.AddSingleton<DaoHua.Server.Clean.TapTap.TapTapOAuthStateProtector>();
-builder.Services.AddHttpClient<DaoHua.Server.Clean.TapTap.TapTapAuthService>();
 builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEventDispatcher>();
 // 冷挂机派发链仅 Api 角色装配：/internal/compute-link 只在 Api map，PersistenceWorker
 // 装配注册表只会空转，ColdCatchUpWorker 还会与 Api 重复生产任务。
@@ -470,12 +480,13 @@ if (processRole == ServerProcessRole.Api)
     }).RequireAuthorization();
 
     var auth = app.MapGroup("/api/v1/auth");
-    auth.MapGet("/client-policy", async (PostgresAccountRiskRepository risk, HttpContext context, CancellationToken ct) =>
+    auth.MapGet("/client-policy", (PostgresAccountRiskRepository risk, HttpContext context) =>
     {
         context.Response.Headers.CacheControl = "no-store";
-        var policy = await risk.LoadPolicyAsync(ct);
-        return Results.Ok(new { tabGuardEnabled = policy.Enabled && policy.Modules.Single(item => item.Id == "tabGuard").Enabled });
-    });
+        // 客户端策略只读进程内注册表快照：注册表在加载/替换时已回写，匿名端点不得每次直连查库。
+        var policy = risk.CurrentPolicy;
+        return Results.Ok(new { tabGuardEnabled = policy.Enabled && policy.Modules.FirstOrDefault(item => item.Id == "tabGuard")?.Enabled == true });
+    }).RequireRateLimiting("auth");
     auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, PostgresAccountRiskRepository risk, AccountRiskRequestContext riskContext, IPlayerRuntime runtime, EcsPlayerRuntimeAdapter adapter, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
     {
         AccountRiskSignals signals;
@@ -814,10 +825,10 @@ if (processRole == ServerProcessRole.Api)
     }).RequireRateLimiting("command");
     // 系统商店货架：官价直售与当日限购进度；价格与限购由服务端配表裁决，客户端只读展示。
     players.MapGet("/{playerId:guid}/shop", async (Guid playerId, ClaimsPrincipal user, GameDataCatalog gameData,
-        ShopPurchaseRepository shopPurchases, CancellationToken ct) =>
+        ShopPurchaseRepository shopPurchases, IPlayerSimulationClock clock, CancellationToken ct) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();
-        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+        var dayIndex = ShopDailyWindow.DayIndexOf(clock.UtcNow);
         var purchased = await shopPurchases.LoadDailyAsync(playerId, dayIndex, ct);
         var offers = gameData.ShopOffers.All
             .Select(offer => new ShopOfferDto(offer.Id, offer.ItemId, offer.UnitPrice, offer.DailyLimit,
@@ -839,11 +850,18 @@ if (processRole == ServerProcessRole.Api)
     });
 
     var market = app.MapGroup("/api/v1/market");
-    market.MapGet("/book", (string assetId, string? variant, int? depth, MarketRuntime marketRuntime) =>
+    market.MapGet("/book", (string assetId, string? variant, int? depth, MarketRuntime marketRuntime, Domain.GameData.GameDataCatalog gameData) =>
     {
-        if (string.IsNullOrWhiteSpace(assetId) || assetId.Length > 128)
+        // 品种与变体口径与挂单一致：幻影品种/异形变体会催生永不回收的幽灵盘口簿（读端点同防线）。
+        if (string.IsNullOrWhiteSpace(assetId) || assetId.Length > 128
+            || (!gameData.Items.ContainsKey(new ItemId(assetId)) && !gameData.RawEquipments.ContainsKey(assetId)))
             return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
-        var instrument = new MarketInstrument(new ItemId(assetId), variant ?? string.Empty);
+        if (EnhancementRules.ParseLevel(variant ?? string.Empty) is not { } variantLevel
+            || variantLevel > EnhancementRules.MaxLevel
+            || (variantLevel > 0 && !gameData.RawEquipments.ContainsKey(assetId)))
+            return Results.BadRequest(Problem(400, "INVALID_VARIANT", "市场变体无效。"));
+        var instrument = new MarketInstrument(new ItemId(assetId),
+            EnhancementRules.KeyFor(new ItemId(assetId), variantLevel).Variant);
         if (!marketRuntime.Owns(instrument)) return Results.Conflict(new { code = "WRONG_PARTITION", partition = marketRuntime.PartitionId });
         try
         {
@@ -860,7 +878,7 @@ if (processRole == ServerProcessRole.Api)
         {
             return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
         }
-    });
+    }).RequireRateLimiting("command");
     market.MapGet("/variants", (string assetId, MarketRuntime marketRuntime) =>
     {
         if (string.IsNullOrWhiteSpace(assetId) || assetId.Length > 128)
@@ -879,7 +897,7 @@ if (processRole == ServerProcessRole.Api)
         {
             return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
         }
-    });
+    }).RequireRateLimiting("command");
     market.MapGet("/stats", async (string? assetId, PostgresMarketRepository marketStore, MarketStatsCache statsCache, CancellationToken ct) =>
     {
         // 行情统计直读 market.item_stats 小表：悬浮行情卡轮询走全表（数百行内），单品种传 assetId 过滤。
@@ -888,7 +906,7 @@ if (processRole == ServerProcessRole.Api)
             return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
         var rows = await statsCache.GetAsync(marketStore, ct);
         return Results.Ok((assetId is null ? rows : rows.Where(row => row.AssetId == assetId)).Select(MarketDtoMapper.ToStats).ToArray());
-    });
+    }).RequireRateLimiting("command");
     market.MapGet("/metrics", (ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {
         if (user.Identity?.IsAuthenticated != true) return Results.Unauthorized();
@@ -940,7 +958,14 @@ if (processRole == ServerProcessRole.Api)
     market.MapDelete("/orders/{orderId:guid}", async (Guid orderId, string assetId, string? variant, ClaimsPrincipal user, MarketRuntime marketRuntime, CancellationToken ct) =>
     {
         if (!Guid.TryParse(user.FindFirstValue("player_id"), out var playerId)) return Results.Unauthorized();
-        var instrument = new MarketInstrument(new ItemId(assetId), variant ?? string.Empty);
+        // 撤单归一化变体到规范 "+N" 键形，防止异形变体在盘口键空间制造幽灵簿；
+        // 不校验配表存在性：已下架品种的历史挂单必须仍可撤销。
+        if (string.IsNullOrWhiteSpace(assetId) || assetId.Length > 128
+            || EnhancementRules.ParseLevel(variant ?? string.Empty) is not { } variantLevel
+            || variantLevel > EnhancementRules.MaxLevel)
+            return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
+        var instrument = new MarketInstrument(new ItemId(assetId),
+            EnhancementRules.KeyFor(new ItemId(assetId), variantLevel).Variant);
         try
         {
             var result = await marketRuntime.CancelAsync(new OrderId(orderId), new PlayerId(playerId), instrument, $"market-cancel:{playerId:D}:{orderId:D}", ct);

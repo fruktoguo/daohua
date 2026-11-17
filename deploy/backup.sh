@@ -4,7 +4,7 @@
 # 主要职责: 生产环境 PostgreSQL 数据库定时热备份、SHA256 校验与分层归档轮转
 #
 # 核心备份流程:
-#   1. 权限与排他锁: 校验 root 执行权限，获取 /run/lock/daohua-ccr-auto-update.lock 文件锁（避免备份与更新并发）；
+#   1. 权限与排他锁: 校验 root 执行权限，获取 /run/lock/daohua-db-backup.lock 文件锁（避免备份与备份/更新重建并发）；
 #   2. 数据库状态检查: 验证 PostgreSQL 容器健康运行；
 #   3. 热备份与压缩导出: 调用 pg_dump 以 gzip:9 压缩导出 custom dump 格式归档；
 #   4. 完整性校验: 执行 pg_restore --list 校验归档完整性，并生成 sha256 校验文件；

@@ -23,7 +23,7 @@ public sealed class ShopPurchaseTests
         var (source, repository, player) = await ArrangeAsync();
         await using var ownedSource = source;
         await CreditSpiritStonesAsync(repository, player, 10_000);
-        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+        var dayIndex = ShopDailyWindow.CurrentDayIndex(DateTimeOffset.UtcNow);
 
         var first = await repository.CommitAsync(BuildRequest(player, dayIndex, 1));
 
@@ -58,7 +58,7 @@ public sealed class ShopPurchaseTests
         var (source, repository, player) = await ArrangeAsync();
         await using var ownedSource = source;
         await CreditSpiritStonesAsync(repository, player, 10_000);
-        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+        var dayIndex = ShopDailyWindow.CurrentDayIndex(DateTimeOffset.UtcNow);
         var request = BuildRequest(player, dayIndex, 1);
 
         Assert.True((await repository.CommitAsync(request)).Applied);
@@ -79,7 +79,7 @@ public sealed class ShopPurchaseTests
         var (source, repository, player) = await ArrangeAsync();
         await using var ownedSource = source;
         await CreditSpiritStonesAsync(repository, player, 10_000);
-        var today = ShopDailyWindow.CurrentDayIndex();
+        var today = ShopDailyWindow.CurrentDayIndex(DateTimeOffset.UtcNow);
 
         Assert.True((await repository.CommitAsync(BuildRequest(player, today, 1))).Applied);
         var tomorrow = Guid.NewGuid();
@@ -122,7 +122,7 @@ public sealed class ShopPurchaseTests
         var (source, repository, player) = await ArrangeAsync();
         await using var ownedSource = source;
         await CreditSpiritStonesAsync(repository, player, 10_000);
-        var dayIndex = ShopDailyWindow.CurrentDayIndex();
+        var dayIndex = ShopDailyWindow.CurrentDayIndex(DateTimeOffset.UtcNow);
 
         var req1 = BuildRequest(player, dayIndex, 1) with
         {

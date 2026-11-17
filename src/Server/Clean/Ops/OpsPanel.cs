@@ -86,6 +86,8 @@ public static class OpsPanel
 
     private static void MapOpsGroup(RouteGroupBuilder group, WebApplication app, OpsOptions options, string releaseVersion, DateTimeOffset startedAt)
     {
+        // 全组挂载 IP 限流：令牌爆破与面板轮询共用 60/min 预算，超限 429 由中间件统一拒绝。
+        group.RequireRateLimiting("ops");
         group.AddEndpointFilter(async (invocationContext, next) =>
         {
             if (RejectUnauthorized(invocationContext.HttpContext, options) is { } rejected)
@@ -474,9 +476,9 @@ public static class OpsPanel
             },
             antiMultiOpen = new
             {
-                tabGuardEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "tabGuard").Enabled,
-                singleSessionKickEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "singleSession").Enabled,
-                deviceQuotaEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "onlineDeviceQuota").Enabled,
+                tabGuardEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.FirstOrDefault(item => item.Id == "tabGuard")?.Enabled == true,
+                singleSessionKickEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.FirstOrDefault(item => item.Id == "singleSession")?.Enabled == true,
+                deviceQuotaEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.FirstOrDefault(item => item.Id == "onlineDeviceQuota")?.Enabled == true,
                 deviceQuotaMaxAccounts = riskPolicies.Current.MaxAccountsPerPerson
             }
         }));
@@ -608,9 +610,12 @@ public static class OpsPanel
     {
         var provided = context.Request.Headers[TokenHeader].ToString();
         var expected = options.Token;
+        // 双方各取 SHA-256 定长摘要再恒定时间比较：原始字节比对会因长度不等提前返回而泄露令牌长度。
         var matches = provided.Length > 0
             && expected.Length > 0
-            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected));
+            && CryptographicOperations.FixedTimeEquals(
+                SHA256.HashData(Encoding.UTF8.GetBytes(provided)),
+                SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
         return matches
             ? null
             : Results.Json(new { code = "OPS_TOKEN_INVALID", message = "运维密码缺失或无效。" }, statusCode: StatusCodes.Status401Unauthorized);

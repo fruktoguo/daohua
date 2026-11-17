@@ -59,12 +59,12 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var readTransaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
-        var ownId = await ScalarAsync(connection, null, "SELECT zongmen_id FROM social.zongmen_members WHERE player_id=$1", ct, playerId);
+        var ownId = await ScalarAsync(connection, readTransaction, "SELECT zongmen_id FROM social.zongmen_members WHERE player_id=$1", ct, playerId);
         ZongmenDto? own = null;
-        if (ownId is Guid id && await ReadAsync(connection, null, id, false, ct) is { } record)
+        if (ownId is Guid id && await ReadAsync(connection, readTransaction, id, false, ct) is { } record)
         {
             var members = new List<ZongmenMemberDto>();
-            await using (var command = Command(connection, null, """
+            await using (var command = Command(connection, readTransaction, """
                 SELECT m.player_id,p.display_name,m.role FROM social.zongmen_members m
                 JOIN identity.players p ON p.player_id=m.player_id
                 WHERE m.zongmen_id=$1 ORDER BY m.role,m.joined_at,m.player_id
@@ -75,14 +75,15 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
                     var memberId = reader.GetGuid(0);
                     members.Add(new(memberId.ToString("D"), reader.GetString(1), reader.GetInt32(2), presence.IsOnline(memberId)));
                 }
-            var role = members.Single(member => member.PlayerId == playerId.ToString("D")).Role;
+            var role = (members.FirstOrDefault(member => member.PlayerId == playerId.ToString("D"))
+                ?? throw new InvalidOperationException("宗门成员名册缺少自身行。")).Role;
             var requests = ZongmenRules.CanManage(role)
-                ? await RequestsAsync(connection, "r.zongmen_id=$1", id, ct) : [];
+                ? await RequestsAsync(connection, readTransaction, "r.zongmen_id=$1", id, ct) : [];
             own = new(id.ToString("D"), record.Name, record.Prefix, record.LeaderId.ToString("D"), role,
                 record.AnchorNodeId, record.NodeId, record.HallLevel, record.Capacity, members, requests);
         }
         var directory = new List<ZongmenSummaryDto>();
-        await using (var command = Command(connection, null, """
+        await using (var command = Command(connection, readTransaction, """
             SELECT z.zongmen_id,z.name,z.prefix,
                 (SELECT count(*) FROM social.zongmen_members m WHERE m.zongmen_id=z.zongmen_id),
                 b.level,b.target_level,b.started_at_unix_seconds,b.contributed_materials,
@@ -100,8 +101,8 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d, ZongmenRules.ResidenceNodeId(reader.GetGuid(0)));
                 directory.Add(new(reader.GetGuid(0).ToString("D"), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), ZongmenRules.MemberCapacity(level), reader.GetString(8)));
             }
-        var invitations = await RequestsAsync(connection, "r.player_id=$1 AND r.kind='invitation'", playerId, ct);
-        var applications = await RequestsAsync(connection, "r.player_id=$1 AND r.kind='application'", playerId, ct);
+        var invitations = await RequestsAsync(connection, readTransaction, "r.player_id=$1 AND r.kind='invitation'", playerId, ct);
+        var applications = await RequestsAsync(connection, readTransaction, "r.player_id=$1 AND r.kind='application'", playerId, ct);
         await readTransaction.CommitAsync(ct);
         return new(own, directory, invitations, applications);
     }
@@ -364,10 +365,10 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
         return result with { HallLevel = level, MemberCount = Convert.ToDouble(count) };
     }
 
-    private static async ValueTask<List<ZongmenRequestDto>> RequestsAsync(NpgsqlConnection connection, string condition, Guid id, CancellationToken ct)
+    private static async ValueTask<List<ZongmenRequestDto>> RequestsAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string condition, Guid id, CancellationToken ct)
     {
         var result = new List<ZongmenRequestDto>();
-        await using var command = Command(connection, null, """
+        await using var command = Command(connection, transaction, """
             SELECT r.zongmen_id,z.name,r.player_id,p.display_name,r.kind
             FROM social.zongmen_requests r JOIN social.zongmen z USING(zongmen_id)
             JOIN identity.players p USING(player_id) WHERE z.disbanded_at IS NULL AND

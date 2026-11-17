@@ -196,7 +196,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         if (!Owns(instrument)) throw new InvalidOperationException("该品种不属于当前市场分片。");
         lock (_booksGate)
         {
-            return _books.GetOrAdd(instrument, static key => new OrderBook(key)).Snapshot(depth);
+            // 只读查询不得建簿：未命中直接回空快照，防止读路径催生永不回收的幽灵盘口。
+            return _books.TryGetValue(instrument, out var book)
+                ? book.Snapshot(depth)
+                : new OrderBookSnapshot(instrument, [], [], 0, DateTimeOffset.UtcNow);
         }
     }
 
@@ -545,22 +548,28 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
             var partitionToken = PartitionToken;
             await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, partitionToken);
-            OrderBook book;
+            OrderBook? book;
             bool hasInMemory;
             lock (_booksGate)
             {
-                book = _books.GetOrAdd(instrument, static key => new OrderBook(key));
-                hasInMemory = book.TryGet(orderId, out _);
+                hasInMemory = _books.TryGetValue(instrument, out book) && book.TryGet(orderId, out _);
             }
             if (!hasInMemory)
             {
                 var persisted = await _store.LoadOrderAsync(orderId.Value, cancellationToken)
                     ?? throw new DomainException(DomainErrorCode.NotFound, "订单不存在。");
-                var persistedOrder = ToDomainOrder(persisted, instrument);
-                if (persistedOrder.OwnerId != ownerId) throw new DomainException(DomainErrorCode.Conflict, "只能撤销自己的订单。");
-                if (persistedOrder.Status == MarketOrderStatus.Cancelled) return new CancellationResult(persistedOrder, book.Version);
+                // 与 GetOrderAsync 同一口径：非属主或品种不符一律按不存在处理，不泄露他人订单存在性；
+                // 订单元数据以持久化 AssetId/Variant 为权威，客户端传入品种仅用于分片路由校验。
+                var persistedInstrument = new MarketInstrument(new ItemId(persisted.AssetId), persisted.Variant);
+                var persistedOrder = ToDomainOrder(persisted, persistedInstrument);
+                if (persistedOrder.OwnerId != ownerId || persistedInstrument != instrument)
+                    throw new DomainException(DomainErrorCode.NotFound, "订单不存在。");
+                if (persistedOrder.Status == MarketOrderStatus.Cancelled) return new CancellationResult(persistedOrder, book?.Version ?? 0);
                 if (persistedOrder.Status is MarketOrderStatus.Active or MarketOrderStatus.PartiallyFilled)
                 {
+                    // 仅当确有活动单需要重建盘口投影时才建簿，撤单路径同样不制造幽灵盘口。
+                    if (book is null)
+                        lock (_booksGate) book = _books.GetOrAdd(instrument, static key => new OrderBook(key));
                     await RestoreBookFromStoreAsync(book, instrument, partitionToken);
                     lock (_booksGate) hasInMemory = book.TryGet(orderId, out _);
                 }
@@ -575,7 +584,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             {
                 lock (_booksGate)
                 {
-                    result = book.Cancel(orderId, ownerId, journal);
+                    result = book!.Cancel(orderId, ownerId, journal);
                     bookMutated = true;
                 }
                 using var participationScope = _participationAssets is null ? null

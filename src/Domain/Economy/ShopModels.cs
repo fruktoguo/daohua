@@ -100,8 +100,8 @@ public static class ShopDailyWindow
     public static long DayIndexOf(DateTimeOffset at)
         => (long)Math.Floor((at.ToUnixTimeSeconds() + UtcOffsetSeconds) / SecondsPerDay);
 
-    /// <summary>当前时刻所在的自然日序号。</summary>
-    public static long CurrentDayIndex() => DayIndexOf(DateTimeOffset.UtcNow);
+    /// <summary>当前时刻所在的自然日序号（生产路径统一由宿主注入的模拟时钟传入 <see cref="DayIndexOf"/>）。</summary>
+    public static long CurrentDayIndex(DateTimeOffset now) => DayIndexOf(now);
 }
 
 /// <summary>

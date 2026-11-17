@@ -5,6 +5,7 @@ import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { useUiStore } from '../uiStore'
+import { useMountedTimeout } from '../hooks/useMountedTimeout'
 import { HOME_NODE_ID, TUTORIAL_DONE, TUTORIAL_MILESTONE_COUNT, TUTORIAL_MILESTONES, type TutorialPrepare, type TutorialUiStep } from './steps'
 
 /**
@@ -384,6 +385,8 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
     return () => window.clearInterval(timer)
   }, [phase, uiStep])
 
+  const mountedTimeout = useMountedTimeout()
+
   // target 推进：捕获阶段监听真实控件点击，点到高亮目标即进入下一子步骤。
   // 推进延迟到本次事件 dispatch 结束：若在捕获阶段同步 setSubstep，React 会立即
   // commit 到新子步——新步若为无目标的等待步，其首轮定位会触发游离弹窗治理，
@@ -395,11 +398,11 @@ export const TutorialOverlay = memo(function TutorialOverlay(): React.JSX.Elemen
     const onClick = (event: MouseEvent) => {
       if (!(event.target as Element | null)?.closest?.(selector)) return
       const from = substep
-      window.setTimeout(() => setSubstep(index => (index === from ? index + 1 : index)), 0)
+      mountedTimeout(() => setSubstep(index => (index === from ? index + 1 : index)), 0)
     }
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
-  }, [phase, uiStep, substep])
+  }, [phase, uiStep, substep, mountedTimeout])
 
   // Esc 视为跳过引导（与按钮同路径——先弹确认，确认态下 Esc 取消回引导）；
   // 完成卡阶段按 Esc 直接结束并拉起「帮助」提示弹窗；

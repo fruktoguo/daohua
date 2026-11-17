@@ -37,19 +37,16 @@ state="$(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.Stat
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 archive="$BACKUP_DIR/base/daohua-postgres-base-${timestamp}.tar.gz"
 partial="${archive}.partial"
-container_tmp="/tmp/daohua-base-${timestamp}"
 
-cleanup() { docker exec "$DB_CONTAINER_NAME" rm -rf -- "$container_tmp" >/dev/null 2>&1 || true; rm -f "$partial"; }
+cleanup() { rm -f "$partial"; }
 trap cleanup EXIT
 
+# 流式基线备份：pg_basebackup 直接以 tar 流输出到标准输出，经宿主机 gzip 落盘，
+# 不在容器 /tmp 落全量未压缩副本，避免「数据卷 + 容器临时副本 + 宿主机归档」三倍瞬时占用。
 docker exec "$DB_CONTAINER_NAME" sh -ceu '
-  rm -rf -- "$1"
-  mkdir -p "$1"
   PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未注入}" \
-    pg_basebackup -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D "$1" -Fp -X stream -c fast -P
-' sh "$container_tmp"
-docker exec "$DB_CONTAINER_NAME" test -f "$container_tmp/backup_manifest"
-docker exec "$DB_CONTAINER_NAME" tar -C "$container_tmp" -czf - . >"$partial"
+    exec pg_basebackup -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D - -Ft -X stream -c fast -P
+' | gzip -"${BACKUP_COMPRESS_LEVEL:-6}" >"$partial"
 # 必须在原子移入正式基线目录前校验 gzip/tar 流与 backup_manifest 存在性
 if ! gzip -t "$partial" || ! tar -tzf "$partial" | grep -Eq '^(\./)?backup_manifest$'; then
   rm -f "$partial"
