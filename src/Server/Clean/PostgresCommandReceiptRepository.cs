@@ -63,11 +63,14 @@ public sealed class PostgresCommandReceiptRepository(NpgsqlDataSource dataSource
 /// <summary>周期清理过期命令回执的后台任务（每 10 分钟一批）；单轮失败只记日志，下轮重试。</summary>
 public sealed class CommandReceiptCleanupWorker(
     ICommandReceiptStore receipts,
-    ILogger<CommandReceiptCleanupWorker> logger) : BackgroundService
+    ILogger<CommandReceiptCleanupWorker> logger,
+    ServerOptions? options = null) : BackgroundService
 {
     /// <summary>清理主循环：每 10 分钟删除一次过期回执；单轮失败只记日志，下个周期重试，停机令牌取消即退出。</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // 独立持久化 worker 不读写命令凭证；API 按相同周期负责其完整留存。
+        if (options?.ProcessRole == ServerProcessRole.PersistenceWorker) return;
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(10));
         while (await HostedLoopSupport.WaitNextTickQuietlyAsync(timer, stoppingToken))
         {

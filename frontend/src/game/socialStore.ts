@@ -32,16 +32,30 @@ export interface TeammateReportEntry {
   report: BattleReport | null
   loading: boolean
   updatedAtMs: number
+  error: string | null
 }
 
-/** 存储在途的队友行动收益请求（requestId → playerId） */
-const teammatePendingReqs = new Map<string, string>()
-/**
- * 存储在途的模拟器队友导入名片请求（requestId → { playerId, onCard, timer }）。
- * 按 requestId 独立维护回调，避免并发请求互相覆盖；15 秒未回执自动失效释放。
- */
 type SimulatorCardListener = (card: PlayerCardDto) => void
-const simulatorPendingReqs = new Map<string, { playerId: string; onCard: SimulatorCardListener; timer: number }>()
+type CardRequest = { playerId: string } & (
+  { kind: 'modal' } | { kind: 'teammate' } | { kind: 'simulator'; onCard: SimulatorCardListener }
+)
+const pendingCards = new Map<string, CardRequest & { timer: number }>()
+
+function takeCardRequest(requestId: string) {
+  const pending = pendingCards.get(requestId)
+  if (pending) {
+    pendingCards.delete(requestId)
+    window.clearTimeout(pending.timer)
+  }
+  return pending
+}
+
+function trackCardRequest(requestId: string, request: CardRequest): void {
+  const timer = window.setTimeout(() => {
+    useSocialStore.getState().failCardRequest(requestId, 'timeout')
+  }, CARD_REQUEST_TIMEOUT_MS)
+  pendingCards.set(requestId, { ...request, timer })
+}
 const CARD_REQUEST_TIMEOUT_MS = 15_000
 /**
  * 社交状态接口（好友、申请、队伍、匹配登记、附近修士）。
@@ -75,6 +89,7 @@ interface SocialStore {
   playerCard: PlayerCardDto | null
   /** 角色信息卡在途请求 ID：请求已发出、应答未回，弹窗处于加载态；空闲为 null */
   playerCardRequestId: string | null
+  playerCardError: { playerId: string; code: string } | null
   /** 好友频道当前选中的私聊对象玩家 ID */
   activeFriendId: string | null
   /** 队伍成员当前行动收益缓存（键为 playerId） */
@@ -94,6 +109,7 @@ interface SocialStore {
   requestPlayerCard: (playerId: string) => void
   /** 应用 PlayerCard 帧：仅接收与在途请求 ID 匹配的应答，迟到旧应答直接丢弃 */
   applyPlayerCard: (card: PlayerCardDto) => void
+  failCardRequest: (requestId: string, code: string) => void
   /** 关闭角色信息卡并清理在途角色卡弹窗请求 */
   closePlayerCard: () => void
   /** 连接中断时统一清理所有在途名片/队友战报/模拟器导入请求，防止加载态永挂 */
@@ -147,7 +163,7 @@ interface SocialStore {
   setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'activeFriendId' | 'teammateReports'> = {
+const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'playerCardError' | 'activeFriendId' | 'teammateReports'> = {
   douDiZhuInteractions: [],
   friends: [],
   incomingRequests: [],
@@ -161,6 +177,7 @@ const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingReq
   myValuationBreakdown: null,
   playerCard: null,
   playerCardRequestId: null,
+  playerCardError: null,
   activeFriendId: null,
   teammateReports: {},
 }
@@ -215,98 +232,76 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     myValuationBreakdown: lobby.myValuationBreakdown ?? null,
   }),
   requestPlayerCard: playerId => {
+    const previousId = get().playerCardRequestId
+    if (previousId) takeCardRequest(previousId)
     const requestId = gameClient.requestPlayerCard(playerId)
-    // 发送失败（断线）不进入加载态；成功则以 requestId 配对后续应答。
-    if (requestId === null) return
-    set({ playerCard: null, playerCardRequestId: requestId })
+    if (requestId) trackCardRequest(requestId, { kind: 'modal', playerId })
+    set({ playerCard: null, playerCardRequestId: requestId, playerCardError: requestId ? null : { playerId, code: 'offline' } })
   },
   requestTeammateReport: playerId => {
+    const previous = get().teammateReports[playerId]
+    if (previous?.loading) return
     const requestId = gameClient.requestPlayerCard(playerId)
-    if (requestId === null) return
-    teammatePendingReqs.set(requestId, playerId)
-    set(curr => ({
-      teammateReports: {
-        ...curr.teammateReports,
-        [playerId]: {
-          report: curr.teammateReports[playerId]?.report ?? null,
-          loading: true,
-          updatedAtMs: curr.teammateReports[playerId]?.updatedAtMs ?? 0,
-        },
-      },
-    }))
+    if (requestId) trackCardRequest(requestId, { kind: 'teammate', playerId })
+    set(curr => ({ teammateReports: { ...curr.teammateReports, [playerId]: {
+      report: previous?.report ?? null,
+      updatedAtMs: previous?.updatedAtMs ?? 0,
+      loading: requestId !== null,
+      error: requestId ? null : 'offline',
+    } } }))
   },
   requestSimulatorCard: (playerId, onCard) => {
     const requestId = gameClient.requestPlayerCard(playerId)
-    if (requestId === null) return false
-    const timer = window.setTimeout(() => {
-      simulatorPendingReqs.delete(requestId)
-    }, CARD_REQUEST_TIMEOUT_MS)
-    simulatorPendingReqs.set(requestId, { playerId, onCard, timer })
+    if (!requestId) return false
+    trackCardRequest(requestId, { kind: 'simulator', playerId, onCard })
     return true
   },
   applyPlayerCard: card => {
-    const isTeammateReq = teammatePendingReqs.has(card.requestId)
-    if (isTeammateReq) {
-      teammatePendingReqs.delete(card.requestId)
-    }
-    // 模拟器导入请求：按 requestId 精确消费并投递整卡（含属性/功法/装备/消耗品），不弹窗、不写行动收益缓存。
-    const simPending = simulatorPendingReqs.get(card.requestId)
-    if (simPending) {
-      simulatorPendingReqs.delete(card.requestId)
-      window.clearTimeout(simPending.timer)
-      simPending.onCard(card)
+    const expected = pendingCards.get(card.requestId)
+    if (!expected) return
+    if (expected.kind === 'simulator' && card.error) {
+      takeCardRequest(card.requestId)
+      expected.onCard(card)
       return
     }
-    if (card.playerId) {
-      set(curr => ({
-        teammateReports: {
-          ...curr.teammateReports,
-          [card.playerId]: {
-            report: card.currentReport ?? null,
-            loading: false,
-            updatedAtMs: Date.now(),
-          },
-        },
-      }))
+    if (card.error || card.playerId !== expected.playerId) {
+      get().failCardRequest(card.requestId, card.error || 'invalid')
+      return
     }
-    // 若仅是查询队友行动收益，不触发 PlayerCardModal 弹窗
-    if (isTeammateReq && card.requestId !== get().playerCardRequestId) return
-
-    if (card.requestId !== get().playerCardRequestId) return
-    set({ playerCard: card, playerCardRequestId: null })
+    takeCardRequest(card.requestId)
+    if (expected.kind === 'simulator') {
+      expected.onCard(card)
+    } else if (expected.kind === 'teammate') {
+      set(curr => ({ teammateReports: { ...curr.teammateReports, [expected.playerId]: {
+        report: card.currentReport ?? null, loading: false, updatedAtMs: Date.now(), error: null,
+      } } }))
+    } else if (get().playerCardRequestId === card.requestId) {
+      set({ playerCard: card, playerCardRequestId: null, playerCardError: null })
+    }
   },
-  closePlayerCard: () => set({ playerCard: null, playerCardRequestId: null }),
-  cancelPendingCardRequests: () => {
-    teammatePendingReqs.clear()
-    for (const pending of simulatorPendingReqs.values()) {
-      window.clearTimeout(pending.timer)
+  failCardRequest: (requestId, code) => {
+    const pending = takeCardRequest(requestId)
+    if (!pending) return
+    const { playerId } = pending
+    if (pending.kind === 'modal' && get().playerCardRequestId === requestId) {
+      set({ playerCard: null, playerCardRequestId: null, playerCardError: { playerId, code } })
+    } else if (pending.kind === 'teammate') {
+      set(curr => ({ teammateReports: { ...curr.teammateReports, [playerId]: {
+        ...curr.teammateReports[playerId], loading: false, error: code,
+      } } }))
     }
-    simulatorPendingReqs.clear()
-    set(curr => {
-      let anyLoading = false
-      const nextReports: Record<string, TeammateReportEntry> = {}
-      for (const [id, entry] of Object.entries(curr.teammateReports)) {
-        if (entry.loading) {
-          anyLoading = true
-          nextReports[id] = { ...entry, loading: false }
-        } else {
-          nextReports[id] = entry
-        }
-      }
-      return {
-        playerCard: null,
-        playerCardRequestId: null,
-        ...(anyLoading ? { teammateReports: nextReports } : {}),
-      }
-    })
+  },
+  closePlayerCard: () => {
+    const requestId = get().playerCardRequestId
+    if (requestId) takeCardRequest(requestId)
+    set({ playerCard: null, playerCardRequestId: null, playerCardError: null })
+  },
+  cancelPendingCardRequests: () => {
+    for (const requestId of pendingCards.keys()) get().failCardRequest(requestId, 'offline')
   },
   setActiveFriend: activeFriendId => set({ activeFriendId }),
   reset: () => {
-    teammatePendingReqs.clear()
-    for (const pending of simulatorPendingReqs.values()) {
-      window.clearTimeout(pending.timer)
-    }
-    simulatorPendingReqs.clear()
+    for (const requestId of pendingCards.keys()) takeCardRequest(requestId)
     set({ ...EMPTY })
   },
   readyParty: () => {

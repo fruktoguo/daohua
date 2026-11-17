@@ -2,6 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chatStickerService, DEFAULT_EMOJIS, MAX_CUSTOM_STICKERS } from './chatStickerService.ts'
 import { computeBlobSha256 } from './chatImageUploadService.ts'
+import { setSessionAccount } from '../network/sessionState.ts'
+
+const originalFetch = globalThis.fetch
+// 所有外链都由用例给出本地 fixture；未指定的请求不得真的访问网络。
+test.before(() => { globalThis.fetch = async input => { throw new Error(`未模拟的请求：${input}`) } })
+test.after(() => { globalThis.fetch = originalFetch })
 
 test('chatStickerService: QQ 小黄脸表情频次累加与自排序', () => {
   chatStickerService._resetForTest()
@@ -161,4 +167,90 @@ test('chatStickerService: preloadAllEmotes 与 scheduleIdlePreload 在无 DOM / 
   await chatStickerService.preloadAllEmotes()
   chatStickerService.scheduleIdlePreload()
   assert.ok(true)
+})
+
+const flush = () => new Promise(resolve => setImmediate(resolve))
+function deferredResponse() {
+  let resolve
+  const promise = new Promise(res => { resolve = res })
+  return { promise, resolve }
+}
+
+for (const sameAccount of [false, true]) {
+  test(`收藏同步正文和删除响应晚到时不污染${sameAccount ? '同账号重登' : '新账号'}或解除新同步锁`, async t => {
+    const service = chatStickerService
+    service._resetForTest()
+    const syncs = []
+    const deletion = deferredResponse()
+    t.mock.method(globalThis, 'fetch', (input, init) => {
+      const url = String(input)
+      if (url.endsWith('/stickers/delete')) return deletion.promise
+      if (!url.endsWith('/stickers/sync')) return Promise.reject(new Error('仅使用本地模拟'))
+      const reply = deferredResponse()
+      syncs.push({ ...reply, payload: JSON.parse(init.body) })
+      return reply.promise
+    })
+    t.after(() => { service._resetForTest(); setSessionAccount(null) })
+    const old = deferredResponse()
+    const bodyStarted = deferredResponse()
+    const oldId = 'old-player'
+    const newId = sameAccount ? oldId : 'new-player'
+    service.setActivePlayer(oldId)
+    const oldSync = service.syncWithServer()
+    syncs[0].resolve({ ok: true, status: 200, json() { bodyStarted.resolve(); return old.promise } })
+    await bodyStarted.promise
+    const removed = 'https://fixture.invalid/removed.png'
+    service.addCustomStickerDetailed(removed, { skipCacheFetch: true })
+    assert.equal(service.removeCustomSticker(removed), true)
+    // 同 playerId 也必须因真实登录世代变化作废。
+    setSessionAccount({ playerId: newId, accountId: newId, account: newId, name: newId })
+    service.setActivePlayer(newId)
+    assert.equal(syncs.length, 2)
+    const fresh = service.syncWithServer()
+    const staleUrl = 'https://fixture.invalid/stale.png'
+    const stale = { stickers: [{ stickerId: 'stale', url: staleUrl, updatedAt: 1 }], tombstones: [{ stickerId: 'late-tomb', deletedAt: 1 }] }
+    old.resolve(stale)
+    deletion.resolve(Response.json(stale))
+    await oldSync
+    await flush()
+    const deduped = service.syncWithServer()
+    assert.equal(syncs.length, 2, '旧 finally 不得清空当前账号的在途同步')
+    assert.equal(service.isStickerSaved(staleUrl), false)
+    syncs[1].resolve(Response.json({ stickers: [], tombstones: [] }))
+    await Promise.all([fresh, deduped])
+    const sync = service.syncWithServer()
+    assert.equal(syncs[2].payload.items.some(item => item.stickerId === 'stale'), false)
+    assert.equal(syncs[2].payload.deleted.some(item => item.stickerId === 'late-tomb'), false)
+    syncs[2].resolve(Response.json({ stickers: [], tombstones: [] }))
+    await sync
+  })
+}
+
+test('Blob URL 按字节预算回收：切会话后旧租约不撤销新图', async t => {
+  const service = chatStickerService
+  service._resetForTest()
+  t.after(() => service._resetForTest())
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ stickers: [], tombstones: [] }))
+  const revoked = new Set()
+  const revoke = URL.revokeObjectURL.bind(URL)
+  t.mock.method(URL, 'revokeObjectURL', url => { revoked.add(url); revoke(url) })
+  const blob = new Blob([new Uint8Array(8 * 1024 * 1024)])
+  await service.saveImageBlob('/a.png', blob, 'a')
+  const old = await service.acquireImage('/a.png')
+  await service.saveImageBlob('/b.png', blob, 'b')
+  const expendable = await service.acquireImage('/b.png')
+  expendable.release()
+  await service.saveImageBlob('/c.png', blob, 'c')
+  await service.saveImageBlob('/d.png', blob, 'd')
+  assert.equal(revoked.has(expendable.src), true)
+  assert.equal(revoked.has(old.src), false)
+  service.setActivePlayer('new-player')
+  await service.syncWithServer()
+  await service.saveImageBlob('/a.png', blob, 'a')
+  const fresh = await service.acquireImage('/a.png')
+  assert.notEqual(fresh.src, old.src)
+  old.release()
+  assert.equal(revoked.has(old.src), true)
+  assert.equal(revoked.has(fresh.src), false)
+  fresh.release()
 })

@@ -89,6 +89,21 @@ public sealed class CombatSnapshotRestoreTests
     }
 
     [Fact]
+    public void RetaggedSnapshotWithoutFormationCooldowns_RestoresAsUntriggered()
+    {
+        // 迁移只改标签，v43 战斗快照没有这两个 JSON 属性。
+        const string legacyJson = """{"hitpoints":100,"manapoints":50,"nextAttackAtSeconds":1,"attackCount":0,"threat":100}""";
+        var snapshot = JsonSerializer.Deserialize<CombatantSnapshot>(legacyJson, Domain.Persistence.PersistenceJson.Options)!;
+        var stats = CombatantStats.Create(100, 10, 0, 2) with { MaxManapoints = 50 };
+        var template = new CombatantTemplate(stats);
+        var restored = CombatEncounterState.Restore("encounter.test", 42, template, snapshot,
+            [template], [snapshot], 0, CombatOutcome.Running);
+
+        Assert.Equal(-1, restored.Player.LastTianleiTriggerAtSeconds);
+        Assert.Equal(-1, restored.Player.LastXueshaTriggerAtSeconds);
+    }
+
+    [Fact]
     public void RestoreSnapshot_WithNegativeOrInvalidCooldown_ThrowsDomainException()
     {
         var stats = CombatantStats.Create(1000, 100, 10, 1.0);

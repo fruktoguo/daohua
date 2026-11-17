@@ -44,6 +44,30 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(8, fixture.Sections.LatestSections.Count);
     }
 
+    [Theory]
+    [InlineData("item.ningxue-grass", 0)]
+    [InlineData("item.fragment.heavy-slash", 1)]
+    public async Task InvalidFragmentConversionDoesNotInterruptQueuedAction(string item, double level)
+    {
+        var fixture = CreateFixture(new AssetBalanceRecord(Guid.Empty, item, "", 5, 1));
+        await using var adapter = fixture.Adapter;
+        var before = await EnqueueGatheringAsync(fixture);
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(new ActionIntentRequest(requestId.ToString("D"),
+            SecretArtRules.ConvertActionId, Parameters: new Dictionary<string, double>
+            {
+                [EnhancementRules.InitialLevelParameter] = level
+            }, TargetItemId: item, Priority: true), ProtocolJson.Options);
+
+        var result = await adapter.ExecuteAsync(fixture.PlayerId, "action.enqueue", payload, 0, requestId);
+        var after = await adapter.LoadAsync(fixture.PlayerId);
+
+        Assert.Equal("INVALID_PAYLOAD", result.Code);
+        Assert.Equal(Assert.Single(before.State.Actions).Id, Assert.Single(after.State.Actions).Id);
+        Assert.Equal(before.State.StateVersion, after.State.StateVersion);
+        Assert.Empty(fixture.Economy.Attempts);
+    }
+
     [Fact]
     public async Task ConcurrentSamePlayerCommandsRemainSerialized()
     {
@@ -252,7 +276,7 @@ public sealed class EcsAdapterBoundaryTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task UnknownCommitReplaysExactRequestAndFencesWhenConfirmationFails(bool unavailable)
+    public async Task UnknownCommitUsesReadOnlyConfirmationAndFencesWhenUnavailable(bool unavailable)
     {
         var fixture = CreateFixture(new AssetBalanceRecord(Guid.Empty, "item.tome.heavy-slash", "", 1, 1));
         await using var adapter = fixture.Adapter;
@@ -266,7 +290,7 @@ public sealed class EcsAdapterBoundaryTests
             var unknown = await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () =>
                 await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, id));
             Assert.IsType<IOException>(unknown.InnerException);
-            Assert.IsType<IOException>(unknown.Data["ConfirmationError"]);
+            Assert.IsType<IOException>(unknown.Data["RuntimeConfirmationError"]);
             Assert.Same(unknown, await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.LoadAsync(fixture.PlayerId)));
             await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.FlushAsync(fixture.PlayerId, true));
             await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(async () => await adapter.MutateOwnedAsync(fixture.PlayerId, aggregate => aggregate.SkipTutorial()));
@@ -277,8 +301,7 @@ public sealed class EcsAdapterBoundaryTests
         else
         {
             Assert.True((await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, id)).Success);
-            Assert.Single(fixture.Economy.Requests);
-            Assert.Same(fixture.Economy.Attempts[0], fixture.Economy.Attempts[1]);
+            Assert.Single(fixture.Economy.Attempts);
             Assert.Equal(0d, (await adapter.LoadAsync(fixture.PlayerId)).Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
         }
     }
@@ -1283,6 +1306,14 @@ public sealed class EcsAdapterBoundaryTests
         public Func<EconomyTransactionRequest, ValueTask>? BeforeCommitAsync { get; set; }
         public int Calls { get; private set; }
         public List<EconomyTransactionRequest> Attempts { get; } = [];
+        public ValueTask<EconomyTransactionResult?> FindCommittedAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            if (FailConfirmation) throw new IOException("注入结局核验不可达。");
+            EconomyTransactionResult? committed = _committed.TryGetValue(request.IdempotencyKey, out var result)
+                ? result with { AlreadyCommitted = true }
+                : null;
+            return ValueTask.FromResult(committed);
+        }
         public async ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
             if (BeforeCommitAsync is { } beforeCommit) await beforeCommit(request);

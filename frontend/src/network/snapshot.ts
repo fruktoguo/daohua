@@ -7,7 +7,7 @@
  * 2. 严格核对 Snapshot 头校验和（Head Checksum），防止数据篡改或网络坏帧；
  * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
  */
-import { getPlayerAvatarSrc, type PlayerAvatarId, useAvatarStore } from '../game/avatarStore'
+import { getPlayerAvatarSrc } from '../game/avatarStore'
 import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
 import { calculateRealmProgress, serverExpToNextCap } from '../game/combatConstants'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
@@ -54,7 +54,7 @@ import type {
   WorldState,
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
-import { SNAPSHOT_SCHEMA_VERSION, snapshotSchemaReadable } from './snapshotSchemaGate'
+import { SNAPSHOT_SCHEMA_VERSION, requireReadableSnapshotSchema } from './snapshotSchemaGate'
 
 export { SNAPSHOT_SCHEMA_VERSION }
 
@@ -289,9 +289,7 @@ async function decodeSections(
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (!snapshotSchemaReadable(section.schemaVersion, section.minReaderSchemaVersion)) {
-      throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}，请更新客户端。`)
-    }
+    requireReadableSnapshotSchema(section.schemaVersion, section.minReaderSchemaVersion)
   }
   const spans = sectionDataSpans(payloadBytes, memberPath)
   if (spans.length !== sections.length) throw new Error('玩家 section 数据区间与列表不一致。')
@@ -1539,18 +1537,25 @@ const TOP_SECTIONS_PATH: readonly string[] = ['sections']
  * 3. 并行解码并逐段校验各 Section 的 SHA-256 校验和；
  * 4. 解析转换为前端 PlayerSnapshot 完整聚合状态。
  */
+interface SnapshotAvatarUpdate {
+  avatarId?: string
+  unlockedAvatars?: string[]
+}
+
+function decodeUnlockedAvatars(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : undefined
+}
+
 export async function decodePlayerSnapshotDto(
   dto: PlayerSnapshotDto,
   payloadBytes: Uint8Array,
   account = '',
   sequenceId = 0,
   sectionMemberPath: readonly string[] = TOP_SECTIONS_PATH,
-): Promise<PlayerSnapshot> {
+): Promise<PlayerSnapshot & SnapshotAvatarUpdate> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!snapshotSchemaReadable(dto.head?.schemaVersion, dto.head?.minReaderSchemaVersion)) {
-    throw new Error('玩家快照 schema 版本不受支持，请更新客户端。')
-  }
+  requireReadableSnapshotSchema(dto.head?.schemaVersion, dto.head?.minReaderSchemaVersion)
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
@@ -1577,6 +1582,7 @@ export async function decodePlayerSnapshotDto(
   const statsRealm = calculateRealmProgress(stats.experience, stats.realmLevel,
     serverExpToNextCap(stats.expToNextLinggen, stats.realmLevel))
   const renameCooldownUntil = numberValue(settings.renameCooldownUntilUnixSeconds)
+  const avatarId = optionalString(settings.avatar, 'settings.avatar') ?? undefined
   return {
     playerId: dto.playerId,
     name,
@@ -1594,14 +1600,9 @@ export async function decodePlayerSnapshotDto(
     combat: loadout,
     combatResources: combat.resources,
     combatAttributes: combat.attributes,
-    visual: visualFor(name, (() => {
-      if (Array.isArray(settings.unlockedAvatars)) {
-        useAvatarStore.getState().setUnlockedAvatars(settings.unlockedAvatars.filter((x): x is string => typeof x === 'string'))
-      }
-      const av = optionalString(settings.avatar, 'settings.avatar') ?? undefined
-      if (av) useAvatarStore.getState().setAvatarId(av as PlayerAvatarId)
-      return av
-    })()),
+    visual: visualFor(name, avatarId),
+    avatarId,
+    unlockedAvatars: decodeUnlockedAvatars(settings.unlockedAvatars),
     world,
     duel,
     // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
@@ -1625,7 +1626,7 @@ export async function decodePlayerSnapshotDeltaDto(
   current: PlayerSnapshot,
   payloadBytes: Uint8Array,
   sectionMemberPath: readonly string[] = TOP_CHANGED_SECTIONS_PATH,
-): Promise<PlayerPatch> {
+): Promise<PlayerPatch & SnapshotAvatarUpdate> {
   if (!dto || dto.playerId !== current.playerId) throw new Error('玩家增量快照归属不一致。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家增量快照')
   if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
@@ -1636,7 +1637,7 @@ export async function decodePlayerSnapshotDeltaDto(
   const simulatedAt = optionalString(dto.lastSimulatedAt, '玩家增量快照 lastSimulatedAt')
   if (simulatedAt === null) throw new Error('玩家增量快照缺少 lastSimulatedAt。')
   const serverTime = seconds(simulatedAt)
-  const patch: PlayerPatch = {
+  const patch: PlayerPatch & SnapshotAvatarUpdate = {
     playerId: dto.playerId,
     version: stateVersion,
     serverTimeUnixSeconds: serverTime,
@@ -1654,7 +1655,7 @@ export async function decodePlayerSnapshotDeltaDto(
     }
   }
   if (deltaAvatar) {
-    useAvatarStore.getState().setAvatarId(deltaAvatar as PlayerAvatarId)
+    patch.avatarId = deltaAvatar
     patch.visual = visualFor(dto.displayName ?? current.name ?? '', deltaAvatar)
   }
   let queueEntriesUpdated = false
@@ -1665,12 +1666,10 @@ export async function decodePlayerSnapshotDeltaDto(
     if (nextPaused !== (current.queue?.paused ?? false)) {
       queueEntriesUpdated = true
     }
-    if (Array.isArray(settings.unlockedAvatars)) {
-      useAvatarStore.getState().setUnlockedAvatars(settings.unlockedAvatars.filter((x): x is string => typeof x === 'string'))
-    }
+    patch.unlockedAvatars = decodeUnlockedAvatars(settings.unlockedAvatars)
     const avatar = optionalString(settings.avatar, 'settings.avatar')
     if (avatar) {
-      useAvatarStore.getState().setAvatarId(avatar as PlayerAvatarId)
+      patch.avatarId = avatar
       patch.visual = visualFor(dto.displayName ?? current.name ?? '', avatar)
     }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)

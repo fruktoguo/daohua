@@ -77,11 +77,11 @@ public static class SectionCodec
     /// 发布瞬间战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。
     /// v43：progression 分段新增生涯斗法胜负计数 duelWins/duelLosses，settings 分段新增
     /// publicLoadoutVisible 配装隐私开关（默认 true），均可缺省解码，不改变最低可读版本地板 v41。
-    /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 docs/backend/db-version-changes.md
-    /// 登记 vX -&gt; vY 的字段变动、是否可缺省解码、MinReadableSchemaVersion 取舍及存量迁移方式；
-    /// 日常不再强制手写单次 migrations/*.sql，待 prod-release 时统一合写存档标签推进或手动迁移；
-    /// 本地开发漂移仍由 reset-outdated-players.sh 优先跑已有链式脚本、缺失则交互确认 RESET 清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 43;
+    /// v44：combat 分段的战斗单位快照新增天雷、血煞上次触发时刻，缺省时为未触发。
+    /// 升级约定：每次 bump 时同步递增 PostgresSchema.Version，在 docs/backend/db-version-changes.md
+    /// 登记字段变动、缺省语义、最低可读版本及存量处理，并随版本编写 migrations/ 单步脚本。
+    /// 本地开发由 reset-outdated-players.sh 优先执行已有迁移；缺失时须交互确认重置。运行时只解码当前版本。</summary>
+    public const int CurrentSchemaVersion = 44;
     /// <summary>
     /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。
     /// 客户端按 <c>minReaderSchemaVersion &lt;= 自身版本</c> 判定可读性，替代旧的全等门禁：

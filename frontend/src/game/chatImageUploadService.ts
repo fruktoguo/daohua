@@ -1,3 +1,4 @@
+import { getSessionGeneration } from '../network/sessionState.ts'
 /**
  * 传音图片与表情包直传及拉取服务
  *
@@ -303,16 +304,26 @@ export async function uploadChatImage(sourceBlob: Blob): Promise<UploadChatImage
     throw new Error('EMPTY_IMAGE')
   }
 
+  const generation = getSessionGeneration()
+  const requireCurrentSession = () => {
+    if (generation !== getSessionGeneration()) throw new DOMException('账号会话已切换。', 'AbortError')
+  }
   return enqueueUpload(async () => {
+    requireCurrentSession()
     const strategy = await resolveBeeimgStrategy(false)
+    requireCurrentSession()
     const prepared = await prepareUploadPayload(sourceBlob, strategy.maxUploadBytes, strategy.allowedTypes)
     const sha256 = await computeBlobSha256(prepared.blob)
+    requireCurrentSession()
 
     let uploadJson = await postToBeeimg(prepared.blob, prepared.ext, strategy.storageId)
+    requireCurrentSession()
     // 若图床刚好更换了游客 storage_id，立即刷新一次策略并自动重试
     if (uploadJson.status !== 'success' && uploadJson.message?.includes('储存驱动')) {
       const refreshed = await resolveBeeimgStrategy(true)
+      requireCurrentSession()
       uploadJson = await postToBeeimg(prepared.blob, prepared.ext, refreshed.storageId)
+      requireCurrentSession()
     }
 
     const directUrl = uploadJson.data?.public_url?.trim() ?? ''
@@ -334,12 +345,42 @@ export async function uploadChatImage(sourceBlob: Blob): Promise<UploadChatImage
   })
 }
 
+const MAX_CACHED_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** Content-Length 仅用于提前拒绝；分块或解压后的实际字节仍逐块计数。 */
+export async function readChatImageBody(response: Response): Promise<Blob | null> {
+  const reader = response.body?.getReader()
+  if (!reader) return null
+  const chunks: ArrayBuffer[] = []
+  let size = 0
+  try {
+    if (Number(response.headers.get('content-length')) > MAX_CACHED_IMAGE_BYTES) {
+      void reader.cancel().catch(() => undefined)
+      return null
+    }
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_CACHED_IMAGE_BYTES) {
+        void reader.cancel().catch(() => undefined)
+        return null
+      }
+      chunks.push(value.slice().buffer)
+    }
+    return size ? new Blob(chunks, { type: response.headers.get('content-type') ?? '' }) : null
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 /**
  * 拉取图片原始二进制 Blob 用于写入本地 IndexedDB：
  * 1. 优先尝试浏览器直连 CORS fetch；
  * 2. 若第三方图床未开放 CORS 头导致拦截，自动回退至服务端无状态防 SSRF 中继接口。
  */
 export async function fetchImageBlobForCaching(rawUrl: string): Promise<{ blob: Blob; mime: string } | null> {
+  const generation = getSessionGeneration()
   const trimmed = rawUrl.trim()
   if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
     return null
@@ -356,9 +397,10 @@ export async function fetchImageBlobForCaching(rawUrl: string): Promise<{ blob: 
       signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
     })
     if (resp.ok) {
-      const blob = await resp.blob()
+      const blob = await readChatImageBody(resp)
+      if (!blob) return null
       const detectedMime = await detectRasterImageMime(blob)
-      if (detectedMime && blob.size > 0 && blob.size <= 10 * 1024 * 1024) {
+      if (detectedMime) {
         return { blob, mime: detectedMime }
       }
     }
@@ -367,7 +409,7 @@ export async function fetchImageBlobForCaching(rawUrl: string): Promise<{ blob: 
   }
 
   // 2. 服务端无状态防 SSRF 中继拉取（仅支持 HTTPS 外链，不落盘）
-  if (trimmed.startsWith('https://')) {
+  if (generation === getSessionGeneration() && trimmed.startsWith('https://')) {
     try {
       const proxyUrl = getApiUrl(`/api/v1/chat/sticker-fetch?url=${encodeURIComponent(trimmed)}`)
       const resp = await fetch(proxyUrl, {
@@ -376,9 +418,10 @@ export async function fetchImageBlobForCaching(rawUrl: string): Promise<{ blob: 
         signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
       })
       if (resp.ok) {
-        const blob = await resp.blob()
+        const blob = await readChatImageBody(resp)
+        if (!blob) return null
         const detectedMime = await detectRasterImageMime(blob)
-        if (detectedMime && blob.size > 0) {
+        if (detectedMime) {
           return { blob, mime: detectedMime }
         }
       }

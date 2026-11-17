@@ -69,11 +69,11 @@ public sealed record LoadTestOptions(
             values[key] = value;
         }
 
-        var scenario = values.GetValueOrDefault("scenario", "capacity-target").Trim().ToLowerInvariant();
+        var scenario = values.GetValueOrDefault("scenario", "capacity-link").Trim().ToLowerInvariant();
         // 各场景默认玩家数对齐容量目标：不带 --players 的运行即为门禁口径。
         var defaultPlayers = scenario switch
         {
-            "capacity-target" => CapacityTargetScenario.RegisteredAccountTarget,
+            "capacity-link" or "capacity-target" or "target-acceptance" => CapacityTargetScenario.RegisteredAccountTarget,
             "websocket" => 100,
             "http-read" => 500,
             "compute" => CapacityTargetScenario.ColdComputeTarget,

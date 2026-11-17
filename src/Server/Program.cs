@@ -538,10 +538,11 @@ if (processRole == ServerProcessRole.Api)
     }).RequireRateLimiting("auth");
     auth.MapPost("/logout", async (IAccountRepository accounts, SessionRegistry sessions, HttpContext context, CancellationToken ct) =>
     {
-        if (context.Request.Cookies.TryGetValue(SessionAuthenticationDefaults.CookieName, out var token))
+        var token = SessionAuthenticationDefaults.ReadPresentedToken(context);
+        if (!string.IsNullOrWhiteSpace(token))
         {
             await accounts.RevokeSessionAsync(token, ct);
-            // 登出即踢线：被吊销会话若仍持有 WebSocket，按令牌哈希精确关闭其命令通道。
+            // 登出即踢线：Cookie 与 Bearer 会话都按本次实际令牌精确关闭其命令通道。
             sessions.CloseByTokenHash(SHA256.HashData(Encoding.UTF8.GetBytes(token)), 1008, "会话已吊销，请重新登录。");
         }
         context.Response.Cookies.Delete(SessionAuthenticationDefaults.CookieName, new CookieOptions { Path = "/", HttpOnly = true, SameSite = SameSiteMode.Lax });
@@ -553,7 +554,8 @@ if (processRole == ServerProcessRole.Api)
             return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
         // 改密吊销其他会话：当前会话令牌哈希作为豁免项传入仓储。
         byte[]? keepTokenHash = null;
-        if (context.Request.Cookies.TryGetValue(SessionAuthenticationDefaults.CookieName, out var currentToken))
+        var currentToken = SessionAuthenticationDefaults.ReadPresentedToken(context);
+        if (!string.IsNullOrWhiteSpace(currentToken))
             keepTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(currentToken));
         var result = await accounts.ChangePasswordAsync(accountId, request.CurrentPassword, request.NewPassword, keepTokenHash, ct);
         if (!result.Success)

@@ -180,6 +180,10 @@ PlayerActionQueueMutationComponent.Work.Begin
 - `ExportSnapshot`/`RestorePlayer`/`PlayerStateDocument` 是唯一序列化通道；新增持久化字段必须落 section 编码 + 文档字段 + 测试金色样本。
 - `StateVersion`、`DirtyMarks`、`AttributeRevision` 与版本化列表计数随组件状态单调存活；快照恢复、视图命令和队列操作必须保住该语义。
 - 脏段写回失败要保留可恢复证据；`AcknowledgeDirtySections`/`RestoreDirtySections` 只调集合，**不回退流水号**。
+- 刷盘死信退出调度，不退出权威判断。仍未被同玩家、同分段的更高版本代替的死信，阻断单人分段读取、完整加载及冷算冻结/写回；批量派生读取须隔离该玩家，不回退旧分段，也不阻断其他玩家。不能拿全局提交头或其他分段的版本当代替凭据。更高替代载荷必须满足当前 schema、完整性与 JSON 形状；仅当符合要求的更高版本实际落盘，留存任务才允许按龄清理旧死信。
+- 资产检查点一旦确认 durable（含幂等命中），即越过本玩家和外层批次的回滚边界。已入账的缓冲不能恢复；后续钱包同步失败只能重读权威余额，不能重新提交旧缓冲。
+- 续租在取得身份和租约行锁后按数据库墙钟判定；若已经到期，不得续活旧实体。过期租约留存以锁定后的行重新判定。
+- 未知提交的恢复只查询既有持久化事实。查不到不是回滚凭据，不得自动补交旧请求；失租时淘汰本地实体，保留诊断。核实已提交后也必须重新取得有效所有权并重载，不能复用旧实体。
 - `SnapshotUpdated` 推送仅在 `SimulationResult.Changed` 为真时发出；空闲玩家不得推 delta。
 
 ## 7. 新功能落地 checklist

@@ -15,6 +15,7 @@ export interface SessionAccount {
   sequenceId?: number
 }
 
+let generation = 0
 let current: SessionAccount | null = null
 
 /** 读取当前会话身份（gameClient 握手时取 playerId 等字段） */
@@ -22,7 +23,17 @@ export function getSessionAccount(): SessionAccount | null {
   return current
 }
 
-/** 写入会话身份；登录/登出/道号变更时由 account Store 同步调用 */
+/** 登录世代独立于角色 ID：同角色重登也会失效旧请求。 */
+export function getSessionGeneration(): number {
+  return generation
+}
+
+/** 建立或清除登录会话；显示名改动不更换会话。 */
 export function setSessionAccount(value: SessionAccount | null): void {
+  generation += 1
   current = value
+}
+
+export function updateSessionDisplayName(name: string): void {
+  if (current) current = { ...current, name }
 }

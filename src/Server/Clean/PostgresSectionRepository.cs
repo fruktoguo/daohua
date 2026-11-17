@@ -10,7 +10,78 @@ public sealed class PostgresSectionRepository(
     /// <summary>刷盘队列行连续失败最大次数；超限后转入 dead 死信态，停止阻塞活跃队列。</summary>
     public const int MaxFlushAttempts = 12;
 
+    // 每种分段只需保留最高死信的水位；同一 MVCC 快照中，用实际读到的生效载荷证明替代，不能只相信版本号。
+    private const string DeadSectionWatermarkSql = """
+        SELECT DISTINCT ON (q.player_id, q.section_kind) q.player_id, q.section_kind, q.state_version, q.queue_id
+        FROM platform.section_flush_queue q
+        WHERE q.player_id = ANY($1) AND q.status = 'dead'
+          AND ($2::text IS NULL OR q.section_kind = $2)
+        ORDER BY q.player_id, q.section_kind, q.state_version DESC, q.queue_id DESC
+        """;
+
+    private sealed record DeadSectionWatermark(Guid PlayerId, string Kind, long Version, long QueueId);
+
+    private static void BindDeadSectionWatermark(NpgsqlParameterCollection parameters, Guid[] playerIds, string? sectionKind)
+    {
+        parameters.Add(new NpgsqlParameter { Value = playerIds });
+        parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Text, Value = (object?)sectionKind ?? DBNull.Value });
+    }
+
+    private static async ValueTask<List<DeadSectionWatermark>> ReadDeadSectionWatermarksAsync(
+        NpgsqlDataReader reader, CancellationToken cancellationToken)
+    {
+        var rows = new List<DeadSectionWatermark>();
+        while (await reader.ReadAsync(cancellationToken))
+            rows.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt64(3)));
+        return rows;
+    }
+
+    private static async ValueTask<List<DeadSectionWatermark>> ReadDeadSectionWatermarksAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid[] playerIds, string sectionKind,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(DeadSectionWatermarkSql, connection, transaction);
+        BindDeadSectionWatermark(command.Parameters, playerIds, sectionKind);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await ReadDeadSectionWatermarksAsync(reader, cancellationToken);
+    }
+
+    private static void VerifyDeadReplacement(DeadSectionWatermark dead, StoredSection? replacement)
+    {
+        var description = $"玩家分段存在未被有效替代的刷盘死信 player={dead.PlayerId:D} section={dead.Kind} version={dead.Version} queueId={dead.QueueId}。";
+        if (replacement is null || replacement.StateVersion <= dead.Version)
+            throw new InvalidDataException(description);
+        try { VerifySectionPayload(replacement); }
+        catch (InvalidDataException ex) { throw new InvalidDataException(description, ex); }
+    }
+
+    // 用既有编解码验证 schema、原始哈希以及 JSON；死信的替代证据不得依赖元数据自愈。
+    internal static void VerifySectionPayload(StoredSection section)
+    {
+        try
+        {
+            var json = SectionCodec.Decode<JsonElement>(section);
+            var expected = section.SectionKind is PlayerSectionKinds.ActionQueue or PlayerSectionKinds.Buffs
+                ? JsonValueKind.Array : JsonValueKind.Object;
+            if (json.ValueKind != expected)
+                throw new InvalidDataException($"玩家分段 {section.SectionKind} JSON 形状无效。");
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException)
+        {
+            throw new InvalidDataException($"玩家分段 {section.SectionKind} 无法解压或反序列化。", ex);
+        }
+    }
+
+    private static StoredSection ValidateAndRepairReadableSection(StoredSection section)
+    {
+        if (section.SchemaVersion != SectionCodec.CurrentSchemaVersion
+            || !SectionCodec.TryRepairSection(section, out var corrected))
+            throw new InvalidDataException($"玩家分段 {section.SectionKind} schema 或载荷无效。");
+        return corrected ?? section;
+    }
+
     private readonly LogThrottle _flushErrorLog = new(TimeSpan.FromMinutes(1));
+    private readonly LogThrottle _derivedSectionIsolationLog = new(TimeSpan.FromMinutes(1));
     /// <summary>
     /// 加载玩家完整持久化状态：identity + 提交头 + 已落盘 section + 尚未落盘的 flush 队列行
     /// 在 RepeatableRead 快照内合并，队列中的较新版本覆盖旧快照；玩家不存在返回 null，
@@ -49,6 +120,9 @@ public sealed class PostgresSectionRepository(
             SELECT player_id, account_id, display_name, created_at
             FROM identity.players WHERE player_id = $1 AND status = 1
             """, playerId));
+        var deadWatermark = new NpgsqlBatchCommand(DeadSectionWatermarkSql);
+        BindDeadSectionWatermark(deadWatermark.Parameters, [playerId], null);
+        batch.BatchCommands.Add(deadWatermark);
         batch.BatchCommands.Add(ReadCommand("""
             SELECT player_id, state_version, schema_version, last_simulated_at,
                    game_data_fingerprint, checksum, updated_at
@@ -93,12 +167,15 @@ public sealed class PostgresSectionRepository(
         var sections = new Dictionary<string, StoredSection>(StringComparer.Ordinal);
         var pendingSections = new List<FlushQueueItem>();
         var storedActions = new List<StoredAction>();
+        List<DeadSectionWatermark> deadWatermarks;
         await using (var reader = await batch.ExecuteReaderAsync(cancellationToken))
         {
             if (await reader.ReadAsync(cancellationToken))
                 identity = new PlayerIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3));
             if (identity is null) return null;
 
+            await reader.NextResultAsync(cancellationToken);
+            deadWatermarks = await ReadDeadSectionWatermarksAsync(reader, cancellationToken);
             await reader.NextResultAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -154,6 +231,15 @@ public sealed class PostgresSectionRepository(
             head = new PlayerStateHead(playerId, 0, SectionCodec.CurrentSchemaVersion, identity.CreatedAt, string.Empty, string.Empty, identity.CreatedAt);
         }
 
+        foreach (var dead in deadWatermarks)
+        {
+            var persisted = sections.GetValueOrDefault(dead.Kind);
+            var pending = pendingSections.Where(row => row.SectionKind == dead.Kind).MaxBy(row => (row.StateVersion, row.QueueId));
+            VerifyDeadReplacement(dead, pending is not null && (persisted is null || pending.StateVersion > persisted.StateVersion)
+                ? ToStoredSection(pending)
+                : persisted);
+        }
+
         // 先按已持久化提交头与已持久化 sections 验真：不能被后续待刷盘队列覆盖掩盖篡改的持久化头/分段。
         if (head.StateVersion > 0)
         {
@@ -168,9 +254,8 @@ public sealed class PostgresSectionRepository(
             foreach (var kind in sections.Keys.ToArray())
             {
                 var section = sections[kind];
-                if (!SectionCodec.TryRepairSection(section, out var corrected))
-                    throw new InvalidDataException($"玩家 section {kind} 载荷损坏且无法自愈。");
-                if (corrected is null) continue;
+                var corrected = ValidateAndRepairReadableSection(section);
+                if (ReferenceEquals(section, corrected)) continue;
                 sections[kind] = corrected;
                 persistedCorrections.Add((corrected, 0L));
             }
@@ -234,9 +319,8 @@ public sealed class PostgresSectionRepository(
             foreach (var (kind, queueId) in pendingSources)
             {
                 var section = sections[kind];
-                if (!SectionCodec.TryRepairSection(section, out var corrected))
-                    throw new InvalidDataException($"玩家队列 section {kind} 载荷损坏且无法自愈。");
-                if (corrected is null) continue;
+                var corrected = ValidateAndRepairReadableSection(section);
+                if (ReferenceEquals(section, corrected)) continue;
                 sections[kind] = corrected;
                 pendingCorrections.Add((corrected, queueId));
             }
@@ -253,15 +337,16 @@ public sealed class PostgresSectionRepository(
             }
         }
 
-        var pendingAction = pendingSections.FirstOrDefault(item => item.SectionKind == PlayerSectionKinds.ActionQueue);
-        var actions = includeActionQueue
-            && pendingAction is not null
-            && sections.TryGetValue(PlayerSectionKinds.ActionQueue, out var effectiveAction)
-            && effectiveAction.StateVersion == pendingAction.StateVersion
-            ? DecodeQueuedActions(effectiveAction)
+        var actions = includeActionQueue && pendingSources.ContainsKey(PlayerSectionKinds.ActionQueue)
+            ? DecodeQueuedActions(sections[PlayerSectionKinds.ActionQueue])
             : storedActions;
 
-        return new PlayerStateBundle(identity, head, sections, actions);
+        var bundle = new PlayerStateBundle(identity, head, sections, actions);
+        // 只有存在死信证据时额外按完整领域形状验证，避免把语法正确但不可恢复的替代者冻结给冷算。
+        if (deadWatermarks.Count > 0)
+            try { SectionCodec.DecodeAggregate(bundle); }
+            catch (JsonException ex) { throw new InvalidDataException("玩家死信替代后的存档不可解码。", ex); }
+        return bundle;
     }
 
     /// <summary>
@@ -297,6 +382,7 @@ public sealed class PostgresSectionRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         // 持久化分段与刷盘收件箱须处于同一 RepeatableRead 快照，防止刷盘并发删除队列行引发错读回退。
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var deadWatermarks = await ReadDeadSectionWatermarksAsync(connection, transaction, [playerId], sectionKind, cancellationToken);
         StoredSection? persisted = null;
         await using (var command = new NpgsqlCommand("""
             SELECT player_id, section_kind, section_version, schema_version, codec,
@@ -340,31 +426,31 @@ public sealed class PostgresSectionRepository(
                 }
             }
         }
+        foreach (var dead in deadWatermarks) VerifyDeadReplacement(dead, persisted);
+        if (persisted is not null) persisted = ValidateAndRepairReadableSection(persisted);
         await transaction.CommitAsync(cancellationToken);
-        // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
-        if (persisted is not null
-            && SectionCodec.TryRepairSection(persisted, out var corrected)
-            && corrected is not null)
-            return corrected;
         return persisted;
     }
 
     /// <summary>
     /// 批量读取多名玩家同一分段的生效载荷：已落盘行 + 刷盘队列中较新版本叠加（与 <see cref="LoadAsync"/> 同一口径）。
-    /// 供组队大厅等批量估值场景一次往返取回全体成员的 loadout 分段。
+    /// 仅供排行榜、组队估值等派生读模型：逐玩家隔离损坏分段，不回退旧版本、不阻断其他玩家。
+    /// 权威装载和补算必须使用 <see cref="LoadAsync"/> 或 <see cref="LoadComputeInputAsync"/>。
     /// </summary>
     /// <param name="playerIds">玩家 ID 集合。</param>
     /// <param name="sectionKind">分段键（见 <see cref="PlayerSectionKinds"/>）。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    /// <returns>playerId → 生效分段；未落盘且队列无挂起的玩家缺席。</returns>
+    /// <returns>playerId → 生效分段；没有可用权威分段的玩家缺席。</returns>
     public async ValueTask<IReadOnlyDictionary<Guid, StoredSection>> LoadSectionsAsync(
         IReadOnlyCollection<Guid> playerIds, string sectionKind, CancellationToken cancellationToken = default)
     {
         if (playerIds.Count == 0) return new Dictionary<Guid, StoredSection>();
         var ids = playerIds.ToArray();
         var result = new Dictionary<Guid, StoredSection>(ids.Length);
+        var conflicts = new HashSet<Guid>();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var deadWatermarks = await ReadDeadSectionWatermarksAsync(connection, transaction, ids, sectionKind, cancellationToken);
         await using (var command = new NpgsqlCommand("""
             SELECT player_id, section_kind, section_version, schema_version, codec,
                    payload, raw_bytes, checksum, updated_at
@@ -394,6 +480,7 @@ public sealed class PostgresSectionRepository(
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                if (conflicts.Contains(reader.GetGuid(0))) continue;
                 var pending = new StoredSection(
                     reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
                     reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
@@ -402,18 +489,43 @@ public sealed class PostgresSectionRepository(
                 else if (pending.StateVersion == persisted.StateVersion
                          && !string.Equals(pending.Checksum, persisted.Checksum, StringComparison.Ordinal))
                 {
-                    throw new InvalidDataException("玩家 section 同一版本载荷冲突。");
+                    conflicts.Add(pending.PlayerId);
+                    result.Remove(pending.PlayerId);
+                    LogDerivedSectionIsolation(pending.PlayerId, sectionKind,
+                        new InvalidDataException($"玩家 section 同一版本载荷冲突 version={pending.StateVersion}。"));
                 }
             }
         }
-        await transaction.CommitAsync(cancellationToken);
-        // 校验元数据漂移就地修正（仅内存返回）：持久化回写由整包加载路径负责。
+        foreach (var dead in deadWatermarks)
+        {
+            if (conflicts.Contains(dead.PlayerId)) continue;
+            try { VerifyDeadReplacement(dead, result.GetValueOrDefault(dead.PlayerId)); }
+            catch (InvalidDataException ex)
+            {
+                result.Remove(dead.PlayerId);
+                LogDerivedSectionIsolation(dead.PlayerId, sectionKind, ex);
+            }
+        }
         foreach (var (id, section) in result)
-            if (SectionCodec.TryRepairSection(section, out var corrected) && corrected is not null)
-                result[id] = corrected;
+        {
+            try { result[id] = ValidateAndRepairReadableSection(section); }
+            catch (InvalidDataException ex)
+            {
+                result.Remove(id);
+                LogDerivedSectionIsolation(id, sectionKind, ex);
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
         return result;
     }
 
+
+    private void LogDerivedSectionIsolation(Guid playerId, string sectionKind, InvalidDataException exception)
+    {
+        RuntimeInstrumentation.Count("persistence.derived_section_quarantined");
+        if (_derivedSectionIsolationLog.TryAcquire())
+            logger.LogError(exception, "批量派生读取已隔离损坏分段 player={PlayerId} section={SectionKind}", playerId, sectionKind);
+    }
 
     private static PlayerStateHead BuildEffectiveHead(
         PlayerIdentity identity,
@@ -803,7 +915,7 @@ public sealed class PostgresSectionRepository(
         CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         var outcome = await ApplyComputeResultInTransactionAsync(
             connection, transaction, playerId, sourceStateVersion, targetStateVersion,
             writes, lastSimulatedAt, gameDataFingerprint, null, cancellationToken);
@@ -858,6 +970,7 @@ public sealed class PostgresSectionRepository(
         var now = DateTimeOffset.UtcNow;
         long? lockedHeadVersion;
         var walletReadSetMatches = true;
+        List<DeadSectionWatermark> deadWatermarks;
         var pendingItems = new List<FlushQueueItem>();
         // 统一全局玩家行锁顺序：identity.players -> player_asset_balances -> player_state_heads -> section_flush_queue；
         // 单批一次往返完成身份锁定、钱包读集复核、提交头版本锁定及待刷盘收件箱锁定。
@@ -887,6 +1000,10 @@ public sealed class PostgresSectionRepository(
                 """);
             headCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
             readBatch.BatchCommands.Add(headCommand);
+
+            var deadWatermark = new NpgsqlBatchCommand(DeadSectionWatermarkSql);
+            BindDeadSectionWatermark(deadWatermark.Parameters, [playerId], null);
+            readBatch.BatchCommands.Add(deadWatermark);
 
             var pendingCommand = new NpgsqlBatchCommand("""
                 SELECT queue_id, player_id, section_kind, state_version, schema_version, codec,
@@ -924,6 +1041,8 @@ public sealed class PostgresSectionRepository(
                 ? reader.GetInt64(0)
                 : null;
             await reader.NextResultAsync(cancellationToken);
+            deadWatermarks = await ReadDeadSectionWatermarksAsync(reader, cancellationToken);
+            await reader.NextResultAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 pendingItems.Add(new FlushQueueItem(
@@ -935,6 +1054,11 @@ public sealed class PostgresSectionRepository(
                     reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13)));
             }
         }
+        // 冻结与写回共用生效载荷校验。先锁住 pending：快照里的替代行若已转 dead，RR 将拒绝陈旧写回。
+        // 正式提交者已执行完整源基线加载；独立仓储入口也必须核实，不得用目标写入修补旧基线。
+        if (deadWatermarks.Count > 0 && walletReadSet is null
+            && await LoadInTransactionAsync(connection, transaction, playerId, cancellationToken, includeActionQueue: false) is null)
+            return ComputeApplyOutcome.MissingPlayer;
         if (!walletReadSetMatches)
             return ComputeApplyOutcome.StaleVersion;
         if (lockedHeadVersion is not long initialHeadVersion)
@@ -1115,7 +1239,9 @@ public sealed class PostgresSectionRepository(
         for (var i = 0; i < count; i++)
         {
             var write = writes[i];
-            write.VerifyIntegrity();
+            write.Validate();
+            VerifySectionPayload(new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion,
+                write.SchemaVersion, write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt));
             playerIds[i] = write.PlayerId;
             sectionKinds[i] = write.SectionKind;
             stateVersions[i] = write.StateVersion;
@@ -1153,7 +1279,8 @@ public sealed class PostgresSectionRepository(
         for (var i = 0; i < count; i++)
         {
             var item = items[i];
-            item.VerifyIntegrity();
+            item.Validate();
+            VerifySectionPayload(ToStoredSection(item));
             playerIds[i] = item.PlayerId;
             sectionKinds[i] = item.SectionKind;
             stateVersions[i] = item.StateVersion;
@@ -1237,13 +1364,12 @@ public sealed class PostgresSectionRepository(
         if (items.Count == 0) return;
         var first = items[0];
         // 全局加锁顺序：先锁 identity.players 父行，再锁提交头、section 与投影，
-        // 消除首发无提交头时的并发插入竞争，并与 ComputeResultCommitter（先锁 players/projection 再锁 heads）严格同序防死锁。
-        await using (var identityLock = new NpgsqlCommand("""
-            SELECT 1 FROM identity.players WHERE player_id = $1 FOR UPDATE
-            """, connection, transaction))
+        // 函数只取身份行锁，将独立 worker 的行锁能力与身份表 DML 隔离。
+        await using (var identityLock = new NpgsqlCommand("SELECT game.lock_player_for_section_flush($1)", connection, transaction))
         {
             identityLock.Parameters.Add(new NpgsqlParameter { Value = first.PlayerId });
-            await identityLock.ExecuteNonQueryAsync(cancellationToken);
+            if (await identityLock.ExecuteScalarAsync(cancellationToken) is not true)
+                throw new InvalidDataException("刷盘目标玩家身份不存在。");
         }
         await using (var headLock = new NpgsqlCommand("""
             SELECT 1 FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
@@ -1251,6 +1377,21 @@ public sealed class PostgresSectionRepository(
         {
             headLock.Parameters.Add(new NpgsqlParameter { Value = first.PlayerId });
             await headLock.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // 已抢占或人工重排的认领行不能用旧内存载荷写穿；锁住匹配行直至落盘或回滚。
+        await using (var claims = new NpgsqlCommand("""
+            SELECT count(*) FROM (
+                SELECT queue_id FROM platform.section_flush_queue
+                WHERE queue_id = ANY($1) AND status = 'pending' AND lease_token = $2
+                ORDER BY queue_id FOR UPDATE
+            ) locked
+            """, connection, transaction))
+        {
+            claims.Parameters.Add(new NpgsqlParameter { Value = queueIds.ToArray() });
+            claims.Parameters.Add(new NpgsqlParameter { Value = first.LeaseToken });
+            if ((long)(await claims.ExecuteScalarAsync(cancellationToken))! != queueIds.Count)
+                throw new InvalidOperationException("刷盘队列认领已失效，不可应用旧认领载荷。");
         }
 
         foreach (var item in items)

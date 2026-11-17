@@ -68,9 +68,9 @@
 | C | 传音 `ChatRuntime` | 收件人按本地 presence 解析（`Social/ChatRuntime.cs:129-147`） | 世界/附近频道跨实例收不到；节流窗按实例翻倍 | P1 |
 | D | 设备配额 `DeviceQuotaRegistry` + 准入 | 进程内存（`AntiMultiOpen/DeviceQuotaRegistry.cs`） | 同设备账号配额按实例数翻倍，防线失效 | P1 |
 | E | 节点注册表 `ComputeLinkRegistry` | 进程内存，按拨入归属分片（`ComputeLinkRegistry.cs`） | 本身可工作；但 `JOB_TOO_LARGE` 判死只看本实例节点组，可能误杀别实例大节点能接的任务 | P1 |
-| F | 节点建筑 `NodeBuildingRegistry` | 进程内存缓存 + 信号量写（`NodeBuildingRegistry.cs:98`） | **材料贡献跨实例丢更新**：玩家背包已扣、行被旧缓存覆盖 | **P0** |
+| F | 节点建筑 `NodeBuildingRegistry` | PG 锁行事务串行化贡献与资产扣减 | 已修复丢更新；跨实例读投影仍非实时 | P1 读侧 |
 | G | 玩家请求跨实例路由 | 租约表已有 owner_instance_id，无实例目录、无转发 | 请求落到非持有实例：actor 加载失败或等租约过期 | P1 |
-| H | 任务生产者全局 leader | `ColdCatchUpWorker` 每实例各扫一遍 | 重复扫描/重复全量加载，靠入队幂等兜底，正确但浪费 | P0（可选） |
+| H | 任务生产者全局 leader | 持 PG 咨询锁的 API 实例扫描 | 连接断开释放、下轮接管；入队仍有幂等兜底 | 已落地 |
 | I | 市场跨分片结算 | 分片租约已就绪；`ClaimSettlementAsync` 在 PartitionCount>1 时显式拒绝（`MarketRuntime.cs:235-236`） | 多分片/多实例下结算领取无路由；非分片持有实例直接 503 | P1 |
 | J | 节点多上游故障转移 | `ComputeNode:UpstreamUrl` 单值（`ComputeNode/Program.cs:66`） | 单域名下边缘负载均衡已能转移；多域名/多入口才需要上游列表 | P2 |
 | K | 集群级容量视图 | `OpsPanel` 单进程只读（Development-only）；`registry.Nodes` 只含本实例节点 | 运维看不到全集群节点/会话/分片归属 | P1 |
@@ -119,13 +119,10 @@
   - P1：`groupBudget` 改从 `platform.compute_nodes` 集群视图取全集群最大承接能力（该表本来就要为 §K 建，顺带修判死口径）。
   - 衔接：drain 落地后 `Acquire()` 已按 `Draining` 过滤（见 §4）；节点在实例间迁移就是普通断线重连，`Pending` 在飞批次按租约语义退回，多主服下由新落点实例的派发器接手。
 
-### F. 节点建筑 `NodeBuildingRegistry`（`NodeBuildingRegistry.cs:98-324`）——P0 必修
+### F. 节点建筑：行锁写入已落地
 
-- **现状**：`game.node_buildings` 整行 upsert；进程内 `_gate` 信号量串行化建造/升级/贡献/惰性完工，读路径走 Volatile 快照。贡献材料是"锁内读旧行→按剩余需求封顶→合并→整行写回"的 read-modify-write。
-- **失效模式**：**真数据丢失**。两个玩家分别在两个实例上向同一座建筑捐材料：A 实例扣背包→按自己缓存写回 +10 木；B 实例缓存里还是旧行→扣背包→写回 +5 石，**把 A 刚写进去的 10 木整个覆盖掉**。玩家背包已扣、建筑材料却丢了。完工结算双实例重复执行尚属幂等（`FinalizeIfComplete` 结果确定），但贡献合并是硬错误。
-- **演进路径**：
-  - P0：把贡献合并下沉进 PG 事务——`SELECT ... FOR UPDATE` 锁行→应用层按剩余需求封顶→写回，或改 jsonb 原子合并；建筑写低频（建造/升级/捐材料/完工），直接走行锁事务即可，不需要分片或租约。`NodeBuildingRegistry` 降级为"读缓存 + 写后失效"，快照版本戳改以行 `updated_at`/版本列为准，跨实例读靠短 TTL 或 NOTIFY 失效。
-  - 衔接：玩家背包扣减仍走 `commitDebitAsync` 在**同一条事务**内提交（与 §G 玩家聚合的 `PostgresEconomyRepository` 同事务边界一致），保证"扣材料"与"记贡献"同生同灭。
+- `PostgresNodeBuildingRepository` 按建筑行串行化修改；贡献写入、实际材料扣减与回执同事务，不再用进程缓存覆盖整行。
+- 尚未证实多副本读投影实时一致；扩展多主服时单独评估缓存刷新。
 
 ### G. 玩家请求跨实例路由——多主服的"主缺口"
 
@@ -139,11 +136,9 @@
   - 推荐：**先边缘粘滞**（P0 部署层就能备），实例目录为踢人/市场路由必需；转发留作后路。
   - 衔接：斗法撮合随路由一并解决——寻求者仍按"已加载玩家"撮合，但候选集改从 `platform.online_presence`（§B）取跨实例在线寻求者，剧本挂载仍回各自持有实例执行；撮合本质是低频玩法操作，允许先限"同实例撮合"再放开。
 
-### H. 任务生产者全局 leader——其实没那么紧急
+### H. 任务生产者：扫描 leader 已落地
 
-- **现状**：`ColdCatchUpWorker` 每分钟扫 `player_projection JOIN player_state_heads`，筛掉在线（`player_runtime_leases` 有效租约）与已有未完结任务的玩家，做全量加载后 `EnqueueAsync` 入队。入队有确定性 `job_id` + 部分唯一索引 `ux_compute_jobs_open` 兜底（`PostgresComputeJobRepository.cs:88-163`）。
-- **失效模式**：两个实例各扫一遍、各做一遍全量 LoadAsync——**重复劳动但不产生重复任务**（同 job_id 必有一方 `SkippedExisting`/`Refreshed`）。扫描 SQL 的 `NOT EXISTS player_runtime_leases` 条件已经是共享 PG 口径，天然不会把别实例在线玩家当离线玩家派出去。
-- **演进路径**：P0 可选——`pg_try_advisory_lock` 抢一把"冷扫描"咨询锁，拿不到就本轮跳过，一行改动消掉重复扫描；不做也能正确运行，只是浪费 IO。其他后台 worker 的多副本口径已经安全（`section_flush_queue`/`integration_outbox` 都是 SKIP LOCKED；retention/receipt 清理是幂等 DELETE）。
+- `ColdCatchUpWorker` 仅在持有 PG 咨询锁时扫描；失去连接后锁释放，活副本可接管。扫描仍排除持有有效租约的玩家，任务幂等与 open-job 唯一索引保留作为写入约束。
 
 ### I. 市场跨分片结算（`MarketRuntime.cs`、`PostgresMarketRepository.cs`）
 
@@ -235,7 +230,7 @@
 
 | 阶段 | 目标 | 内容 |
 | --- | --- | --- |
-| **P0 单主服多副本就绪** | 滚动重启/主备切换不丢东西、可灰度 | ✅ drain 帧与双侧排空（本次）；NodeBuildingRegistry 写下沉 PG 事务（修贡献丢更新）；ColdCatchUpWorker 可选咨询锁；部署侧多副本 compose + Caddy 多 upstream + `lb_policy cookie` 粘滞预案 |
+| **P0 单主服多副本就绪** | 滚动重启/主备切换不丢东西、可灰度 | ✅ drain 帧与双侧排空（本次）；✅ 建筑 PG 锁行贡献与冷扫描咨询锁；待部署侧多副本 compose + Caddy 多 upstream + `lb_policy cookie` 粘滞预案 |
 | **P1 真多主服前置** | 多实例功能正确 | `platform.server_instances` + `platform.compute_nodes` 心跳表；玩家路由（粘滞优先、实例目录必备）；互踢/存在感/聊天扇出/设备配额跨实例化；市场动态分片认领 + 请求路由 + 跨分片结算领取；斗法跨实例撮合；集群容量视图；判死口径接集群视图 |
 | **P2 多主服运营形态** | 体验与容量 | 节点多上游列表；限流跨实例口径；会话缓存 NOTIFY 失效；drain 转移 hint；集群容量视图进运维面板 |
 

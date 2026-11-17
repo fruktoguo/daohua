@@ -35,6 +35,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_sta
     social.party_sessions, social.party_invitations, social.party_seekers,
     social.player_invitations, social.chat_messages,
     social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers TO daohua_worker;
+-- 独立 worker 需要身份行锁而不是身份 DML；审计只供 outbox 首次插入与 event_id 幂等。
+ALTER FUNCTION game.lock_player_for_section_flush(uuid) OWNER TO daohua_bootstrap;
+REVOKE ALL ON FUNCTION game.lock_player_for_section_flush(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION game.lock_player_for_section_flush(uuid) TO daohua_api, daohua_worker;
+GRANT INSERT (event_id, actor_id, event_type, target_id, payload, occurred_at),
+    SELECT (event_id) ON identity.audit_events TO daohua_worker;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity, game, economy, market, platform, social TO daohua_api, daohua_worker;
 -- metrics 只读取 PostgreSQL 统计，不获得账号、密钥、玩家载荷或账本的 SELECT。
 GRANT pg_read_all_stats TO daohua_metrics;

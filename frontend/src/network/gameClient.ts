@@ -1,3 +1,4 @@
+import { normalizePlayerAvatarId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { useMailStore } from '../game/mailStore'
 import { useCheckinStore } from '../game/checkinStore'
@@ -40,7 +41,8 @@ import {
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
 import { fetchMarketStats, getCatalogFingerprint } from './apiClient'
 import { getApiUrl } from './apiUrl'
-import { getSessionAccount } from './sessionState'
+import { getSessionAccount, getSessionGeneration } from './sessionState'
+import { SnapshotUpgradeRequiredError } from './snapshotSchemaGate'
 import { useUiStore } from '../uiStore'
 import type { AwakenedTraitResult } from '../game/types'
 import { collectAccountSignals } from './accountSignals'
@@ -89,6 +91,15 @@ export class GameClient {
   private disposed = false
   /** 会话世代：账号切换、连接重建和 dispose 后，旧 socket 的异步回调一律失效。 */
   private sessionGeneration = 0
+  private accountGeneration = getSessionGeneration()
+  private firstSnapshotTimer: number | undefined
+  private hasConnectionBaseline = false
+  private baselineSince: number | null = null
+  private snapshotRecoveryPending = false
+  private snapshotRecoveryAttempts = 0
+  private snapshotTerminal: 'common.net.snapshotUnavailable' | 'common.net.snapshotUpdateRequired' | null = null
+  private static readonly FIRST_SNAPSHOT_TIMEOUT_MS = 20_000
+  private static readonly MAX_SNAPSHOT_REBUILDS = 3
   private reconnectDelay = 500
   private lastServerSequence = 0
   private outboundSequence = 0
@@ -118,8 +129,6 @@ export class GameClient {
   private lastOutageReasonKey: 'common.net.serverUpdating' | 'common.net.serverUnavailable' | null = null
   /** 坊市行情统计轮询计时器：仅在会话在线期间运行，连接断开即停。 */
   private marketStatsTimer: number | undefined
-  /** 行情统计在途请求标记：上一轮未返回时跳过一次 tick，避免慢网叠加并发请求。 */
-  private marketStatsInFlight = false
   /**
    * 入站帧串行链：delta 的 section checksum 解码是真异步（crypto.subtle），
    * 并发处理会让多帧共享同一旧基线互相覆盖应用结果；串行后应用顺序恒等于通道到达序。
@@ -208,18 +217,20 @@ export class GameClient {
    * 小表投影写入 gameStore.marketStats，供物品悬浮「市场价格」副卡零请求渲染；
    * 页面转后台时跳过 tick（与坊市页轮询同一节能口径），回前台时立即补一轮。
    */
-  private startMarketStatsSync(): void {
+  private startMarketStatsSync(socket: WebSocket, generation: number, playerId: string): void {
     this.stopMarketStatsSync()
+    let inFlight = false
+    const isCurrent = () => this.isCurrentSession(socket, generation, playerId)
     const tick = async () => {
-      if (this.disposed || this.marketStatsInFlight || document.visibilityState !== 'visible') return
-      this.marketStatsInFlight = true
+      if (!isCurrent() || inFlight || document.visibilityState !== 'visible') return
+      inFlight = true
       try {
         const stats = await fetchMarketStats()
-        if (!this.disposed) useGameStore.getState().setMarketStats(stats)
+        if (isCurrent()) useGameStore.getState().setMarketStats(stats)
       } catch {
         // 行情为只读背景数据：单轮失败静默等待下一周期，不产生用户态噪音。
       } finally {
-        this.marketStatsInFlight = false
+        inFlight = false
       }
     }
     const onVisible = () => {
@@ -254,9 +265,12 @@ export class GameClient {
       return
     }
     useGameStore.getState().setConnection('reconnecting')
+    const generation = this.sessionGeneration
+    const accountGeneration = this.accountGeneration
     const delay = this.reconnectDelay
     this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
     this.reconnectTimer = window.setTimeout(() => {
+      if (!this.isCurrentDisconnectedGeneration(generation, accountGeneration)) return
       this.reconnectTimer = undefined
       this.open()
     }, delay)
@@ -267,13 +281,24 @@ export class GameClient {
    * 与服务不可达不可区分；这里经 HTTP 会话端点甄别——401 按认证失败终态处置（停连+过期提示），
    * 避免 cookie 过期/会话被吊销后陷入无上限的静默重连；其余情况继续既有退避重连。
    */
+  private isCurrentDisconnectedGeneration(generation: number, accountGeneration: number): boolean {
+    return !this.disposed && this.socket === null && generation === this.sessionGeneration
+      && accountGeneration === this.accountGeneration && accountGeneration === getSessionGeneration()
+  }
+
   private async probeSessionValidity(): Promise<void> {
+    const generation = this.sessionGeneration
+    const accountGeneration = this.accountGeneration
+    const isCurrent = () => this.isCurrentDisconnectedGeneration(generation, accountGeneration)
+    if (!isCurrent()) return
     try {
       const response = await fetch(getApiUrl('/api/v1/auth/session'), {
-        credentials: 'same-origin',
+        credentials: 'include',
+        cache: 'no-store',
         signal: AbortSignal.timeout(8_000),
       })
-      if (response.status === 401 && !this.disposed) {
+      if (!isCurrent()) return
+      if (response.status === 401) {
         this.consecutiveConnectFailures = 0
         this.lastOutageReasonKey = null
         useGameStore.getState().setConnection('offline')
@@ -289,6 +314,7 @@ export class GameClient {
         } catch {
           // 非 JSON 网关错误按服务暂不可用处理。
         }
+        if (!isCurrent()) return
         const nextReason = code === 'SERVER_UPDATING' ? 'common.net.serverUpdating' : 'common.net.serverUnavailable'
         const noticeKey = code === 'SERVER_UPDATING' ? 'common.net.serverUpdatingNotice' : 'common.net.serverUnavailableNotice'
         if (this.lastOutageReasonKey !== nextReason) {
@@ -301,7 +327,7 @@ export class GameClient {
     } catch {
       // 探测请求自身失败按「服务不可达」处理，继续退避重连。
     }
-    this.scheduleReconnect()
+    if (isCurrent()) this.scheduleReconnect()
   }
 
   /** 建立/恢复游戏连接：重置退避与序列号后打开 socket；被互斥阻断或未登录时静默置为 offline */
@@ -317,20 +343,30 @@ export class GameClient {
       useGameStore.getState().setConnection('offline')
       return
     }
-    const accountChanged = accountInfo.playerId !== this.playerId
+    const accountGeneration = getSessionGeneration()
+    const accountChanged = accountGeneration !== this.accountGeneration || accountInfo.playerId !== this.playerId
       || accountInfo.account !== this.account
       || (accountInfo.sequenceId ?? 0) !== this.sequenceId
     if (accountChanged) {
       this.sessionGeneration += 1
       const staleSocket = this.socket
       this.socket = null
+      this.clearFirstSnapshotTimer()
       this.stopHeartbeat()
+      this.clearPendingRequests()
+      this.awaitingReconnectRequests.clear()
+      useSocialStore.getState().reset()
       if (staleSocket && (staleSocket.readyState === WebSocket.OPEN || staleSocket.readyState === WebSocket.CONNECTING)) {
         staleSocket.close(1000, '账号会话已切换')
       }
     }
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     this.sessionGeneration += 1
+    if (!accountChanged && this.snapshotTerminal === 'common.net.snapshotUpdateRequired') return
+    this.accountGeneration = accountGeneration
+    this.snapshotTerminal = null
+    this.snapshotRecoveryAttempts = 0
+    if (accountChanged) this.lastInspectTarget = null
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
     this.sequenceId = accountInfo.sequenceId ?? 0
@@ -351,7 +387,6 @@ export class GameClient {
 
   /** 登出：断开连接并清空本地账号态 */
   logout(): void {
-    this.dispose()
     clearStoredAccount()
   }
 
@@ -359,6 +394,7 @@ export class GameClient {
   dispose(): void {
     this.sessionGeneration += 1
     this.disposed = true
+    this.clearFirstSnapshotTimer()
     this.clearReconnectTimer()
     this.stopHeartbeat()
     this.stopMarketStatsSync()
@@ -375,12 +411,11 @@ export class GameClient {
 
   /** 触发快照重建：断开当前连接（走统一重连路径换取全量 Snapshot），未连接时直接重开 */
   requestSnapshotOrResync(): void {
-    if (this.disposed) return
+    if (this.disposed || this.snapshotTerminal || this.snapshotRecoveryPending) return
     const socket = this.socket
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    if (!socket) this.open()
+    else if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.close(1000, '协议序列断层，重新建立快照')
-    } else {
-      this.open()
     }
   }
 
@@ -434,7 +469,7 @@ export class GameClient {
    */
   sendChat(channel: ChatChannel, body: string, targetPlayerId?: string | null): boolean {
     const socket = this.ensureOpenSocket()
-    if (!socket) return false
+    if (!socket || !this.isCurrentSession(socket, this.sessionGeneration, this.playerId)) return false
     const requestId = createRequestId()
     const payload: ChatSendDto = { requestId, channel, body, ...(targetPlayerId ? { targetPlayerId } : {}) }
     return this.trySend(socket, WireMessageType.ChatSend, requestId, payload)
@@ -544,8 +579,66 @@ export class GameClient {
     return payload.requestId
   }
 
+  private clearFirstSnapshotTimer(): void {
+    if (this.firstSnapshotTimer !== undefined) window.clearTimeout(this.firstSnapshotTimer)
+    this.firstSnapshotTimer = undefined
+  }
+
+  private acceptFullSnapshot(snapshot: Awaited<ReturnType<typeof decodePlayerSnapshotDto>>): void {
+    const store = useGameStore.getState()
+    if (snapshot.playerId !== this.playerId) throw new Error('快照角色不匹配。')
+    if (store.hasReceivedSnapshot && snapshot.version < store.version) {
+      if (!this.hasConnectionBaseline) throw new Error('重连快照早于当前进度。')
+      return
+    }
+    store.applySnapshot(snapshot)
+    applySnapshotAvatar(snapshot)
+    if (!this.hasConnectionBaseline) this.baselineSince = Date.now()
+    this.hasConnectionBaseline = true
+    this.clearFirstSnapshotTimer()
+    this.reconnectDelay = 500
+    this.reconnectAttempts = 0
+    this.awaitingReconnectRequests.clear()
+    if (this.helloAckReceived) store.setConnection('online')
+  }
+
+  private acceptSnapshotPatch(patch: Awaited<ReturnType<typeof decodePlayerSnapshotDeltaDto>>, allowSameVersion: boolean): void {
+    const store = useGameStore.getState()
+    if (patch.version < store.version || (patch.version === store.version && !allowSameVersion)) return
+    store.applyPatch(patch, { allowSameVersion })
+    applySnapshotAvatar(patch)
+  }
+
+  private failSnapshot(error: unknown, socket: WebSocket): void {
+    if (this.snapshotRecoveryPending) return
+    this.snapshotRecoveryPending = true
+    this.hasConnectionBaseline = false
+    this.clearFirstSnapshotTimer()
+    if (error instanceof SnapshotUpgradeRequiredError) {
+      this.snapshotTerminal = 'common.net.snapshotUpdateRequired'
+    } else {
+      // 健康运行一段时间后再恢复预算，避免每次成功收到全量、下一帧又坏的重连循环。
+      if (this.baselineSince !== null && Date.now() - this.baselineSince >= PARSE_FAILURE_WINDOW_MS) {
+        this.snapshotRecoveryAttempts = 0
+      }
+      if (++this.snapshotRecoveryAttempts > GameClient.MAX_SNAPSHOT_REBUILDS) {
+        this.snapshotTerminal = 'common.net.snapshotUnavailable'
+      }
+    }
+    const store = useGameStore.getState()
+    if (this.snapshotTerminal) {
+      store.setDisconnectReason(this.snapshotTerminal)
+      store.setConnection('offline')
+      store.setNotice(getT()(this.snapshotTerminal))
+    } else {
+      store.setConnection('reconnecting')
+    }
+    socket.close(1000, '重新建立权威快照')
+  }
+
   private isCurrentSession(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): boolean {
     return !this.disposed
+      && this.accountGeneration === getSessionGeneration()
       && this.socket === sourceSocket
       && this.sessionGeneration === sourceGeneration
       && this.playerId === sourcePlayerId
@@ -574,11 +667,15 @@ export class GameClient {
   private open(): void {
     this.clearReconnectTimer()
     const session = getSessionAccount()
-    if (this.disposed || !session || session.playerId !== this.playerId || session.account !== this.account || (session.sequenceId ?? 0) !== this.sequenceId) return
+    if (this.disposed || this.snapshotTerminal || this.accountGeneration !== getSessionGeneration() || !session || session.playerId !== this.playerId || session.account !== this.account || (session.sequenceId ?? 0) !== this.sequenceId) return
     this.sessionGeneration += 1
     this.stopHeartbeat()
     this.stopMarketStatsSync()
     this.helloAckReceived = false
+    this.hasConnectionBaseline = false
+    this.baselineSince = null
+    this.snapshotRecoveryPending = false
+    this.clearFirstSnapshotTimer()
     this.clearPendingPings()
     this.messageChain = Promise.resolve()
     this.outboundSequence = 0
@@ -598,6 +695,11 @@ export class GameClient {
     this.socket = socket
     const sourceGeneration = this.sessionGeneration
     const sourcePlayerId = this.playerId
+    this.firstSnapshotTimer = window.setTimeout(() => {
+      if (this.isCurrentSession(socket, sourceGeneration, sourcePlayerId) && !this.hasConnectionBaseline) {
+        this.failSnapshot(new Error('首个快照等待超时。'), socket)
+      }
+    }, GameClient.FIRST_SNAPSHOT_TIMEOUT_MS)
 
     socket.addEventListener('open', () => {
       if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) {
@@ -624,13 +726,18 @@ export class GameClient {
     socket.addEventListener('close', event => {
       // 旧连接关闭不能停止新连接心跳，也不能改变新会话状态。
       if (!this.isCurrentSession(socket, sourceGeneration, sourcePlayerId)) return
+      this.clearFirstSnapshotTimer()
       this.stopHeartbeat()
       this.stopMarketStatsSync()
       this.socket = null
       this.markPendingRequestsAwaitingReconnect()
       // 连接中断时在途名片/队友战报/模拟器导入请求必然失效：统一清理，避免加载态永久悬挂。
       useSocialStore.getState().cancelPendingCardRequests()
-      if (this.disposed) return
+      if (this.disposed || this.snapshotTerminal) return
+      if (this.snapshotRecoveryPending) {
+        this.scheduleReconnect()
+        return
+      }
       // 配表指纹不匹配：挂起自动重连，等待 App 重新拉取配表成功后显式 connect() 放行。
       if (this.catalogRefreshPending) {
         useGameStore.getState().setConnection('reconnecting')
@@ -715,18 +822,22 @@ export class GameClient {
   }
 
   private async handleMessage(data: unknown, sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): Promise<void> {
-    if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+    if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
     let bytes: Uint8Array
     if (data instanceof ArrayBuffer) bytes = new Uint8Array(data)
     else if (data instanceof Blob) bytes = new Uint8Array(await data.arrayBuffer())
     else throw new Error('协议帧载荷类型无效。')
-    if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+    if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
 
+    let authoritative = false
     try {
       const envelope = decodeEnvelope(bytes)
-      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+      if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
       if (envelope.sequence <= this.lastServerSequence) return
       this.lastServerSequence = envelope.sequence
+      authoritative = envelope.messageType === WireMessageType.Snapshot
+        || envelope.messageType === WireMessageType.SnapshotDelta
+        || envelope.messageType === WireMessageType.CommandResult
       let appliedBusinessPayload = false
 
       switch (envelope.messageType) {
@@ -755,15 +866,12 @@ export class GameClient {
             )
           }
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
-          useGameStore.getState().setConnection('online')
           this.helloAckReceived = true
+          if (this.hasConnectionBaseline) useGameStore.getState().setConnection('online')
           this.consecutiveConnectFailures = 0
           this.lastOutageReasonKey = null
-          // 重连成功即清账：悬挂请求的超时提示已发出、其状态由随后的全量快照权威覆盖；
-          // 集合只进不出会随断线次数缓慢泄漏。
-          this.awaitingReconnectRequests.clear()
           this.sendPing(sourceSocket, sourceGeneration, sourcePlayerId)
-          this.startMarketStatsSync()
+          this.startMarketStatsSync(sourceSocket, sourceGeneration, sourcePlayerId)
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
           this.lastInspectTarget = null
@@ -774,30 +882,29 @@ export class GameClient {
           const dto = decodeJsonPayload<PlayerSnapshotDto>(envelope)
           // 传入信封原始字节：section checksum 校验直接对线上 data 成员字节区间复算。
           const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account, this.sequenceId)
-          if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
-          useGameStore.getState().applySnapshot(snapshot)
-          this.reconnectDelay = 500
-          this.reconnectAttempts = 0
+          if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+          this.acceptFullSnapshot(snapshot)
           appliedBusinessPayload = true
           break
         }
         case WireMessageType.SnapshotDelta: {
           const dto = decodeJsonPayload<PlayerSnapshotDeltaDto>(envelope)
-          // 首帧全量快照未到达前（store 归属尚未建立），任何增量都无处合并：
-          // 正常握手服务端保证 Snapshot 先行；此分支兜底极端竞态（旧会话残留帧等），
-          // 静默丢弃等待服务端重连全量，不再抛「归属不一致」红字打断登录流程。
-          if (!useGameStore.getState().hasReceivedSnapshot) break
+          if (!this.hasConnectionBaseline) break
           const current = useGameStore.getState().toSnapshotView()
           const patch = await decodePlayerSnapshotDeltaDto(dto, current, envelope.payload)
-          if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+          if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
           // 邮件领奖等纯资产补算会发零 StateVersion 增量包，需允许在同版本下合并资产变动
-          useGameStore.getState().applyPatch(patch, { allowSameVersion: Boolean(dto.changedAssets?.length) })
+          this.acceptSnapshotPatch(patch, Boolean(dto.changedAssets?.length))
           appliedBusinessPayload = true
           break
         }
         case WireMessageType.CommandResult: {
           const result = decodeJsonPayload<CommandResultDto>(envelope)
-          if (result.requestId !== envelope.requestId) return
+          authoritative = result.snapshot != null
+          if (result.requestId !== envelope.requestId) {
+            if (authoritative) throw new Error('命令回执与信封不匹配。')
+            return
+          }
           const timer = this.pendingRequests.get(result.requestId)
           if (timer !== undefined) {
             window.clearTimeout(timer)
@@ -808,32 +915,34 @@ export class GameClient {
           // 超 15s 晚到的回执仍要合入快照：pending 计时器只负责超时提示，资产差额仅由回执
           // 携带（推送基线已前移后不再重发），整帧丢弃会造成永久缺失；过旧/重复内容
           // 由 applyPatch/applySnapshot 的版本门禁幂等丢弃，requestId 必须与信封一致。
-          if (result.snapshotForm === CommandResultSnapshotForm.Delta && isPlayerSnapshotDeltaDto(result.snapshot)) {
+          if (authoritative && result.snapshotForm === CommandResultSnapshotForm.Delta) {
             // 全量快照未到达前的命令回执增量无处合并（同 SnapshotDelta 分支兜底口径）；
             // 仅跳过快照合并，回执的 message/notice 照常展示，状态差额由随后握手全量快照覆盖。
-            if (useGameStore.getState().hasReceivedSnapshot) {
+            if (!isPlayerSnapshotDeltaDto(result.snapshot)) throw new Error('命令回执增量快照无效。')
+            if (this.hasConnectionBaseline) {
               const current = useGameStore.getState().toSnapshotView()
               const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
-              if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+              if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
               // 钱包类命令（market.*/item.*）不推状态版本：同版本回执仍携带资产差额必须合入，仅丢弃严格更旧的回执。
-              useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
-              appliedBusinessPayload = true
+              this.acceptSnapshotPatch(patch, true)
             }
-          } else if (result.snapshotForm === CommandResultSnapshotForm.Snapshot && isPlayerSnapshotDto(result.snapshot)) {
+          } else if (authoritative && result.snapshotForm === CommandResultSnapshotForm.Snapshot) {
+            if (!isPlayerSnapshotDto(result.snapshot)) throw new Error('命令回执全量快照无效。')
             // 内嵌全量快照的 sections 位于信封 JSON 的 snapshot 成员内，按路径定位 data 字节区间。
             const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, this.sequenceId, ['snapshot', 'sections'])
-            if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
-            useGameStore.getState().applySnapshot(snapshot)
-            appliedBusinessPayload = true
+            if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+            this.acceptFullSnapshot(snapshot)
+          } else if (authoritative) {
+            throw new Error('命令回执快照形态无效。')
           }
-           if (result.message) useGameStore.getState().setNotice(result.message)
+          if (result.message) useGameStore.getState().setNotice(result.message)
           if (result.succeeded && result.data && typeof result.data === 'object') {
             const custom = result.data as Record<string, unknown>
             if (Array.isArray(custom.awakenedTraits) && custom.awakenedTraits.length > 0) {
               useUiStore.getState().openAwakenResult(custom.awakenedTraits as AwakenedTraitResult[])
             }
           }
-           appliedBusinessPayload = true
+          appliedBusinessPayload = true
           break
         }
         case WireMessageType.ActionResult: {
@@ -847,6 +956,7 @@ export class GameClient {
           const error = decodeJsonPayload<ErrorDto>(envelope)
           if (!error || typeof error.code !== 'string' || typeof error.message !== 'string') throw new Error('协议错误载荷无效。')
           if (error.requestId && error.requestId !== envelope.requestId) return
+          useSocialStore.getState().failCardRequest(error.requestId ?? envelope.requestId, error.code)
           if (error.requestId) {
             const timer = this.pendingRequests.get(error.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
@@ -915,7 +1025,7 @@ export class GameClient {
         }
         case WireMessageType.PlayerCard: {
           const card = decodeJsonPayload<PlayerCardDto>(envelope)
-          if (!card) throw new Error('角色信息卡载荷无效。')
+          if (!card || card.requestId !== envelope.requestId) break
           useSocialStore.getState().applyPlayerCard(card)
           appliedBusinessPayload = true
           break
@@ -974,9 +1084,9 @@ export class GameClient {
       }
       if (appliedBusinessPayload) this.resetParseFailureState()
     } catch (error) {
-      // 解析失败不主动断开：丢弃该帧，仅按阈值渐进升级（提示 -> resync -> 断开重连），
-      // 避免坏帧与"close -> 重连 -> 再失败"形成无限循环。
-      if (this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) this.handleParseFailure(error)
+      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
+      if (authoritative) this.failSnapshot(error, sourceSocket)
+      else this.handleParseFailure(error)
     }
   }
 
@@ -1016,6 +1126,13 @@ export class GameClient {
       this.requestSnapshotOrResync()
     }
   }
+}
+
+/** 只有通过连接与版本检查的权威快照才可更新头像缓存。 */
+function applySnapshotAvatar(snapshot: { avatarId?: string; unlockedAvatars?: string[] }): void {
+  const avatars = useAvatarStore.getState()
+  if (snapshot.unlockedAvatars) avatars.setUnlockedAvatars(snapshot.unlockedAvatars)
+  if (snapshot.avatarId) avatars.setAvatarId(normalizePlayerAvatarId(snapshot.avatarId))
 }
 
 /** 全局游戏网络客户端单例（UI 与账号 Store 统一经它收发指令与状态） */

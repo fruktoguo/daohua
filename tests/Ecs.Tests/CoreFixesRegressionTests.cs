@@ -406,6 +406,34 @@ public sealed class CoreFixesRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData("item.ningxue-grass", false)]
+    [InlineData("equipment.qingfeng-sword", true)]
+    public async Task SecretArtConvert_BlocksNonFragmentsWithoutConsumingAssetsOrGrantingExperience(string targetId, bool equipped)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "残卷准入", SeedTime, catalog.Fingerprint);
+        if (equipped)
+            player.ReplaceCombatSlots([], [new PlayerEquipmentSlot(targetId, 0)]);
+        var asset = new AssetKey(new ItemId(targetId));
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        var id = runtime.CreatePlayer(player.ExportState(), [new AssetBalance(player.PlayerId, asset, 1, 0)]);
+        runtime.EnqueueActionIntent(id, new ActionIntent(new ActionId(SecretArtRules.ConvertActionId), 1, TargetItemId: targetId));
+        var before = runtime.ExportSnapshot(id).State;
+
+        await runtime.RunPlayerOnceAsync(id, SeedTime.AddSeconds(60));
+
+        var blocked = Assert.Single(runtime.DrainSimulationEvents(id), e => e.Code == "action.blocked");
+        Assert.Contains("功法残卷", blocked.Message);
+        var after = runtime.ExportSnapshot(id).State;
+        Assert.Equal(ActionQueueStatus.Blocked, Assert.Single(after.Actions).Status);
+        Assert.Equal(0, after.Actions[0].CompletedRepeats);
+        Assert.Equal(1, runtime.GetAssetBalances(id)[asset]);
+        Assert.Empty(runtime.DrainSimulationResult(id)!.AssetDeltas);
+        Assert.Equal(before.Progression.Foundation, after.Progression.Foundation);
+        Assert.Equal(before.Loadout.TechniqueExperiences, after.Loadout.TechniqueExperiences);
+    }
+
     /// <summary>组队阵盘：teamWide == false 仅注入施放者自身，后序队友同阵盘空槽不得抹除前序队友已激活的全队阵盘。</summary>
     [Fact]
     public void ActionParticipationSession_FormationTeamWideAndEmptySlotIsolation()

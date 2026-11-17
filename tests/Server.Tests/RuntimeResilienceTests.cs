@@ -183,6 +183,47 @@ public sealed class RuntimeResilienceTests
         Assert.Null(adapter.TryGetLoaded(playerId));
         Assert.DoesNotContain(ecs.ExportSnapshots(), s => s.PlayerId == playerId);
         Assert.Null(ownership.CurrentOwnerPlayerId);
+        Assert.Equal(1, economy.CommitCalls); // 核实只读，不是第二次提交。
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EcsPlayerRuntimeAdapter_ConfirmedCheckpoint_WalletReadFailureNeverRestoresBufferedAssets(bool cancelRead)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.NewGuid();
+        var clock = new MutableClock(Epoch);
+        var sections = new InMemorySections();
+        var agg = PlayerAggregate.Create(new(playerId), new(playerId), "检查点道友", Epoch, catalog.Fingerprint);
+        agg.SkipTutorial();
+        agg.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Epoch, catalog.Actions);
+        sections.Seed(BundleFromState(agg.ExportState()));
+        var storage = new CheckpointStorage(cancelRead);
+        using var ecs = new EcsGameRuntime(catalog, Epoch);
+        await using var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, storage, storage, catalog,
+            NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, serverOptions: DefaultOptions());
+        await adapter.LoadAsync(playerId);
+        clock.Advance(TimeSpan.FromMinutes(2));
+        await adapter.AdvanceAllAsync(clock.UtcNow);
+        Assert.Empty(storage.Commits); // 有采集收益，但未到检查点，仍在缓冲。
+        var checkpointAt = Epoch.AddMinutes(10);
+        clock.UtcNow = checkpointAt;
+        if (cancelRead)
+            await Assert.ThrowsAsync<OperationCanceledException>(() => adapter.AdvanceAllAsync(checkpointAt).AsTask());
+        else
+            await Assert.ThrowsAsync<IOException>(() => adapter.AdvanceAllAsync(checkpointAt).AsTask());
+        var checkpoint = Assert.Single(storage.Commits);
+        Assert.NotEmpty(checkpoint.Deltas);
+        Assert.Equal(checkpointAt, adapter.TryGetLoaded(playerId)!.LastSimulatedAt);
+        Assert.Equal(checkpointAt, Assert.Single(ecs.ExportSnapshots()).State.LastSimulatedAt);
+
+        // 相同时钟重试并强制刷盘只允许重读余额；若内层或整批回滚恢复历史缓冲，将在此额外入账。
+        await adapter.AdvanceAllAsync(checkpointAt);
+        await adapter.FlushAsync(playerId, force: true);
+        Assert.Single(storage.Commits);
+        Assert.Equal(checkpointAt, adapter.TryGetLoaded(playerId)!.LastSimulatedAt);
+        Assert.True(storage.ReadRecoveredBalance);
     }
 
     [Fact]
@@ -420,15 +461,56 @@ public sealed class RuntimeResilienceTests
             => ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, ReadOnlyMemory<byte>.Empty));
     }
 
+    private sealed class CheckpointStorage(bool cancelRead) : IAssetBalanceRepository, IEconomyTransactionStore
+    {
+        private readonly Dictionary<(string, string), AssetBalanceRecord> balances = [];
+        private bool failRead;
+        public bool ReadRecoveredBalance;
+        public List<EconomyTransactionRequest> Commits { get; } = [];
+
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default)
+        {
+            if (failRead)
+            {
+                failRead = false;
+                if (cancelRead) throw new OperationCanceledException("提交后钱包读取被取消");
+                throw new IOException("提交后钱包读取失败");
+            }
+            ReadRecoveredBalance = balances.Count > 0;
+            return ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(balances.Values.ToArray());
+        }
+
+        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            Commits.Add(request);
+            foreach (var delta in request.Deltas)
+            {
+                var key = (delta.AssetId, delta.Variant);
+                var prior = balances.GetValueOrDefault(key);
+                balances[key] = new(delta.PlayerId, delta.AssetId, delta.Variant,
+                    (prior?.Quantity ?? 0) + delta.Delta, (prior?.Version ?? 0) + 1);
+            }
+            failRead = true;
+            // 存储已成功、结果走幂等确认口径，不带余额。
+            return ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey,
+                true, true, DateTimeOffset.UtcNow, ReadOnlyMemory<byte>.Empty));
+        }
+    }
+
     private sealed class ThrowingUnknownEconomy : IEconomyTransactionStore
     {
         public bool ShouldResolveCommit;
+        public int CommitCalls;
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
-            if (!ShouldResolveCommit)
-                throw new EconomyCommitOutcomeUnknownException(request.TransactionId, new IOException("模拟提交回包超时"));
-            return ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, true, DateTimeOffset.UtcNow, ReadOnlyMemory<byte>.Empty));
+            CommitCalls++;
+            throw new EconomyCommitOutcomeUnknownException(request.TransactionId, new IOException("模拟提交回包超时"));
         }
+
+        public ValueTask<EconomyTransactionResult?> FindCommittedAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<EconomyTransactionResult?>(ShouldResolveCommit
+                ? new(request.TransactionId, request.IdempotencyKey, true, true, DateTimeOffset.UtcNow, request.ResultPayload)
+                : null);
     }
 
     private sealed class TrackingOwnershipStore : IPlayerOwnershipStore

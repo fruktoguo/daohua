@@ -61,7 +61,7 @@ public interface IPlayerActionContext
     /// <summary>队首高优插队（自动移动/手动赶路/行动参与开打共用）：同类去重、挂起运行中队首、新行动立即 Running；模拟内传 incrementVersion: false。</summary>
     IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog catalog,
         TravelActionState? travel = null, bool incrementVersion = true,
-        Domain.Player.ActionParticipationBinding? participation = null);
+        Domain.Player.ActionParticipationBinding? participation = null, Guid? actionInstanceId = null);
 }
 
 /// <summary>资源自然窗口需要的直接分段引用；不要求任何聚合或序列化文档。</summary>

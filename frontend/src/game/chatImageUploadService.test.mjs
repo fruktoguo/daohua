@@ -5,8 +5,10 @@ import {
   computeBlobSha256,
   detectRasterImageMime,
   inferImageExtension,
+  fetchImageBlobForCaching,
   uploadChatImage,
 } from './chatImageUploadService.ts'
+import { setSessionAccount } from '../network/sessionState.ts'
 
 test('chatImageUploadService: inferImageExtension 文件名与 MIME 识别', () => {
   const blobPng = new Blob(['123'], { type: 'image/png' })
@@ -97,4 +99,49 @@ test('chatImageUploadService: 动态探测 storage_id、失效刷新重试与重
     globalThis.fetch = originalFetch
     _resetImageUploadStateForTest()
   }
+})
+
+test('直连无 Content-Length 的超限图像立即取消读取且不重走中继', async t => {
+  let reads = 0
+  let cancelled = false
+  const stream = new ReadableStream({
+    pull(controller) { reads++; controller.enqueue(new Uint8Array(6 * 1024 * 1024)) },
+    cancel() { cancelled = true },
+  }, { highWaterMark: 0 })
+  const fetch = t.mock.method(globalThis, 'fetch', async () => new Response(stream))
+  assert.equal(await fetchImageBlobForCaching('https://fixture.invalid/large.png'), null)
+  assert.equal(reads, 2)
+  assert.equal(cancelled, true)
+  assert.equal(fetch.mock.callCount(), 1)
+})
+
+test('会话切换作废已排队上传，以及发出后迟到且需要重传的结果', async t => {
+  _resetImageUploadStateForTest()
+  t.after(() => { _resetImageUploadStateForTest(); setSessionAccount(null) })
+  let postStarted, resolvePost
+  const started = new Promise(resolve => { postStarted = resolve })
+  const response = new Promise(resolve => { resolvePost = resolve })
+  let uploads = 0, strategyLoads = 0
+  t.mock.method(globalThis, 'fetch', async input => {
+    const url = String(input)
+    if (url.endsWith('/group')) {
+      strategyLoads++
+      return Response.json({ status: 'success', data: { storages: [{ id: 4 }] } })
+    }
+    if (url.endsWith('/upload')) {
+      uploads++
+      postStarted()
+      return response
+    }
+    assert.fail('未预期的请求')
+  })
+  const png = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: 'image/png' })
+  const first = assert.rejects(uploadChatImage(png), { name: 'AbortError' })
+  const queued = assert.rejects(uploadChatImage(png), { name: 'AbortError' })
+  await started
+  setSessionAccount(null)
+  resolvePost(Response.json({ status: 'error', message: '不存在的储存驱动' }))
+  await Promise.all([first, queued])
+  assert.equal(uploads, 1)
+  assert.equal(strategyLoads, 1, '旧任务不再刷新图床策略并重传')
 })

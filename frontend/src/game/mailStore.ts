@@ -1,3 +1,4 @@
+import { getSessionGeneration } from '../network/sessionState'
 import { create } from 'zustand'
 import { getT } from '../i18n'
 import {
@@ -150,12 +151,14 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   refreshList: async (options) => {
+    const generation = getSessionGeneration()
     const seq = ++listRequestSeq
     if (!options?.silent) {
       set({ loadingList: true, error: null })
     }
     try {
       const response = await fetchMailList()
+      if (generation !== getSessionGeneration()) return
       if (seq !== listRequestSeq) return
       const nextMails = response.mails
       set(state => {
@@ -179,6 +182,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
         }
       })
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       if (seq !== listRequestSeq) return
       const message = extractErrorMessage(cause, getT()('app.mail.loadFailed'))
       set({ loadingList: false, error: message })
@@ -190,6 +194,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   selectMail: async mailKey => {
+    const generation = getSessionGeneration()
     const current = get()
     set({ selectedMailKey: mailKey, error: null })
 
@@ -204,6 +209,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
     set({ loadingDetailKey: mailKey })
     try {
       const response = await fetchMailDetail(mailKey)
+      if (generation !== getSessionGeneration()) return
       if (seq !== detailRequestSeq) return
       const detail = response.mail
       set(state => ({
@@ -213,6 +219,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
         loadingDetailKey: state.loadingDetailKey === mailKey ? null : state.loadingDetailKey,
       }))
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       if (seq !== detailRequestSeq) return
       const message = extractErrorMessage(cause, getT()('app.mail.detailFailed'))
       set({ loadingDetailKey: null, error: message })
@@ -221,11 +228,13 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   claimMail: async mailKey => {
+    const generation = getSessionGeneration()
     const busyKey = `claim:${mailKey}`
     if (get().actionBusyKey) return
     set({ actionBusyKey: busyKey, error: null })
     try {
       const response = await claimMailAttachments(mailKey)
+      if (generation !== getSessionGeneration()) return
       const claimedSet = new Set(response.claimedMailKeys)
       set(state => {
         const nextMails = state.mails.map(item =>
@@ -247,6 +256,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
       })
       useGameStore.getState().setNotice(formatClaimedSummaryNotice(response.grantedAttachments))
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       const message = extractErrorMessage(cause, getT()('app.mail.claimFailed'))
       set({ actionBusyKey: null, error: message })
       useGameStore.getState().setNotice(message)
@@ -254,10 +264,12 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   claimAllMails: async () => {
+    const generation = getSessionGeneration()
     if (get().actionBusyKey) return
     set({ actionBusyKey: 'claim-all', error: null })
     try {
       const response = await claimAllMailAttachments()
+      if (generation !== getSessionGeneration()) return
       const claimedSet = new Set(response.claimedMailKeys)
       set(state => {
         const nextMails = state.mails.map(item =>
@@ -279,6 +291,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
       })
       useGameStore.getState().setNotice(formatClaimedSummaryNotice(response.grantedAttachments))
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       const message = extractErrorMessage(cause, getT()('app.mail.claimFailed'))
       set({ actionBusyKey: null, error: message })
       useGameStore.getState().setNotice(message)
@@ -286,6 +299,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   deleteOneMail: async mailKey => {
+    const generation = getSessionGeneration()
     const stateSnapshot = get()
     if (stateSnapshot.actionBusyKey) return
     const target = stateSnapshot.detailsByKey[mailKey] ?? stateSnapshot.mails.find(m => m.mailKey === mailKey)
@@ -297,6 +311,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
     set({ actionBusyKey: `delete:${mailKey}`, error: null })
     try {
       const response = await deleteMail(mailKey)
+      if (generation !== getSessionGeneration()) return
       const deletedSet = new Set(response.deletedMailKeys)
       set(state => {
         const nextMails = state.mails.filter(item => !deletedSet.has(item.mailKey))
@@ -313,6 +328,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
       })
       useGameStore.getState().setNotice(getT()('app.mail.deleteSuccessNotice'))
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       const message = extractErrorMessage(cause, getT()('app.mail.deleteFailed'))
       set({ actionBusyKey: null, error: message })
       useGameStore.getState().setNotice(message)
@@ -320,10 +336,12 @@ export const useMailStore = create<MailStore>((set, get) => ({
   },
 
   deleteAllReadMails: async () => {
+    const generation = getSessionGeneration()
     if (get().actionBusyKey) return
     set({ actionBusyKey: 'delete-read', error: null })
     try {
       const response = await deleteReadMails()
+      if (generation !== getSessionGeneration()) return
       const deletedSet = new Set(response.deletedMailKeys)
       set(state => {
         const nextMails = state.mails.filter(item => !deletedSet.has(item.mailKey))
@@ -350,6 +368,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
         useGameStore.getState().setNotice(t('app.mail.deleteReadNoneNotice'))
       }
     } catch (cause) {
+      if (generation !== getSessionGeneration()) return
       const message = extractErrorMessage(cause, getT()('app.mail.deleteFailed'))
       set({ actionBusyKey: null, error: message })
       useGameStore.getState().setNotice(message)

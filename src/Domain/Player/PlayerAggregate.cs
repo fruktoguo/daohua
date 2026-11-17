@@ -1023,9 +1023,10 @@ public sealed partial class PlayerAggregate
         ActionCatalog catalog,
         TravelActionState? travel = null,
         bool incrementVersion = true,
-        ActionParticipationBinding? participation = null)
+        ActionParticipationBinding? participation = null,
+        Guid? actionInstanceId = null)
         => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.EnqueuePriority,
-            Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion,
+            InstanceId: actionInstanceId.GetValueOrDefault(), Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion,
             Participation: participation)).Action!;
 
     /// <summary>

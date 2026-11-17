@@ -66,13 +66,14 @@ public static class ComputeLinkEndpoint
             return;
         }
 
-        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+        WebSocket? socket = null;
         var handshakePending = true;
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        var token = linked.Token;
         ComputeLinkNode? node = null;
         try
         {
+            socket = await context.WebSockets.AcceptWebSocketAsync();
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            var token = linked.Token;
             // 首帧必须是 hello：凭证、契约版本、节点容量与配表指纹都在这里裁决。
             var first = await ReceiveMessageAsync(socket, token)
                 .WaitAsync(ComputeLinkContract.HelloTimeout, token);
@@ -170,14 +171,14 @@ public static class ComputeLinkEndpoint
             linked.Cancel();
             try { await Task.WhenAll(sendTask, receiveTask); } catch { /* 断开清理路径忽略残余异常 */ }
         }
-        catch (ComputeNodeDisconnectedException)
+        catch (ComputeNodeDisconnectedException) when (socket is not null)
         {
             // 对端主动关闭/心跳判定断开：属正常链路生命周期，finally 的离线行已含在飞数，
             // 无需 Warning 级异常堆栈——弱网节点闪断不再刷告警。
             logger.LogInformation("计算节点链路被对端关闭 name={Name} remote={Remote}",
                 node?.Name ?? "handshake", context.Connection.RemoteIpAddress);
         }
-        catch (InvalidDataException exception) when (node is null)
+        catch (InvalidDataException exception) when (socket is not null && node is null)
         {
             // 握手期协议违规（hello 缺失/契约版本不符/能力声明非法）：计数 + 节流留证据，
             // 沿用原 LINK_ERROR 关闭帧口径让节点拿到可读拒绝原因。
@@ -191,7 +192,7 @@ public static class ComputeLinkEndpoint
             }
             catch { }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (socket is not null && exception is not OperationCanceledException)
         {
             logger.LogWarning(exception, "计算节点链路异常中止 remote={Remote}", context.Connection.RemoteIpAddress);
             try
@@ -203,6 +204,7 @@ public static class ComputeLinkEndpoint
         finally
         {
             if (handshakePending) HandshakeGate.Release();
+            socket?.Dispose();
             if (node is not null)
             {
                 registry.Unregister(node);

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { SNAPSHOT_SCHEMA_VERSION } from './snapshotSchemaGate.ts'
 
 // snapshot 与 gameStore 涉及跨域模块路径，用 esbuild 打包后以原生 node:test 校验隐私状态默认与增量同步。
@@ -36,8 +37,11 @@ await esbuild.build({
 })
 const { decodePlayerSnapshotDeltaDto } = await import(pathToFileURL(snapshotOut).href)
 
-test('名片隐私与 Schema v43：版本对齐且 gameStore 默认公开配装、增量补丁可准确切换并随 reset 复位', async () => {
-  assert.equal(SNAPSHOT_SCHEMA_VERSION, 43)
+test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配装、增量补丁可准确切换并随 reset 复位', async () => {
+  const codec = await readFile(new URL('../../../src/Domain/Persistence/SectionCodec.cs', import.meta.url), 'utf8')
+  const serverSchema = /public const int CurrentSchemaVersion = (\d+);/.exec(codec)
+  assert.ok(serverSchema, '服务端必须声明当前快照 Schema')
+  assert.equal(SNAPSHOT_SCHEMA_VERSION, Number(serverSchema[1]))
 
   useGameStore.getState().resetGameStore()
   assert.equal(useGameStore.getState().publicLoadoutVisible, true)

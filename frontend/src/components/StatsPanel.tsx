@@ -60,7 +60,7 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   useEffect(() => {
     if (!isSelf && selectedMemberId) {
       const cached = teammateReports[selectedMemberId]
-      if (!cached || (Date.now() - cached.updatedAtMs > 5000 && !cached.loading)) {
+      if (!cached || (Date.now() - cached.updatedAtMs > 5000 && !cached.loading && !cached.error)) {
         requestTeammateReport(selectedMemberId)
       }
     }
@@ -158,6 +158,12 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
         )}
       </header>
 
+      {teammateEntry?.error && (
+        <p role="status">
+          {teammateEntry.error === 'timeout' ? t('common.net.requestTimeout') : t('social.card.errorGeneric')}{' '}
+          <button type="button" onClick={() => requestTeammateReport(selectedMemberId)}>{t('app.mail.retry')}</button>
+        </p>
+      )}
       {isLoadingTeammate ? (
         <p className="battle-report-loading">{t('combat.report.loadingTeammate')}</p>
       ) : isEmpty ? (

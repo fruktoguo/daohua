@@ -9,6 +9,21 @@ public static class SessionAuthenticationDefaults
     public const string Scheme = "DaohuaSession";
     /// <summary>承载不透明会话令牌的 HttpOnly Cookie 名；任何取值变更必须与前端同源 cookie 约定一致。</summary>
     public const string CookieName = "daohua_session";
+
+    /// <summary>
+    /// 读取本次请求实际使用的会话令牌。Cookie 优先与认证处理器保持一致，Bearer 仅作为非浏览器客户端回退。
+    /// 登出、WebSocket 会话登记和改密撤销必须复用此解析结果，避免不同认证介质出现撤销分叉。
+    /// </summary>
+    public static string? ReadPresentedToken(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var cookie = context.Request.Cookies[CookieName];
+        if (!string.IsNullOrWhiteSpace(cookie)) return cookie;
+        var authorization = context.Request.Headers.Authorization.ToString();
+        return authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? authorization[7..].Trim()
+            : null;
+    }
 }
 
 /// <summary>
@@ -32,12 +47,7 @@ public sealed class SessionAuthenticationHandler(
     /// </summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var token = Request.Cookies[SessionAuthenticationDefaults.CookieName];
-        if (string.IsNullOrWhiteSpace(token) && Request.Headers.Authorization.Count > 0)
-        {
-            var value = Request.Headers.Authorization.ToString();
-            if (value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) token = value[7..].Trim();
-        }
+        var token = SessionAuthenticationDefaults.ReadPresentedToken(Context);
         if (string.IsNullOrWhiteSpace(token)) return AuthenticateResult.NoResult();
 
         var identity = await accounts.ValidateSessionAsync(token, Context.RequestAborted);

@@ -79,8 +79,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, byte> _walletReloadRequired = new();
     // COMMIT 无法精确重放确认时保留租约与错误证据，拒绝装载、推进和刷盘，防止不确定终态覆盖 durable 状态。
     private readonly ConcurrentDictionary<Guid, EconomyCommitOutcomeUnknownException> _fencedCommits = new();
-    // 栅栏对应的结局核实入口：结局未知后必须能用同一事务标识/幂等键精确重放才能查明事实。
-    // 没有它栅栏只能靠进程重启清除，玩家会被永久锁在门外（COMMIT 回包丢失 + 核实请求也超时即触发）。
+    // 栅栏对应的只读核实入口。查不到不等于原事务回滚，绝不能触发旧请求补写。
     private readonly ConcurrentDictionary<Guid, Func<CancellationToken, ValueTask<bool>>> _fenceResolvers = new();
     private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logs = new();
     // 玩家级单写者门：按需分配并在无引用后回收释放，避免长运行会话键表无限增长。
@@ -398,7 +397,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         }
         catch (Exception loadError)
         {
-            // 未知结局栅栏必须在 LoadOwnedAsync 失败时保留已装配的 ECS 实体、_loaded 与租约等待确认重放；
+            // 未知结局栅栏必须在 LoadOwnedAsync 失败时保留实体与租约等待只读核实；
             // 非栅栏原因的加载失败才清理半成品实体与派生缓存并释放租约。
             if (_fencedCommits.ContainsKey(playerId)) throw;
             ClearLoadedPlayerStateOwned(playerId);
@@ -576,6 +575,13 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     ? $"尚未解锁该制造图鉴（需境界达到 {requiredLevel} 级{techHint}）。"
                                     : $"尚未达到该行动所需等级（需境界达到 {requiredLevel} 级{techHint}）。";
                                 return new PlayerCommandResult(false, errorCode, errorMessage, before);
+                            }
+                            if (actionDefinition.Id.Value == SecretArtRules.ConvertActionId)
+                            {
+                                if (!SecretArtRules.TryResolveFragmentTome(gameData, request.TargetItemId ?? string.Empty, out _))
+                                    return new PlayerCommandResult(false, "INVALID_PAYLOAD", "转化目标必须是有对应秘籍的功法残卷。", before);
+                                if (request.Parameters?.TryGetValue(EnhancementRules.InitialLevelParameter, out var level) == true && level != 0)
+                                    return new PlayerCommandResult(false, "INVALID_PAYLOAD", "残卷不能指定强化等级。", before);
                             }
                             // 强化行动必须指定目标装备；缺 targetItemId 载荷无效，不入队。
                             if (actionDefinition.Kind == ActionKind.Enhancement && string.IsNullOrWhiteSpace(request.TargetItemId))
@@ -1088,13 +1094,12 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var zongmenReceipt = CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion);
                         async ValueTask<EconomyTransactionResult> ApplyZongmen(CancellationToken ct) => await zongmen.ExecuteAsync(
                             playerId, requestId, command, payload, before.State.World.NodeId,
-                            before.State.World.EdgeId is not null, zongmenReceipt, ct);
+                            before.State.World.EdgeId is not null, zongmenReceipt, ct, RuntimeOwnerFence);
                         EconomyTransactionResult committed;
                         try { committed = await ApplyZongmen(cancellationToken); }
                         catch (EconomyCommitOutcomeUnknownException unknown)
                         {
-                            _fenceResolvers[playerId] = async ct => { await ApplyZongmen(ct); return true; };
-                            _fencedCommits[playerId] = unknown;
+                            FenceUnknownCommit(playerId, unknown, ct => HasCommittedReceiptAsync(zongmenReceipt, ct));
                             throw;
                         }
                         receiptAlreadyCommitted = true;
@@ -1265,7 +1270,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var contributeContext = new NodeBuildingContributionTransaction(
                             playerId, requestId, $"building-contribute:{playerId:D}:{requestId:D}", command,
                             DateTimeOffset.UtcNow,
-                            Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)]);
+                            Receipts: [CreateReceipt(playerId, requestId, command, payloadHash, before.StateVersion)])
+                            { RequiredRuntimeOwner = RuntimeOwnerFence };
                         NodeBuildingMutationResult contributeResult;
                         try
                         {
@@ -1274,12 +1280,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         catch (EconomyCommitOutcomeUnknownException unknown)
                         {
-                            // 建筑贡献自身的重放也失败时才落到这里；仍要留下核实入口，
-                            // 用同一幂等键再确认一次（命中历史 applied 即证明已提交），否则玩家被永久围栏。
-                            _fenceResolvers[playerId] = token => ResolveContributeOutcomeAsync(
-                                before.State.World.NodeId, buildingId, requested, contributeContext, token);
-                            _fencedCommits[playerId] = unknown;
-                            _logger.LogCritical(unknown, "建筑贡献结局无法确认，保留玩家租约 player={PlayerId}", playerId);
+                            FenceUnknownCommit(playerId, unknown, ct => HasCommittedReceiptAsync(contributeContext.Receipts![0], ct));
                             throw;
                         }
                         var contributeCommit = contributeResult.Economy;
@@ -1891,7 +1892,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             try { await participationRuntime.AdvanceOnlineAsync(target, cancellationToken).ConfigureAwait(false); }
             catch (Exception exception) when (exception is not OperationCanceledException)
             { failures.Add(exception); }
-        var allIds = _loaded.Keys.Concat(_fencedCommits.Keys).Distinct().OrderBy(id => id).ToArray();
+        var allIds = _loaded.Keys.Concat(_fencedCommits.Keys.Where(_leaseRenewedAt.ContainsKey)).Distinct().OrderBy(id => id).ToArray();
         var notifications = new List<RuntimeNotification>();
         Dictionary<Guid, PlayerRuntimeSnapshot>? before = null;
         Dictionary<Guid, PlayerSectionKind[]>? dirtyBefore = null;
@@ -1931,10 +1932,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 {
                     foreach (var playerId in lostSet)
                     {
-                        if (_loaded.ContainsKey(playerId))
-                            EvictOwnershipLostOwned(playerId);
-                        else
-                            _leaseRenewedAt.TryRemove(playerId, out _);
+                        EvictOwnershipLostOwned(playerId);
                         uncommitted.Remove(playerId);
                     }
                     ids = ids.Where(id => !lostSet.Contains(id) && !failedLease.Contains(id)).ToArray();
@@ -2079,7 +2077,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
                             && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
                         {
-                            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                            await FlushOwnedAsync(playerId, force: true, cancellationToken, uncommitted).ConfigureAwait(false);
                             _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
                         }
                         _simulationBackoffs.TryRemove(playerId, out _);
@@ -2093,7 +2091,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         if (target - _lastCheckpointSimAt.GetValueOrDefault(playerId, before[playerId].LastSimulatedAt) >= _onlineCheckpointInterval
                             && (HasPendingSimulationDeltas(playerId) || ecs.GetDirtySections(playerId).Length > 0))
                         {
-                            await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                            await FlushOwnedAsync(playerId, force: true, cancellationToken, uncommitted).ConfigureAwait(false);
                             _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
                         }
                         _simulationBackoffs.TryRemove(playerId, out _);
@@ -2103,7 +2101,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     // 在线模拟推进不再每 Tick 写 PostgreSQL：结果与脏段暂存内存并同步内存钱包/WS 推流，
                     // 仅当 10 分钟安全检查点到期或 PVP 斗法结束时才原子合批落库。
                     var outcome = await BufferOnlineSimulationOwned(
-                        playerId, before[playerId], after, dirtyBefore[playerId], target, cancellationToken).ConfigureAwait(false);
+                        playerId, before[playerId], after, dirtyBefore[playerId], target, uncommitted, cancellationToken).ConfigureAwait(false);
                     // 检查点刷盘、钱包同步或时钟补推可能推进状态版本/资产版本号：变更后重导出终态。
                     if (outcome.Flushed || ecs.GetStateVersion(playerId) != after.StateVersion)
                         after = ToSnapshot(ecs.ExportSnapshot(playerId));
@@ -2157,11 +2155,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             if (before is not null)
                 foreach (var playerId in uncommitted)
                 {
-                    // 已 durable 提交但随后的钱包读取取消时，Commit 已保留新时钟；不能重复回滚。
-                    if (!_loaded.ContainsKey(playerId)
-                        || _fencedCommits.ContainsKey(playerId)
-                        || (_walletReloadRequired.ContainsKey(playerId)
-                            && _loaded[playerId].LastSimulatedAt > before[playerId].LastSimulatedAt)) continue;
+                    if (!_loaded.ContainsKey(playerId) || _fencedCommits.ContainsKey(playerId)) continue;
                     try
                     {
                         RestoreBufferingForRollback(playerId, before[playerId], dirtyBefore![playerId],
@@ -2635,7 +2629,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         finally { gateLease.Dispose(); }
     }
 
-    private async ValueTask FlushOwnedAsync(Guid playerId, bool force, CancellationToken cancellationToken)
+    private async ValueTask FlushOwnedAsync(Guid playerId, bool force, CancellationToken cancellationToken,
+        HashSet<Guid>? uncommittedBatch = null)
     {
         try
         {
@@ -2679,12 +2674,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 with { Sections = writes, Receipts = pending.ToArray() };
             var result = await CommitWithConfirmationAsync(playerId, request, cancellationToken).ConfigureAwait(false);
             if (!result.Applied) throw new InvalidOperationException("玩家检查点资产与状态事务未提交。");
-            var writtenKinds = writes.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
-            ecs.AcknowledgeDirtySections(playerId, writtenKinds);
-            foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
+            // durable 点：任何上层异常（包括钱包读取取消）均不得恢复旧时钟或已入账缓冲。
+            uncommittedBatch?.Remove(playerId);
             pending.Clear();
             ClearPendingSimulationDeltas(playerId);
             MarkCheckpointSynced(playerId, snapshot);
+            if (_loaded.TryGetValue(playerId, out var loadedBeforeSync))
+                _loaded[playerId] = snapshot with
+                {
+                    TouchedSections = loadedBeforeSync.TouchedSections,
+                    WireAttributesChanged = loadedBeforeSync.WireAttributesChanged
+                };
+            var writtenKinds = writes.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
+            ecs.AcknowledgeDirtySections(playerId, writtenKinds);
+            foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
             try { await SyncWalletAfterCommitAsync(playerId, result, _shutdownCts.Token).ConfigureAwait(false); }
             catch (Exception exception)
             {
@@ -2719,6 +2722,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             foreach (var section in eligible) _dirtyAt[playerId][section] = wallNow;
             throw;
         }
+        uncommittedBatch?.Remove(playerId);
         ecs.AcknowledgeDirtySections(playerId, eligible);
         foreach (var section in eligible) _dirtyAt[playerId].Remove(section);
         pending.Clear();
@@ -2855,6 +2859,11 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         ClearLoadedPlayerStateOwned(playerId);
         _leaseRenewedAt.TryRemove(playerId, out _);
+        if (_fencedCommits.TryGetValue(playerId, out var unknown))
+        {
+            unknown.Data["OwnershipLost"] = true;
+            _logger.LogError(unknown, "未知提交核实期间运行时失租，停止后台扫描并保留证据 player={PlayerId}", playerId);
+        }
         _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
 
@@ -2936,8 +2945,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 ? SimulationEconomyTransaction.CreateCheckpoint(
                     playerId, bufferedFromAt, after.LastSimulatedAt, after.StateVersion, mergedDeltas, simulationTransactionIdentity)
                 : SimulationEconomyTransaction.Create(playerId, simulation!, simulationTransactionIdentity);
-            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken, after).ConfigureAwait(false);
-            ClearPendingSimulationDeltas(playerId);
+            await CommitPlayerAssetsAsync(playerId, before, dirtySectionsBefore, transaction, receipt, cancellationToken, after,
+                consumesSimulationBuffer: true).ConfigureAwait(false);
         }
         else if ((simulation is not null || bufferedDeltas.Length > 0)
             && (after.LastSimulatedAt != before.LastSimulatedAt || after.StateVersion != before.StateVersion || bufferedDeltas.Length > 0))
@@ -3012,7 +3021,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private async ValueTask<EconomyTransactionResult> CommitPlayerAssetsAsync(Guid playerId,
         PlayerRuntimeSnapshot before, IEnumerable<PlayerSectionKind> dirtySectionsBefore,
         EconomyTransactionRequest request, CommandReceipt? receipt, CancellationToken cancellationToken,
-        PlayerRuntimeSnapshot? afterSnapshot = null)
+        PlayerRuntimeSnapshot? afterSnapshot = null, bool consumesSimulationBuffer = false)
     {
         var dirtyBefore = dirtySectionsBefore.ToArray();
         var dirty = ecs.GetDirtySections(playerId).ToHashSet();
@@ -3048,6 +3057,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             RestoreUncommittedPlayer(playerId, before, dirtyBefore);
             throw;
         }
+        if (consumesSimulationBuffer) ClearPendingSimulationDeltas(playerId);
         var writtenKinds = writes.Select(write => SectionCodec.FromStorageKind(write.SectionKind)).ToArray();
         ecs.AcknowledgeDirtySections(playerId, writtenKinds);
         foreach (var kind in writtenKinds) _dirtyAt[playerId].Remove(kind);
@@ -3064,31 +3074,39 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         return result;
     }
 
+    private Guid? RuntimeOwnerFence => ownership is null ? null : _ownerInstanceId;
+
     private async ValueTask<EconomyTransactionResult> CommitWithConfirmationAsync(Guid playerId,
         EconomyTransactionRequest request, CancellationToken cancellationToken)
     {
-        try { return await economy.CommitAsync(request, cancellationToken).ConfigureAwait(false); }
+        var stable = request with { RequiredRuntimeOwner = RuntimeOwnerFence };
+        try { return await economy.CommitAsync(stable, cancellationToken).ConfigureAwait(false); }
         catch (EconomyCommitOutcomeUnknownException unknown)
         {
-            // 原请求精确重放：同一事务标识、幂等键、分段校验和和回执；不重算资产，也不受原客户端取消影响。
             try
             {
                 using var confirmation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                var result = await economy.CommitAsync(request, confirmation.Token).ConfigureAwait(false);
-                if (!result.Applied) throw new InvalidOperationException("提交结局核验未获得确定成功结果。");
-                return result;
+                if (await economy.FindCommittedAsync(stable, confirmation.Token).ConfigureAwait(false) is { Applied: true } result)
+                    return result;
             }
             catch (Exception confirmationError)
             {
-                unknown.Data["ConfirmationError"] = confirmationError;
-                // 栅栏必须携带结局核实入口：否则 COMMIT 回包与核实请求同时超时后，玩家只能等进程重启才恢复。
-                _fenceResolvers[playerId] = token => ResolveOutcomeAsync(request, token);
-                _fencedCommits[playerId] = unknown;
-                _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
-                _logger.LogCritical(unknown, "资产提交结局无法确认，保留玩家租约并禁止后续写入 player={PlayerId} transaction={TransactionId}", playerId, request.TransactionId);
-                throw unknown;
+                unknown.Data["RuntimeConfirmationError"] = confirmationError;
             }
+            FenceUnknownCommit(playerId, unknown, async token =>
+                await economy.FindCommittedAsync(stable, token).ConfigureAwait(false) is { Applied: true });
+            _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
+            throw;
         }
+    }
+
+    private void FenceUnknownCommit(Guid playerId, EconomyCommitOutcomeUnknownException unknown,
+        Func<CancellationToken, ValueTask<bool>> findCommitted)
+    {
+        _fenceResolvers[playerId] = findCommitted;
+        _fencedCommits[playerId] = unknown;
+        _logger.LogCritical(unknown, "资产提交结局无法确认，隔离玩家写入 player={PlayerId} transaction={TransactionId}",
+            playerId, unknown.TransactionId);
     }
 
     private void ThrowIfCommitFenced(Guid playerId)
@@ -3096,38 +3114,15 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         if (_fencedCommits.TryGetValue(playerId, out var unknown)) throw unknown;
     }
 
-    /// <summary>
-    /// 结局核实：以同一请求精确重放资产事务。命中幂等键即读回既有结果（事务已提交），
-    /// 否则本次重放真正提交它——两种结局都让「未知」变成「已知已提交」，可安全解除栅栏。
-    /// </summary>
-    /// <returns>落实为已提交返回 true；仍未确认返回 false。</returns>
-    private async ValueTask<bool> ResolveOutcomeAsync(EconomyTransactionRequest request, CancellationToken cancellationToken)
+    // 建筑/宗门回执与各自的账本、业务变更同事务提交；核实不调用任何业务写入口。
+    private async ValueTask<bool> HasCommittedReceiptAsync(CommandReceipt expected, CancellationToken cancellationToken)
     {
-        var result = await economy.CommitAsync(request, cancellationToken).ConfigureAwait(false);
-        return result.Applied;
+        if (commandReceipts is null) return false;
+        var receipt = await commandReceipts.FindAsync(expected.PlayerId, expected.RequestId, cancellationToken).ConfigureAwait(false);
+        return receipt is not null && receipt.Command == expected.Command && receipt.PayloadHash == expected.PayloadHash;
     }
 
-    /// <summary>
-    /// 建筑贡献的结局核实：以同一幂等键与上下文重放整笔原子事务。
-    /// 命中历史 applied 时注册表按首次提交的接纳量返回，不重复扣材料、不重复写建筑行。
-    /// </summary>
-    /// <returns>确认已提交返回 true；仍未确认返回 false。</returns>
-    private async ValueTask<bool> ResolveContributeOutcomeAsync(string nodeId, string buildingId,
-        IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
-        CancellationToken cancellationToken)
-    {
-        var outcome = await nodeBuildings!.ContributeAsync(nodeId, buildingId, requested, context, cancellationToken)
-            .ConfigureAwait(false);
-        return outcome.Success && outcome.Economy is { Applied: true };
-    }
-
-    /// <summary>
-    /// 结局未知栅栏的核实：栅栏的用途是阻止不确定终态覆盖 durable 状态，不是永久封禁玩家。
-    /// COMMIT 已发出但连接中断时，事务要么留下完整幂等记录（含流水/分段/回执），要么整体回滚，
-    /// 二者可由幂等键唯一判定；因此这里用同一请求精确重放一次提交——拿到确定结果即解除栅栏，
-    /// 仍无法确认则继续 fail-closed（保留租约与证据），避免写入未知结局。
-    /// </summary>
-    /// <returns>栅栏已解除返回 null；仍然存在返回待抛出的原始证据。</returns>
+    /// <summary>结局未知可以无租约读证据，但只有确认已提交才解栅栏，并始终丢弃旧实体。</summary>
     private async ValueTask<EconomyCommitOutcomeUnknownException?> TryResolveFencedCommitAsync(
         Guid playerId, CancellationToken cancellationToken)
     {
@@ -3143,7 +3138,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             unknown.Data["ResolutionError"] = resolutionError;
             return unknown;
         }
-        // 核实成功：幂等事实已确定（本次重放提交或确认既有提交），可以安全恢复写入。
+        // 只证明既有事务已提交，不授予所有权；后续写路径必须重新装载。
         _fencedCommits.TryRemove(playerId, out _);
         _fenceResolvers.TryRemove(playerId, out _);
         // 已提交事务同时带走了分段写回与资产扣减，内存实体在结局未知期间没有同步这份权威状态，
@@ -3416,6 +3411,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         PlayerRuntimeSnapshot afterSnapshot,
         PlayerSectionKind[] dirtySectionsBefore,
         DateTimeOffset target,
+        HashSet<Guid> uncommittedBatch,
         CancellationToken cancellationToken)
     {
         var walletBackup = new Dictionary<AssetKey, AssetBalanceRecord>(_wallets[playerId]);
@@ -3478,7 +3474,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
 
             if (duelCompleted || checkpointDue)
             {
-                await FlushOwnedAsync(playerId, force: true, cancellationToken).ConfigureAwait(false);
+                await FlushOwnedAsync(playerId, force: true, cancellationToken, uncommittedBatch).ConfigureAwait(false);
                 flushed = true;
                 if (duelCompleted)
                     await TryRecordDuelCompletionAsync(
@@ -3489,7 +3485,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         {
             throw;
         }
-        catch (Exception originalException)
+        catch (Exception originalException) when (uncommittedBatch.Contains(playerId))
         {
             try
             {

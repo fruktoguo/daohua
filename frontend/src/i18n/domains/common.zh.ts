@@ -38,6 +38,8 @@ export const commonZh = {
       deviceCheckFailed: '设备校验信息缺失，请刷新页面后重试。',
       dedicatedClientRequired: '当前天道界域要求使用专属版面，暂无法接入。',
       parseUnstable: '传讯数据持续异常，已重置连接以恢复同步。',
+      snapshotUnavailable: '未能恢复游戏进度，请重新连接。',
+      snapshotUpdateRequired: '当前版本无法载入游戏，请刷新页面更新。',
       versionUpdating: '检测到仙途新版本，正在自动重载...',
       versionCircuitBroken: '检测到仙途新版本，请按 Ctrl+F5 强制刷新页面。',
     },

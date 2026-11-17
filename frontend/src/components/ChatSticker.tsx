@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { chatStickerService, MAX_CUSTOM_STICKERS } from '../game/chatStickerService'
+import { useChatImageGeneration, useChatImageSource } from './useChatImageLease'
 import { FloatingMenuItem, FloatingMenuGroup, FloatingPopover } from './FloatingPopover'
 import { ChatImageLightbox } from './ChatImageLightbox'
 import { useGameStore } from '../game/gameStore'
@@ -26,18 +27,27 @@ export interface ChatStickerProps {
  * 3. 鼠标右键（或触屏长按）呼出操作菜单，支持一键「添加到表情包」（自动强缓存原图到本地与云端同步）；
  * 4. 云端图片过期时，若本地存有原图，支持自动静默重传自愈并刷新各端直链。
  */
-export const ChatSticker = memo(function ChatSticker({
+export const ChatSticker = memo(function ChatSticker(props: ChatStickerProps): React.JSX.Element {
+  const generation = useChatImageGeneration()
+  // 切会话、链接或内容 ID 时同时重置占位、错误和灯箱状态。
+  const key = JSON.stringify([generation, props.url.trim(), props.sha256 ?? null])
+  return <ChatStickerImage key={key} {...props} generation={generation} />
+})
+
+function ChatStickerImage({
   url,
   sha256,
   className = '',
   alt,
   zoomable = false,
-}: ChatStickerProps): React.JSX.Element {
+  generation,
+}: ChatStickerProps & { generation: number }): React.JSX.Element {
   const t = useT()
   const trimmedUrl = url.trim()
-  const [cachedSrc, setCachedSrc] = useState<string>(trimmedUrl)
+  const [imageUrl, setImageUrl] = useState(trimmedUrl)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isError, setIsError] = useState(false)
+  const cachedSrc = useChatImageSource(isError ? null : imageUrl, generation, sha256)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isHealing, setIsHealing] = useState(false)
@@ -53,24 +63,8 @@ export const ChatSticker = memo(function ChatSticker({
 
   useEffect(() => {
     mountedRef.current = true
-    let isCancelled = false
-    setCachedSrc(trimmedUrl)
-    setIsLoaded(false)
-    setIsError(false)
-
-    chatStickerService.loadImageWithCache(trimmedUrl, sha256).then(src => {
-      if (!isCancelled && mountedRef.current && src) {
-        setCachedSrc(src)
-      }
-    }).catch(() => {
-      // 静默降级保持 trimmedUrl
-    })
-
-    return () => {
-      isCancelled = true
-      mountedRef.current = false
-    }
-  }, [trimmedUrl, sha256])
+    return () => { mountedRef.current = false }
+  }, [])
 
   const handleContextMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
@@ -84,6 +78,7 @@ export const ChatSticker = memo(function ChatSticker({
     setIsSaving(true)
     try {
       const res = await chatStickerService.saveStickerFromUrl(trimmedUrl)
+      if (generation !== chatStickerService.getGeneration()) return
       if (res.ok) {
         useGameStore.getState().setNotice(t('combat.chat.stickerAdded'))
       } else if (res.reason === 'limit') {
@@ -108,7 +103,7 @@ export const ChatSticker = memo(function ChatSticker({
     setMenuOpen(false)
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(trimmedUrl).then(() => {
-        useGameStore.getState().setNotice(t('combat.chat.linkCopied'))
+        if (generation === chatStickerService.getGeneration()) useGameStore.getState().setNotice(t('combat.chat.linkCopied'))
       }).catch(() => {})
     }
   }
@@ -125,9 +120,9 @@ export const ChatSticker = memo(function ChatSticker({
     setIsHealing(true)
     try {
       const res = await chatStickerService.ensureStickerReadyForSend(trimmedUrl, blob => uploadChatImage(blob))
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== chatStickerService.getGeneration()) return
       if (res.healed && res.url && res.url !== trimmedUrl) {
-        setCachedSrc(res.url)
+        setImageUrl(res.url)
         setIsError(false)
         setIsLoaded(false)
         useGameStore.getState().setNotice(t('combat.chat.stickerHealSuccess'))
@@ -150,6 +145,8 @@ export const ChatSticker = memo(function ChatSticker({
   }
 
   const handleImageError = (): void => {
+    setLightboxOpen(false)
+    setIsLoaded(false)
     setIsError(true)
     if (isSaved && autoHealAttemptedRef.current !== trimmedUrl) {
       autoHealAttemptedRef.current = trimmedUrl
@@ -242,7 +239,7 @@ export const ChatSticker = memo(function ChatSticker({
           </span>
         )}
       </span>
-      {lightboxOpen && (
+      {lightboxOpen && cachedSrc && (
         <ChatImageLightbox
           alt={alt ?? t('combat.chat.stickerAlt')}
           onClose={() => setLightboxOpen(false)}
@@ -252,4 +249,4 @@ export const ChatSticker = memo(function ChatSticker({
       )}
     </FloatingPopover>
   )
-})
+}

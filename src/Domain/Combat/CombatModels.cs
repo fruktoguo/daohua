@@ -701,6 +701,10 @@ public sealed record CombatantSnapshot(
 {
     /// <summary>本场入战定格特质；恢复不读取玩家战中改动后的装配。</summary>
     public CombatTraitState Traits { get; init; } = CombatTraitState.Empty;
+    /// <summary>天雷阵上次触发的战斗时钟秒；null 表示没有触发记录。</summary>
+    public double? LastTianleiTriggerAtSeconds { get; init; }
+    /// <summary>血煞阵上次触发的战斗时钟秒；null 表示没有触发记录。</summary>
+    public double? LastXueshaTriggerAtSeconds { get; init; }
     /// <summary>快照字段的有限性/取值域校验（不含上限比对——上限依赖施法时面板）。</summary>
     internal bool IsValid => Traits is not null && Traits.IsValid && double.IsFinite(Hitpoints) && Hitpoints >= 0
         && double.IsFinite(Manapoints) && Manapoints >= 0
@@ -718,6 +722,8 @@ public sealed record CombatantSnapshot(
             || (double.IsFinite(RespawnDeadlineSeconds.Value) && RespawnDeadlineSeconds.Value >= 0))
         && (RespawnWaitingUntilSeconds is null
             || (double.IsFinite(RespawnWaitingUntilSeconds.Value) && RespawnWaitingUntilSeconds.Value >= 0))
+        && (LastTianleiTriggerAtSeconds is not { } tianlei || (double.IsFinite(tianlei) && tianlei >= 0))
+        && (LastXueshaTriggerAtSeconds is not { } xuesha || (double.IsFinite(xuesha) && xuesha >= 0))
         && (SkillCooldownUntil is null || SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0))
         && (Buffs is null || Buffs.All(buff => buff is not null && buff.IsValid));
 }
@@ -1046,36 +1052,22 @@ public sealed class CombatEncounterState
     public static CombatantSnapshot Snapshot(CombatantState state)
         => new(state.Hitpoints, state.Manapoints, state.NextAttackAtSeconds, state.AttackCount,
             state.Threat, state.PendingSkillIndex, state.ThreatBonusPoints, state.BonusAbsorptionPoints,
-            state.SkillCooldownUntil, state.SkillCastCount,
+            state.SkillCooldownUntil?.ToArray(), state.SkillCastCount,
             state.Buffs.Count == 0 ? null : state.Buffs.ToArray(),
             double.IsFinite(state.RespawnAtSeconds) ? state.RespawnAtSeconds : null,
             state.RespawnPolicy,
             state.RespawnTargetIndex,
             double.IsFinite(state.RespawnDeadlineSeconds) ? state.RespawnDeadlineSeconds : null,
             double.IsFinite(state.RespawnWaitingUntilSeconds) ? state.RespawnWaitingUntilSeconds : null)
-        { Traits = state.TraitState };
+        {
+            Traits = state.TraitState,
+            LastTianleiTriggerAtSeconds = state.LastTianleiTriggerAtSeconds >= 0 ? state.LastTianleiTriggerAtSeconds : null,
+            LastXueshaTriggerAtSeconds = state.LastXueshaTriggerAtSeconds >= 0 ? state.LastXueshaTriggerAtSeconds : null
+        };
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
-        if (snapshot.Traits is null || !snapshot.Traits.IsValid
-            || !double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0
-            || !double.IsFinite(snapshot.Manapoints) || snapshot.Manapoints < 0
-            || !double.IsFinite(snapshot.NextAttackAtSeconds) || snapshot.NextAttackAtSeconds < 0
-            || !double.IsFinite(snapshot.AttackCount) || snapshot.AttackCount < 0
-            || !double.IsFinite(snapshot.Threat) || snapshot.Threat < 0
-            || !double.IsFinite(snapshot.ThreatBonusPoints) || snapshot.ThreatBonusPoints < 0
-            || !double.IsFinite(snapshot.BonusAbsorptionPoints)
-            || snapshot.PendingSkillIndex < -1
-            || !double.IsFinite(snapshot.SkillCastCount) || snapshot.SkillCastCount < 0
-            || (snapshot.RespawnAtSeconds is { } respawnAt && (!double.IsFinite(respawnAt) || respawnAt < 0))
-            || !Enum.IsDefined(snapshot.RespawnPolicy)
-            || snapshot.RespawnTargetIndex is < -1 or > 4
-            || (snapshot.RespawnDeadlineSeconds is { } deadline && (!double.IsFinite(deadline) || deadline < 0))
-            || (snapshot.RespawnWaitingUntilSeconds is { } waitingUntil
-                && (!double.IsFinite(waitingUntil) || waitingUntil < 0))
-            || (snapshot.SkillCooldownUntil is { } cooldowns
-                && cooldowns.Any(value => !double.IsFinite(value) || value < 0))
-            || (snapshot.Buffs is { } buffs && buffs.Any(buff => buff is null || !buff.IsValid)))
+        if (!snapshot.IsValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
         // 上限来自恢复时点解析面板，随装备/Buff/境界/配表漂移；历史快照可合法超出，越界按上限钳制。
         state.Hitpoints = Math.Max(0, Math.Min(snapshot.Hitpoints, maxHitpoints));
@@ -1104,6 +1096,8 @@ public sealed class CombatEncounterState
             state.SkillCooldownUntil = null;
         }
         state.SkillCastCount = snapshot.SkillCastCount;
+        state.LastTianleiTriggerAtSeconds = snapshot.LastTianleiTriggerAtSeconds ?? -1;
+        state.LastXueshaTriggerAtSeconds = snapshot.LastXueshaTriggerAtSeconds ?? -1;
         // 倒地复活截止点随快照恢复（友方单位口径）；null 表示未倒地。
         state.RespawnAtSeconds = snapshot.RespawnAtSeconds ?? double.PositiveInfinity;
         // 复活时机策略与等待上限随快照恢复：等待期间跨进程重启不丢失门禁输入。

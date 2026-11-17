@@ -20,9 +20,9 @@
 
 - 玩家在线时由单写者持有完整领域聚合；数据库不是每个字段一次一行，而是共享表中的少量稳定 section。
 - 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue`、`duel` 八个 section。每个玩家对应共享表中的八行最新值，不建立“每个玩家一张表”。`action_queue` 中的讨伐行动保存搜寻/战斗阶段和确定性战斗标量，`durationSeconds=0` 仅表示由战斗状态机推进，不会被普通计时器丢弃。
-- 普通模拟只在内存推进，脏 section 以 15 秒合并窗口写入 `platform.section_flush_queue`；同一玩家/section 永远只有一条待写记录，不保存逐 Tick 历史。
+- 单人高频模拟在内存推进；按 10 分钟检查点或关键生命周期边界，将余额、脏分段及推进时刻原子提交。`platform.section_flush_queue` 是追加式待写队列，不是逐 Tick 历史；未被更新有效状态覆盖的死信保留为恢复证据。
 - 资产余额、唯一物品、订单冻结、成交、退款和幂等事务由 PostgreSQL 关系模型负责，并在一个事务内提交。
-- WebSocket 帧、心跳、战斗伤害明细和聊天消息不落盘。前端日志只有当前页面内的 100 条内存环形缓冲。
+- WebSocket 帧、心跳和单人战斗 Tick 不持久化；聊天仅保存受限的作用域历史（`social.chat_messages`），不归档传输帧。
 - Redis 不在基线中。选型依据和未来准入门槛见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
 
 目标主机按 `2c4g/40g` 预算设计：5000+ 注册账号、100+ 持续网络收发、500+ 峰值收发和 2000+ 冷挂机补算。容量目标是门禁，不是未经实测的性能承诺。
@@ -42,7 +42,7 @@
 - `art/`：美术与图像资源源文件。
 - `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置）。
 - `data`：运行数据目录（如本地工具需要），不进 Git、不进镜像。
-- `vendor/YuoCore`：固定版本 submodule；基座引用保留待用，本任务不修改其内容。
+- `vendor/YuoCore`：固定版本 submodule；生产运行时内核，由 `src/Ecs` 承载游戏实体、系统和模拟。
 
 ## 本地运行
 
@@ -73,9 +73,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v37**（`PostgresSchema.Version = 37`），启动时校验版本并拒绝旧 schema；玩家八分段载荷版本保持 **v36**。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立脚本（当前覆盖至 v37，详见 [`migrations/README.md`](migrations/README.md)）。v36→v37 涉及旧组队托管退款，必须停服、全库备份并等待有效租约过期后显式执行 `0037_v36_to_v37.sql`，本地开发启动链不会自动执行。其中 v20→v21 的参与载荷不能无损迁移，旧玩家行必须由 `reset-outdated-players.sh` 交互确认清零；任何版本链缺口或无法迁移的库均不得假装升级，应在确认数据无需保留后重建/清零。本目录可整体删除，全新初始化行为不变。
-
-同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回。当前数据库为 v37、玩家 section 仍为 v36，两者不可混用标签。schema 版本变化通常要求迁移或重新初始化；其中 v20→v21 的旧参与载荷不能无损迁移，必须按迁移说明由 `reset-outdated-players.sh` 交互确认清零；v36→v37 可保留现有玩家，按离线迁移脚本结清旧组队托管。
+默认监听 `http://127.0.0.1:5128`。当前源码由 `PostgresSchema.Sql` 为全新库直建 **数据库 v61**，八分段载荷标签为 **v44**，客户端最低读者为 **v41**；三个版本含义不同。运行时不执行历史迁移，也不以旧标签继续加载。已有可保留的数据库按 [`migrations/README.md`](migrations/README.md) 在受控停写窗口迁移；`0061_v60_to_v61.sql` 更新标签、刷盘权限，不改写历史载荷。相同载荷版本下，配表指纹变化不要求清库。
 
 启动正式前端：
 
@@ -124,7 +122,7 @@ dotnet run --project src/ComputeNode/ComputeNode.csproj
 ```bash
 dotnet build Game.slnx -c Release --disable-build-servers --nologo
 dotnet test tests/Domain.Tests/Domain.Tests.csproj -c Release --no-build --disable-build-servers --nologo
-dotnet test tests/Server.Tests/Server.Tests.csproj -c Release --no-build --disable-build-servers --nologo
+scripts/verify.sh --with-postgres -- dotnet test tests/Server.Tests/Server.Tests.csproj -c Release --no-build --disable-build-servers --nologo
 npm --prefix frontend run build
 dotnet run --project src/DataTool/DataTool.csproj -c Release -- validate config/game-data --strict
 ```
@@ -138,15 +136,13 @@ scripts/verify.sh --backend    # 仅后端面（可叠加 --full）
 scripts/verify.sh --frontend   # 仅前端面
 ```
 
-分级只服务日常迭代，不能替代交付前的全量门禁。
+`--full` 为每轮集成测试自动供给新的回环 PostgreSQL 18，一次性库凭随机库名、独占所有者和服务端标识领取，退出后回收；不复用本地开发库。分级只服务日常迭代，不能替代交付前的全量门禁。
 
 容量场景：
 
 ```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
-  --scenario capacity-target --require-database
-```
-`scripts/capacity-target.sh` 缺省创建随机回环端口的独立 tmpfs PostgreSQL，结束只清理本次容器，不操作已有开发库或数据卷；显式外部库使用 `CAPACITY_REAL_DATABASE_URL` 并提供 `CAPACITY_POSTGRES_CONTAINER` 资源证据。门禁真实运行5000账号存储、100/500认证业务收发与2000名一小时欠债玩家的 ComputeNode → 主服独立重演 → 原子写回。目标集合全部握手、业务回执与 `Applied` 终态、Server/节点/PG资源证据和预算必须同时满足；任一缺失、dead、超时或超预算均非零，`syntheticEstimate` 永不替代。容量门禁不执行远程发布或生产恢复，报告也不是未经实测的生产性能承诺。
+scripts/capacity-target.sh --link-regression
+`scripts/capacity-target.sh --link-regression` 仅在本机运行，创建随机回环端口的独立 tmpfs PostgreSQL，不接受外部数据库、代理或已有服务地址，结束只回收本次容器。它验证 5000 账号存储、100/500 并发认证业务收发，以及 2000 名一小时冷挂机玩家经计算节点回写的整条链路；报告绑定本轮 Server/ComputeNode 产物 SHA-256。任一目标未通过即非零退出；估算不替代实测。固定 `2c4g/40g` 目标另行验收，本地链路绿灯不代表生产硬件达标。
 
 压测工具支持的场景：`capacity-target`（容量综合门禁）、`websocket`（真实 WS 连接与协议握手）、`http-read`（只读 HTTP 端点）、`compute`（本地冷挂机补算）、`postgres`（PostgreSQL/WAL 真实探测）。各场景参数语义以 `src/LoadTests/LoadTestOptions.cs` 为准。
 
@@ -183,22 +179,9 @@ SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
 
 
-## 本地三版本基准控制面
+## 历史性能基线
 
-`scripts/bench-matrix.sh --manifest <角色清单> --seed-players <清单角色数> --players 10 --hours 1 --scenarios Gathering,Crafting,Combat` 使用同一清单分别重置三套本地实验库并运行真实服务；`--concurrency` 可固定同时执行的玩家命令数。`DAOHUA_BENCH_OBSERVABILITY=false` 可在同负载关闭深度观测，用于判断埋点自身的开销。`--hours 1` 是业务时钟回放一小时，实际墙钟运行时间另见报告。
-
-OOP、ECS-current 和 ECS-optimized 实验共享开发控制面，只在 `Development` API 宿主显式配置 `DAOHUA_BENCH_MODE=replay|online` 与 `DAOHUA_BENCH_VARIANT=oop|ecs-current|ecs-optimized` 时装配。数据库必须是本机对应的 `daohua_bench_oop`、`daohua_bench_ecs_current`、`daohua_bench_ecs_optimized`，请求必须来自本机回环地址；控制面拒绝浏览器 Origin 和转发来源。
-
-- `replay` 必须设置 ISO-8601 `DAOHUA_BENCH_SIMULATION_TARGET`，禁用模拟/玩家周期刷盘与冷挂机后台，由控制端显式推进及 flush，采用确定性模拟事务ID。
-- `online` 使用系统业务时钟，禁止设置固定目标；保留在线模拟和周期刷盘，按实际墙钟 duration/concurrency/interval 运行。两种模式均不启用冷挂机派发，租约与会话过期始终使用系统时钟。
-- `POST /api/debug/bench/session` 接收 `{ "playerId": "<已种入基准账号的UUID>" }`，签发真实 PostgreSQL session 与 HttpOnly Cookie；正式登录限流保持原值。`simulation-clock`、`flush`、`metrics` 端点要求该正式会话。
-- `DAOHUA_BENCH_OBSERVABILITY=true|false` 控制业务 Meter，默认 `true`。监听器在数据库 bootstrap 之前创建。`GET /api/debug/bench/metrics` 返回 `measurements`（阶段与场景键、count/totalMs/固定桶/分位）和 `counters`；Bench将测量窗口桶差与事件差写入报告 `server_measurements` / `server_counters`。
-- 现已观测 OOP/ECS 的 `core.simulation`、`snapshot.export`、`queue.actor_wait` 与玩家载入/卸载；ECS 还观测 `ecs.system_tick`、游戏 System 活动调用、真实实体创建/销毁及 `yuocore.*` 内核路径（Fiber 邮箱、World 分派、System 扫描、组件热路径）。报告把内核阶段归一化为 `ecs.core.*`；仅两版真实边界一致的阶段可比较，优化版专属内部步骤单列。样本为实际调用，缺失阶段不填零，累计分位不得相减。请求 RTT 单独报告；在线结束时钟不同，跨库终态严格比较使用独立 replay。
-- 单版 `bench run`/`probe` 除 JSON 和总览 CSV 外，写出同名 `.stages.csv` 与 `.counters.csv`：阶段行含层级、状态、调用次数、累计耗时、单次均值及 p50/p95/p99/max；计数行记录邮箱、组件、系统等事件次数。`domain.*` 是 OOP/ECS 共用领域原语，`oop.logic.*`、`ecs.system.run.*` 与 `ecs.core.*` 分别解释实现和内核路径；父子计时和并发累计耗时不能相加为墙钟。`not_observed`、`not_applicable`、`unavailable` 的统计字段留空。
-- `dotnet run --project src/Bench -- report --report 'artifacts/bench/<同条件三版报告通配符>.json' --comparison-output artifacts/bench/gathering.comparison.json` 生成阶段与事件计数的横向对比 JSON/CSV，并为旧版输入报告补齐缺失的 `.stages.csv`、`.counters.csv`（不覆盖已有文件）。输入必须是 OOP、ECS-current、ECS-optimized 各一份，且场景、人数、manifest SHA-256、游戏数据指纹、模式、目标时长、并发和成功命令数一致；条件不符仍输出明细，但拒绝计算倍率并返回非零状态。同一 `stage|scenario`、调用边界和调用次数相同的共享阶段可计算三版倍率；两套 ECS 共有阶段只计算优化版/当前版；`all` 运维阶段只并排展示，`count_mismatch` 不计算倍率。
-- 报告尚未记录 ECS `shardCount`，计算倍率前需外部核对两套 ECS 服务的实际分片数。`instrumentation_listener_ms` 是服务端 Meter 监听器窗口耗时下界；完整埋点成本要用相同负载的观测开/关独立重复实验确认。
-
-该实验尚未替代正式服务。完整设计、验证记录与剩余门禁见 [`TASK-20260924-09`](docs/tasks/archive/archive-2026-09.md)。
+OOP、ECS-current、ECS-optimized 三版本对照是历史实验，不是当前生产运行模式。实验条件和报告见 [`TASK-20260924-09`](docs/tasks/archive/archive-2026-09.md)；现在的交付口径为单内核 ECS 与独立容量门禁。
 
 ## Docker 与生产部署
 
@@ -220,7 +203,7 @@ docker compose -f compose.yaml down
 - Server 与 ComputeNode 使用 `linux/amd64`、不可变 digest 固定的镜像引用（构建时可保留 `sha-<commit>` 标签，但生产 Compose 必须解析并固定 `@sha256:...`），`prod` 仅作移动发布指针；
 - PostgreSQL 卷 `daohua_daohua-postgres` 未被替换，备份归档和 SHA-256 校验可恢复；
 - Caddy 配置已 `caddy validate`，公网只暴露 HTTPS、HTTP API 和 WebSocket；
-- 应用日志、WAL、队列和备份均有硬上限，禁止把 WebSocket/聊天/战斗 Tick 变成持久化日志。
+- 应用日志、WAL、队列和备份均有硬上限，禁止把 WebSocket 帧或单人战斗 Tick 变成持久化日志。
 
 ## 开发阶段兼容边界
 

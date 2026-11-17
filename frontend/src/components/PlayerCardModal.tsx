@@ -495,25 +495,30 @@ export const PlayerCardModal = memo(function PlayerCardModal(): React.JSX.Elemen
   const t = useT()
   const card = useSocialStore(state => state.playerCard)
   const pending = useSocialStore(state => state.playerCardRequestId !== null)
+  const error = useSocialStore(state => state.playerCardError)
+  const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const closePlayerCard = useSocialStore(state => state.closePlayerCard)
 
-  const open = pending || card !== null
+  const open = pending || card !== null || error !== null
   if (!open) return null
 
-  const errorText = card?.error === 'forbidden'
+  const errorText = error?.code === 'forbidden'
     ? t('social.card.errorForbidden')
-    : card?.error === 'not-found'
+    : error?.code === 'not-found'
       ? t('social.card.errorNotFound')
-      : card?.error
-        ? t('social.card.errorGeneric')
-        : null
+      : error?.code === 'timeout'
+        ? t('common.net.requestTimeout')
+        : error ? t('social.card.errorGeneric') : null
 
   return (
     <Modal className="player-card-modal" labelledBy="player-card-title" onClose={closePlayerCard} open size="medium">
       {card === null && !errorText ? (
         <p className="player-card-loading">{t('social.card.loading')}</p>
       ) : errorText !== null ? (
-        <p className="player-card-error" id="player-card-title">{errorText}</p>
+        <div>
+          <p className="player-card-error" id="player-card-title">{errorText}</p>
+          {error && <button type="button" onClick={() => requestPlayerCard(error.playerId)}>{t('app.mail.retry')}</button>}
+        </div>
       ) : card !== null ? (
         <PlayerCardBody card={card} />
       ) : null}

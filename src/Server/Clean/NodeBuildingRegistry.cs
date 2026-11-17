@@ -37,7 +37,10 @@ public sealed record NodeBuildingContributionTransaction(
     string TransactionType,
     DateTimeOffset OccurredAt,
     IReadOnlyList<SectionWrite>? Sections = null,
-    IReadOnlyList<CommandReceipt>? Receipts = null);
+    IReadOnlyList<CommandReceipt>? Receipts = null)
+{
+    public Guid? RequiredRuntimeOwner { get; init; }
+}
 
 /// <summary>
 /// 节点公共建筑持久化适配：game.node_buildings 按 (node_id, building_id) 主键读写，
@@ -131,7 +134,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
             {
                 using var confirmation = unknown is null ? null : new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 return await ContributeCoreAsync(nodeId, buildingId, definition, requested, context,
-                    confirmation?.Token ?? cancellationToken);
+                    confirmation?.Token ?? cancellationToken, confirmOnly: unknown is not null);
             }
             catch (PostgresException exception) when (exception.SqlState is "40001" or "40P01"
                 && attempt < 5 && unknown is null && !cancellationToken.IsCancellationRequested)
@@ -140,7 +143,7 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
             }
             catch (EconomyCommitOutcomeUnknownException exception) when (unknown is null)
             {
-                // 原上下文精确重放：先查询历史 applied；没有历史事实才重做整笔原子事务。
+                // COMMIT 不确定时只查历史 applied，不能重新裁决当前建筑或扣材料。
                 unknown = exception;
             }
             catch (Exception exception) when (unknown is not null)
@@ -158,22 +161,25 @@ public sealed class PostgresNodeBuildingRepository(NpgsqlDataSource dataSource)
     private async ValueTask<NodeBuildingWriteOutcome> ContributeCoreAsync(
         string nodeId, string buildingId, BuildingDefinition definition,
         IReadOnlyDictionary<string, double> requested, NodeBuildingContributionTransaction context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool confirmOnly)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var existing = await PostgresEconomyRepository.TryLoadCommittedAsync(
-            connection, transaction, context.IdempotencyKey, cancellationToken);
+            connection, transaction, context.IdempotencyKey, cancellationToken, lockRow: !confirmOnly);
         if (existing is not null)
         {
             var applied = ReadAppliedMaterials(existing.ResultPayload);
             var replayRequest = CreateContributionRequest(nodeId, buildingId, requested, applied, context);
             var replay = PostgresEconomyRepository.ValidateReplay(replayRequest, existing);
             // 返回当前活行仅刷新派生缓存，不改变建筑；实际接纳量始终来自首次提交的结果。
-            var live = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
+            var live = confirmOnly ? null : await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
             return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Applied, live, applied, replay);
         }
 
+        if (confirmOnly) throw new InvalidOperationException("未找到建筑贡献已提交的幂等事实。");
+        await PostgresEconomyRepository.CheckRuntimeOwnerAsync(connection, transaction, context.PlayerId,
+            context.RequiredRuntimeOwner, cancellationToken);
         var row = await SelectForUpdateAsync(connection, transaction, nodeId, buildingId, cancellationToken);
         if (row is null) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.NotFound);
         if (row.TargetLevel <= 0) return new NodeBuildingWriteOutcome(NodeBuildingWriteStatus.Idle, row);

@@ -14,6 +14,7 @@ public sealed class PostgresRetentionRepository(
     ILogger<PostgresRetentionRepository> logger)
 {
     private const int MaxPassesPerCycle = 8;
+    private readonly LogThrottle _badReplacementLog = new(TimeSpan.FromMinutes(1));
 
     private enum CleanupStepKind
     {
@@ -88,21 +89,15 @@ public sealed class PostgresRetentionRepository(
                 LIMIT $2
                 """, "DELETE FROM platform.integration_outbox o USING ({0}) doomed WHERE o.outbox_id = doomed.outbox_id"),
 
-            new(CleanupStepKind.DeadFlushQueue, deadBefore, normalBatch, """
-                SELECT queue_id
-                FROM platform.section_flush_queue
-                WHERE status = 'dead' AND updated_at < $1
-                ORDER BY updated_at
-                LIMIT $2
-                """, "DELETE FROM platform.section_flush_queue q USING ({0}) doomed WHERE q.queue_id = doomed.queue_id"),
+            new(CleanupStepKind.DeadFlushQueue, deadBefore, normalBatch, "", ""),
 
             new(CleanupStepKind.StaleRuntimeLeases, staleLeaseBefore, normalBatch, """
                 SELECT player_id
                 FROM game.player_runtime_leases
                 WHERE lease_until < $1
-                ORDER BY lease_until
-                LIMIT $2
-                """, "DELETE FROM game.player_runtime_leases l USING ({0}) doomed WHERE l.player_id = doomed.player_id"),
+                ORDER BY lease_until, player_id
+                LIMIT $2 FOR UPDATE SKIP LOCKED
+                """, "DELETE FROM game.player_runtime_leases l USING ({0}) doomed WHERE l.player_id = doomed.player_id AND l.lease_until < $1"),
 
             new(CleanupStepKind.Sessions, sessionsBefore, normalBatch, """
                 SELECT session_id
@@ -304,14 +299,19 @@ public sealed class PostgresRetentionRepository(
             var anyHitCap = false;
             foreach (var step in steps)
             {
+                // API 始终执行完整留存；独立 worker 不需要身份、租约、账本等敏感表权限。
+                if (options.ProcessRole == ServerProcessRole.PersistenceWorker
+                    && step.Kind is not (CleanupStepKind.Outbox or CleanupStepKind.DeadOutbox or CleanupStepKind.DeadFlushQueue))
+                    continue;
                 var idx = (int)step.Kind;
                 var shouldRun = hasBacklog[idx] || (step.TriggeredBy is { } dep && hasBacklog[(int)dep]);
                 if (!shouldRun) continue;
 
                 await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-                var deleted = await DeleteBatchAsync(
-                    connection, transaction, step.SelectorSql, step.DeleteTemplate,
-                    step.Cutoff, step.BatchSize, cancellationToken);
+                var deleted = step.Kind == CleanupStepKind.DeadFlushQueue
+                    ? await DeleteReplacedDeadSectionsAsync(connection, transaction, deadBefore, step.BatchSize, cancellationToken)
+                    : await DeleteBatchAsync(connection, transaction, step.SelectorSql, step.DeleteTemplate,
+                        step.Cutoff, step.BatchSize, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
                 totals[idx] += deleted;
@@ -352,6 +352,52 @@ public sealed class PostgresRetentionRepository(
                 result.TransientIdempotency, result.ExpiredMails, result.DuelLogs, result.MarketTrades,
                 result.TerminalOrders, result.TerminalReservations, result.ShopDailyPurchases, result.StickerTombstones);
         return result;
+    }
+
+    private async Task<int> DeleteReplacedDeadSectionsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        DateTimeOffset before, int batchSize, CancellationToken cancellationToken)
+    {
+        var validated = new List<long>();
+        // 同时钉住候选死信和实际落盘替代行。不得在校验之后把恢复中的行或坏替代者当作清理证据。
+        await using (var select = new NpgsqlCommand("""
+            SELECT q.queue_id, s.player_id, s.section_kind, s.section_version, s.schema_version,
+                   s.codec, s.payload, s.raw_bytes, s.checksum, s.updated_at
+            FROM platform.section_flush_queue q
+            JOIN game.player_state_sections s ON s.player_id = q.player_id AND s.section_kind = q.section_kind
+            WHERE q.status = 'dead' AND q.updated_at < $1 AND s.section_version > q.state_version
+              AND s.schema_version = $3
+            ORDER BY q.updated_at, q.queue_id
+            LIMIT $2 FOR UPDATE OF q SKIP LOCKED FOR SHARE OF s SKIP LOCKED
+            """, connection, transaction))
+        {
+            select.Parameters.Add(new NpgsqlParameter { Value = before });
+            select.Parameters.Add(new NpgsqlParameter { Value = batchSize });
+            select.Parameters.Add(new NpgsqlParameter { Value = SectionCodec.CurrentSchemaVersion });
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var queueId = reader.GetInt64(0);
+                var replacement = new StoredSection(reader.GetGuid(1), reader.GetString(2), reader.GetInt64(3),
+                    reader.GetInt32(4), reader.GetString(5), reader.GetFieldValue<byte[]>(6), reader.GetInt32(7),
+                    reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9));
+                try { PostgresSectionRepository.VerifySectionPayload(replacement); }
+                catch (InvalidDataException ex)
+                {
+                    if (_badReplacementLog.TryAcquire())
+                        logger.LogWarning(ex, "刷盘死信的落盘替代分段无效，保留证据 queueId={QueueId} player={PlayerId} section={Section}",
+                            queueId, replacement.PlayerId, replacement.SectionKind);
+                    continue;
+                }
+                validated.Add(queueId);
+            }
+        }
+        if (validated.Count == 0) return 0;
+        await using var delete = new NpgsqlCommand("""
+            DELETE FROM platform.section_flush_queue WHERE queue_id = ANY($1) AND status = 'dead' AND updated_at < $2
+            """, connection, transaction);
+        delete.Parameters.Add(new NpgsqlParameter { Value = validated.ToArray() });
+        delete.Parameters.Add(new NpgsqlParameter { Value = before });
+        return await delete.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<int> DeleteBatchAsync(

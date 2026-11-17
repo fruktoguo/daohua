@@ -1,143 +1,115 @@
 using System.Collections.Concurrent;
-using Domain.Persistence;
+using System.Text.RegularExpressions;
 using Npgsql;
 using Server.Clean;
 using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>
-/// 共享同一 PostgreSQL 库的集成测试集合：全部串行执行。
-/// 市场链路使用 Serializable 事务，任何并发写 platform.section_flush_queue / game.* 的
-/// 测试都会与其构成 SSI 谓词冲突（40001），进而触发 MarketRuntime 的就绪熔断；
-/// 统一收进本集合后跨类不再并行落库，各自仍共享同一 schema。
-/// </summary>
+/// <summary>同一测试宿主内串行访问独享库，避免市场 Serializable 事务的跨测试 SSI 冲突。</summary>
 [CollectionDefinition("PostgresIntegration")]
 public sealed class PostgresIntegrationCollection;
 
-/// <summary>
-/// 集成测试建库辅助。
-///
-/// 背景：多个集成测试类会被 xUnit 并行执行，而 `PostgresSchema.Sql` 里的
-/// `CREATE SCHEMA IF NOT EXISTS` 在并发下并不安全——两个事务同时插入同一个
-/// `pg_namespace` 行会撞唯一索引（23505），失败方还可能继续在无表状态下执行用例（42P01）。
-///
-/// 处理方式：用会话级 advisory lock 把建库串行化，并对并发 DDL 的瞬时冲突（23505 / 40P01 / 40001）
-/// 做有限退避重试。这样无论多少个测试类同时建库，最终都会收敛到「schema 已就绪」。
-/// </summary>
+/// <summary>仅在与本轮标识匹配、显式授权的空库上执行权威建表，不迁移或清表。</summary>
 internal static class PostgresTestSchema
 {
-    /// <summary>专用 advisory lock 键，仅用于测试建库串行化。</summary>
-    private const long AdvisoryLockKey = 772301;
-    private static int _initialized;
-
-    /// <summary>在专用测试库上建立/校验当前 schema；可安全地被多个测试类并发调用。</summary>
-    /// <param name="source">目标数据源。</param>
-    public static async Task EnsureAsync(NpgsqlDataSource source)
-    {
-        if (Volatile.Read(ref _initialized) == 1) return;
-        await using var connection = await source.OpenConnectionAsync();
-        await using (var acquire = new NpgsqlCommand($"SELECT pg_advisory_lock({AdvisoryLockKey})", connection))
-            await acquire.ExecuteNonQueryAsync();
-        try
-        {
-            if (Volatile.Read(ref _initialized) == 1) return;
-            for (var attempt = 1; ; attempt++)
-            {
-                try
-                {
-                    await using var prePatch = new NpgsqlCommand("""
-                        ALTER TABLE IF EXISTS identity.accounts ADD COLUMN IF NOT EXISTS taptap_openid varchar(128) NULL;
-                        ALTER TABLE IF EXISTS identity.accounts ADD COLUMN IF NOT EXISTS is_bot boolean NOT NULL DEFAULT false;
-                        ALTER TABLE IF EXISTS platform.section_flush_queue ADD COLUMN IF NOT EXISTS status varchar(16) NOT NULL DEFAULT 'pending';
-                        ALTER TABLE IF EXISTS platform.integration_outbox ADD COLUMN IF NOT EXISTS status varchar(16) NOT NULL DEFAULT 'pending';
-                        ALTER TABLE IF EXISTS platform.compute_jobs ADD COLUMN IF NOT EXISTS dead_count integer NOT NULL DEFAULT 0;
-                        """, connection) { CommandTimeout = 60 };
-                    await prePatch.ExecuteNonQueryAsync();
-                    await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection) { CommandTimeout = 60 };
-                    await ddl.ExecuteNonQueryAsync();
-                    await using var patch = new NpgsqlCommand("""
-                        ALTER TABLE IF EXISTS market.item_stats ADD COLUMN IF NOT EXISTS reference_price double precision;
-                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS experience double precision NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS lifetime_experience double precision NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS duel_wins double precision NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS duel_losses double precision NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_projection ADD COLUMN IF NOT EXISTS avatar varchar(64) NOT NULL DEFAULT 'player';
-                        ALTER TABLE IF EXISTS social.chat_messages ADD COLUMN IF NOT EXISTS sender_realm integer NOT NULL DEFAULT 1;
-                        ALTER TABLE IF EXISTS social.parties ALTER COLUMN open_slots SET DEFAULT 3;
-                        ALTER TABLE IF EXISTS social.parties ADD COLUMN IF NOT EXISTS doudizhu_stake double precision NOT NULL DEFAULT 10
-                            CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision);
-                        ALTER TABLE IF EXISTS social.party_members ADD COLUMN IF NOT EXISTS doudizhu_ready boolean NOT NULL DEFAULT false;
-                        ALTER TABLE IF EXISTS social.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_channel_check;
-                        ALTER TABLE IF EXISTS social.chat_messages ADD CONSTRAINT chat_messages_channel_check CHECK (channel IN ('world','nearby','friend','party','sect'));
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_start_day_index bigint NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_days integer NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_merit integer NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS week_days_mask smallint NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_key integer NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_days integer NOT NULL DEFAULT 0;
-                        ALTER TABLE IF EXISTS game.player_daily_checkins ADD COLUMN IF NOT EXISTS month_merit integer NOT NULL DEFAULT 0;
-                        """, connection) { CommandTimeout = 60 };
-                    await patch.ExecuteNonQueryAsync();
-                    await using var updateVersions = new NpgsqlCommand($"""
-                        UPDATE game.player_state_heads SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
-                        UPDATE game.player_state_sections SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
-                        UPDATE platform.section_flush_queue SET schema_version = {SectionCodec.CurrentSchemaVersion} WHERE schema_version <> {SectionCodec.CurrentSchemaVersion};
-                        INSERT INTO platform.schema_version(version, applied_at) VALUES ({PostgresSchema.Version}, now()) ON CONFLICT (version) DO NOTHING;
-                        """, connection) { CommandTimeout = 60 };
-                    await updateVersions.ExecuteNonQueryAsync();
-                    // 测试库按清零口径每轮供给即净态:几十轮门禁累积的投影/玩家/会话行会让
-                    // 冷扫描(ORDER BY last_simulated_at LIMIT 2048)被历史残留玩家占满,本轮
-                    // 新入队玩家被挤出候选集,ScanColdPlayers 间歇乃至稳定假红(实测 projection
-                    // 残留 5212 行)。统一清空全部业务表,仅保留 schema_version 与密钥环。
-                    await using var truncate = new NpgsqlCommand("""
-                        TRUNCATE identity.accounts, identity.players, identity.auth_sessions, identity.audit_events,
-                            identity.account_risk_events, identity.account_risk_signals,
-                            identity.data_protection_keys,
-                            game.player_state_heads, game.player_state_sections, game.player_action_queue,
-                            game.player_projection, game.leaderboard_snapshots, game.leaderboard_ranks, game.player_runtime_leases, game.node_buildings, game.duel_logs, game.player_daily_checkins,
-                            platform.compute_jobs, platform.section_flush_queue, platform.command_receipts,
-                            platform.integration_outbox, platform.account_risk_policy, platform.account_risk_key,
-                            social.doudizhu_games, social.parties, social.party_members, social.party_sessions, social.party_session_inbox,
-                            social.party_seekers, social.party_invitations, social.friendships, social.friend_requests,
-                            social.chat_messages, social.player_invitations,
-                            social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers,
-                            social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures,
-                            economy.transactions, economy.transaction_lines, economy.player_asset_balances,
-                            economy.player_asset_instances, economy.reservations, economy.shop_daily_purchases, economy.transient_idempotency,
-                            market.orders, market.trades, market.item_stats, market.partition_leases,
-                            market.settlement_claims, market.settlement_cursors
-                        RESTART IDENTITY CASCADE;
-                        """, connection) { CommandTimeout = 60 };
-                    await truncate.ExecuteNonQueryAsync();
-                    Volatile.Write(ref _initialized, 1);
-                    return;
-                }
-                catch (PostgresException exception) when (attempt < 5 && exception.SqlState is "23505" or "40P01" or "40001")
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
-                }
-            }
-        }
-        finally
-        {
-            await using var release = new NpgsqlCommand($"SELECT pg_advisory_unlock({AdvisoryLockKey})", connection);
-            await release.ExecuteNonQueryAsync();
-        }
-    }
-
-    /// <summary>测试专用轻量 PBKDF2 迭代数（贴合库约束 password_iterations >= 100,000 下限）；生产默认仍为 600,000。</summary>
-    internal const int TestPbkdf2Iterations = 100_000;
+    private const string ConnectionVariable = "DAOHUA_MARKET_TEST_CONNECTION";
+    private const string RunIdVariable = "DAOHUA_POSTGRES_TEST_RUN_ID";
+    private static readonly string ProcessId = Guid.NewGuid().ToString("N");
     private static readonly ConcurrentDictionary<string, NpgsqlDataSource> SharedSources = new(StringComparer.Ordinal);
 
-    /// <summary>复用测试进程级共享数据源，避免每个集成用例反复创建与销毁 Npgsql 连接池。</summary>
+    public static async Task EnsureAsync(NpgsqlDataSource source)
+    {
+        var expected = RequireConnectionString("PostgreSQL 集成测试");
+        var target = ValidateTarget(source.ConnectionString, RequireRunId(), requirePassword: false);
+        var allowed = new NpgsqlConnectionStringBuilder(expected);
+        // NpgsqlDataSource 的公开连接串可脱敏；实际库和登录身份另由数据库回查。
+        target.Remove("Password");
+        allowed.Remove("Password");
+        if (!target.EquivalentTo(allowed))
+            throw new InvalidOperationException("数据源不是本轮配置的一次性测试库。");
+
+        var ready = $"daohua-postgres-test-v1:{RequireRunId()}:ready";
+        var claimed = $"daohua-postgres-test-v1:{RequireRunId()}:claimed:{ProcessId}";
+        await using var connection = await source.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var acquire = new NpgsqlCommand("SELECT pg_catalog.pg_advisory_xact_lock(772301)", connection, transaction))
+            await acquire.ExecuteNonQueryAsync();
+
+        // 服务器侧验证真实库名、登录角色、库所有者和预置标识。已领取的库只认当前宿主。
+        await using var identity = new NpgsqlCommand("""
+            SELECT pg_catalog.shobj_description(d.oid, 'pg_database')
+            FROM pg_catalog.pg_database d
+            WHERE d.datname = pg_catalog.current_database() AND d.datname = @database
+              AND current_user = @owner AND session_user = @owner
+              AND d.datdba = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = @owner)
+            """, connection, transaction);
+        identity.Parameters.AddWithValue("database", target.Database!);
+        identity.Parameters.AddWithValue("owner", target.Username!);
+        var marker = await identity.ExecuteScalarAsync() as string;
+        if (marker == claimed)
+        {
+            await transaction.CommitAsync();
+            return;
+        }
+        if (marker != ready)
+            throw new InvalidOperationException("拒绝建表：测试库缺少本轮 ready 标识、所有者不匹配或已被另一测试宿主领取。");
+
+        await using var isEmpty = new NpgsqlCommand("""
+            SELECT NOT EXISTS (
+                SELECT FROM pg_catalog.pg_namespace
+                WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'public')
+            ) AND NOT EXISTS (
+                SELECT FROM pg_catalog.pg_depend
+                WHERE refclassid = 'pg_catalog.pg_namespace'::regclass
+                  AND refobjid = 'public'::regnamespace
+            );
+            """, connection, transaction);
+        if (await isEmpty.ExecuteScalarAsync() is not true)
+            throw new InvalidOperationException("拒绝建表：只接受来自未修改模板的空库。");
+
+        await using var ddl = new NpgsqlCommand(PostgresSchema.Sql, connection, transaction) { CommandTimeout = 60 };
+        await ddl.ExecuteNonQueryAsync();
+        // 名称与标识只包含校验过的十六进制和常量；与建表一起提交，其他进程不能复用。
+        await using var claim = new NpgsqlCommand($"COMMENT ON DATABASE {target.Database} IS '{claimed}';", connection, transaction);
+        await claim.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+    }
+
+    /// <summary>测试专用轻量 PBKDF2 迭代数（贴合数据库约束）；生产默认仍为 600,000。</summary>
+    internal const int TestPbkdf2Iterations = 100_000;
+
     public static NpgsqlDataSource GetSharedDataSource(string connectionString)
         => SharedSources.GetOrAdd(connectionString, static cs => NpgsqlDataSource.Create(cs));
 
-    /// <summary>读取集成测试专用库连接串；未配置时抛出带说明的异常。</summary>
-    /// <param name="purpose">调用方用途描述，用于异常文案。</param>
-    /// <returns>连接串。</returns>
-    public static string RequireConnectionString(string purpose) =>
-        Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION")
-        ?? throw new InvalidOperationException($"{purpose}需要专用 PostgreSQL 库：DAOHUA_MARKET_TEST_CONNECTION。");
+    public static string RequireConnectionString(string purpose)
+    {
+        var connection = Environment.GetEnvironmentVariable(ConnectionVariable);
+        if (string.IsNullOrWhiteSpace(connection))
+            throw new InvalidOperationException($"{purpose}需要一次性测试库：通过 scripts/verify.sh --with-postgres -- 供给 {ConnectionVariable}。");
+        var target = ValidateTarget(connection, RequireRunId());
+        target.MaxPoolSize = 16;
+        target.Timeout = 5;
+        target.CommandTimeout = 30;
+        return target.ConnectionString;
+    }
+
+    private static string RequireRunId() => Environment.GetEnvironmentVariable(RunIdVariable)
+        ?? throw new InvalidOperationException($"一次性测试库必须配置 {RunIdVariable}。");
+
+    internal static NpgsqlConnectionStringBuilder ValidateTarget(string connectionString, string runId, bool requirePassword = true)
+    {
+        var error = "拒绝集成测试连接：要求 127.0.0.1、显式端口与密码，以及与本轮随机标识对应的库名和独占角色。";
+        NpgsqlConnectionStringBuilder input;
+        try { input = new(connectionString); }
+        catch (ArgumentException) { throw new InvalidOperationException(error); } // 不回显连接串或解析异常。
+        if (!Regex.IsMatch(runId, "\\A[0-9a-f]{32}\\z")
+            || input.Host != "127.0.0.1" || !input.ShouldSerialize("Port") || input.Port is < 1 or > 65535
+            || input.Database != $"daohua_test_{runId}" || input.Username != input.Database
+            || (requirePassword && string.IsNullOrWhiteSpace(input.Password))
+            || input.Keys.Cast<string>().Any(key => key is not ("Host" or "Port" or "Database" or "Username"
+                or "Password" or "Maximum Pool Size" or "Timeout" or "Command Timeout")))
+            throw new InvalidOperationException(error);
+        return input;
+    }
 }

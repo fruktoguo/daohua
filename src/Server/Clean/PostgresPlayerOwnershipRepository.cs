@@ -10,25 +10,24 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
     public async ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
         Validate(playerId, ownerInstanceId, lease);
-        var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await LockPlayerIdentityAsync(connection, transaction, playerId, cancellationToken);
         await using var command = new NpgsqlCommand("""
+            WITH stamp AS MATERIALIZED (SELECT clock_timestamp() AS checked_at)
             INSERT INTO game.player_runtime_leases(player_id, owner_instance_id, lease_until, renewed_at)
-            VALUES ($1, $2, $3, $4)
+            SELECT $1, $2, checked_at + $3, checked_at FROM stamp
             ON CONFLICT (player_id) DO UPDATE
             SET owner_instance_id = EXCLUDED.owner_instance_id,
                 lease_until = EXCLUDED.lease_until,
                 renewed_at = EXCLUDED.renewed_at
-            WHERE game.player_runtime_leases.lease_until <= $4
+            WHERE game.player_runtime_leases.lease_until <= EXCLUDED.renewed_at
                OR game.player_runtime_leases.owner_instance_id = $2
             RETURNING owner_instance_id
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
-        command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
-        command.Parameters.Add(new NpgsqlParameter { Value = now });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Interval, Value = lease });
         var acquired = await command.ExecuteScalarAsync(cancellationToken) is Guid owner && owner == ownerInstanceId;
         await transaction.CommitAsync(cancellationToken);
         return acquired;
@@ -37,22 +36,27 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
     /// <summary>持有者续租；返回 false 表示租约已过期或已被其他实例接管，调用方必须按租约丢失处理并淘汰内存陈旧状态。</summary>
     public async ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
-        // lease_until > now() 硬守卫：租约一旦过期，ColdCatchUpWorker 与 ComputeResultCommitter 均视该玩家为无人持租，
-        // 若允许原实例在失速恢复后直接续活陈旧内存实体而不重载持久化状态，会覆盖期间冷挂机写入，形成脑裂。
         Validate(playerId, ownerInstanceId, lease);
-        var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await LockPlayerIdentityAsync(connection, transaction, playerId, cancellationToken);
+        // 只有拿到身份和租约行锁之后才取数据库墙钟；排队期间到期的旧实体不能被续活。
         await using var command = new NpgsqlCommand("""
-            UPDATE game.player_runtime_leases
-            SET lease_until = $1, renewed_at = $2
-            WHERE player_id = $3 AND owner_instance_id = $4 AND lease_until > $2
+            WITH locked AS MATERIALIZED (
+                SELECT player_id, lease_until FROM game.player_runtime_leases
+                WHERE player_id = $1 AND owner_instance_id = $2 FOR UPDATE
+            ), stamp AS MATERIALIZED (
+                SELECT player_id, lease_until, clock_timestamp() AS checked_at FROM locked
+            )
+            UPDATE game.player_runtime_leases lease
+            SET lease_until = stamp.checked_at + $3, renewed_at = stamp.checked_at
+            FROM stamp
+            WHERE lease.player_id = stamp.player_id AND lease.owner_instance_id = $2
+              AND stamp.lease_until > stamp.checked_at
             """, connection, transaction);
-        command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
-        command.Parameters.Add(new NpgsqlParameter { Value = now });
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Interval, Value = lease });
         var renewed = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
         await transaction.CommitAsync(cancellationToken);
         return renewed;

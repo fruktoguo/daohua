@@ -1,3 +1,4 @@
+import { getSessionGeneration } from '../network/sessionState'
 import { create } from 'zustand'
 import { getT } from '../i18n'
 import { claimDailyCheckin, fetchCheckinStatus } from '../network/apiClient'
@@ -206,9 +207,11 @@ export const useCheckinStore = create<CheckinStore>((set, get) => ({
     if (!options?.silent) {
       set({ loading: true, error: null })
     }
+    const generation = getSessionGeneration()
     const promise = (async () => {
       try {
         const status = await fetchCheckinStatus()
+        if (generation !== getSessionGeneration()) return null
         const prevDay = get().status?.dayIndex
         set({
           status,
@@ -219,22 +222,25 @@ export const useCheckinStore = create<CheckinStore>((set, get) => ({
         })
         return status
       } catch (err) {
+        if (generation !== getSessionGeneration()) return null
         const message = err instanceof Error ? err.message : getT()('app.checkin.loadFailed')
         set({ loading: false, error: message })
         return null
-      } finally {
-        activeRefreshPromise = null
       }
-    })()
+    })().finally(() => {
+      if (activeRefreshPromise === promise) activeRefreshPromise = null
+    })
     activeRefreshPromise = promise
     return promise
   },
 
   claim: async () => {
     if (get().claiming) return null
+    const generation = getSessionGeneration()
     set({ claiming: true, error: null })
     try {
       const result = await claimDailyCheckin()
+      if (generation !== getSessionGeneration()) return null
       set({
         claiming: false,
         status: result.status,
@@ -248,6 +254,7 @@ export const useCheckinStore = create<CheckinStore>((set, get) => ({
       }
       return result
     } catch (err) {
+      if (generation !== getSessionGeneration()) return null
       const message = err instanceof Error ? err.message : getT()('app.checkin.claimFailed')
       set({ claiming: false, error: message })
       useGameStore.getState().setNotice(message)

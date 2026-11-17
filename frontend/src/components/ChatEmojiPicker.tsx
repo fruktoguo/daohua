@@ -1,3 +1,4 @@
+import { useChatImageGeneration } from './useChatImageLease'
 import { memo, useEffect, useState, useSyncExternalStore } from 'react'
 import {
   chatStickerService,
@@ -122,12 +123,19 @@ const StickerPickerItem = memo(function StickerPickerItem({
  * 3. 表情包 Tab：支持 100 个上限展示（X/100）、批量勾选管理删除、多文件上传、链接添加与多端云端同步；
  *    点击表情包时自动探测云端有效性并在过期时从本地 IndexedDB 自动重传换链后插入输入框草稿。
  */
-export const ChatEmojiPicker = memo(function ChatEmojiPicker({
+export const ChatEmojiPicker = memo(function ChatEmojiPicker(props: ChatEmojiPickerProps): React.JSX.Element {
+  const generation = useChatImageGeneration()
+  return <SessionChatEmojiPicker key={generation} {...props} generation={generation} />
+})
+
+function SessionChatEmojiPicker({
   onSelectEmoji,
   onSelectSticker,
   onClose,
-}: ChatEmojiPickerProps): React.JSX.Element {
+  generation,
+}: ChatEmojiPickerProps & { generation: number }): React.JSX.Element {
   const t = useT()
+  const isCurrentSession = () => generation === chatStickerService.getGeneration()
   const [activeTab, setActiveTab] = useState<'emoji' | 'sticker'>('emoji')
   const [newStickerUrl, setNewStickerUrl] = useState('')
   const [manageMode, setManageMode] = useState(false)
@@ -165,10 +173,11 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
   }
 
   const handleStickerClick = async (item: CustomStickerItem): Promise<void> => {
-    if (busyId) return
+    if (!isCurrentSession() || busyId) return
     setBusyId(item.stickerId)
     try {
       const ready = await chatStickerService.ensureStickerReadyForSend(item.url, blob => uploadChatImage(blob))
+      if (!isCurrentSession()) return
       if (ready.missingLocalBlob) {
         useGameStore.getState().setNotice(t('combat.chat.stickerMissingLocalBlob'))
         return
@@ -180,7 +189,7 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
       onSelectSticker(ready.url)
       onClose?.()
     } finally {
-      setBusyId(null)
+      if (isCurrentSession()) setBusyId(null)
     }
   }
 
@@ -215,7 +224,7 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
 
   const handleAddStickerSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
-    if (isAddingUrl) return
+    if (!isCurrentSession() || isAddingUrl) return
     const trimmed = newStickerUrl.trim()
     if (!trimmed) return
 
@@ -237,6 +246,7 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
     setIsAddingUrl(true)
     try {
       const result = await chatStickerService.saveStickerFromUrl(trimmed)
+      if (!isCurrentSession()) return
       if (result.ok) {
         setNewStickerUrl('')
         useGameStore.getState().setNotice(t('combat.chat.stickerAdded'))
@@ -248,19 +258,20 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
         useGameStore.getState().setNotice(t('combat.chat.stickerInvalidImage'))
       }
     } finally {
-      setIsAddingUrl(false)
+      if (isCurrentSession()) setIsAddingUrl(false)
     }
   }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
-    if (files.length === 0 || isUploading) return
+    if (!isCurrentSession() || files.length === 0 || isUploading) return
 
     const currentCount = chatStickerService.getSortedStickers().length
     if (currentCount >= MAX_CUSTOM_STICKERS) {
       // 单图若与已有内容重复仍允许检测复用；全部超出上限时明确拦截提示
       const firstSha = files.length === 1 ? await computeBlobSha256(files[0]).catch(() => '') : ''
+      if (!isCurrentSession()) return
       if (!firstSha || !chatStickerService.isStickerSaved('', firstSha)) {
         useGameStore.getState().setNotice(t('combat.chat.stickerLimitReached', { max: MAX_CUSTOM_STICKERS }))
         return
@@ -285,11 +296,14 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
         }
 
         const preSha = await computeBlobSha256(file).catch(() => '')
+        if (!isCurrentSession()) return
         const existing = preSha ? chatStickerService.findSticker(preSha) : undefined
         if (existing) {
           const ready = await chatStickerService.ensureStickerReadyForSend(existing.url, blob => uploadChatImage(blob))
+          if (!isCurrentSession()) return
           lastSelectedUrl = ready.url
           await chatStickerService.saveImageBlob(ready.url, file, preSha)
+          if (!isCurrentSession()) return
           continue
         }
 
@@ -299,6 +313,7 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
         }
 
         const uploaded = await uploadChatImage(file)
+        if (!isCurrentSession()) return
         if (uploaded.transcodedFromGif) convertedGif = true
         const addRes = chatStickerService.addCustomStickerDetailed(uploaded.url, {
           sha256: uploaded.sha256,
@@ -337,12 +352,13 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
         )
       }
     } catch (err: unknown) {
+      if (!isCurrentSession()) return
       const errMsg = err instanceof Error ? err.message : t('combat.chat.uploadFailed')
       useGameStore.getState().setNotice(
         errMsg === 'IMAGE_TOO_LARGE' ? t('combat.chat.uploadImageTooLarge') : t('combat.chat.uploadFailed')
       )
     } finally {
-      setIsUploading(false)
+      if (isCurrentSession()) setIsUploading(false)
     }
   }
 
@@ -486,4 +502,4 @@ export const ChatEmojiPicker = memo(function ChatEmojiPicker({
       )}
     </div>
   )
-})
+}

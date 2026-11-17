@@ -1,3 +1,4 @@
+import { useChatImageGeneration } from './useChatImageLease'
 import { useZongmenStore } from '../game/zongmenStore'
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useGameStore } from '../game/gameStore'
@@ -27,17 +28,19 @@ const MAX_CHAT_BODY_LENGTH = 200
  *
  * 独立持有草稿状态：聊天列表的高频刷新不会重建输入框，输入焦点与选区保持稳定。
  */
-const ChatComposer = memo(function ChatComposer({
-  channel,
-  targetPlayerId,
-  hint,
-}: {
+interface ChatComposerProps {
   channel: ChatChannel
-  /** 好友频道的私聊对象 */
   targetPlayerId?: string | null
-  /** 频道不可用时的提示文案；提供时输入框整体禁用 */
   hint?: string
-}): React.JSX.Element {
+}
+
+const ChatComposer = memo(function ChatComposer(props: ChatComposerProps): React.JSX.Element {
+  const generation = useChatImageGeneration()
+  return <SessionChatComposer key={generation} {...props} generation={generation} />
+})
+
+function SessionChatComposer({ channel, targetPlayerId, hint, generation }: ChatComposerProps & { generation: number }): React.JSX.Element {
+  const isCurrentSession = () => generation === chatStickerService.getGeneration()
   const t = useT()
   const mountedTimeout = useMountedTimeout()
   const [draft, setDraft] = useState('')
@@ -63,6 +66,7 @@ const ChatComposer = memo(function ChatComposer({
     })
   }, [mountedTimeout])
   const handleInsertText = (text: string): void => {
+    if (!isCurrentSession()) return
     const input = inputRef.current
     if (!input) {
       setDraft(prev => (prev ? `${prev} ${text}` : text))
@@ -85,6 +89,7 @@ const ChatComposer = memo(function ChatComposer({
     }, 20)
   }
   const handlePaste = async (event: React.ClipboardEvent<HTMLInputElement>): Promise<void> => {
+    if (!isCurrentSession()) return
     const items = event.clipboardData?.items
     if (!items) return
 
@@ -100,10 +105,13 @@ const ChatComposer = memo(function ChatComposer({
         useGameStore.getState().setNotice(t('combat.chat.uploadingImage'))
         try {
           const sha256 = await computeBlobSha256(blob).catch(() => '')
+          if (!isCurrentSession()) return
           const existing = sha256 ? chatStickerService.findSticker(sha256) : undefined
           if (existing) {
             const ready = await chatStickerService.ensureStickerReadyForSend(existing.url, b => uploadChatImage(b))
+            if (!isCurrentSession()) return
             await chatStickerService.saveImageBlob(ready.url, blob, sha256)
+            if (!isCurrentSession()) return
             handleInsertText(ready.url)
             useGameStore.getState().setNotice(
               ready.healed ? t('combat.chat.stickerHealedInserted') : t('combat.chat.uploadReused')
@@ -112,6 +120,7 @@ const ChatComposer = memo(function ChatComposer({
           }
 
           const uploaded = await uploadChatImage(blob)
+          if (!isCurrentSession()) return
           handleInsertText(uploaded.url)
           const addRes = chatStickerService.addCustomStickerDetailed(uploaded.url, {
             sha256: uploaded.sha256,
@@ -129,12 +138,13 @@ const ChatComposer = memo(function ChatComposer({
             )
           }
         } catch (err: unknown) {
+          if (!isCurrentSession()) return
           const errMsg = err instanceof Error ? err.message : t('combat.chat.uploadFailed')
           useGameStore.getState().setNotice(
             errMsg === 'IMAGE_TOO_LARGE' ? t('combat.chat.uploadImageTooLarge') : t('combat.chat.uploadFailed')
           )
         } finally {
-          setUploading(false)
+          if (isCurrentSession()) setUploading(false)
         }
         return
       }
@@ -144,10 +154,11 @@ const ChatComposer = memo(function ChatComposer({
 
   const submit = async (): Promise<void> => {
     const body = draft.trim()
-    if (body.length === 0 || sending || uploading) return
+    if (!isCurrentSession() || body.length === 0 || sending || uploading) return
     setSending(true)
     try {
       const prepared = await chatStickerService.prepareDraftStickersForSend(body)
+      if (!isCurrentSession()) return
       if (!prepared.ok) {
         useGameStore.getState().setNotice(t('combat.chat.stickerMissingLocalBlob'))
         return
@@ -164,7 +175,7 @@ const ChatComposer = memo(function ChatComposer({
         setPickerOpen(false)
       }
     } finally {
-      setSending(false)
+      if (isCurrentSession()) setSending(false)
     }
   }
   if (disabled) return <p className="chat-composer-hint">{hint}</p>
@@ -218,7 +229,7 @@ const ChatComposer = memo(function ChatComposer({
       <button disabled={draft.trim().length === 0 || uploading || sending} type="submit">{t('combat.chat.send')}</button>
     </form>
   )
-})
+}
 
 /**
  * 传音频道面板 (ChatChannelPanel)

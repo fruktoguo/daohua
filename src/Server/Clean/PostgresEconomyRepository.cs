@@ -82,20 +82,17 @@ public sealed class PostgresEconomyRepository(
                 }
                 catch (EconomyCommitOutcomeUnknownException unknown)
                 {
-                    // PersistLedger=false 且未携带幂等键时，禁止盲目重放确认，防止出现双倍入账或扣减。
-                    if (!stableRequest.PersistLedger && string.IsNullOrWhiteSpace(stableRequest.IdempotencyKey))
-                        throw;
-                    // 不释放会话门或玩家门就精确重放确认，不能让后续实耗跨入未知资产结局。
                     try
                     {
                         using var confirmation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                        return await CommitOnceAsync(stableRequest, confirmation.Token);
+                        if (await FindCommittedAsync(stableRequest, confirmation.Token) is { } committed)
+                            return committed;
                     }
                     catch (Exception confirmationError)
                     {
                         unknown.Data["ConfirmationError"] = confirmationError;
-                        throw unknown;
                     }
+                    throw;
                 }
             }
         }
@@ -110,9 +107,58 @@ public sealed class PostgresEconomyRepository(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await CheckRuntimeOwnerAsync(connection, transaction, request.ActorId, request.RequiredRuntimeOwner, cancellationToken);
         var result = await CommitCoreAsync(connection, transaction, request, cancellationToken);
         await CommitTransactionAsync(transaction, request.TransactionId, cancellationToken);
         return result;
+    }
+
+    public async ValueTask<EconomyTransactionResult?> FindCommittedAsync(
+        EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey)) return null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (request.PersistLedger)
+        {
+            var existing = await TryLoadCommittedAsync(connection, null, request.IdempotencyKey, cancellationToken);
+            return existing is null ? null : ValidateReplay(request, existing);
+        }
+
+        // 瞬时幂等表只保存玩家、键和时间；仅用原请求的稳定键查存在性，缺席不是回滚凭据。
+        await using var command = new NpgsqlCommand("""
+            SELECT created_at FROM economy.transient_idempotency WHERE player_id = $1 AND idempotency_key = $2
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = request.ActorId });
+        command.Parameters.Add(new NpgsqlParameter { Value = request.IdempotencyKey });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new(request.TransactionId, request.IdempotencyKey, true, true,
+                reader.GetFieldValue<DateTimeOffset>(0), request.ResultPayload)
+            : null;
+    }
+
+    internal static async ValueTask CheckRuntimeOwnerAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        Guid playerId, Guid? ownerInstanceId, CancellationToken cancellationToken)
+    {
+        if (ownerInstanceId is null) return;
+        // 身份 -> 租约与接管、冷算 fence 同序。身份锁持有至 COMMIT，验证后的写入不能跨进新 owner 的窗口。
+        await using (var identity = new NpgsqlCommand("""
+            SELECT 1 FROM identity.players WHERE player_id = $1 AND status = 1 FOR UPDATE
+            """, connection, transaction))
+        {
+            identity.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            if (await identity.ExecuteScalarAsync(cancellationToken) is null)
+                throw new PlayerOwnershipLostException(playerId);
+        }
+        await using var lease = new NpgsqlCommand("""
+            SELECT 1 FROM game.player_runtime_leases
+            WHERE player_id = $1 AND owner_instance_id = $2 AND lease_until > clock_timestamp()
+            FOR UPDATE
+            """, connection, transaction);
+        lease.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        lease.Parameters.Add(new NpgsqlParameter { Value = ownerInstanceId.Value });
+        if (await lease.ExecuteScalarAsync(cancellationToken) is null)
+            throw new PlayerOwnershipLostException(playerId);
     }
 
     internal sealed record CommittedEconomyRecord(
@@ -125,15 +171,15 @@ public sealed class PostgresEconomyRepository(
         DateTimeOffset CommittedAt);
 
     internal static async ValueTask<CommittedEconomyRecord?> TryLoadCommittedAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, string idempotencyKey,
-        CancellationToken cancellationToken)
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, string idempotencyKey,
+        CancellationToken cancellationToken, bool lockRow = true)
     {
-        await using var command = new NpgsqlCommand("""
+        const string sql = """
             SELECT transaction_id, idempotency_key, request_hash, transaction_type, actor_id, result_payload, created_at
             FROM economy.transactions
             WHERE idempotency_key = $1
-            FOR SHARE
-            """, connection, transaction);
+            """;
+        await using var command = new NpgsqlCommand(lockRow && transaction is not null ? sql + " FOR SHARE" : sql, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = idempotencyKey });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
@@ -243,7 +289,7 @@ public sealed class PostgresEconomyRepository(
         else if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             // PersistLedger=false 的高频模拟/冷挂机入账使用短期幂等表防重：
-            // 当 EconomyCommitOutcomeUnknownException 触发重放或同一键重复提交时，冲突即判定已提交并短路，绝不双倍入账/扣减。
+            // 同一键重复提交时，冲突即判定已提交并短路，绝不双倍入账/扣减。
             var inserted = false;
             await using (var transient = new NpgsqlCommand("""
                 INSERT INTO economy.transient_idempotency (player_id, idempotency_key, created_at)

@@ -6,7 +6,7 @@
  */
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-export const SNAPSHOT_SCHEMA_VERSION = 43
+export const SNAPSHOT_SCHEMA_VERSION = 44
 
 /** schemaVersion 为载荷标签，minReaderSchemaVersion 为服务端声明的读者地板；任一缺失按保守语义拒绝。 */
 export function snapshotSchemaReadable(
@@ -15,4 +15,16 @@ export function snapshotSchemaReadable(
 ): boolean {
   const floor = minReaderSchemaVersion ?? schemaVersion
   return typeof floor === 'number' && Number.isFinite(floor) && floor <= SNAPSHOT_SCHEMA_VERSION
+}
+
+/** 区分客户端确实过旧和损坏/缺字段的快照。 */
+export function requireReadableSnapshotSchema(schemaVersion: number | undefined, minReaderSchemaVersion?: number): void {
+  if (snapshotSchemaReadable(schemaVersion, minReaderSchemaVersion)) return
+  const floor = minReaderSchemaVersion ?? schemaVersion
+  if (typeof floor === 'number' && Number.isFinite(floor)) throw new SnapshotUpgradeRequiredError()
+  throw new Error('玩家快照缺少有效版本。')
+}
+
+export class SnapshotUpgradeRequiredError extends Error {
+  constructor() { super('玩家快照 schema 版本不受支持，请更新客户端。') }
 }

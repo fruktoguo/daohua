@@ -363,12 +363,19 @@ public sealed class SessionRegistry
 /// </summary>
 public static class WebSocketEndpoint
 {
-    /// <summary>
-    /// /ws 端点主流程：升级与鉴权校验 → accept socket → 订阅快照/战报事件 →
-    /// 收发双循环（Hello 握手内完成防多开准入裁决）→ 按 CloseHint 发关闭帧 →
-    /// 释放准入登记并卸载玩家 Actor。
-    /// </summary>
-    /// <param name="context">HTTP 请求上下文。</param>
+    internal static bool IsAllowedPlayerWebSocketOrigin(HttpContext context, ServerOptions options)
+    {
+        // 非浏览器工具可省略 Origin，但仍须先通过会话认证。
+        // 浏览器自动附带的来源必须与入口同源，或命中完整来源白名单。
+        if (!context.Request.Headers.TryGetValue("Origin", out var values)) return true;
+        if (values.Count != 1 || ServerOptions.NormalizeWebSocketOrigin(values[0]) is not { } origin)
+            return false;
+        var requestOrigin = ServerOptions.NormalizeWebSocketOrigin($"{context.Request.Scheme}://{context.Request.Host}");
+        return string.Equals(origin, requestOrigin, StringComparison.OrdinalIgnoreCase)
+            || options.WebSocketAllowedOrigins.Contains(origin);
+    }
+
+    /// <summary>会话认证与来源核验通过后才升级，然后执行 Hello 准入和收发循环。</summary>
     public static async Task HandleAsync(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -385,6 +392,12 @@ public static class WebSocketEndpoint
         }
 
         var options = context.RequestServices.GetRequiredService<ServerOptions>();
+        if (!IsAllowedPlayerWebSocketOrigin(context, options))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { code = "WEBSOCKET_ORIGIN_REJECTED", message = "WebSocket 来源不被允许。" });
+            return;
+        }
         var admission = context.RequestServices.GetRequiredService<Admission.IHelloAdmissionHook>();
         var runtime = context.RequestServices.GetRequiredService<IPlayerRuntime>();
         var gameData = context.RequestServices.GetRequiredService<Domain.GameData.GameDataCatalog>();
@@ -408,7 +421,8 @@ public static class WebSocketEndpoint
         // 会话令牌哈希随会话登记：登出/改密吊销 HTTP 会话时按哈希精确踢线对应 WebSocket，
         // 避免被吊销的挂机连接继续持有可用的命令通道。
         byte[]? authSessionTokenHash = null;
-        if (context.Request.Cookies.TryGetValue(SessionAuthenticationDefaults.CookieName, out var wsSessionToken))
+        var wsSessionToken = SessionAuthenticationDefaults.ReadPresentedToken(context);
+        if (!string.IsNullOrWhiteSpace(wsSessionToken))
             authSessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(wsSessionToken));
         var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity, accountId, authSessionTokenHash, isBot, accountCreatedAt);
         // 会话准入（单账号互踢/拒绝 + 设备配额）推迟到 Hello 处理时统一裁决：

@@ -45,6 +45,8 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
   // 邀请链接进入时自动切到注册页并预填邀请码（仍可手动修改）。
   const initialInviteCode = useState(readInviteCodeFromLocation)[0]
   const [mode, setMode] = useState<AuthMode>(initialInviteCode ? 'register' : 'login')
+  const logoutState = useAccountStore(state => state.logoutState)
+  const logoutPending = logoutState === 'pending'
   const savedAccounts = useAccountStore(state => state.savedAccounts)
   const loginWithAuth = useAccountStore(state => state.loginWithAuth)
   const registerWithAuth = useAccountStore(state => state.registerWithAuth)
@@ -78,6 +80,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
   }, [onLoggedIn, t])
 
   const handleTapTapLogin = async () => {
+    if (logoutPending || loading) return
     setLoading(true)
     setError(null)
 
@@ -154,6 +157,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (logoutPending || loading) return
     const cleanAcc = loginAccount.trim()
     if (!cleanAcc) {
       setError(t('app.login.errorEmptyAccount'))
@@ -182,6 +186,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (logoutPending || loading) return
     const cleanAcc = regAccount.trim()
     const cleanName = (regCharName || cleanAcc).trim()
 
@@ -242,6 +247,14 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
         <h1 className="login-title">{t('app.login.gameTitle')}</h1>
         <p className="login-subtitle">{t('app.login.subtitle')}</p>
 
+        {logoutPending && <p role="status">{t('app.login.logoutPending')}</p>}
+        {logoutState === 'failed' && (
+          <div className="login-error-msg" role="alert">
+            {t('app.login.logoutFailed')}{' '}
+            <button type="button" disabled={loading} onClick={() => void useAccountStore.getState().logout()}>{t('app.settings.logoutBtn')}</button>
+          </div>
+        )}
+
         <div className="auth-tab-bar" role="tablist" aria-label={t('app.login.tabBarAria')}>
           <button
             type="button"
@@ -276,7 +289,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
                 type="button"
                 className="taptap-auth-btn"
                 onClick={handleTapTapLogin}
-                disabled={loading}
+                disabled={loading || logoutPending}
                 style={{
                   width: '100%',
                   display: 'flex',
@@ -373,7 +386,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
               {error && <div className="login-error-msg">{error}</div>}
 
-              <button type="submit" className="login-submit-btn" disabled={loading}>
+              <button type="submit" className="login-submit-btn" disabled={loading || logoutPending}>
                 {loading ? t('app.login.loginLoading') : t('app.login.loginBtn')}
               </button>
             </form>
@@ -487,7 +500,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
               {error && <div className="login-error-msg">{error}</div>}
 
-              <button type="submit" className="login-submit-btn" disabled={loading}>
+              <button type="submit" className="login-submit-btn" disabled={loading || logoutPending}>
                 {loading ? t('app.login.registerLoading') : t('app.login.registerBtn')}
               </button>
             </form>

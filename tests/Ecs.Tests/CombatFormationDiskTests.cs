@@ -152,6 +152,51 @@ public sealed class CombatFormationDiskTests
         Assert.Equal(expectedDamage, derived.Healing, 5);
     }
 
+    [Theory]
+    [InlineData("formation.tianlei", "item.tianlei-formation-disk")]
+    [InlineData("formation.xuesha", "item.xuesha-formation-disk")]
+    public void FormationCooldown_RestoresWithinWindowThenAllowsTheNextEligibleHit(string buffId, string abilityId)
+    {
+        var player = new CombatantTemplate(CombatantStats.Create(1000, 20, 10, 2) with { MaxManapoints = 200 });
+        var enemy = new CombatantTemplate(CombatantStats.Create(1000, 10, 0, 2));
+        var continuous = CombatEncounterState.Create("formation-restore", 42, player, [enemy]);
+        continuous.Player.Hitpoints = 400;
+        continuous.Player.AddBuff(new CombatBuffState(buffId, 300, 1));
+        Assert.Equal(abilityId, Assert.Single(Strike(continuous, 0, 2).DerivedEvents!).AbilityId);
+
+        static CombatantSnapshot RoundTrip(CombatantState unit)
+            => System.Text.Json.JsonSerializer.Deserialize<CombatantSnapshot>(
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(CombatEncounterState.Snapshot(unit), Domain.Persistence.PersistenceJson.Options),
+                Domain.Persistence.PersistenceJson.Options)!;
+
+        var resumed = CombatEncounterState.Restore("formation-restore", 42, player, RoundTrip(continuous.Player),
+            [enemy], [RoundTrip(continuous.Enemies[0])], 0, CombatOutcome.Running);
+        // Count=6 会掷中首个触发通道；冷却中的两个分支都不得消费这次随机判定。
+        var ongoingHit = Strike(continuous, 0.5, 6);
+        var restoredHit = Strike(resumed, 0.5, 6);
+        Assert.Null(ongoingHit.DerivedEvents);
+        Assert.Null(restoredHit.DerivedEvents);
+        Assert.Equal(ongoingHit.NextRoll(), restoredHit.NextRoll());
+
+        var expected = Assert.Single(Strike(continuous, 1, 6).DerivedEvents!);
+        Assert.Equal(expected, Assert.Single(Strike(resumed, 1, 6).DerivedEvents!));
+        Assert.Equal(continuous.Player.Hitpoints, resumed.Player.Hitpoints);
+        Assert.Equal(continuous.Player.Manapoints, resumed.Player.Manapoints);
+        Assert.Equal(continuous.Enemies[0].Hitpoints, resumed.Enemies[0].Hitpoints);
+
+        static CombatHitContext Strike(CombatEncounterState encounter, double atSeconds, int count)
+        {
+            var context = new CombatHitContext
+            {
+                Encounter = encounter, Attacker = encounter.Player, Target = encounter.Enemies[0],
+                AttackStats = encounter.Player.EffectiveStats, Side = 0, Count = count, AtSeconds = atSeconds,
+                Hit = true, Damage = 50, RawDamage = 50
+            };
+            CombatTriggerMath.FormationReactiveStrike(context);
+            return context;
+        }
+    }
+
     [Fact]
     public void TianleiFormation_DoesNotTrigger_WhenManaIsInsufficient()
     {

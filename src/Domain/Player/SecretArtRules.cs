@@ -18,6 +18,23 @@ public static class SecretArtRules
     public const double FragmentTomeChance = 0.05;
     private const int MaxRecipeDepth = 4;
 
+    /// <summary>只接受配表中的功法残卷，并解析同一后缀的完整秘籍。</summary>
+    internal static bool TryResolveFragmentTome(GameDataCatalog? gameData, string fragmentItemId, out ItemId tomeId)
+    {
+        const string prefix = "item.fragment.";
+        tomeId = default;
+        if (gameData is null || fragmentItemId.Length <= prefix.Length
+            || !fragmentItemId.StartsWith(prefix, StringComparison.Ordinal)
+            || !gameData.Items.TryGetValue(new ItemId(fragmentItemId), out var fragment)
+            || fragment.SubCategory != "manualFragment")
+            return false;
+        var candidate = new ItemId("item.tome." + fragmentItemId[prefix.Length..]);
+        if (!gameData.Items.TryGetValue(candidate, out var tome) || tome.SubCategory != "manualTome")
+            return false;
+        tomeId = candidate;
+        return true;
+    }
+
     /// <summary>残卷推演失败时的保底灵石奖励：按残卷自身系统回收价的 2 倍动态计算。</summary>
     public static double ResolveFragmentFailureReward(GameDataCatalog gameData, string fragmentItemId)
     {

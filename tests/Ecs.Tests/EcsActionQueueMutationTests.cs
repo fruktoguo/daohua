@@ -16,6 +16,40 @@ public sealed class EcsActionQueueMutationTests
 {
     private static readonly DateTimeOffset From = new(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public async Task AutoTravel_CatchUpFromSameFrozenInputEncodesIdenticalInFlightSections()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        player.TravelTo("node.yunxi-village");
+        player.SetAutoTravelEnabled(true);
+        player.Enqueue(new(new ActionId("explore.gather-ningxue-grass"), -1), From, catalog.Actions);
+        player.TravelTo("node.shuyu-brook");
+        var seed = player.ExportState();
+        var until = From.AddSeconds(1);
+
+        async Task<PlayerAggregateState> Advance()
+        {
+            using var runtime = new EcsGameRuntime(catalog, From);
+            var id = runtime.CreatePlayer(PlayerAggregate.Restore(seed).ExportState());
+            await runtime.RunPlayerOnceAsync(id, until);
+            Assert.Single(runtime.DrainSimulationEvents(id), e => e.Code == "action.auto-travel");
+            return runtime.ExportSnapshot(id).State;
+        }
+
+        var first = await Advance();
+        var replay = await Advance();
+        Assert.NotNull(first.World.EdgeId);
+        Assert.Equal("world.travel", first.Actions[0].Intent.ActionId.Value);
+        Assert.Equal("node.yunxi-village", first.Actions[0].Travel!.TargetNodeId);
+        Assert.Equal(seed.Actions[0].Id, first.Actions[1].Id);
+        var actual = Domain.Persistence.SectionCodec.EncodeAggregateFull(first, until);
+        var expected = Domain.Persistence.SectionCodec.EncodeAggregateFull(replay, until);
+        Assert.Equal(expected.Select(s => (s.SectionKind, s.Checksum)), actual.Select(s => (s.SectionKind, s.Checksum)));
+        for (var i = 0; i < actual.Count; i++)
+            Assert.Equal(expected[i].Payload.ToArray(), actual[i].Payload.ToArray());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

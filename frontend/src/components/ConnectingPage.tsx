@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 import { Icon } from './Icon'
@@ -17,8 +18,8 @@ interface ConnectingPageProps {
 export const ConnectingPage = memo(function ConnectingPage({ onCancel }: ConnectingPageProps): React.JSX.Element {
   const t = useT()
   const handleCancel = () => {
-    gameClient.logout()
-    onCancel?.()
+    if (onCancel) onCancel()
+    else gameClient.logout()
   }
 
   return (
@@ -63,14 +64,16 @@ interface ConnectionErrorPageProps {
  */
 export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, onLogout, message }: ConnectionErrorPageProps): React.JSX.Element {
   const t = useT()
+  const updateRequired = useGameStore(state => state.disconnectReason === 'common.net.snapshotUpdateRequired')
   const handleRetry = () => {
-    if (onRetry) onRetry()
+    if (updateRequired) window.location.reload()
+    else if (onRetry) onRetry()
     else gameClient.connect()
   }
 
   const handleLogout = () => {
-    gameClient.logout()
-    onLogout?.()
+    if (onLogout) onLogout()
+    else gameClient.logout()
   }
 
   return (
@@ -88,7 +91,7 @@ export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, 
         </p>
         <div className="status-actions">
           <button type="button" className="status-btn primary" onClick={handleRetry}>
-            {t('app.connect.retryBtn')}
+            {updateRequired ? t('app.connect.refreshBtn') : t('app.connect.retryBtn')}
           </button>
           <button type="button" className="status-btn secondary" onClick={handleLogout}>
             {t('app.connect.switchAccountBtn')}

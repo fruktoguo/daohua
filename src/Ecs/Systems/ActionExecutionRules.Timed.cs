@@ -118,7 +118,7 @@ internal static partial class ActionExecutionRules
             }
             else if (SecretArtRules.IsSecretArtAction(definition.Id.Value))
             {
-                if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out var reason))
+                if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out _, out var reason))
                 {
                     availableHere = true;
                     hasInputs = false;
@@ -182,11 +182,15 @@ internal static partial class ActionExecutionRules
         {
             return false;
         }
-        // 与 world.travel 命令同一条插队通道；模拟内不额外推版本，仅标脏 ActionQueue。
+        // 模拟内新实例须在节点与主服重演一致；用独立用途前缀，不消费随机流。
+        var idInput = FormattableString.Invariant($"auto-travel:{action.Id:D}:{at.UtcTicks}:{anchor}");
+        var idHash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(idInput));
+        var instanceId = new Guid(idHash.AsSpan(0, 16));
+        // 与 world.travel 命令共用插队通道；模拟内不额外推版本，仅标脏 ActionQueue。
         player.EnqueuePriority(new ActionIntent(travelId, 1, anchor), at,
             gameData.Actions,
             new TravelActionState(anchor, plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments),
-            incrementVersion: false);
+            incrementVersion: false, actionInstanceId: instanceId);
         events ??= new();
         events.Add(new SimulationEvent(at, "action.auto-travel",
             $"当前位置无法执行，自动前往 {anchorNode.Name}。", definition.Id));
@@ -947,11 +951,21 @@ internal static partial class ActionExecutionRules
         GameDataCatalog? gameData,
         AssetWallet? assets,
         IReadOnlyDictionary<AssetKey, double>? deltas,
+        out (AssetKey Asset, int InitialLevel, ItemId TomeId) target,
         out string reason)
     {
+        target = default;
         if (!TryResolveSecretArtTarget(action, definition, gameData,
                 out var targetItemId, out var initialLevel, out var targetKey, out reason))
             return false;
+        var tomeId = default(ItemId);
+        if (definition.Id.Value == SecretArtRules.ConvertActionId
+            && !SecretArtRules.TryResolveFragmentTome(gameData, targetItemId, out tomeId))
+        {
+            reason = "转化目标必须是有对应秘籍的功法残卷。";
+            return false;
+        }
+        target = (targetKey, initialLevel, tomeId);
 
         var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
         if (definition.Id.Value == SecretArtRules.LiquefyActionId)
@@ -1142,7 +1156,7 @@ internal static partial class ActionExecutionRules
         ref double completedActions,
         ref double completedRepeats)
     {
-        if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out var reason))
+        if (!CheckSecretArtInputs(player, action, definition, gameData, assets, deltas, out var resolved, out var reason))
         {
             action.Status = ActionQueueStatus.Blocked;
             events ??= new SimulationEventTail();
@@ -1150,8 +1164,8 @@ internal static partial class ActionExecutionRules
             return;
         }
 
-        TryResolveSecretArtTarget(action, definition, gameData,
-            out var targetItemId, out var initialLevel, out var targetKey, out _);
+        var (targetKey, initialLevel, tomeId) = resolved;
+        var targetItemId = targetKey.ItemId.Value;
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
         // 持续消耗品按本轮实际经过时间扣减（与普通/强化行动一致），经验仍按基础耗时结算。
         var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
@@ -1204,11 +1218,10 @@ internal static partial class ActionExecutionRules
             var hash = System.Security.Cryptography.SHA256.HashData(seedBytes);
             var roll = (BitConverter.ToUInt32(hash, 0) % 10000) / 10000.0;
             var producesTome = SecretArtRules.FragmentProducesTome(roll);
-            var tomeId = targetItemId.Replace("item.fragment.", "item.tome.", StringComparison.Ordinal);
-            if (producesTome && gameData is not null && gameData.Items.ContainsKey(new ItemId(tomeId)))
+            if (producesTome)
             {
-                AddDelta(deltas, new AssetKey(new ItemId(tomeId)), 1d);
-                var tomeMarkup = FormatItemMarkup(tomeId, ResolveItemDisplayName(gameData, tomeId), 1d);
+                AddDelta(deltas, new AssetKey(tomeId), 1d);
+                var tomeMarkup = FormatItemMarkup(tomeId.Value, ResolveItemDisplayName(gameData, tomeId.Value), 1d);
                 eventDesc = $"残卷推演机缘顿悟！消耗 1 份 {targetMarkup}，获得完整功法秘籍 {tomeMarkup}。";
             }
             else

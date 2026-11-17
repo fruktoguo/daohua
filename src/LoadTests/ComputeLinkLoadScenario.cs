@@ -73,11 +73,17 @@ internal static class ComputeLinkLoadScenario
         var runPlayerIds = Array.Empty<Guid>();
         var templatePlayerId = Guid.Empty;
         var templateCreatedByUs = false;
+        // 每轮独占发布目录；其他 dotnet build 不会覆写本次进程将加载的程序集及配表。
+        var buildDir = Path.Combine(Path.GetTempPath(), $"daohua-linkbuild-{Guid.NewGuid():N}");
+        var artifacts = new Dictionary<string, ArtifactEvidence>();
         try
         {
-            // 构建产物：缺失时现场 dotnet build（增量化，热缓存下秒级）。
-            var serverDll = await EnsureBuiltAsync(repoRoot, Path.Combine("src", "Server", "Server.csproj"), "Server.dll", cancellationToken);
-            var nodeDll = await EnsureBuiltAsync(repoRoot, Path.Combine("src", "ComputeNode", "ComputeNode.csproj"), "DaoHua.ComputeNode.dll", cancellationToken);
+            var serverDll = await BuildAsync(repoRoot, Path.Combine("src", "Server", "Server.csproj"),
+                Path.Combine(buildDir, "server"), "Server.dll", cancellationToken);
+            artifacts["server"] = await HashArtifactAsync(serverDll, cancellationToken);
+            var nodeDll = await BuildAsync(repoRoot, Path.Combine("src", "ComputeNode", "ComputeNode.csproj"),
+                Path.Combine(buildDir, "node"), "DaoHua.ComputeNode.dll", cancellationToken);
+            artifacts["computeNode"] = await HashArtifactAsync(nodeDll, cancellationToken);
 
             var logDir = Path.Combine(Path.GetTempPath(), $"daohua-linkload-{runTag}");
             Directory.CreateDirectory(logDir);
@@ -110,7 +116,7 @@ internal static class ComputeLinkLoadScenario
             {
                 if (options.CapacityNetworkOnLocalServer)
                 {
-                    var networkDuration = int.Parse(Environment.GetEnvironmentVariable("CAPACITY_REAL_NETWORK_DURATION_SECONDS") ?? "60");
+                    var networkDuration = CapacityTargetScenario.ReadEnvironmentInt("CAPACITY_REAL_NETWORK_DURATION_SECONDS", 60, 60, 86_400);
                     foreach (var target in new[] { CapacityTargetScenario.SustainedNetworkTarget, CapacityTargetScenario.PeakNetworkTarget })
                     {
                         var networkReport = await WebSocketScenario.RunAsync(options with
@@ -175,6 +181,7 @@ internal static class ComputeLinkLoadScenario
                 warnings.Add("Server/ComputeNode/PostgreSQL 资源证据缺失或超预算，容量门禁失败关闭。");
             }
             var metrics = result.ToMetrics(options, connectionString);
+            metrics["artifacts"] = artifacts;
             metrics["resources"] = resources;
             metrics["networkReports"] = networkReports;
 
@@ -207,21 +214,29 @@ internal static class ComputeLinkLoadScenario
         }
         catch (OperationCanceledException)
         {
-            return LoadTestReport.Failure("compute-link", "压测被取消或超出整体时间预算。");
+            return FailureWithArtifacts("压测被取消或超出整体时间预算。");
         }
         catch (Exception exception)
         {
-            return LoadTestReport.Failure("compute-link", $"compute-link 场景执行失败：{exception.Message}");
+            return FailureWithArtifacts($"compute-link 场景执行失败：{exception.Message}");
         }
         finally
         {
             foreach (var child in spawned) child.Dispose();
+            try { if (Directory.Exists(buildDir)) Directory.Delete(buildDir, recursive: true); }
+            catch (IOException exception) { Log($"无法回收本轮构建目录：{exception.Message}"); }
+            catch (UnauthorizedAccessException exception) { Log($"无法回收本轮构建目录：{exception.Message}"); }
             if (!options.KeepProbeSchema)
             {
                 try { await CleanupAsync(dataSource, runPlayerIds, templateCreatedByUs ? templatePlayerId : null, runTag); }
                 catch (Exception exception) { Log($"清理种子数据失败（忽略）：{exception.Message}"); }
             }
         }
+
+        LoadTestReport FailureWithArtifacts(string message) => LoadTestReport.Failure("compute-link", message) with
+        {
+            Metrics = new Dictionary<string, object?> { ["artifacts"] = artifacts }
+        };
     }
 
     /// <summary>compute-link 专用连接串解析：显式 --database 优先，其后专用环境变量，最后通用链。</summary>
@@ -257,28 +272,49 @@ internal static class ComputeLinkLoadScenario
         return null;
     }
 
-    /// <summary>定位项目构建产物；缺失时执行 dotnet build -c Release。</summary>
-    private static async Task<string> EnsureBuiltAsync(
-        string repoRoot, string projectRelative, string assemblyName, CancellationToken cancellationToken)
+    private sealed record ArtifactEvidence(string Assembly, string Sha256);
+
+    private static async Task<ArtifactEvidence> HashArtifactAsync(string path, CancellationToken cancellationToken)
     {
-        var output = Path.Combine(repoRoot, Path.GetDirectoryName(projectRelative)!,
-            "bin", "Release", "net10.0", assemblyName);
-        if (File.Exists(output)) return output;
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        return new ArtifactEvidence(Path.GetFileName(path), Convert.ToHexStringLower(hash));
+    }
+
+    /// <summary>每轮显式增量构建到独占目录，不从仓库的 bin 目录启动旧产物。</summary>
+    private static async Task<string> BuildAsync(
+        string repoRoot, string projectRelative, string outputDir, string assemblyName, CancellationToken cancellationToken)
+    {
+        var output = Path.Combine(outputDir, assemblyName);
         var project = Path.Combine(repoRoot, projectRelative);
         if (!File.Exists(project))
             throw new InvalidOperationException($"项目文件不存在：{project}");
-        Log($"构建产物缺失，执行 dotnet build {projectRelative} -c Release …");
-        var build = Process.Start(new ProcessStartInfo
+        Log($"增量构建 {projectRelative}（Release，独占输出）…");
+        var startInfo = new ProcessStartInfo(DotnetHost())
         {
-            FileName = DotnetHost(),
-            Arguments = $"build \"{project}\" -c Release --nologo",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            WorkingDirectory = repoRoot,
             UseShellExecute = false
-        }) ?? throw new InvalidOperationException("无法启动 dotnet build。");
-        var stdout = await build.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = await build.StandardError.ReadToEndAsync(cancellationToken);
-        await build.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromMinutes(5), cancellationToken);
+        };
+        foreach (var argument in new[] { "build", project, "-c", "Release", "-o", outputDir, "--nologo", "--disable-build-servers" })
+            startInfo.ArgumentList.Add(argument);
+        using var build = Process.Start(startInfo) ?? throw new InvalidOperationException("无法启动 dotnet build。");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(5));
+        var stdoutTask = build.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderrTask = build.StandardError.ReadToEndAsync(timeout.Token);
+        try
+        {
+            await build.WaitForExitAsync(timeout.Token);
+            await Task.WhenAll(stdoutTask, stderrTask);
+        }
+        finally
+        {
+            if (!build.HasExited) build.Kill(entireProcessTree: true);
+        }
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
         if (build.ExitCode != 0 || !File.Exists(output))
             throw new InvalidOperationException($"dotnet build {projectRelative} 失败：{stderr}{stdout[^Math.Min(800, stdout.Length)..]}");
         return output;
@@ -303,19 +339,28 @@ internal static class ComputeLinkLoadScenario
         return port;
     }
 
+    // 不继承游戏、备份、上游、Kestrel、密钥或代理配置；下方显式设置本轮所需配置。
+    private static ProcessStartInfo IsolatedRuntimeStartInfo(string dll)
+    {
+        var startInfo = new ProcessStartInfo(DotnetHost())
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = Path.GetDirectoryName(dll)!
+        };
+        startInfo.ArgumentList.Add(dll);
+        startInfo.Environment.Clear();
+        foreach (var key in new[] { "PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR", "DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_ARM64" })
+            if (Environment.GetEnvironmentVariable(key) is { } value) startInfo.Environment[key] = value;
+        return startInfo;
+    }
+
     /// <summary>拉起真实主服：compute 派发链全配（短轮询/短租约/短扫描间隔），运维面板开在本机随机端口。</summary>
     private static SpawnedProcess SpawnServer(
         string serverDll, int apiPort, string connectionString, string token, string logDir)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = DotnetHost(),
-            Arguments = $"\"{serverDll}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Path.GetDirectoryName(serverDll)!
-        };
+        var psi = IsolatedRuntimeStartInfo(serverDll);
         psi.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{apiPort}";
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
         // 宿主连接池对齐生产 Compose（32），压测客户端自身仍使用独立 16 连接池。
@@ -347,15 +392,7 @@ internal static class ComputeLinkLoadScenario
     private static SpawnedProcess SpawnNode(
         string nodeDll, int apiPort, string token, string nodeName, string logDir)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = DotnetHost(),
-            Arguments = $"\"{nodeDll}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Path.GetDirectoryName(nodeDll)!
-        };
+        var psi = IsolatedRuntimeStartInfo(nodeDll);
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
         psi.Environment["ComputeNode__AllowInsecureLoopback"] = "true";
         psi.Environment["DAOHUA_COMPUTE_TOKEN"] = token;

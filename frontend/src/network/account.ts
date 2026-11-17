@@ -6,7 +6,8 @@ import { useCheckinStore } from '../game/checkinStore'
 import { useUiStore } from '../uiStore'
 import { requestJson } from './apiClient'
 import { gameClient } from './gameClient'
-import { setSessionAccount } from './sessionState'
+import { getSessionGeneration, setSessionAccount, updateSessionDisplayName } from './sessionState'
+import { chatStickerService } from '../game/chatStickerService'
 
 /** 浏览器仅保存非敏感的账号显示信息；认证凭据永远由 HttpOnly Cookie 持有。 */
 export interface StoredAccountInfo {
@@ -70,11 +71,6 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-function loadCurrentAccount(): StoredAccountInfo | null {
-  const value = loadJson<unknown>(CURRENT_ACCOUNT_KEY, null)
-  return isAccount(value) ? value : null
-}
-
 function loadSavedAccounts(): StoredAccountInfo[] {
   const value = loadJson<unknown>(SAVED_ACCOUNTS_KEY, [])
   return Array.isArray(value) ? value.filter(isAccount) : []
@@ -112,7 +108,7 @@ function authFailure(error: unknown): AuthResponseDto {
 }
 
 /** 注册账号并建立会话（HttpOnly Cookie 由服务端下发）；UI 层按返回 message 展示错误 */
-export async function requestRegister(account: string, password: string, displayName?: string, invitationCode?: string): Promise<AuthResponseDto> {
+async function requestRegister(account: string, password: string, displayName?: string, invitationCode?: string): Promise<AuthResponseDto> {
   try {
     const signals = await collectAccountSignals()
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/register', {
@@ -126,7 +122,7 @@ export async function requestRegister(account: string, password: string, display
 }
 
 /** 账号密码登录；成功即由服务端写入会话 Cookie */
-export async function requestLogin(account: string, password: string): Promise<AuthResponseDto> {
+async function requestLogin(account: string, password: string): Promise<AuthResponseDto> {
   try {
     const signals = await collectAccountSignals()
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/login', {
@@ -141,19 +137,23 @@ export async function requestLogin(account: string, password: string): Promise<A
 
 /** 修改当前账号登录密码；账号身份由会话 Cookie 承载，成功返回 204。服务端会吊销其他设备会话。 */
 export async function requestChangePassword(currentPassword: string, newPassword: string): Promise<AuthResponseDto> {
-  try {
-    await requestJson('/api/v1/auth/change-password', {
-      method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
-    })
-    return { success: true }
-  } catch (error) {
-    return authFailure(error)
-  }
+  const generation = getSessionGeneration()
+  return serializeAuth(async () => {
+    if (generation !== getSessionGeneration()) return { success: false }
+    try {
+      await requestJson('/api/v1/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      return { success: true }
+    } catch (error) {
+      return authFailure(error)
+    }
+  })
 }
 
 /** 用现有会话 Cookie 探测登录态（启动时静默调用，不带任何凭据参数） */
-export async function requestSession(): Promise<AuthResponseDto> {
+async function requestSession(): Promise<AuthResponseDto> {
   try {
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/session')
     return authSuccess(dto)
@@ -170,6 +170,7 @@ interface AccountStore {
   savedAccounts: StoredAccountInfo[]
   /** 启动时的会话探测是否已完成（App 据此决定是否展示登录页而非加载页） */
   sessionChecked: boolean
+  logoutState: 'idle' | 'pending' | 'failed'
   /** 登录并同步会话状态；成功后立即触发 gameClient 连接 */
   loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
   /** 注册并登录；成功后立即触发 gameClient 连接 */
@@ -185,7 +186,7 @@ interface AccountStore {
   /** 启动时用 Cookie 恢复会话；返回是否恢复成功 */
   restoreSession: () => Promise<boolean>
   /** 登出：通知服务端注销、清空本地账号态、断开游戏连接并重置游戏 Store */
-  logout: () => void
+  logout: () => Promise<boolean>
   /** 从快捷账号列表中移除指定账号 */
   removeSavedAccount: (account: string) => void
   /** 更新当前账号道号显示名（本地缓存与会话态同步刷新） */
@@ -211,75 +212,102 @@ function rememberAccount(account: StoredAccountInfo, existing: readonly StoredAc
   return result
 }
 
+// 认证入口与登出共用一条队列，前一请求结束才允许下一次写 Cookie。
+let authTail: Promise<unknown> = Promise.resolve()
+let logoutInFlight: Promise<boolean> | null = null
+
+function serializeAuth<T>(operation: () => Promise<T>): Promise<T> {
+  const result = authTail.then(operation)
+  authTail = result.catch(() => undefined)
+  return result
+}
+
+function activateSession(info: StoredAccountInfo | null): void {
+  setSessionAccount(info)
+  gameClient.dispose()
+  useUiStore.getState().setMailOpen(false)
+  useUiStore.getState().setCheckinModalOpen(false)
+  useMailStore.getState().reset()
+  useCheckinStore.getState().reset()
+  useGameStore.getState().resetGameStore()
+  // 不等 App 刷新才切换收藏归属，同角色重登也断开旧任务。
+  chatStickerService.setActivePlayer(info?.playerId ?? null)
+}
+
+function applyAuthResponse(response: AuthResponseDto): AuthResponseDto {
+  if (!response.success) return response
+  const info = accountFromResponse(response)
+  activateSession(info)
+  useAccountStore.setState({
+    currentAccount: info,
+    savedAccounts: rememberAccount(info, useAccountStore.getState().savedAccounts),
+    sessionChecked: true,
+    logoutState: 'idle',
+  })
+  gameClient.connect()
+  return response
+}
+
+function authenticate(request: () => Promise<AuthResponseDto>): Promise<AuthResponseDto> {
+  return serializeAuth(async () => {
+    if (useAccountStore.getState().currentAccount) {
+      activateSession(null)
+      persistAccount(null)
+      useAccountStore.setState({ currentAccount: null })
+    }
+    try {
+      return applyAuthResponse(await request())
+    } catch (error) {
+      return authFailure(error)
+    }
+  })
+}
+
 /** 账号会话全局 Store（登录态、快捷账号列表、会话探测） */
 export const useAccountStore = create<AccountStore>((set, get) => ({
-  currentAccount: loadCurrentAccount(),
+  currentAccount: null,
   savedAccounts: loadSavedAccounts(),
   sessionChecked: false,
+  logoutState: 'idle',
 
-  loginWithAuth: async (account, password) => {
-    const response = await requestLogin(account, password)
-    if (!response.success) return response
-    const info = accountFromResponse(response)
-    setSessionAccount(info)
-    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
-    gameClient.connect()
-    return response
-  },
+  loginWithAuth: (account, password) => authenticate(() => requestLogin(account, password)),
+  registerWithAuth: (account, password, displayName, invitationCode) =>
+    authenticate(() => requestRegister(account, password, displayName, invitationCode)),
+  loginWithNativeTapTap: data => authenticate(() => requestJson<AuthResponseDto>('/api/v1/auth/taptap/native-login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })),
 
-  registerWithAuth: async (account, password, displayName, invitationCode) => {
-    const response = await requestRegister(account, password, displayName, invitationCode)
-    if (!response.success) return response
-    const info = accountFromResponse(response)
-    setSessionAccount(info)
-    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
-    gameClient.connect()
-    return response
-  },
-  loginWithNativeTapTap: async data => {
+  restoreSession: () => serializeAuth(async () => {
+    if (get().sessionChecked) return get().currentAccount !== null
     try {
-      const response = await requestJson<AuthResponseDto>('/api/v1/auth/taptap/native-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!response.success) return response
-      const info = accountFromResponse(response)
-      setSessionAccount(info)
-      set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
-      gameClient.connect()
-      return response
+      if (applyAuthResponse(await requestSession()).success) return true
     } catch {
-      return { success: false, message: 'TapTap 原生登录请求失败。' }
+      // 不完整的恢复响应不能建立本地会话。
     }
-  },
-
-  restoreSession: async () => {
-    const response = await requestSession()
-    if (!response.success) {
-      setSessionAccount(null)
-      set({ currentAccount: null, sessionChecked: true })
-      persistAccount(null)
-      return false
-    }
-    const info = accountFromResponse(response)
-    setSessionAccount(info)
-    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
-    gameClient.connect()
-    return true
-  },
+    activateSession(null)
+    persistAccount(null)
+    set({ currentAccount: null, sessionChecked: true })
+    return false
+  }),
 
   logout: () => {
-    void requestJson('/api/v1/auth/logout', { method: 'POST' }).catch(() => undefined)
-    persistAccount(null)
-    setSessionAccount(null)
-    set({ currentAccount: null, sessionChecked: true })
-    gameClient.dispose()
-    useUiStore.getState().setMailOpen(false)
-    useUiStore.getState().setCheckinModalOpen(false)
-    useMailStore.getState().reset()
-    useCheckinStore.getState().reset()
-    useGameStore.getState().resetGameStore()
+    if (logoutInFlight) return logoutInFlight
+    const operation = serializeAuth(async () => {
+      activateSession(null)
+      persistAccount(null)
+      set({ currentAccount: null, sessionChecked: true, logoutState: 'pending' })
+      try {
+        await requestJson('/api/v1/auth/logout', { method: 'POST' })
+        set({ logoutState: 'idle' })
+        return true
+      } catch {
+        set({ logoutState: 'failed' })
+        return false
+      }
+    })
+    logoutInFlight = operation.finally(() => { logoutInFlight = null })
+    return logoutInFlight
   },
 
   removeSavedAccount: account => {
@@ -295,13 +323,10 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     const updatedSaved = get().savedAccounts.map(item => item.account === current.account ? updatedCurrent : item)
     persistAccount(updatedCurrent)
     persistSavedAccounts(updatedSaved)
-    setSessionAccount(updatedCurrent)
+    updateSessionDisplayName(updatedCurrent.name)
     set({ currentAccount: updatedCurrent, savedAccounts: updatedSaved })
   },
 }))
-
-// 模块加载即把持久化账号灌入 sessionState，保证首次握手前网络层已持有玩家身份
-setSessionAccount(useAccountStore.getState().currentAccount)
 
 /** 读取当前登录账号（供网络层握手等非 React 路径使用） */
 export function getStoredAccount(): StoredAccountInfo | null {
@@ -310,7 +335,7 @@ export function getStoredAccount(): StoredAccountInfo | null {
 
 /** 清空当前账号并登出（语义等同 logout） */
 export function clearStoredAccount(): void {
-  useAccountStore.getState().logout()
+  void useAccountStore.getState().logout()
 }
 
 /** 清理本应用浏览器缓存；不触碰服务端资产和会话以外的站点数据。 */
@@ -321,12 +346,6 @@ export function resetAllLocalData(): void {
       window.localStorage.removeItem(SAVED_ACCOUNTS_KEY)
     } catch { /* 非关键显示缓存 */ }
   }
-  gameClient.dispose()
-  useAccountStore.setState({ currentAccount: null, savedAccounts: [], sessionChecked: true })
-  setSessionAccount(null)
-  useUiStore.getState().setMailOpen(false)
-  useUiStore.getState().setCheckinModalOpen(false)
-  useMailStore.getState().reset()
-  useCheckinStore.getState().reset()
-  useGameStore.getState().resetGameStore()
+  activateSession(null)
+  useAccountStore.setState({ currentAccount: null, savedAccounts: [], sessionChecked: true, logoutState: 'idle' })
 }

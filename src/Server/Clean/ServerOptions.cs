@@ -35,8 +35,12 @@ public sealed record ServerOptions(
     /// <summary>ECS 运行时的固定 World/Fiber 分片数；仅 ECS 宿主消费此配置。</summary>
     public int EcsShardCount { get; init; } = 1;
 
+    /// <summary>进程运行时的 WebSocket 允许额外来源；同源来源始终允许，空 Origin 仅供非浏览器认证客户端。</summary>
+    public IReadOnlySet<string> WebSocketAllowedOrigins { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>进程运行角色（API、Worker 或全部）</summary>
     public ServerProcessRole ProcessRole { get; init; } = ServerProcessRole.Api;
+
     /// <summary>历史过期数据单次清理批次大小</summary>
     public int RetentionBatchSize { get; init; } = 256;
     /// <summary>留存清理周期；每 5 分钟多批排空超期流水与日志，确保清理速率远高于写入速率。</summary>
@@ -217,6 +221,10 @@ public sealed record ServerOptions(
                 throw new InvalidOperationException($"ComputeNode:Tokens:{tokenNodeName} 令牌长度不能超过 512。");
             computeNodeTokens[tokenNodeName] = tokenValue;
         }
+        var websocketOrigins = (configuration.GetSection("Server:WebSocketAllowedOrigins").Get<string[]>() ?? [])
+            .Select(raw => NormalizeWebSocketOrigin(raw) ?? throw new InvalidOperationException(
+                "Server:WebSocketAllowedOrigins 只接受完整的 HTTP(S) 来源（协议、主机和端口）。"))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return new ServerOptions(
             configuration["Service:Name"] ?? "daohua",
             connectionString,
@@ -260,12 +268,22 @@ public sealed record ServerOptions(
             OfflineBatchInterval = TimeSpan.FromMinutes(offlineBatchMinutes),
             ComputeLocalFallbackMaxCpuPercent = localFallbackMaxCpuPercent,
             OfflineGrace = TimeSpan.FromSeconds(offlineGraceSeconds),
-            EcsShardCount = ecsShardCount
+            EcsShardCount = ecsShardCount,
+            WebSocketAllowedOrigins = websocketOrigins
         };
     }
 
-}
+    internal static string? NormalizeWebSocketOrigin(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https") || string.IsNullOrEmpty(uri.Host)
+            || uri.UserInfo.Length != 0 || uri.AbsolutePath != "/"
+            || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            return null;
+        return uri.GetLeftPart(UriPartial.Authority);
+    }
 
+}
 /// <summary>
 /// 进程运行角色：决定装配哪些宿主服务与仓储。
 /// </summary>

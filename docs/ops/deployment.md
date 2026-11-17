@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文描述当前部署契约。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前数据库 schema v52，玩家八分段载荷标签 v42（以 `SectionCodec.CurrentSchemaVersion` 为准）。v52 将特质 ID/等级定格进战斗快照，恢复当前战斗不能读取新装配；旧战斗无法无损回推入战特质，`0052_v51_to_v52.sql` 在推进库版本的同时将存档标签统一推进至 v42——旧载荷 Traits 可缺省解码为 Empty，迁移瞬间处于战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格，非战斗玩家零影响。本地启动链对不可缺省解码的旧载荷仍须交互确认后才可清零，无 TTY 必须中止；本次未操作任何本地开发玩家或生产数据。完整备份须包含当前战斗快照内的定格特质，并使用匹配 schema/载荷版本的应用恢复。本地版本漂移先尝试独立迁移脚本，无法迁移时须交互确认后才允许清零；无 TTY 则中止，不自动删除玩家存档。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的独立迁移脚本（命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；v36→v37 涉及旧托管退款，须停服备份后显式执行，本地启动链拒绝自动应用。该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文描述当前源码的部署契约，不代表生产已升级。全新库由权威 `PostgresSchema.Sql` 直建 **数据库 v61**；玩家八分段标签为 **v44**，快照最低读者为 **v41**。`0061_v60_to_v61.sql` 推进三处载荷标签，并同步最小刷盘权限；不重写 JSON、Brotli 或校验和。已在途的旧战斗缺失阵盘上次触发时刻，不能回推；新检查点开始保存该时刻。运行时不执行迁移；迁移目录可整体删除，不影响空库初始化。
 
 ## 拓扑与边界
 
@@ -70,9 +70,9 @@ Vite 固定监听 `127.0.0.1:15172`，将 `/api`、`/ws` 代理到 API。前端�
 scripts/verify.sh --full
 ```
 
-无参数的 `scripts/verify.sh` 是日常快速口径，会跳过 PostgresIntegration 集成测试与 Compose 校验；**合并与发布前必须显式加 `--full`**。
+无参数的 `scripts/verify.sh` 是日常快速口径，跳过 PostgresIntegration 和 Compose。**交付前运行 `--full`**：每轮 PostgreSQL 18 测试库以独占回环端口、随机库名和服务端标识领取，不复用开发库。只定向检查数据库测试可用 `scripts/verify.sh --with-postgres -- <测试命令>`。
 
-该入口包含 Release 构建、Domain/ECS/Server 三套测试、配表校验、Compose 配置校验与前端构建。Server 的 PostgreSQL 集成测试使用 `DAOHUA_MARKET_TEST_CONNECTION` 指向的独立测试库：verify.sh 在本地库可达时自动供给 `daohua_market_test` 并导出该变量，也可预设变量指向自己的专用库（须与日常开发库隔离）。容量门禁不在合并必跑内，容量相关变更与发布前执行 `scripts/capacity-target.sh`。
+该入口同时覆盖 Release 构建、Domain/ECS/Server、配表、Compose 和前端门禁。容量另跑 `scripts/capacity-target.sh --link-regression`；本地链路证据不可代替目标硬件实测。禁止将集成测试或链路回归指向正在使用的数据库。
 
 直接源码烟测且没有静态 `wwwroot` 时：
 
@@ -165,7 +165,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 - `/healthz` 只反映进程存活；`/readyz` 反映 PostgreSQL、schema 和市场分片租约是否可用，不泄漏连接串、token、堆栈或玩家数据。
 - `/api/debug/*`、`/api/metrics` 与裸 `/ops`、`/ops/*` 由生产 Caddy 拦截；后台监控面板通过动态随机路径 `/ops-<16位hex>`（未配置 `OPS_PATH` 时每次进程启动自动生成并输出至容器日志）与全量 `X-Ops-Token` 密码门禁（可通过 `OPS_TOKEN` 配置，未配置时启动随机生成）对外提供监控与运维服务，服务端对任何未命中当前激活随机路径的 `/ops*` 请求直接返回 404。
-- CORS 只允许配置的完整来源；正式前端与 API 同源，不使用任意来源加凭据。
+- 正式页面与 `/ws` 默认同源。浏览器升级请求须匹配入口协议、主机和端口，额外允许来源须逐条设为 `Server__WebSocketAllowedOrigins__0` 等；无 Origin 的非浏览器工具仍须持有效 Cookie 或 Bearer。HTTP 与 WS 使用同一令牌撤销口径。
 - ComputeNode 仅内部网络可达，令牌通过环境变量注入；节点镜像不包含 PostgreSQL 凭据。
 - 当前主实例具备单写者玩家运行时和市场分片租约边界，但不宣称跨进程玩家无停机迁移；扩容前必须增加玩家分片路由和连接排空方案。计算链路侧已具备优雅排空（compute-link.v1.3 `drain`/`draining` 帧）：主服停机给在飞批次 12 秒收尾窗口并通知节点换上游，节点停机先上报停派再排空在飞——滚动升级/CCR 自动更新不再丢弃正在计算的批次。多主服就绪缺口与分期见 `docs/distributed-readiness.md`。
 
@@ -183,11 +183,13 @@ sudo /opt/daohua/pitr-restore.sh \
 | --- | --- |
 | `daohua_bootstrap` | schema 和表所有者，仅初始化/结构维护使用 |
 | `daohua_api` | API、市场事务与当前内置后台 worker 的 DML，无 schema DDL 权限 |
-| `daohua_worker` | section 刷盘、outbox 投递和 retention，不读取账号密码或资产余额 |
+| `daohua_worker` | section 刷盘、outbox 审计投递与这两类队列的留存；通过单用途函数锁玩家身份行，不获得身份表 DML、账号密码或资产余额权限 |
 | `daohua_archive` | 只读删两个热流水表，在对应 schema 创建归档月分区 |
 | `daohua_metrics` | PostgreSQL 统计视图，不授予业务表读取权限 |
 
 用本地管理员通过交互式 `psql` 创建独立登录角色，并 `GRANT daohua_api TO <本地API登录角色>`，密码通过 `\password` 交互设置；worker 等进程按对应组授权。应用连接串使用该登录角色，并设置 `Storage__EnableSchemaBootstrap=false`。不要给运行账号授予 bootstrap 组。现有 Compose 的开发管理员连接仅供初次建库与普通本地开发；权限验收必须使用独立角色覆盖连接串，不能把默认管理员连接当作权限隔离已启用的证据。
+
+schema v61 将身份/命令回执、租约、账本等留存集中在 API；独立 worker 只清理 outbox 和刷盘死信，不为这些敏感表扩大授权。
 
 该方案未修改生产登录账号、密码、表所有权或部署配置。生产切换须先备份、明确授权，再使用对应登录角色运行及验证。归档组应以自身角色首次创建归档表；已有归档表的所有权处理属于单独受控操作。
 
@@ -213,7 +215,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 数据库备份必须包括 `identity.account_risk_signals`、`identity.account_risk_events`、`platform.account_risk_policy`、`platform.account_risk_key` 与现有 Data Protection key。丢失 HMAC 密钥会破坏历史关联匹配；设备 Cookie 依赖 Data Protection key，二者不得独立清空。风险事件按独立 `Storage:AccountRiskEventRetentionDays`（默认 30 天、范围 1..365）小批量清理，每小时批次为普通清理批次的 16 倍且不超过 10000，稳定关联和风险密钥保留。API/worker 角色授权已同步 `deploy/postgres-local-roles.sql`。本任务未执行任何远端迁移或发布；生产升级 schema v10 须另行授权、先备份并显式应用独立迁移脚本。
 
-## 组队权威会话与恢复（当前数据库 schema v40）
+## 组队权威会话与恢复（历史迁移与现行边界）
 
 - `social.party_sessions` 同时保存冻结输入、权威战斗检查点、推进时刻与版本；`social.party_session_inbox` 保存各成员待消费结算。两者必须随全库备份/恢复，不可仅恢复玩家分段。
 - 检查点与成员结算一次事务交付；成员消费时，资产、分段与消费回执一次事务提交。重启恢复会话，不再无条件标记 `server.restart` 散场。

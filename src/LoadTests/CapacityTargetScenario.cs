@@ -1,9 +1,7 @@
 namespace DaoHua.LoadTests;
 
 /// <summary>
-/// 容量目标综合压测场景。
-/// 结合账号存储估算、网络峰值估算、本地计算与 PostgreSQL 真实探测，
-/// 验证 2c4g-40g 预算下的容量目标。
+/// 容量链路回归：验证真实业务链路数量与预算，不是固定规格主机验收。
 /// </summary>
 public static class CapacityTargetScenario
 {
@@ -28,8 +26,18 @@ public static class CapacityTargetScenario
     /// <summary>进程工作集内存预算（字节）。</summary>
     public const long ProcessWorkingSetBudgetBytes = 768L * 1024 * 1024;
 
+    internal static LoadTestReport TargetAcceptanceUnavailable() => LoadTestReport.Failure(
+        "target-acceptance", "未执行固定规格验收：当前入口无法证明 2c4g-40g 整机约束、持久盘 I/O 和 5000 份代表性完整存档。链路回归不可代替。") with
+    {
+        Metrics = new Dictionary<string, object?>
+        {
+            ["evidenceScope"] = "fixed-target-acceptance",
+            ["targetAcceptance"] = new { status = "not-verified", serverClass = "2c4g-40g" }
+        }
+    };
+
     /// <summary>
-    /// 执行完整的容量目标压测。
+    /// 执行容量链路回归。
     /// </summary>
     /// <param name="options">压测选项。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -44,6 +52,7 @@ public static class CapacityTargetScenario
         var started = Stopwatch.GetTimestamp();
         var warnings = new List<string>();
         var errors = 0;
+        warnings.Add("本报告仅为容量链路回归：主服/节点无整机资源约束，PG 存储探针使用合成载荷，未验证固定规格目标。");
 
         // 这些结果只表示可重复的合成估算，不能代表生产业务路径；超预算仅告警，不参与主结论。
         var storage = CapacitySynthetic.EstimateStorage(RegisteredAccountTarget);
@@ -178,7 +187,7 @@ public static class CapacityTargetScenario
         var elapsed = Stopwatch.GetElapsedTime(started);
         return new LoadTestReport(
             "loadtest.v1",
-            "capacity-target",
+            "capacity-link",
             RegisteredAccountTarget,
             options.StateChangeSeconds,
             elapsed.TotalMilliseconds,
@@ -194,13 +203,19 @@ public static class CapacityTargetScenario
             errors == 0,
             new Dictionary<string, object?>
             {
+                ["evidenceScope"] = "link-regression",
+                ["targetAcceptance"] = new
+                {
+                    status = "not-verified",
+                    serverClass = "2c4g-40g",
+                    missing = new[] { "whole-host-resource-limits", "production-like-persistent-disk", "representative-full-saves" }
+                },
                 ["target"] = new
                 {
                     registeredAccounts = RegisteredAccountTarget,
                     sustainedNetworkPlayers = SustainedNetworkTarget,
                     peakNetworkPlayers = PeakNetworkTarget,
-                    coldComputePlayers = ColdComputeTarget,
-                    serverClass = "2c4g-40g"
+                    coldComputePlayers = ColdComputeTarget
                 },
                 ["budget"] = new
                 {
@@ -242,7 +257,7 @@ public static class CapacityTargetScenario
         || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>读取真实路径的有限整数配置。</summary>
-    private static int ReadEnvironmentInt(string name, int fallback, int minimum, int maximum)
+    internal static int ReadEnvironmentInt(string name, int fallback, int minimum, int maximum)
     {
         var value = Environment.GetEnvironmentVariable(name);
         if (string.IsNullOrWhiteSpace(value)) return fallback;

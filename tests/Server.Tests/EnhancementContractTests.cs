@@ -93,7 +93,7 @@ public sealed class EnhancementContractTests
         var playerId = Guid.NewGuid();
         await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId), new EmptyAssets(), new NoopEconomy(),
-            LoadCatalogFiles("actions/enhancement.json"));
+            LoadCatalogFiles("actions/enhancement.json", "items/manuals.json"));
         await runtime.LoadAsync(playerId);
 
         var rejectedRequestId = Guid.NewGuid();
@@ -723,10 +723,8 @@ public sealed class EnhancementContractTests
             ("item.beast-hide", string.Empty, 3),
             ("item.gongde", string.Empty, 2000));
         var economy = new RecordingEconomy(assets);
-        var failNext = true;
-        economy.FaultInjector = req => failNext
-            ? new EconomyCommitOutcomeUnknownException(req.TransactionId, new IOException("injected-commit-drop"))
-            : null;
+        economy.AfterCommitFault = req => new EconomyCommitOutcomeUnknownException(req.TransactionId, new IOException("injected-commit-drop"));
+        economy.HideCommittedResults = true;
         await using var runtime = EcsRuntimeFactory.Create(new FakeRepository(playerId), assets, economy, catalog);
         await runtime.LoadAsync(playerId);
 
@@ -742,7 +740,7 @@ public sealed class EnhancementContractTests
             runtime.ExecuteAsync(playerId, "player.rename", JsonSerializer.SerializeToElement(new { displayName = "Blocked" }), 0, Guid.NewGuid()).AsTask());
 
         // 故障恢复后，下一次命令核实原事务已提交并解除围栏、回附单据提交、恢复后正常执行。
-        failNext = false;
+        economy.HideCommittedResults = false;
         var recovered = await runtime.ExecuteAsync(playerId, "player.rename",
             JsonSerializer.SerializeToElement(new { displayName = "Recovered" }), 0, Guid.NewGuid());
         Assert.True(recovered.Success, $"{recovered.Code}: {recovered.Message}");
@@ -990,6 +988,13 @@ public sealed class EnhancementContractTests
         public EconomyTransactionRequest? LastRequest { get; private set; }
         public List<EconomyTransactionRequest> Requests { get; } = [];
         public Func<EconomyTransactionRequest, Exception?>? FaultInjector { get; set; }
+        public Func<EconomyTransactionRequest, Exception>? AfterCommitFault { get; set; }
+        public bool HideCommittedResults { get; set; }
+
+        public ValueTask<EconomyTransactionResult?> FindCommittedAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<EconomyTransactionResult?>(!HideCommittedResults && Requests.Contains(request)
+                ? new(request.TransactionId, request.IdempotencyKey, true, true, DateTimeOffset.UtcNow, request.ResultPayload)
+                : null);
 
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
@@ -998,6 +1003,7 @@ public sealed class EnhancementContractTests
             LastRequest = request;
             Requests.Add(request);
             var balances = backingAssets?.Apply(request.Deltas);
+            if (AfterCommitFault?.Invoke(request) is { } faultAfterCommit) throw faultAfterCommit;
             return ValueTask.FromResult(new EconomyTransactionResult(
                 request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload, balances));
         }

@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import { marketZh } from '../i18n/domains/market.zh.ts'
 
 test('marketOrders: 订单已成交量推导与明细文案格式化自洽', () => {
@@ -201,18 +203,53 @@ test('marketBrowse: 坊市在售、求购总量与参考价格聚合与角标显
   const noPriceAria = dict.itemNoPrice.replace('{name}', '稀有灵草')
   assert.equal(noPriceAria, '稀有灵草，暂无参考价')
 })
-test('marketBrowse: 标的卡片 ItemTile 必须显式携带 itemId 属性，确保图标资源正常解析', async () => {
-  const fs = await import('node:fs/promises')
-  const path = await import('node:path')
-  const filePath = path.resolve('frontend/src/components/market/MarketBrowseGrid.tsx')
-  const content = await fs.readFile(filePath, 'utf8')
+// 逐个 JSX 节点检查；不从相邻标签、注释或后置 spread 借用 ID。
+function inspectMarketTiles(content, file = 'MarketBrowseGrid.tsx') {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const tileTags = new Set(['ItemTile'])
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    const bindings = statement.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings)) continue
+    for (const element of bindings.elements) {
+      if (element.propertyName?.text === 'ItemTile') tileTags.add(element.name.text)
+    }
+  }
+  const linesWithoutId = []
+  let count = 0
+  const unwrap = (node) => {
+    while (node && ts.isParenthesizedExpression(node)) node = node.expression
+    return node
+  }
+  function visit(node) {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && tileTags.has(node.tagName.getText(source))) {
+      count++
+      const props = node.attributes.properties
+      const prop = props.findLast((attr) => ts.isJsxSpreadAttribute(attr) || attr.name.getText(source) === 'itemId')
+      const init = prop && ts.isJsxAttribute(prop) && prop.initializer
+      const id = init && ts.isJsxExpression(init) && unwrap(init.expression)
+      const validId = id && ((ts.isPropertyAccessExpression(id) && id.name.text === 'itemId')
+        || (ts.isElementAccessExpression(id) && ts.isStringLiteral(id.argumentExpression) && id.argumentExpression.text === 'itemId'))
+        && !id.questionDotToken && unwrap(id.expression)?.getText(source) === 'item'
+      if (!validId) linesWithoutId.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return { count, linesWithoutId }
+}
 
-  // 必须在 ItemTile 调用点传 itemId={item.itemId}
-  assert.match(
-    content,
-    /<ItemTile[\s\S]*?itemId=\{item\.itemId\}[\s\S]*?\/>/,
-    'MarketBrowseCardItem 中的 ItemTile 必须传 itemId={item.itemId}，否则瓦片将无法命中图标回退为纯文字'
-  )
+test('marketBrowse: 每张 ItemTile 必须显式从当前标的传入真实 itemId', () => {
+  const content = readFileSync(new URL('../components/market/MarketBrowseGrid.tsx', import.meta.url), 'utf8')
+  const { count, linesWithoutId } = inspectMarketTiles(content)
+  assert.ok(count > 0, 'MarketBrowseGrid 未发现受保护的 ItemTile')
+  assert.deepEqual(linesWithoutId, [], 'MarketBrowseGrid 以下行的 ItemTile 缺少有效 itemId')
+})
+
+test('marketBrowse: 相邻卡片或 spread 不能掩盖漏传，合法 JSX 重排仍通过', () => {
+  assert.deepEqual(inspectMarketTiles('<><ItemTile itemId={item.itemId} />\n<ItemTile /></>'), { count: 2, linesWithoutId: [2] })
+  assert.deepEqual(inspectMarketTiles('<ItemTile itemId={item.itemId} {...other} />'), { count: 1, linesWithoutId: [1] })
+  assert.deepEqual(inspectMarketTiles("import { ItemTile as Tile } from './ItemDisplay';\n<Tile {...other} itemId={(item['itemId'])}>子节点</Tile>"), { count: 1, linesWithoutId: [] })
 })
 
 test('marketPricing: normalizeMarketPrice 严格遵循系统回收底价与价格步长网格防套利', async () => {

@@ -141,9 +141,10 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
             """, ct, playerId) as string;
     }
 
-    /// <summary>固定原请求进行冲突重试与未知提交确认，不能重算令牌或替换首次回执。</summary>
+    /// <summary>确定的事务冲突可重试；未知提交只查既有结果，不能重做宗门变更。</summary>
     public async ValueTask<EconomyTransactionResult> ExecuteAsync(Guid playerId, Guid requestId, string action,
-        JsonElement payload, string currentNodeId, bool travelling, CommandReceipt receipt, CancellationToken ct)
+        JsonElement payload, string currentNodeId, bool travelling, CommandReceipt receipt, CancellationToken ct,
+        Guid? requiredRuntimeOwner = null)
     {
         Require(payload.ValueKind == JsonValueKind.Object, "宗门操作参数无效。");
         var now = DateTimeOffset.UtcNow;
@@ -163,8 +164,11 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
                 {
                     await using var connection = await dataSource.OpenConnectionAsync(token);
                     await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, token);
-                    var previous = await PostgresEconomyRepository.TryLoadCommittedAsync(connection, transaction, request.IdempotencyKey, token);
+                    var previous = await PostgresEconomyRepository.TryLoadCommittedAsync(connection, transaction,
+                        request.IdempotencyKey, token, lockRow: unknown is null);
                     if (previous is not null) return PostgresEconomyRepository.ValidateReplay(request, previous);
+                    if (unknown is not null) throw new InvalidOperationException("未找到宗门事务已提交的幂等事实。");
+                    await PostgresEconomyRepository.CheckRuntimeOwnerAsync(connection, transaction, playerId, requiredRuntimeOwner, token);
                     await MutateAsync(connection, transaction, playerId, requestId, action, payload, currentNodeId, travelling, now, token);
                     var result = await PostgresEconomyRepository.CommitCoreAsync(connection, transaction, request, token);
                     await PostgresEconomyRepository.CommitTransactionAsync(transaction, request.TransactionId, token);

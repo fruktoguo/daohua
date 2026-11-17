@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useState } from 'react'
 import { getQqEmojiUrls, QQ_EMOJI_MAP } from '../game/qqEmojis.ts'
-import { chatStickerService } from '../game/chatStickerService.ts'
+import { useChatImageGeneration, useChatImageSource } from './useChatImageLease'
 
 export interface QqEmojiProps {
   /** 经典表情名称，如 "微笑" 或 "呲牙" */
@@ -21,67 +21,28 @@ export interface QqEmojiProps {
  * 4. 离线沉淀：网络拉取成功后，自动写入 IndexedDB，后续离线脱机可用；
  * 5. 极端兜底：全部资源不可用时，优雅展示 [表情名] 文本徽章。
  */
-export const QqEmoji = memo(function QqEmoji({
+export const QqEmoji = memo(function QqEmoji(props: QqEmojiProps): React.JSX.Element {
+  const generation = useChatImageGeneration()
+  const meta = QQ_EMOJI_MAP.get(props.name)
+  if (!meta) return <span className="qq-emoji-fallback">[{props.name}]</span>
+
+  return <QqEmojiImage key={`${generation}:${meta.qsid}`} {...props} generation={generation} qsid={meta.qsid} />
+})
+
+function QqEmojiImage({
   name,
   size = 20,
   className = '',
   title,
-}: QqEmojiProps): React.JSX.Element {
-  const meta = QQ_EMOJI_MAP.get(name)
-  const qsid = meta?.qsid ?? ''
-  const { cfUrl, localUrl } = qsid ? getQqEmojiUrls(qsid) : { cfUrl: '', localUrl: '' }
+  generation,
+  qsid,
+}: QqEmojiProps & { generation: number; qsid: string }): React.JSX.Element {
+  const { cfUrl, localUrl } = getQqEmojiUrls(qsid)
+  const [currentSource, setCurrentSource] = useState<'cf' | 'local' | 'failed'>('cf')
+  const imageUrl = currentSource === 'cf' ? cfUrl : currentSource === 'local' ? localUrl : null
+  const displaySrc = useChatImageSource(imageUrl, generation)
 
-  // 状态机：'cached' | 'cf' | 'local' | 'failed'
-  const [currentSource, setCurrentSource] = useState<'cached' | 'cf' | 'local' | 'failed'>('cf')
-  const [displaySrc, setDisplaySrc] = useState<string>(cfUrl)
-
-  useEffect(() => {
-    if (!cfUrl || !localUrl) return
-    let active = true
-
-    // 1. 尝试从内存缓存同步获取
-    const cached = chatStickerService.getCachedUrl(cfUrl) || chatStickerService.getCachedUrl(localUrl)
-    if (cached) {
-      setDisplaySrc(cached)
-      setCurrentSource('cached')
-      return
-    }
-
-    // 2. 异步查询 IndexedDB，优先尝试 CF 资源，命中后换成 ObjectURL
-    chatStickerService.loadImageWithCache(cfUrl).then((resolved: string) => {
-      if (!active) return
-      if (resolved && resolved !== cfUrl) {
-        // 成功提取或下载到了 Blob URL
-        setDisplaySrc(resolved)
-        setCurrentSource('cached')
-      } else {
-        setDisplaySrc(cfUrl)
-        setCurrentSource('cf')
-      }
-    })
-
-    return () => {
-      active = false
-    }
-  }, [cfUrl, localUrl])
-
-  // 处理图片加载失败（双源切换）
-  const handleError = useCallback(() => {
-    if (currentSource === 'cf') {
-      // CF 失败，自动回退到游戏服务器本地静态源
-      setCurrentSource('local')
-      setDisplaySrc(localUrl)
-      chatStickerService.loadImageWithCache(localUrl).catch(() => {})
-    } else if (currentSource === 'local') {
-      // 本地也失败，降级为文字
-      setCurrentSource('failed')
-    }
-  }, [currentSource, localUrl])
-
-  // 在所有 Hook 调用完成后再执行条件返回
-  if (!meta || currentSource === 'failed') {
-    return <span className="qq-emoji-fallback">[{name}]</span>
-  }
+  if (currentSource === 'failed') return <span className="qq-emoji-fallback">[{name}]</span>
 
   return (
     <span
@@ -89,16 +50,16 @@ export const QqEmoji = memo(function QqEmoji({
       style={{ width: size, height: size }}
       title={title ?? `[${name}]`}
     >
-      <img
+      {displaySrc && <img
         alt={`[${name}]`}
         className="qq-emoji-img"
         height={size}
         loading="lazy"
-        onError={handleError}
-        src={displaySrc || localUrl}
+        onError={() => setCurrentSource(currentSource === 'cf' ? 'local' : 'failed')}
+        src={displaySrc}
         style={{ width: size, height: size, objectFit: 'contain' }}
         width={size}
-      />
+      />}
     </span>
   )
-})
+}

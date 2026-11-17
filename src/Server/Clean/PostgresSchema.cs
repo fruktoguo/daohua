@@ -85,8 +85,9 @@ public static class PostgresSchema
     /// compute_jobs 增 dead_count 防无限死复循环、补齐 auth_sessions/market.trades/market.orders/settlement_claims/
     /// reservations/party_session_inbox 清理与反查索引及热表 fillfactor/autovacuum 调优）；玩家载荷标签保持 v43 不变。
     /// v60：传音表情包多端同步系统（新增 social.player_stickers 旁路表情包表及软删除墓碑索引，上限 100 个）；玩家载荷标签保持 v43 不变。
+    /// v61：战斗单位快照保存天雷/血煞阵盘触发时刻，载荷标签 v44；建立刷盘身份行锁函数及最小 worker 审计权限。
     /// </summary>
-    public const int Version = 60;
+    public const int Version = 61;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -863,6 +864,33 @@ public static class PostgresSchema
     ALTER TABLE platform.section_flush_queue SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_cost_limit = 1000);
     ALTER TABLE economy.transient_idempotency SET (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_cost_limit = 1000);
 
+    -- 独立 worker 只需要串行化刷盘，不得读写身份表。函数不返回身份字段。
+    CREATE OR REPLACE FUNCTION game.lock_player_for_section_flush(uuid) RETURNS boolean
+    LANGUAGE sql VOLATILE STRICT SECURITY DEFINER SET search_path = pg_catalog
+    AS $lock_player$
+        SELECT true FROM identity.players WHERE player_id = $1 FOR NO KEY UPDATE;
+    $lock_player$;
+    REVOKE ALL ON FUNCTION game.lock_player_for_section_flush(uuid) FROM PUBLIC;
+    DO $flush_roles$
+    DECLARE identity_owner name := (
+        SELECT pg_catalog.pg_get_userbyid(relowner) FROM pg_catalog.pg_class WHERE oid = 'identity.players'::regclass
+    );
+    BEGIN
+        -- 使用身份表属主的权限，不继承偶然以超级用户执行迁移的权限。
+        IF identity_owner <> current_user THEN
+            EXECUTE pg_catalog.format('ALTER FUNCTION game.lock_player_for_section_flush(uuid) OWNER TO %I', identity_owner);
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'daohua_api') THEN
+            GRANT EXECUTE ON FUNCTION game.lock_player_for_section_flush(uuid) TO daohua_api;
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'daohua_worker') THEN
+            GRANT EXECUTE ON FUNCTION game.lock_player_for_section_flush(uuid) TO daohua_worker;
+            GRANT INSERT (event_id, actor_id, event_type, target_id, payload, occurred_at),
+                SELECT (event_id) ON identity.audit_events TO daohua_worker;
+        END IF;
+    END;
+    $flush_roles$;
+
     CREATE TABLE IF NOT EXISTS platform.schema_version (
         version integer PRIMARY KEY,
         applied_at timestamptz NOT NULL
@@ -870,7 +898,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

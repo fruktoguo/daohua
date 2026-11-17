@@ -1,27 +1,29 @@
-using Server.Clean;
-using Microsoft.Extensions.Logging.Abstractions;
+using Domain.Persistence;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using Server.Clean;
 using Xunit;
 
 namespace Server.Tests;
 
 [Collection("PostgresIntegration")]
+[Trait("Category", "PostgresIntegration")]
 public sealed class PostgresSchemaHostedServiceTests
 {
-    private static readonly string? ConnectionString =
-        Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION");
-
     [Fact]
     public async Task StartAsync_WhenSchemaMatches_CompletesWithoutThrowingEvenIfSectionLabelsStale()
     {
-        if (string.IsNullOrWhiteSpace(ConnectionString))
-            return;
-
-        await using var dataSource = NpgsqlDataSource.Create(ConnectionString);
+        var connectionString = PostgresTestSchema.RequireConnectionString("旧分段标签启动回归");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await PostgresTestSchema.EnsureAsync(dataSource);
+        var playerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var name = $"stale_{playerId:N}";
+        var staleVersion = SectionCodec.CurrentSchemaVersion - 1;
+        var logger = new SectionWarningLogger();
         var options = new ServerOptions(
             ServiceName: "test",
-            ConnectionString: ConnectionString,
+            ConnectionString: connectionString,
             SectionFlushBatchSize: 100,
             SectionFlushInterval: TimeSpan.FromSeconds(1),
             SectionFlushLease: TimeSpan.FromSeconds(30),
@@ -33,43 +35,64 @@ public sealed class PostgresSchemaHostedServiceTests
             MarketPartitionCount: 1,
             MarketPartitionId: 0,
             EnableSchemaBootstrap: false);
-        var service = new PostgresSchemaHostedService(
-            dataSource,
-            options,
-            NullLogger<PostgresSchemaHostedService>.Instance);
+        var service = new PostgresSchemaHostedService(dataSource, options, logger);
 
-        await service.StartAsync(CancellationToken.None);
-
-        // 注入一条旧标签：验证 WarnStaleSectionLabelsAsync 仅告警、不抛异常拖死启动
-        await using (var conn = await dataSource.OpenConnectionAsync())
+        await using var conn = await dataSource.OpenConnectionAsync();
+        try
         {
-            var expected = Domain.Persistence.SectionCodec.CurrentSchemaVersion;
-            await using var cmd = new NpgsqlCommand($"""
-                UPDATE game.player_state_sections
-                SET schema_version = {expected - 1}
-                WHERE section_kind = 'progression'
-                  AND schema_version = {expected}
-                  AND player_id IN (SELECT player_id FROM game.player_state_sections LIMIT 1);
+            await using (var identity = new NpgsqlCommand("""
+                INSERT INTO identity.accounts(account_id, login_normalized, password_hash, password_salt, password_iterations, created_at, updated_at)
+                VALUES (@account, @name, decode('00', 'hex'), decode('00', 'hex'), 100000, now(), now());
+                INSERT INTO identity.players(player_id, account_id, display_name, display_name_normalized, created_at, last_seen_at)
+                VALUES (@player, @account, @name, @name, now(), now());
+                """, conn))
+            {
+                identity.Parameters.AddWithValue("account", accountId);
+                identity.Parameters.AddWithValue("player", playerId);
+                identity.Parameters.AddWithValue("name", name);
+                Assert.Equal(2, await identity.ExecuteNonQueryAsync());
+            }
+            // 仅测试标签巡检，不读取载荷。独立播种并校验一行，与其他用例顺序无关。
+            await using var seed = new NpgsqlCommand("""
+                INSERT INTO game.player_state_sections(player_id, section_kind, section_version, schema_version, codec, payload, raw_bytes, stored_bytes, checksum, updated_at)
+                VALUES (@player, 'progression', 1, @version, 'test', decode('00', 'hex'), 1, 1, repeat('0', 64), now());
                 """, conn);
-            var updated = await cmd.ExecuteNonQueryAsync();
-            try
-            {
-                // 必须平稳完成、不抛异常
-                await service.StartAsync(CancellationToken.None);
-            }
-            finally
-            {
-                // 恢复现场
-                if (updated > 0)
-                {
-                    await using var fix = new NpgsqlCommand($"""
-                        UPDATE game.player_state_sections
-                        SET schema_version = {expected}
-                        WHERE schema_version <> {expected};
-                        """, conn);
-                    await fix.ExecuteNonQueryAsync();
-                }
-            }
+            seed.Parameters.AddWithValue("player", playerId);
+            seed.Parameters.AddWithValue("version", staleVersion);
+            Assert.Equal(1, await seed.ExecuteNonQueryAsync());
+
+            await service.StartAsync(CancellationToken.None);
+            Assert.Equal(1L, Assert.Single(logger.StaleSectionCounts));
+            await using var read = new NpgsqlCommand("""
+                SELECT schema_version FROM game.player_state_sections
+                WHERE player_id = @player AND section_kind = 'progression';
+                """, conn);
+            read.Parameters.AddWithValue("player", playerId);
+            Assert.Equal(staleVersion, Assert.IsType<int>(await read.ExecuteScalarAsync()));
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlCommand("""
+                DELETE FROM game.player_state_sections WHERE player_id = @player;
+                DELETE FROM identity.players WHERE player_id = @player;
+                DELETE FROM identity.accounts WHERE account_id = @account;
+                """, conn);
+            cleanup.Parameters.AddWithValue("player", playerId);
+            cleanup.Parameters.AddWithValue("account", accountId);
+            await cleanup.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class SectionWarningLogger : ILogger<PostgresSchemaHostedService>
+    {
+        public List<long> StaleSectionCounts { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning && state is IEnumerable<KeyValuePair<string, object?>> fields)
+                foreach (var field in fields)
+                    if (field is { Key: "Sections", Value: long count }) StaleSectionCounts.Add(count);
         }
     }
 }

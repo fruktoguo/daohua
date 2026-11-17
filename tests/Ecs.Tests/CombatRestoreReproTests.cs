@@ -3,6 +3,7 @@ using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
 using DaoHua.Ecs;
+using DaoHua.Ecs.Systems;
 using Xunit;
 
 namespace Ecs.Tests;
@@ -51,6 +52,37 @@ public sealed class CombatRestoreReproTests
         await restored.RunPlayerOnceAsync(PlayerIdValue, changed.State.LastSimulatedAt.AddMilliseconds(10));
         var resumed = restored.ExportSnapshot(PlayerIdValue);
         Assert.Contains(CombatTraitRules.DuelKingTraitId, resumed.State.Actions[0].Expedition!.PlayerState!.Traits.Ids);
+    }
+
+    [Fact]
+    public void FrozenSkillCooldownSnapshot_ResumesIdenticallyAfterAFailedAdvance()
+    {
+        using var skill = System.Text.Json.JsonDocument.Parse("""{"id":"ability.test-heal","category":"spell","effectType":"heal","healingRatio":1,"castMilliseconds":500,"cooldownMilliseconds":10000,"targetType":"self"}""");
+        var player = new CombatantTemplate(CombatantStats.Create(1000, 20, 10, 2) with { SpellAttack = 100 },
+            [new SkillSlot(skill.RootElement, Triggers: [])]);
+        var enemy = new CombatantTemplate(CombatantStats.Create(1000, 10, 0, 2));
+        var battle = CombatEventAdvanceSystem.Start("cooldown-retry", 42, player, [enemy]);
+        battle.Player.Hitpoints = 500;
+        var frozen = CombatEncounterState.Snapshot(battle.Player);
+        var enemyBefore = CombatEncounterState.Snapshot(battle.Enemies[0]);
+        var frozenBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(frozen);
+        CombatEncounterState Restore() => CombatEncounterState.Restore("cooldown-retry", 42,
+            player, frozen, [enemy], [enemyBefore], 0, CombatOutcome.Running);
+        var clean = Restore();
+
+        // 燃魂缺少来源会在 1 秒网格结算抛错；此时 0.5 秒已完成施法并写入冷却。
+        battle.Enemies[0].AddBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, 30, 1,
+            Effects: [new BuffEffect(BuffEffectChannel.FireSpellDamagePerSecond, 5)], SourceUnitId: "ally:99"));
+        Assert.Throws<DomainException>(() => CombatEventAdvanceSystem.AdvanceTo(battle, 1));
+        Assert.True(battle.Player.SkillCooldownUntil![0] > 0);
+        Assert.Equal(frozenBytes, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(frozen));
+
+        var retry = Restore();
+        var expected = CombatEventAdvanceSystem.AdvanceTo(clean, 2);
+        var actual = CombatEventAdvanceSystem.AdvanceTo(retry, 2);
+        Assert.Equal(expected.Events.ToArray(), actual.Events.ToArray());
+        Assert.Equal(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(CombatEncounterState.Snapshot(clean.Player)),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(CombatEncounterState.Snapshot(retry.Player)));
     }
 
     [Fact]

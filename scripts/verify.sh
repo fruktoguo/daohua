@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 门禁入口：工具链、restore+Release 构建、Domain/Ecs/Server 三套测试（自动供给
-# daohua_market_test 集成测试库，并按 trx 实际执行数硬校验非空）、DataTool 校验、前端单测与
+# 每轮一次性集成测试库，并按 trx 实际执行数硬校验非空）、DataTool 校验、前端单测与
 # 构建。
 #
 # 默认（无参数）= 日常快速门禁：跳过 Compose 校验与 PostgresIntegration 集成测试。
@@ -36,7 +36,83 @@ usage() {
   printf '  --frontend   仅前端：依赖安装、i18n、日志标记、单测、契约、类型检查与生产构建\n'
   printf '  --serial     禁用前后端并发，强制纯串行执行\n'
   printf '\n环境变量: SKIP_NPM_CI=1 跳过前端依赖安装；VERIFY_DOCKER=1 追加生产镜像构建\n'
+  printf '%s\n' '  --with-postgres -- <命令>  仅给一个测试宿主供给新库' \
+    '默认使用 postgres:18-alpine 专用容器、tmpfs、随机回环端口；退出即清理。' \
+    '外部供给必须显式设置 VERIFY_POSTGRES_EXTERNAL=1；只接受全新一次性回环库，不接管或清理外部库。' \
+    'DAOHUA_POSTGRES_TEST_RUN_ID 为 32 位小写随机十六进制；库名及其独占登录所有者均为 daohua_test_<RUN_ID>。' \
+    "用所有者给空库执行 COMMENT ON DATABASE daohua_test_<RUN_ID> IS 'daohua-postgres-test-v1:<RUN_ID>:ready';" \
+    'DAOHUA_MARKET_TEST_CONNECTION=Host=127.0.0.1;Port=<端口>;Database=<库>;Username=<所有者>;Password=<临时密码>' \
+    '一个库只交给一个测试宿主；外部供给者完成后自行回收。'
 }
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    printf '门禁失败：%s需要可用的 Docker。\n' "$1" >&2
+    exit 1
+  fi
+}
+
+VERIFY_PG_CONTAINER=""
+cleanup_verify() {
+  if [[ -n "$VERIFY_PG_CONTAINER" ]]; then
+    docker rm -f -v "$VERIFY_PG_CONTAINER" >/dev/null ||
+      printf '警告：无法回收本轮专用容器 %s。\n' "$VERIFY_PG_CONTAINER" >&2
+  fi
+  if [[ -n "${VERIFY_TMP:-}" ]]; then rm -rf "$VERIFY_TMP"; fi
+}
+trap cleanup_verify EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+supply_verify_postgres() {
+  if [[ "${VERIFY_POSTGRES_EXTERNAL:-0}" == 1 ]]; then
+    : "${DAOHUA_MARKET_TEST_CONNECTION:?缺少一次性测试库连接串}"
+    : "${DAOHUA_POSTGRES_TEST_RUN_ID:?缺少一次性测试库标识}"
+    export DAOHUA_MARKET_TEST_CONNECTION DAOHUA_POSTGRES_TEST_RUN_ID
+    return
+  fi
+  require_docker '供给一次性 PostgreSQL '
+  unset DAOHUA_MARKET_TEST_CONNECTION DAOHUA_POSTGRES_TEST_RUN_ID
+  local run_id name password address ready=0
+  run_id="$(openssl rand -hex 16 | tr -d '\r')"
+  password="$(openssl rand -hex 24 | tr -d '\r')"
+  [[ "$run_id" =~ ^[0-9a-f]{32}$ && "$password" =~ ^[0-9a-f]{48}$ ]] || exit 1
+  name="daohua_test_$run_id"
+  # 只记录新建的容器 ID，不搜索已有容器、挂载用户卷或复用端口。禁止 MSYS 改写 Linux 路径。
+  VERIFY_PG_CONTAINER="$(POSTGRES_DB="$name" POSTGRES_USER="$name" POSTGRES_PASSWORD="$password" \
+    MSYS_NO_PATHCONV=1 docker create --rm --label daohua.verify.postgres=true \
+    --publish 127.0.0.1::5432 --tmpfs=/var/lib/postgresql:rw \
+    --env POSTGRES_DB --env POSTGRES_USER --env POSTGRES_PASSWORD postgres:18-alpine | tr -d '\r')"
+  [[ "$VERIFY_PG_CONTAINER" =~ ^[0-9a-f]{64}$ ]] || { VERIFY_PG_CONTAINER=""; exit 1; }
+  docker start "$VERIFY_PG_CONTAINER" >/dev/null
+  # 探测 TCP 而不是镜像初始化时临时打开的 Unix socket。
+  for _ in {1..60}; do
+    if docker exec "$VERIFY_PG_CONTAINER" sh -ceu '
+      PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -Xq -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1"
+    ' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [[ "$ready" == 1 ]] || { printf '一次性测试库未就绪。\n' >&2; exit 1; }
+  docker exec "$VERIFY_PG_CONTAINER" sh -ceu '
+    PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -Xq -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"
+  ' sh "COMMENT ON DATABASE $name IS 'daohua-postgres-test-v1:$run_id:ready';"
+  address="$(docker port "$VERIFY_PG_CONTAINER" 5432/tcp)"
+  address="${address%$'\r'}"
+  [[ "$address" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { printf '一次性测试库未绑定到独占回环端口。\n' >&2; exit 1; }
+  export DAOHUA_POSTGRES_TEST_RUN_ID="$run_id"
+  export DAOHUA_MARKET_TEST_CONNECTION="Host=127.0.0.1;Port=${address##*:};Database=$name;Username=$name;Password=$password"
+}
+
+if [[ "${1:-}" == --with-postgres ]]; then
+  if [[ "${2:-}" != -- || $# -lt 3 ]]; then usage >&2; exit 2; fi
+  shift 2
+  supply_verify_postgres
+  "$@"
+  exit
+fi
 
 FULL=0
 SCOPE="all"
@@ -44,8 +120,12 @@ PARALLEL=1
 for arg in "$@"; do
   case "$arg" in
     --full) FULL=1 ;;
-    --backend) SCOPE="backend" ;;
-    --frontend) SCOPE="frontend" ;;
+    --backend|--frontend)
+      if [[ "$SCOPE" != all && "$SCOPE" != "${arg#--}" ]]; then
+        printf '%s\n' '--backend 与 --frontend 不能同时指定。' >&2
+        exit 2
+      fi
+      SCOPE="${arg#--}" ;;
     --serial) PARALLEL=0 ;;
     -h|--help) usage; exit 0 ;;
     *)
@@ -65,6 +145,13 @@ case "$SCOPE" in
   frontend) RUN_BACKEND=0; RUN_INTEGRATION=0; RUN_COMPOSE=0 ;;
 esac
 
+RUN_IMAGE=0
+if [[ "${VERIFY_DOCKER:-0}" == 1 && "$RUN_COMPOSE" -eq 1 ]]; then RUN_IMAGE=1; fi
+if [[ "$RUN_COMPOSE" -eq 1 ]]; then
+  require_docker '全量 Compose 校验'
+  docker compose version >/dev/null || { printf '门禁失败：缺少 Docker Compose 插件。\n' >&2; exit 1; }
+fi
+
 if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf 'YuoCore submodule 未初始化，请执行 git submodule update --init --recursive。\n' >&2
   exit 1
@@ -80,9 +167,9 @@ if [[ -d "$PRIVATE_ROOT/server" ]]; then
 fi
 
 printf '%s\n' '==> 检查真实工具链'
-dotnet --version
-node --version
-npm --version
+if [[ "$RUN_BACKEND" -eq 1 ]]; then dotnet --version; fi
+node --version # 后端契约测试也调用 Node。
+if [[ "$RUN_FRONTEND" -eq 1 ]]; then npm --version; fi
 
 # 前端依赖只在 node_modules 缺失或锁定文件更新时重装：`npm ci` 整目录重装要付 7~40s，
 # 且会与运行中的 dev server 争抢同一份 esbuild/rollup 原生二进制。
@@ -143,59 +230,15 @@ run_backend_pipeline() {
   fi
 
   if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
-    # PostgresIntegration 集成测试需要专用库：本地 PG 可达时幂等创建 daohua_market_test
-    # 并导出 DAOHUA_MARKET_TEST_CONNECTION；未供给成功时相关测试失败并报明所需环境变量。
-    DB_HOST="${DB_HOST:-127.0.0.1}"
-    DB_PORT="${DB_PORT:-5432}"
-    DB_USER="${DB_USER:-daohua}"
-    DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
-    DB_CONTAINER="${DB_CONTAINER:-daohua-local-db}"
-    pg_admin() {
-      if command -v docker >/dev/null 2>&1 \
-          && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
-        docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
-      elif command -v psql >/dev/null 2>&1; then
-        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
-      else
-        return 127
-      fi
-    }
-
     if [[ "$RUN_INTEGRATION" -eq 1 ]]; then
-      printf '%s\n' '==> 供给 PostgreSQL 集成测试库'
-      if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
-        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-          docker compose -f compose.yaml up -d db
-          for _ in {1..60}; do
-            if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
-            sleep 1
-          done
-        fi
-      fi
-
-      if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null \
-          && [[ -z "${DAOHUA_MARKET_TEST_CONNECTION:-}" ]]; then
-        TEST_DB_NAME="${TEST_DB_NAME:-daohua_market_test}"
-        TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
-        if [[ "$TEST_DB_EXISTS" != "1" ]]; then
-          pg_admin -c "CREATE DATABASE ${TEST_DB_NAME};" >/dev/null 2>&1 || true
-          TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
-        fi
-        if [[ "$TEST_DB_EXISTS" == "1" ]]; then
-          export DAOHUA_MARKET_TEST_CONNECTION="Host=${DB_HOST};Port=${DB_PORT};Database=${TEST_DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};Maximum Pool Size=16;Timeout=5;Command Timeout=30"
-          printf '已导出 DAOHUA_MARKET_TEST_CONNECTION（库 %s）。\n' "$TEST_DB_NAME"
-        else
-          printf '警告: 无法供给集成测试库 %s；PostgresIntegration 测试将失败。\n' "$TEST_DB_NAME" >&2
-          printf '      请手动创建该库，或预设 DAOHUA_MARKET_TEST_CONNECTION。\n' >&2
-        fi
-      elif (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
-        printf '检测到预设 DAOHUA_MARKET_TEST_CONNECTION，直接使用。\n'
-      else
-        printf '警告: PostgreSQL 不可达且未设 DAOHUA_MARKET_TEST_CONNECTION；PostgresIntegration 测试将失败。\n' >&2
-      fi
-
       printf '%s\n' '==> 服务端测试'
       run_suite server tests/Server.Tests/Server.Tests.csproj 150
+      # 总数下限不能证明 PG 组跑到了；至少一条实际通过的宿主启动回归必须存在。
+      if ! grep -Eq '<UnitTestResult [^>]*testName="[^"<>]*StartAsync_WhenSchemaMatches_CompletesWithoutThrowingEvenIfSectionLabelsStale"[^>]*outcome="Passed"' \
+          "$RESULTS_DIR/server/server.trx"; then
+        printf '门禁失败：TRX 未记录通过的 PostgreSQL 旧标签启动回归。\n' >&2
+        exit 1
+      fi
     else
       # --fast：跳过需要真实数据库的 PostgresIntegration 门禁，只跑纯内存/契约用例。
       printf '%s\n' '==> 服务端测试（跳过 PostgresIntegration）'
@@ -257,14 +300,14 @@ run_frontend_pipeline() {
   fi
 }
 
+if [[ "$RUN_INTEGRATION" -eq 1 ]]; then
+  printf '%s\n' '==> 供给 PostgreSQL 集成测试一次性库'
+  supply_verify_postgres
+fi
+
 if [[ "$RUN_BACKEND" -eq 1 && "$RUN_FRONTEND" -eq 1 && "$PARALLEL" -eq 1 ]]; then
   printf '%s\n' '==> 启动前后端并发双轨门禁流水线（并行加速模式）'
   VERIFY_TMP="$(mktemp -d "${TMPDIR:-/tmp}/daohua-verify.XXXXXX")"
-  cleanup_verify_tmp() {
-    rm -rf "$VERIFY_TMP" >/dev/null 2>&1 || true
-  }
-  trap cleanup_verify_tmp EXIT
-
   BACKEND_STATUS_FILE="$VERIFY_TMP/backend.status"
   FRONTEND_STATUS_FILE="$VERIFY_TMP/frontend.status"
 
@@ -311,38 +354,41 @@ fi
 
 if [[ "$RUN_COMPOSE" -eq 1 ]]; then
   printf '%s\n' '==> 校验 Compose 配置'
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    docker compose -f compose.yaml config >/dev/null
-    DB_BOOTSTRAP_USER=daohua_bootstrap \
-    DB_BOOTSTRAP_PASSWORD=verify-bootstrap-password \
-    DB_APP_USER=daohua_api_login \
-    DB_APP_PASSWORD=verify-app-password \
-    DB_WORKER_USER=daohua_worker_login \
-    DB_WORKER_PASSWORD=verify-worker-password \
-    APP_IMAGE=daohua:verify \
-    COMPUTE_IMAGE=daohua-compute:verify \
-    COMPUTE_TOKEN=verify-compute-token \
-      docker compose -f deploy/compose.prod.yaml config --quiet
-  else
-    printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
-  fi
+  docker compose -f compose.yaml config >/dev/null
+  DB_BOOTSTRAP_USER=daohua_bootstrap \
+  DB_BOOTSTRAP_PASSWORD=verify-bootstrap-password \
+  DB_APP_USER=daohua_api_login \
+  DB_APP_PASSWORD=verify-app-password \
+  DB_WORKER_USER=daohua_worker_login \
+  DB_WORKER_PASSWORD=verify-worker-password \
+  APP_IMAGE=daohua:verify \
+  COMPUTE_IMAGE=daohua-compute:verify \
+  COMPUTE_TOKEN=verify-compute-token \
+    docker compose -f deploy/compose.prod.yaml config --quiet
 fi
 
-if [[ "${VERIFY_DOCKER:-0}" == "1" ]]; then
-  if [[ "$FULL" -eq 1 ]]; then
-    printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1 + --full）'
-    scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
-  else
-    printf '%s\n' 'VERIFY_DOCKER=1 需配合 --full 才执行镜像构建，已跳过。' >&2
-  fi
+if [[ "$RUN_IMAGE" -eq 1 ]]; then
+  printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1 + 不限范围的 --full）'
+  scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
 fi
 
-if [[ "$FULL" -eq 1 ]]; then
+summary_item() {
+  local item="$1" executed="$2" reason="$3"
+  if [[ "$executed" -eq 1 ]]; then
+    printf '  %s：已通过\n' "$item"
+  else
+    printf '  %s：未执行（%s）\n' "$item" "$reason"
+  fi
+}
+
+printf '\n门禁执行摘要（scope=%s，full=%s）：\n' "$SCOPE" "$FULL"
+summary_item '后端构建、测试与数据校验' "$RUN_BACKEND" '限定为前端'
+summary_item '前端门禁（含契约）' "$RUN_FRONTEND" '限定为后端'
+summary_item 'PostgresIntegration' "$RUN_INTEGRATION" '快速口径或限定为前端'
+summary_item 'Compose 配置' "$RUN_COMPOSE" '仅不限范围的 --full 执行'
+summary_item '生产镜像构建' "$RUN_IMAGE" '仅不限范围的 --full 加 VERIFY_DOCKER=1 执行'
+if [[ "$RUN_COMPOSE" -eq 1 ]]; then
   printf '%s\n' '全量门禁完成。'
-elif [[ "$SCOPE" == "backend" ]]; then
-  printf '%s\n' '后端门禁完成（快速口径：未覆盖前端面、Compose 与 PostgresIntegration）。交付前请跑 scripts/verify.sh --full。'
-elif [[ "$SCOPE" == "frontend" ]]; then
-  printf '%s\n' '前端门禁完成（未覆盖后端面）。交付前请跑 scripts/verify.sh --full。'
 else
-  printf '%s\n' '快速门禁完成（未覆盖：Compose 校验、PostgresIntegration 集成测试）。交付前请跑 scripts/verify.sh --full。'
+  printf '%s\n' '所选范围门禁完成；未覆盖交付全量，请另跑 scripts/verify.sh --full。'
 fi

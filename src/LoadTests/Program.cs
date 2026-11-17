@@ -28,7 +28,8 @@ public static class Program
         {
             report = options.Scenario switch
             {
-                "capacity-target" => await CapacityTargetScenario.RunAsync(options),
+                "capacity-link" or "capacity-target" => await CapacityTargetScenario.RunAsync(options),
+                "target-acceptance" => CapacityTargetScenario.TargetAcceptanceUnavailable(),
                 "websocket" => await WebSocketScenario.RunAsync(options),
                 "http-read" => await HttpReadScenario.RunAsync(options),
                 "compute" => await ComputeLoadScenario.RunReportAsync(options),

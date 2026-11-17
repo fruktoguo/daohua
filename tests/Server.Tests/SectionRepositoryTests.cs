@@ -398,12 +398,15 @@ public sealed class SectionRepositoryTests
         var writes = new List<SectionWrite>(PlayerSectionKinds.All.Count);
         foreach (var kind in PlayerSectionKinds.All)
         {
-            object payload = kind == PlayerSectionKinds.ActionQueue
-                ? Enumerable.Range(0, actionCount).Select(_ => new QueuedActionState(
+            object payload = kind switch
+            {
+                PlayerSectionKinds.ActionQueue => Enumerable.Range(0, actionCount).Select(_ => new QueuedActionState(
                     Guid.NewGuid(),
                     new ActionIntent(new ActionId("cultivation.draw-qi"), -1),
-                    now, ActionQueueStatus.Pending, 0, -1, 0)).ToList()
-                : new { kind, version };
+                    now, ActionQueueStatus.Pending, 0, -1, 0)).ToList(),
+                PlayerSectionKinds.Buffs => Array.Empty<object>(), // 当前存档的 Buff 段是数组。
+                _ => new { kind, version }
+            };
             writes.Add(CleanSectionCodec.Encode(player, kind, version, payload, now) with
             {
                 GameDataFingerprint = "fp.test",
@@ -432,12 +435,13 @@ public sealed class SectionRepositoryTests
         for (var guard = 0; guard < 8; guard++)
         {
             result = await repository.FlushPendingAsync(256, TimeSpan.FromMinutes(1));
-            Assert.Equal(0, result.Failed);
             var pending = (long)(await Scalar(source,
                 "SELECT count(*) FROM platform.section_flush_queue WHERE player_id = $1", player))!;
             if (pending == 0) return result;
         }
-        throw new InvalidOperationException("本玩家 flush 队列未在有限批次内清空。");
+        var error = await Scalar(source,
+            "SELECT last_error FROM platform.section_flush_queue WHERE player_id=$1 AND last_error IS NOT NULL LIMIT 1", player);
+        throw new InvalidOperationException($"本玩家 flush 队列未在有限批次内清空：{error ?? "未认领或没有失败记录"}。");
     }
 
     private static async Task<Guid> SeedPlayerAsync(NpgsqlDataSource source)

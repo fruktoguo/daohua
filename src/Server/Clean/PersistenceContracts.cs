@@ -207,7 +207,11 @@ public sealed record EconomyTransactionRequest(
     IReadOnlyList<CommandReceipt>? Receipts = null,
     Social.ParticipationInboxReceipt? ParticipationReceipt = null,
     ShopPurchaseClaim? ShopPurchase = null,
-    bool PersistLedger = true);
+    bool PersistLedger = true)
+{
+    /// <summary>玩家运行时要求调用方仍持有 ActorId 租约；仅用于写入守卫，不参与业务幂等指纹。</summary>
+    public Guid? RequiredRuntimeOwner { get; init; }
+}
 
 /// <summary>资产事务提交结局。</summary>
 /// <param name="TransactionId">实际落库的事务标识（幂等命中时为已存事务 ID）。</param>
@@ -232,9 +236,13 @@ public interface IEconomyTransactionStore
 {
     /// <summary>提交一次资产事务；幂等键冲突且载荷不一致时抛 EconomyIdempotencyConflictException。</summary>
     ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>只查询同一请求的既有提交。null 表示无法确认，绝不授权重新执行。</summary>
+    ValueTask<EconomyTransactionResult?> FindCommittedAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult<EconomyTransactionResult?>(null);
 }
 
-/// <summary>COMMIT 已发出但连接中断或取消，无法断言事务结局；调用方必须重载权威状态，不能盲目回滚后重复结算。</summary>
+/// <summary>COMMIT 已发出但连接中断或取消，无法断言事务结局；调用方须隔离并查询提交事实，不能盲目回滚后重复结算。</summary>
 public sealed class EconomyCommitOutcomeUnknownException(Guid transactionId, Exception innerException)
     : InvalidOperationException($"资产事务提交结局未知 transaction={transactionId:D}", innerException)
 {

@@ -4,9 +4,11 @@ import {
   computeTextSha256,
   detectRasterImageMime,
   fetchImageBlobForCaching,
+  readChatImageBody,
   uploadChatImage,
 } from './chatImageUploadService.ts'
 import { getApiUrl } from '../network/apiUrl.ts'
+import { getSessionGeneration } from '../network/sessionState.ts'
 
 /**
  * 传音聊天内置小黄脸表情与自定义表情包管理、多端同步与本地存储服务
@@ -143,8 +145,29 @@ function normalizeStickerRecord(raw: Partial<CustomStickerItem> & { url: string 
   }
 }
 
+const MEMORY_IMAGE_BUDGET = 24 * 1024 * 1024
+const MEMORY_IMAGE_COUNT = 256
+
+interface MemoryImage {
+  key: string
+  sha256: string | null
+  bytes: number
+  leases: number
+  retired: boolean
+}
+
+export interface ChatImageLease {
+  src: string
+  release: () => void
+}
+
 class ChatStickerService {
   private dbPromise: Promise<IDBDatabase | null> | null = null
+  private generation = 0
+  private accountGeneration = getSessionGeneration()
+  // ObjectURL 顺序即 LRU，已借用的图（含旧会话尚未卸载的节点）也计入硬上限。
+  private readonly memoryImages = new Map<string, MemoryImage>()
+  private memoryBytes = 0
   private readonly memoryBlobUrlMap = new Map<string, string>()
   private readonly memorySha256UrlMap = new Map<string, string>()
   private readonly inFlightLoads = new Map<string, Promise<string>>()
@@ -162,7 +185,6 @@ class ChatStickerService {
   private pendingReplacedIds = new Map<string, string>()
   private pendingBrokenReports = new Map<string, string>()
   private lastSyncError: 'limit' | null = null
-  private hasSyncedOnce = false
   private revision = 0
 
   constructor() {
@@ -222,12 +244,17 @@ class ChatStickerService {
     }
   }
 
+  getGeneration(): number {
+    return this.generation
+  }
+
   /** 绑定当前登录角色，按 playerId 隔离本地列表并触发多端云端同步 */
   setActivePlayer(playerId: string | null): void {
     const normalized = playerId?.trim() || null
-    if (normalized === this.activePlayerId && (normalized === null || this.hasSyncedOnce)) {
-      return
-    }
+    const accountGeneration = getSessionGeneration()
+    if (normalized === this.activePlayerId && accountGeneration === this.accountGeneration) return
+    this.accountGeneration = accountGeneration
+    this.invalidatePendingWork()
     this.activePlayerId = normalized
     this.emojiFreqCache = null
     this.stickerListCache = null
@@ -235,7 +262,6 @@ class ChatStickerService {
     this.pendingReplacedIds.clear()
     this.pendingBrokenReports.clear()
     this.lastSyncError = null
-    this.hasSyncedOnce = false
 
     if (this.syncTimer) {
       clearTimeout(this.syncTimer)
@@ -587,11 +613,14 @@ class ChatStickerService {
       return { ok: false, reason: 'invalid' }
     }
 
+    const generation = this.generation
+    const invalid: AddStickerResult = { ok: false, reason: 'invalid' }
     const current = this.loadStickers()
     const existingByUrl = current.find(item => item.url === trimmed)
     if (existingByUrl) {
       if (!existingByUrl.sha256) {
         await this.cacheStickerBlobAndUpgrade(existingByUrl.stickerId, trimmed)
+        if (generation !== this.generation) return invalid
       }
       return { ok: false, reason: 'duplicate', item: existingByUrl }
     }
@@ -602,6 +631,7 @@ class ChatStickerService {
 
     // 优先使用本地已有 Blob 或拉取远端真实二进制（含 CORS 失败走服务端无状态中继）
     let blob = await this.getStoredBlob(trimmed)
+    if (generation !== this.generation) return invalid
     let mime = blob?.type || ''
     if (!blob) {
       const fetched = await fetchImageBlobForCaching(trimmed)
@@ -613,9 +643,11 @@ class ChatStickerService {
     }
 
     const sha256 = await computeBlobSha256(blob)
+    if (generation !== this.generation) return invalid
     const duplicateByHash = this.loadStickers().find(item => item.sha256 === sha256 || item.stickerId === sha256)
     if (duplicateByHash) {
       await this.saveImageBlob(trimmed, blob, sha256)
+      if (generation !== this.generation) return invalid
       if (duplicateByHash.needsReupload) {
         this.updateStickerUrl(duplicateByHash.url, trimmed, sha256, mime)
       }
@@ -703,19 +735,14 @@ class ChatStickerService {
     this.aliveProbeCache.delete(oldTrimmed)
     this.aliveProbeCache.delete(newTrimmed)
 
-    const mem = this.memoryBlobUrlMap.get(oldTrimmed)
-    if (mem) {
-      this.memoryBlobUrlMap.delete(oldTrimmed)
-      this.setMemoryBlobUrl(newTrimmed, mem)
-    }
-
+    const generation = this.generation
     void this.initDatabase().then(async db => {
-      if (!db) return
+      if (!db || generation !== this.generation) return
       const blob = await this.getFromIndexedDB(db, STORE_IMAGES, oldTrimmed)
         ?? (sha256 ? await this.getBlobFromShaStore(db, sha256) : null)
-      if (blob) {
+      if (blob && generation === this.generation) {
         await this.saveToImageStore(db, newTrimmed, blob)
-        if (sha256) {
+        if (sha256 && generation === this.generation) {
           await this.saveToBlobStore(db, sha256, blob, mime)
         }
       }
@@ -758,6 +785,7 @@ class ChatStickerService {
       return true
     }
 
+    const generation = this.generation
     const cachedCheckedAt = this.aliveProbeCache.get(trimmed)
     if (cachedCheckedAt && Date.now() - cachedCheckedAt < ALIVE_CACHE_TTL_MS) {
       return true
@@ -771,6 +799,7 @@ class ChatStickerService {
           cache: 'no-store',
           signal: AbortSignal.timeout(4000),
         })
+        if (generation !== this.generation) return false
         if (res.ok) {
           const contentType = (res.headers?.get?.('content-type') || '').toLowerCase()
           if (contentType && contentType.startsWith('text/html')) {
@@ -788,7 +817,7 @@ class ChatStickerService {
     }
 
     // 2. 浏览器环境兜底用离屏 Image 探活（不受 CORS 限制，能真实判定 404/失效）
-    if (typeof Image !== 'undefined' && typeof window !== 'undefined') {
+    if (generation === this.generation && typeof Image !== 'undefined' && typeof window !== 'undefined') {
       const imgAlive = await new Promise<boolean>(resolve => {
         const img = new Image()
         const timer = setTimeout(() => {
@@ -807,7 +836,7 @@ class ChatStickerService {
         const sep = trimmed.includes('?') ? '&' : '?'
         img.src = `${trimmed}${sep}_dh_probe=${Date.now()}`
       })
-      if (imgAlive) {
+      if (imgAlive && generation === this.generation) {
         this.aliveProbeCache.set(trimmed, Date.now())
       }
       return imgAlive
@@ -835,7 +864,7 @@ class ChatStickerService {
     if (existing) return existing
 
     const task = this.ensureStickerReadyInternal(trimmed, uploader).finally(() => {
-      this.inFlightHeals.delete(trimmed)
+      if (this.inFlightHeals.get(trimmed) === task) this.inFlightHeals.delete(trimmed)
     })
     this.inFlightHeals.set(trimmed, task)
     return task
@@ -845,16 +874,20 @@ class ChatStickerService {
     trimmed: string,
     uploader?: (blob: Blob) => Promise<{ url: string; sha256?: string; mime?: string }>
   ): Promise<EnsureStickerReadyResult> {
+    const generation = this.generation
+    const stale = { url: trimmed, healed: false, missingLocalBlob: false }
     const sticker = this.findSticker(trimmed)
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return { url: trimmed, healed: false, missingLocalBlob: false, stickerId: sticker?.stickerId }
     }
 
     const isAlive = await this.checkRemoteUrlAlive(trimmed)
+    if (generation !== this.generation) return stale
     if (isAlive) {
       // 确保本地缓存不会缺失
       if (sticker) {
         const localBlob = await this.getStoredBlob(trimmed, sticker.sha256)
+        if (generation !== this.generation) return stale
         if (!localBlob) {
           void this.cacheStickerBlobAndUpgrade(sticker.stickerId, trimmed)
         }
@@ -864,6 +897,7 @@ class ChatStickerService {
 
     // 远端确认失效：检索本地原图二进制
     let blob = await this.getStoredBlob(trimmed, sticker?.sha256)
+    if (generation !== this.generation) return stale
     if (!blob) {
       if (sticker) {
         this.markNeedsReupload(sticker.stickerId, trimmed)
@@ -874,10 +908,13 @@ class ChatStickerService {
     try {
       const uploadFn = uploader ?? uploadChatImage
       const res = await uploadFn(blob)
+      if (generation !== this.generation) return stale
       if (res?.url) {
         const resolvedSha = res.sha256 ?? sticker?.sha256 ?? await computeBlobSha256(blob)
+        if (generation !== this.generation) return stale
         const resolvedMime = res.mime ?? blob.type ?? sticker?.mime ?? ''
         await this.saveImageBlob(res.url, blob, resolvedSha)
+        if (generation !== this.generation) return stale
         if (sticker) {
           if (res.url !== trimmed) {
             this.updateStickerUrl(trimmed, res.url, resolvedSha, resolvedMime)
@@ -915,6 +952,7 @@ class ChatStickerService {
       return { ok: true, body: draft, healedCount: 0 }
     }
 
+    const generation = this.generation
     const uniqueUrls = Array.from(new Set(urlMatches))
     let updatedBody = draft
     let healedCount = 0
@@ -922,9 +960,11 @@ class ChatStickerService {
     for (const candidateUrl of uniqueUrls) {
       const saved = this.findSticker(candidateUrl)
       const hasLocal = saved ? true : Boolean(await this.getStoredBlob(candidateUrl))
+      if (generation !== this.generation) return { ok: false, body: draft, healedCount }
       if (!saved && !hasLocal) continue
 
       const res = await this.ensureStickerReadyForSend(candidateUrl)
+      if (generation !== this.generation) return { ok: false, body: draft, healedCount }
       if (res.missingLocalBlob) {
         return { ok: false, body: draft, healedCount, missingLocalBlob: true }
       }
@@ -982,7 +1022,9 @@ class ChatStickerService {
     if (this.syncTimer) {
       clearTimeout(this.syncTimer)
     }
+    const generation = this.generation
     this.syncTimer = setTimeout(() => {
+      if (generation !== this.generation) return
       this.syncTimer = null
       void this.syncWithServer()
     }, SYNC_DEBOUNCE_MS)
@@ -994,15 +1036,14 @@ class ChatStickerService {
     if (this.syncInFlight) return this.syncInFlight
 
     const task = this.syncWithServerInternal().finally(() => {
-      this.syncInFlight = null
+      if (this.syncInFlight === task) this.syncInFlight = null
     })
     this.syncInFlight = task
     return task
   }
 
   private async syncWithServerInternal(): Promise<void> {
-    const playerId = this.activePlayerId
-    if (!playerId) return
+    const generation = this.generation
 
     const localItems = this.loadStickers()
     const localTombstones = this.loadTombstones()
@@ -1037,10 +1078,11 @@ class ChatStickerService {
         }),
       })
 
-      if (playerId !== this.activePlayerId) return
+      if (generation !== this.generation) return
 
       if (res.status === 409) {
         const errBody = (await res.json().catch(() => null)) as { state?: ServerStickerSyncResponse } | null
+        if (generation !== this.generation) return
         this.lastSyncError = 'limit'
         if (errBody?.state) {
           this.applyServerState(errBody.state, true)
@@ -1052,11 +1094,11 @@ class ChatStickerService {
       if (!res.ok) return
 
       const state = (await res.json()) as ServerStickerSyncResponse
+      if (generation !== this.generation) return
       this.lastSyncError = null
       this.pendingReplacedIds.clear()
       this.pendingBrokenReports.clear()
       this.applyServerState(state, false)
-      this.hasSyncedOnce = true
       this.notify()
       this.scheduleBackgroundMaintenance()
     } catch {
@@ -1066,6 +1108,7 @@ class ChatStickerService {
 
   private async pushDeleteToServer(stickerIds: string[], deletedAt: number): Promise<void> {
     if (!this.activePlayerId || typeof fetch === 'undefined' || stickerIds.length === 0) return
+    const generation = this.generation
     try {
       const res = await fetch(getApiUrl('/api/v1/chat/stickers/delete'), {
         method: 'POST',
@@ -1074,8 +1117,9 @@ class ChatStickerService {
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({ stickerIds, deletedAt }),
       })
-      if (res.ok) {
+      if (generation === this.generation && res.ok) {
         const state = (await res.json()) as ServerStickerSyncResponse
+        if (generation !== this.generation) return
         this.lastSyncError = null
         this.applyServerState(state, false)
         this.notify()
@@ -1132,18 +1176,22 @@ class ChatStickerService {
     if (typeof window === 'undefined' || typeof fetch === 'undefined') return
     if (this.backgroundPassInFlight) return
 
+    const generation = this.generation
     const run = async (): Promise<void> => {
       const snapshot = [...this.loadStickers()]
       for (const item of snapshot) {
-        if (!this.activePlayerId) break
+        if (generation !== this.generation) break
 
         // 1. 跨端自动补传：其他端标记了云端失效，而当前设备本地保有原图
         if (item.needsReupload) {
           const blob = await this.getStoredBlob(item.url, item.sha256)
+          if (generation !== this.generation) return
           if (blob) {
             try {
               const res = await uploadChatImage(blob)
+              if (generation !== this.generation) return
               await this.saveImageBlob(res.url, blob, res.sha256)
+              if (generation !== this.generation) return
               this.updateStickerUrl(item.url, res.url, res.sha256, res.mime)
             } catch {
               // 图床暂不可用，下轮继续
@@ -1154,15 +1202,17 @@ class ChatStickerService {
 
         // 2. 本地缺失二进制补齐：保障从另一端同步或早期收藏的图片均在本机落盘
         const localBlob = await this.getStoredBlob(item.url, item.sha256)
+        if (generation !== this.generation) return
         if (!localBlob) {
           await this.cacheStickerBlobAndUpgrade(item.stickerId, item.url)
         }
       }
     }
 
-    this.backgroundPassInFlight = run().finally(() => {
-      this.backgroundPassInFlight = null
+    const task = run().finally(() => {
+      if (this.backgroundPassInFlight === task) this.backgroundPassInFlight = null
     })
+    this.backgroundPassInFlight = task
   }
 
   /** 拉取图片二进制写入 IndexedDB blobs/images，并把 url_* 临时标识升级为内容 SHA-256 */
@@ -1170,7 +1220,9 @@ class ChatStickerService {
     const trimmedUrl = url.trim()
     if (!trimmedUrl) return
 
+    const generation = this.generation
     let blob = suppliedBlob ?? await this.getStoredBlob(trimmedUrl)
+    if (generation !== this.generation) return
     let mime = blob?.type || ''
     if (!blob) {
       const fetched = await fetchImageBlobForCaching(trimmedUrl)
@@ -1183,7 +1235,9 @@ class ChatStickerService {
     }
 
     const sha256 = await computeBlobSha256(blob)
+    if (generation !== this.generation) return
     await this.saveImageBlob(trimmedUrl, blob, sha256)
+    if (generation !== this.generation) return
 
     const list = this.loadStickers()
     const target = list.find(item => item.stickerId === stickerId || item.url === trimmedUrl)
@@ -1240,49 +1294,64 @@ class ChatStickerService {
   // IndexedDB 图像离线缓存
   // ==========================================
 
-  private setMemoryBlobUrl(url: string, blobUrl: string, sha256?: string | null): void {
-    const prev = this.memoryBlobUrlMap.get(url)
-    if (prev && prev !== blobUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
-      try {
-        URL.revokeObjectURL(prev)
-      } catch {
-        // ignore
-      }
+  private cacheMemoryImage(key: string, blob: Blob, sha256?: string | null): string {
+    if (blob.size > MEMORY_IMAGE_BUDGET) return key
+    const existing = this.getCachedUrl(key, sha256)
+    if (existing) return existing
+    for (const [url, entry] of this.memoryImages) {
+      if (this.memoryBytes + blob.size <= MEMORY_IMAGE_BUDGET && this.memoryImages.size < MEMORY_IMAGE_COUNT) break
+      if (entry.leases === 0) this.retireImage(url, entry)
     }
-    this.memoryBlobUrlMap.set(url, blobUrl)
-    if (sha256) {
-      this.memorySha256UrlMap.set(sha256.toLowerCase(), blobUrl)
-    }
+    if (this.memoryBytes + blob.size > MEMORY_IMAGE_BUDGET || this.memoryImages.size >= MEMORY_IMAGE_COUNT) return key
+    const url = URL.createObjectURL(blob)
+    const sha = sha256?.toLowerCase() || null
+    this.memoryImages.set(url, { key, sha256: sha, bytes: blob.size, leases: 0, retired: false })
+    this.memoryBytes += blob.size
+    this.memoryBlobUrlMap.set(key, url)
+    if (sha) this.memorySha256UrlMap.set(sha, url)
+    return url
   }
 
-  private deleteMemoryBlobUrl(url: string): void {
-    const prev = this.memoryBlobUrlMap.get(url)
-    if (!prev) return
-    this.memoryBlobUrlMap.delete(url)
-    for (const [sha, mapped] of this.memorySha256UrlMap.entries()) {
-      if (mapped === prev) {
-        this.memorySha256UrlMap.delete(sha)
-      }
-    }
-    if (typeof URL !== 'undefined' && URL.revokeObjectURL) {
-      try {
-        URL.revokeObjectURL(prev)
-      } catch {
-        // ignore
-      }
-    }
+  private retireImage(url: string, entry: MemoryImage): void {
+    entry.retired = true
+    if (this.memoryBlobUrlMap.get(entry.key) === url) this.memoryBlobUrlMap.delete(entry.key)
+    if (entry.sha256 && this.memorySha256UrlMap.get(entry.sha256) === url) this.memorySha256UrlMap.delete(entry.sha256)
+    if (entry.leases > 0 || !this.memoryImages.delete(url)) return
+    this.memoryBytes -= entry.bytes
+    URL.revokeObjectURL(url)
   }
 
-  /** 获取当前内存已转换的离线 Object URL（命中即同步直出） */
-  getCachedUrl(url: string, sha256?: string | null): string | null {
-    const trimmed = url.trim()
-    const byUrl = this.memoryBlobUrlMap.get(trimmed)
-    if (byUrl) return byUrl
-    const resolvedSha = sha256 || this.findSticker(trimmed)?.sha256
-    if (resolvedSha) {
-      return this.memorySha256UrlMap.get(resolvedSha.toLowerCase()) ?? null
+  private deleteMemoryBlobUrl(key: string): void {
+    const url = this.memoryBlobUrlMap.get(key)
+    if (url) this.retireImage(url, this.memoryImages.get(url)!)
+  }
+
+  private getCachedUrl(url: string, sha256?: string | null): string | null {
+    const sha = sha256 || this.findSticker(url)?.sha256
+    const hit = this.memoryBlobUrlMap.get(url) ?? (sha ? this.memorySha256UrlMap.get(sha.toLowerCase()) : undefined)
+    if (!hit) return null
+    const entry = this.memoryImages.get(hit)!
+    this.memoryImages.delete(hit)
+    this.memoryImages.set(hit, entry)
+    return hit
+  }
+
+  /** 渲染节点持有租约；退役的旧图等最后一个节点释放后才撤销。 */
+  async acquireImage(url: string, sha256?: string | null): Promise<ChatImageLease> {
+    const generation = this.generation
+    const src = await this.loadImageWithCache(url, sha256)
+    const entry = this.memoryImages.get(src)
+    if (generation !== this.generation || !entry || entry.retired) {
+      return { src: url, release: () => undefined }
     }
-    return null
+    entry.leases += 1
+    let released = false
+    return { src, release: () => {
+      if (released) return
+      released = true
+      entry.leases -= 1
+      if (entry.retired && entry.leases === 0) this.retireImage(src, entry)
+    } }
   }
 
   /** 直接将已持有的 Blob 写入内存与 IndexedDB 双层离线库 */
@@ -1290,6 +1359,7 @@ class ChatStickerService {
     const trimmed = url.trim()
     if (!trimmed) return ''
 
+    const generation = this.generation
     let sha256 = knownSha256?.trim().toLowerCase() || ''
     if (!sha256) {
       try {
@@ -1299,15 +1369,13 @@ class ChatStickerService {
       }
     }
 
-    if (typeof URL !== 'undefined' && URL.createObjectURL) {
-      const blobUrl = URL.createObjectURL(blob)
-      this.setMemoryBlobUrl(trimmed, blobUrl, sha256 || null)
-    }
+    if (generation !== this.generation) return ''
+    this.cacheMemoryImage(trimmed, blob, sha256)
 
     const db = await this.initDatabase()
-    if (db) {
+    if (db && generation === this.generation) {
       await this.saveToImageStore(db, trimmed, blob)
-      if (sha256) {
+      if (sha256 && generation === this.generation) {
         await this.saveToBlobStore(db, sha256, blob, blob.type)
       }
     }
@@ -1318,7 +1386,7 @@ class ChatStickerService {
    * 加载图片并利用 IndexedDB 离线缓存。
    * 优先命中内存 ObjectURL -> 复用并发请求 -> 命中 IndexedDB（URL/SHA-256）-> CORS/中继拉取并持久化。
    */
-  async loadImageWithCache(url: string, sha256?: string | null): Promise<string> {
+  private async loadImageWithCache(url: string, sha256?: string | null): Promise<string> {
     const trimmed = url.trim()
     if (!trimmed) return ''
 
@@ -1330,73 +1398,43 @@ class ChatStickerService {
     if (existing) return existing
 
     const task = this.loadImageInternal(trimmed, resolvedSha).finally(() => {
-      this.inFlightLoads.delete(trimmed)
+      if (this.inFlightLoads.get(trimmed) === task) this.inFlightLoads.delete(trimmed)
     })
     this.inFlightLoads.set(trimmed, task)
     return task
   }
 
   private async loadImageInternal(trimmed: string, sha256: string | null): Promise<string> {
-    const memHit = this.getCachedUrl(trimmed, sha256)
-    if (memHit) return memHit
-
+    const generation = this.generation
     const db = await this.initDatabase()
+    if (generation !== this.generation) return trimmed
     if (db) {
-      try {
-        const cachedBlob =
-          (await this.getFromIndexedDB(db, STORE_IMAGES, trimmed)) ??
-          (sha256 ? await this.getBlobFromShaStore(db, sha256) : null)
-        if (cachedBlob instanceof Blob) {
-          const blobUrl = URL.createObjectURL(cachedBlob)
-          this.setMemoryBlobUrl(trimmed, blobUrl, sha256)
-          return blobUrl
-        }
-      } catch {
-        // 忽略读取异常
-      }
+      const cached = await this.getFromIndexedDB(db, STORE_IMAGES, trimmed)
+        ?? (sha256 ? await this.getBlobFromShaStore(db, sha256) : null)
+      if (generation !== this.generation) return trimmed
+      if (cached) return this.cacheMemoryImage(trimmed, cached, sha256)
     }
 
-    // 相对静态路径（如内置 /emotes/*.gif）或同源资源走直连 fetch
     if (trimmed.startsWith('/')) {
-      if (typeof fetch !== 'undefined') {
-        try {
-          const resp = await fetch(trimmed, { signal: AbortSignal.timeout(10_000) })
-          if (resp.ok) {
-            const blob = await resp.blob()
-            if (blob && blob.size > 0) {
-              if (db) await this.saveToImageStore(db, trimmed, blob)
-              if (typeof URL !== 'undefined' && URL.createObjectURL) {
-                const blobUrl = URL.createObjectURL(blob)
-                this.setMemoryBlobUrl(trimmed, blobUrl)
-                return blobUrl
-              }
-            }
-          }
-        } catch {
-          // 降级返回原路径
-        }
+      try {
+        const resp = await fetch(trimmed, { signal: AbortSignal.timeout(10_000) })
+        if (generation !== this.generation || !resp.ok) return trimmed
+        const blob = await readChatImageBody(resp)
+        if (!blob || generation !== this.generation) return trimmed
+        if (db) await this.saveToImageStore(db, trimmed, blob)
+        if (generation === this.generation) return this.cacheMemoryImage(trimmed, blob, sha256)
+      } catch {
+        // 静态源不可缓存时，交给图片节点处理加载失败。
       }
       return trimmed
     }
 
-    // 外部 HTTP/HTTPS 图片：CORS 直连优先，受限走服务端无状态中继
     const fetched = await fetchImageBlobForCaching(trimmed)
-    if (fetched) {
-      const computedSha = sha256 || (await computeBlobSha256(fetched.blob).catch(() => ''))
-      if (db) {
-        await this.saveToImageStore(db, trimmed, fetched.blob)
-        if (computedSha) {
-          await this.saveToBlobStore(db, computedSha, fetched.blob, fetched.mime)
-        }
-      }
-      if (typeof URL !== 'undefined' && URL.createObjectURL) {
-        const blobUrl = URL.createObjectURL(fetched.blob)
-        this.setMemoryBlobUrl(trimmed, blobUrl, computedSha || null)
-        return blobUrl
-      }
-    }
-
-    return trimmed
+    if (!fetched || generation !== this.generation) return trimmed
+    const computedSha = sha256 || (await computeBlobSha256(fetched.blob).catch(() => ''))
+    if (generation !== this.generation) return trimmed
+    await this.saveImageBlob(trimmed, fetched.blob, computedSha)
+    return generation === this.generation ? this.getCachedUrl(trimmed, computedSha) ?? trimmed : trimmed
   }
 
   /** 直接查询是否已有缓存 */
@@ -1474,25 +1512,21 @@ class ChatStickerService {
     })
   }
 
-  /** 清空内存中的 ObjectURL（防止内存泄漏） */
-  releaseMemoryUrls(): void {
-    for (const blobUrl of this.memoryBlobUrlMap.values()) {
-      try {
-        URL.revokeObjectURL(blobUrl)
-      } catch {
-        // ignore
-      }
-    }
-    this.memoryBlobUrlMap.clear()
-    this.memorySha256UrlMap.clear()
+  private invalidatePendingWork(): void {
+    this.generation += 1
+    for (const [url, entry] of this.memoryImages) this.retireImage(url, entry)
+    this.inFlightLoads.clear()
+    this.inFlightHeals.clear()
+    this.aliveProbeCache.clear()
+    this.syncInFlight = null
+    this.backgroundPassInFlight = null
+    if (this.syncTimer) clearTimeout(this.syncTimer)
+    this.syncTimer = null
   }
 
   /** 测试辅助：清理内存测试状态 */
   _resetForTest(): void {
-    this.releaseMemoryUrls()
-    this.inFlightLoads.clear()
-    this.inFlightHeals.clear()
-    this.aliveProbeCache.clear()
+    this.invalidatePendingWork()
     this.pendingReplacedIds.clear()
     this.pendingBrokenReports.clear()
     this.activePlayerId = null
@@ -1500,11 +1534,6 @@ class ChatStickerService {
     this.stickerListCache = null
     this.tombstoneCache = null
     this.lastSyncError = null
-    this.hasSyncedOnce = false
-    if (this.syncTimer) {
-      clearTimeout(this.syncTimer)
-      this.syncTimer = null
-    }
   }
 
   private isPreloading = false
