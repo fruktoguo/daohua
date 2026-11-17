@@ -1008,6 +1008,8 @@ export const appZh = {
       uptimeLabel: '本次挂机',
       reconnectBtn: '[ ! 立即重连 ]',
       reconnectAria: '立即重新连接服务器',
+      langToggleZhActive: '[ 中文* / EN ]',
+      langToggleZhAria: '切换挂机终端为英文显示',
       exitBtn: '[ × 退出挂机 ]',
       exitAria: '退出挂机模式返回常规界面',
       docTitlePrefix: '[{status}] {name}',

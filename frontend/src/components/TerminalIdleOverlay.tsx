@@ -28,7 +28,13 @@ import {
   buildHexDumpRows,
   clamp01,
   deriveTerminalTelemetry,
+  ENGLISH_AUTO_USE_BAR_NAMES,
+  ENGLISH_TECHNIQUE_NAMES,
+  formatEnglishNumber,
+  formatEnglishQueueEstimate,
+  formatEnglishRealmDisplay,
   formatPlainLogSegments,
+  humanizeEntityId,
   pseudoNoise01,
   renderAsciiBar,
   renderBrailleSparkline,
@@ -39,7 +45,7 @@ import type { ActionDefinition, QueueEntry, WorldMapDefinition, WorldState } fro
 import { useT } from '../i18n'
 import { gameLogService, type GameLogEntry, type LogChannel } from '../logging/gameLogService'
 import { gameClient } from '../network/gameClient'
-import { useUiStore } from '../uiStore'
+import { useUiStore, type IdleTerminalLang } from '../uiStore'
 
 type InspectorTab = 'queue' | 'yield' | 'skills' | 'hex'
 type LogFilter = 'all' | LogChannel
@@ -69,9 +75,10 @@ function formatUptimeSeconds(totalSec: number): string {
   return `${hh}:${mm}:${ss}`
 }
 
-/** 解析队列行动的完整中文显示名称（含地点替换、强化等级后缀、讨伐难度标签） */
+/** 按当前挂机终端语言解析队列行动显示名（中文取配表与本地化名，英文取语义 ID Title） */
 function formatEntryDisplayName(
   entry: QueueEntry,
+  lang: IdleTerminalLang,
   actions: readonly ActionDefinition[],
   items: ReturnType<typeof useGameStore.getState>['items'],
   equipment: ReturnType<typeof useGameStore.getState>['equipment'],
@@ -79,6 +86,26 @@ function formatEntryDisplayName(
   maps: readonly WorldMapDefinition[],
   difficultyLabel: (n: number) => string,
 ): string {
+  if (lang === 'en') {
+    let base = entry.executionKind === 'travel' && entry.travelDestinationNodeId
+      ? `Travel -> ${humanizeEntityId(entry.travelDestinationNodeId, entry.actionId)}`
+      : humanizeEntityId(entry.actionId, entry.actionId)
+    if (entry.targetItemId) {
+      const targetEn = humanizeEntityId(entry.targetItemId, entry.targetItemId)
+      const curPart = entry.enhancementCurrentLevel != null && entry.enhancementCurrentLevel > 0
+        ? ` +${Math.floor(entry.enhancementCurrentLevel)}`
+        : ''
+      const tgtPart = entry.targetLevel != null && entry.targetLevel > 0
+        ? ` -> +${Math.floor(entry.targetLevel)}`
+        : ''
+      base = `${base} · ${targetEn}${curPart}${tgtPart}`
+    }
+    if (entry.difficulty > 0) {
+      base = `${base} [T${entry.difficulty}]`
+    }
+    return base
+  }
+
   const rawName = (entry.actionName && entry.actionName !== entry.actionId)
     ? entry.actionName
     : (findActionInCatalog(actions, entry.actionId) ?? resolveActionDefinition(entry.actionId))?.name
@@ -104,16 +131,19 @@ function formatEntryDisplayName(
 }
 
 /**
- * 纯字符中文终端挂机模式组件 (TerminalIdleOverlay)
+ * 纯字符双语终端挂机模式组件 (TerminalIdleOverlay)
  *
  * 严格约束：
  * 1. 零图像元素（无 img / svg / canvas / Emoji），纯等宽字符框线、块状进度条与盲文点阵波形；
- * 2. 全面使用清晰的中文指标展示玩家真实挂机数据，所有 UI 词条经 i18n 闭环；
+ * 2. 支持右上角一键切换中文与英文（直译游戏真实数据指标），所有中文词条经 i18n 闭环；
  * 3. 仅铺满网页视口，仅通过点击右上角退出按钮返回常规游戏界面。
  */
 export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JSX.Element {
   const t = useT()
   const setIdleModeOpen = useUiStore(state => state.setIdleModeOpen)
+  const lang = useUiStore(state => state.idleTerminalLang)
+  const toggleLang = useUiStore(state => state.toggleIdleTerminalLang)
+  const isEn = lang === 'en'
 
   const name = useGameStore(state => state.name)
   const sequenceId = useGameStore(state => state.sequenceId)
@@ -163,6 +193,11 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   const cmdPoolIndexRef = useRef<number>(0)
   const logContainerRef = useRef<HTMLDivElement>(null)
 
+  const fmtNum = useCallback(
+    (val: number): string => (isEn ? formatEnglishNumber(val) : formatNumber(val)),
+    [isEn],
+  )
+
   const headEntry = queue.entries[0]
   const expedition = headEntry?.expedition ?? null
 
@@ -198,6 +233,9 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
     [expToNextCap, stats?.experience, stats?.realmLevel],
   )
   const realmRatio = clamp01((realmProgress.progressPercentage ?? 0) / 100)
+  const realmDisplayText = isEn
+    ? formatEnglishRealmDisplay(realmProgress.level)
+    : realmInfo.fullDisplayName
 
   const spiritStones = useMemo(
     () => inventory.find(i => i.itemId === 'currency.spirit-stone' && !i.variant)?.amount ?? 0,
@@ -245,11 +283,13 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   ])
 
   const estimatedRemainingText = useMemo(() => {
-    if (!headEntry || !headEstimate) return t('app.idleTerminal.estimateNone')
+    if (!headEntry || !headEstimate) {
+      return isEn ? 'Unlimited' : t('app.idleTerminal.estimateNone')
+    }
     const liveSec = telemetry.jobStatus === 'RUN' ? elapsedQueueSec : 0
     const rem = resolveLiveRemainingSeconds(headEstimate, liveSec)
-    return formatQueueRepeatsText(headEstimate, rem, t)
-  }, [elapsedQueueSec, headEntry, headEstimate, t, telemetry.jobStatus])
+    return isEn ? formatEnglishQueueEstimate(headEstimate, rem) : formatQueueRepeatsText(headEstimate, rem, t)
+  }, [elapsedQueueSec, headEntry, headEstimate, isEn, t, telemetry.jobStatus])
 
   const estimatedServerNowSec = useMemo(() => {
     const base = serverTimeUnixSeconds > 0 ? serverTimeUnixSeconds : Math.floor(nowMs / 1000)
@@ -272,15 +312,20 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
       ? autoUseBarFor({ type: headEntry.type, technique: headActionDef?.technique })
       : null
     if (!bar) {
-      return { barLabel: t('app.idleTerminal.supplyBarNone'), rows: [] as Array<{ slotLabel: string; itemName: string; stock: number; enabled: boolean; activeSec: number }> }
+      return {
+        barLabel: isEn ? 'No Matching Bar' : t('app.idleTerminal.supplyBarNone'),
+        rows: [] as Array<{ slotLabel: string; itemName: string; stock: number; enabled: boolean; activeSec: number }>,
+      }
     }
-    const barLabel = autoUseBarLabel(bar)
+    const barLabel = isEn ? ENGLISH_AUTO_USE_BAR_NAMES[bar] : autoUseBarLabel(bar)
     const rawSlots = queue.autoUseSlots?.[bar] ?? []
     const rows: Array<{ slotLabel: string; itemName: string; stock: number; enabled: boolean; activeSec: number }> = []
     rawSlots.forEach((slot, idx) => {
       if (!slot.itemId) return
       const itemDef = findItemInCatalog(items, slot.itemId)
-      const itemName = itemDef?.name ?? slot.itemId
+      const itemName = isEn
+        ? humanizeEntityId(slot.itemId, slot.itemId)
+        : (itemDef?.name ?? slot.itemId)
       const stock = inventory.find(inv => inv.itemId === slot.itemId && !inv.variant)?.amount ?? 0
       rows.push({
         slotLabel: `#${idx + 1}`,
@@ -291,10 +336,24 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
       })
     })
     return { barLabel, rows }
-  }, [headActionDef?.technique, headEntry, inventory, items, queue.autoUseSlots, t])
+  }, [headActionDef?.technique, headEntry, inventory, isEn, items, queue.autoUseSlots, t])
 
   const resolveJobStatusLabel = useCallback(
     (status: TerminalJobStatus): string => {
+      if (isEn) {
+        switch (status) {
+          case 'RUN':
+            return 'RUNNING'
+          case 'PAUSED':
+            return 'PAUSED'
+          case 'BLOCKED':
+            return 'BLOCKED'
+          case 'QUEUED':
+            return 'QUEUED'
+          case 'IDLE':
+            return 'IDLE'
+        }
+      }
       switch (status) {
         case 'RUN':
           return t('app.idleTerminal.statusRun')
@@ -308,14 +367,17 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
           return t('app.idleTerminal.statusIdle')
       }
     },
-    [t],
+    [isEn, t],
   )
 
   const jobStatusLabel = resolveJobStatusLabel(telemetry.jobStatus)
   const headActionName = useMemo(() => {
-    if (!headEntry) return t('app.idleTerminal.noActiveAction')
+    if (!headEntry) {
+      return isEn ? 'None (Queue is empty)' : t('app.idleTerminal.noActiveAction')
+    }
     return formatEntryDisplayName(
       headEntry,
+      lang,
       actions,
       items,
       equipment,
@@ -323,9 +385,9 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
       maps,
       n => t('app.idleTerminal.difficultyBadge', { n }),
     )
-  }, [actions, equipment, headEntry, items, maps, t, world])
+  }, [actions, equipment, headEntry, isEn, items, lang, maps, t, world])
 
-  // 备份与还原浏览器标签页标题和空图标，并在标题动态提示当前挂机状态
+  // 备份与还原浏览器标签页标题和空图标，并在标题动态同步当前语言的挂机状态
   useEffect(() => {
     if (typeof document === 'undefined') return undefined
     const previousTitle = document.title
@@ -345,13 +407,15 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
 
   useEffect(() => {
     if (typeof document === 'undefined' || !baseTitleRef.current) return
-    document.title = t('app.idleTerminal.docTitlePrefix', {
-      status: jobStatusLabel,
-      name: baseTitleRef.current,
-    })
-  }, [jobStatusLabel, t])
+    document.title = isEn
+      ? `[${jobStatusLabel}] DaoHua Terminal`
+      : t('app.idleTerminal.docTitlePrefix', {
+          status: jobStatusLabel,
+          name: baseTitleRef.current,
+        })
+  }, [isEn, jobStatusLabel, t])
 
-  // 订阅真实游戏日志流（采集产出、制造、战斗击杀与掉落）
+  // 订阅真实游戏日志流
   useEffect(() => {
     setGameLogs(gameLogService.getSnapshot().latest)
     return gameLogService.subscribe(() => {
@@ -389,43 +453,52 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   const cliCommandTemplates = useMemo(
     () => [
       {
-        cmd: t('app.idleTerminal.cliCmdStatus'),
+        cmd: isEn ? 'status --summary' : t('app.idleTerminal.cliCmdStatus'),
         buildOutput: () =>
-          t('app.idleTerminal.cliOutRole', {
-            name,
-            realm: realmInfo.minorName,
-            expPct: (realmRatio * 100).toFixed(1),
-            hp: `${formatNumber(telemetry.hpCurrent)}/${formatNumber(telemetry.hpMax)}`,
-            mp: `${formatNumber(telemetry.mpCurrent)}/${formatNumber(telemetry.mpMax)}`,
-            stones: formatNumber(spiritStones),
-          }),
+          isEn
+            ? `  Player: ${name || 'Player'} | Realm: ${realmDisplayText} (${(realmRatio * 100).toFixed(1)}%) | HP: ${fmtNum(telemetry.hpCurrent)}/${fmtNum(telemetry.hpMax)} | MP: ${fmtNum(telemetry.mpCurrent)}/${fmtNum(telemetry.mpMax)} | Spirit Stones: ${fmtNum(spiritStones)}`
+            : t('app.idleTerminal.cliOutRole', {
+                name,
+                realm: realmInfo.minorName,
+                expPct: (realmRatio * 100).toFixed(1),
+                hp: `${fmtNum(telemetry.hpCurrent)}/${fmtNum(telemetry.hpMax)}`,
+                mp: `${fmtNum(telemetry.mpCurrent)}/${fmtNum(telemetry.mpMax)}`,
+                stones: fmtNum(spiritStones),
+              }),
       },
       {
-        cmd: t('app.idleTerminal.cliCmdQueue'),
+        cmd: isEn ? 'queue --inspect-rates' : t('app.idleTerminal.cliCmdQueue'),
         buildOutput: () =>
-          t('app.idleTerminal.cliOutAction', {
-            action: headActionName,
-            status: jobStatusLabel,
-            pct: (telemetry.jobProgressRatio * 100).toFixed(1),
-            depth: telemetry.queueDepth,
-            daily: formatNumber(briefStats?.dailyRevenue ?? 0),
-          }),
+          isEn
+            ? `  Action: ${headActionName} [${jobStatusLabel}] | Progress: ${(telemetry.jobProgressRatio * 100).toFixed(1)}% | Queue: ${telemetry.queueDepth} | Est. Stones/Day: +${fmtNum(briefStats?.dailyRevenue ?? 0)}`
+            : t('app.idleTerminal.cliOutAction', {
+                action: headActionName,
+                status: jobStatusLabel,
+                pct: (telemetry.jobProgressRatio * 100).toFixed(1),
+                depth: telemetry.queueDepth,
+                daily: fmtNum(briefStats?.dailyRevenue ?? 0),
+              }),
       },
       {
-        cmd: t('app.idleTerminal.cliCmdSupply'),
+        cmd: isEn ? 'supply --check-stock' : t('app.idleTerminal.cliCmdSupply'),
         buildOutput: () =>
-          t('app.idleTerminal.cliOutSupply', {
-            configured: supplyInspection.rows.length,
-            empty: supplyInspection.rows.filter(r => r.stock <= 0).length,
-            rtt: telemetry.rttMs,
-          }),
+          isEn
+            ? `  Supply: ${supplyInspection.rows.length} configured | Exhausted: ${supplyInspection.rows.filter(r => r.stock <= 0).length} | Latency: ${telemetry.rttMs}ms`
+            : t('app.idleTerminal.cliOutSupply', {
+                configured: supplyInspection.rows.length,
+                empty: supplyInspection.rows.filter(r => r.stock <= 0).length,
+                rtt: telemetry.rttMs,
+              }),
       },
     ],
     [
       briefStats?.dailyRevenue,
+      fmtNum,
       headActionName,
+      isEn,
       jobStatusLabel,
       name,
+      realmDisplayText,
       realmInfo.minorName,
       realmRatio,
       spiritStones,
@@ -441,7 +514,12 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
     ],
   )
 
-  // 键盘快捷命令交互：随手敲击字符键即可输出中文挂机快照行
+  // 切换语言时清空未敲完的半截提示命令，防止中英混串
+  useEffect(() => {
+    setTypedCommand('')
+  }, [lang])
+
+  // 键盘快捷命令交互
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -499,10 +577,10 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
 
     const mappedGame = filteredGame.slice(-MAX_MERGED_LOGS).map(entry => {
       const tag = entry.channel === 'combat'
-        ? t('app.idleTerminal.logTagCombat')
-        : t('app.idleTerminal.logTagSystem')
-      const body = formatPlainLogSegments(entry.segments)
-      const countSuffix = entry.count > 1 ? ` (×${entry.count})` : ''
+        ? (isEn ? '[CMB]' : t('app.idleTerminal.logTagCombat'))
+        : (isEn ? '[SYS]' : t('app.idleTerminal.logTagSystem'))
+      const body = formatPlainLogSegments(entry.segments, lang)
+      const countSuffix = entry.count > 1 ? ` (x${entry.count})` : ''
       return {
         id: entry.id,
         timestampMs: entry.latestTimestampMs || entry.timestampMs,
@@ -515,13 +593,13 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
       id: entry.id,
       timestampMs: entry.timestampMs,
       tone: entry.tone,
-      text: `[${formatClockHms(entry.timestampMs)}] ${t('app.idleTerminal.logTagCli')} ${entry.text}`,
+      text: `[${formatClockHms(entry.timestampMs)}] ${isEn ? '[CLI]' : t('app.idleTerminal.logTagCli')} ${entry.text}`,
     }))
 
     return [...mappedGame, ...mappedCli]
       .sort((a, b) => a.timestampMs - b.timestampMs)
       .slice(-MAX_MERGED_LOGS)
-  }, [cliLogs, gameLogs, logFilter, t])
+  }, [cliLogs, gameLogs, isEn, lang, logFilter, t])
 
   useEffect(() => {
     const el = logContainerRef.current
@@ -539,29 +617,29 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   }, [])
 
   const netLabel = telemetry.netState === 'online'
-    ? t('app.idleTerminal.netOnline')
+    ? (isEn ? 'ONLINE' : t('app.idleTerminal.netOnline'))
     : telemetry.netState === 'reconnecting'
-      ? t('app.idleTerminal.netReconnecting')
-      : t('app.idleTerminal.netOffline')
+      ? (isEn ? 'RECONNECTING' : t('app.idleTerminal.netReconnecting'))
+      : (isEn ? 'OFFLINE' : t('app.idleTerminal.netOffline'))
 
   const expeditionPhaseText = useMemo(() => {
     if (headEntry?.executionKind === 'travel') {
-      return t('app.idleTerminal.phaseTravel')
+      return isEn ? 'Traveling' : t('app.idleTerminal.phaseTravel')
     }
     if (!expedition) return null
     switch (expedition.phase) {
       case 'initial-search':
       case 'search':
-        return t('app.idleTerminal.phaseSearch')
+        return isEn ? 'Searching Target' : t('app.idleTerminal.phaseSearch')
       case 'combat':
-        return t('app.idleTerminal.phaseCombat')
+        return isEn ? 'In Combat' : t('app.idleTerminal.phaseCombat')
       case 'respawn':
-        return t('app.idleTerminal.phaseRespawn')
+        return isEn ? 'Respawning' : t('app.idleTerminal.phaseRespawn')
       case 'duel-pending':
       case 'duel':
-        return t('app.idleTerminal.phaseDuel')
+        return isEn ? 'PvP Duel' : t('app.idleTerminal.phaseDuel')
     }
-  }, [expedition, headEntry?.executionKind, t])
+  }, [expedition, headEntry?.executionKind, isEn, t])
 
   const roundProgressRightText = useMemo(() => {
     if (!headEntry) return '0.0%'
@@ -579,8 +657,18 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   }, [elapsedQueueSec, expeditionPhaseText, headEntry, telemetry.jobProgressRatio, telemetry.jobStatus])
 
   const isCombatEntry = headEntry?.type === 'combat' || Boolean(expedition)
-  const locationName = world?.locationName || t('app.idleTerminal.locationFallback')
-  const cultivatorDisplay = `${name || '-'}${sequenceId > 0 ? `#${sequenceId}` : ''}`
+  const locationName = isEn
+    ? (world?.nodeId
+        ? humanizeEntityId(world.nodeId, 'Transit')
+        : world?.edgeId
+          ? 'In Transit'
+          : 'Unknown')
+    : (world?.locationName || t('app.idleTerminal.locationFallback'))
+
+  const cultivatorDisplay = isEn
+    ? `Player#${sequenceId > 0 ? sequenceId : 1}`
+    : `${name || '-'}${sequenceId > 0 ? `#${sequenceId}` : ''}`
+
   const rxSparkline = useMemo(() => renderBrailleSparkline(rxSamples, 24), [rxSamples])
   const opsSparkline = useMemo(() => renderBrailleSparkline(opsSamples, 24), [opsSamples])
   const hexRows = useMemo(() => buildHexDumpRows(0x41a0_0800, version, tick, 10), [tick, version])
@@ -595,43 +683,64 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
         const speedPct = (prog.level * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100).toFixed(1)
         return {
           id: techId,
-          name: t(`insight.technique.${techId}`),
+          name: isEn ? ENGLISH_TECHNIQUE_NAMES[techId] : t(`insight.technique.${techId}`),
           level: prog.level,
           ratio,
           speedPct,
         }
       }),
-    [combat?.techniqueExperiences, t],
+    [combat?.techniqueExperiences, isEn, t],
   )
 
   const netArrow = telemetry.netState === 'online' ? '═══>' : telemetry.netState === 'reconnecting' ? '─?─>' : '─X─ '
-  const nodeMeshText = [
-    `[${t('app.idleTerminal.meshClient')}]══╦${netArrow}[${t('app.idleTerminal.meshGateway')}: ${netLabel} ${telemetry.rttMs}ms]`,
-    `          ╠${netArrow}[${t('app.idleTerminal.meshLocation')}: ${locationName}]`,
-    `          ╚${netArrow}[${t('app.idleTerminal.meshCluster')}: ${t('app.idleTerminal.meshOnlineCount', { online: telemetry.onlinePlayers, idle: telemetry.offlineIdlePlayers })}]`,
-  ].join('\n')
+  const nodeMeshText = isEn
+    ? [
+        `[Client]══╦${netArrow}[Server: ${netLabel} ${telemetry.rttMs}ms]`,
+        `          ╠${netArrow}[Location: ${locationName}]`,
+        `          ╚${netArrow}[Cluster: Online:${telemetry.onlinePlayers} Idle:${telemetry.offlineIdlePlayers}]`,
+      ].join('\n')
+    : [
+        `[${t('app.idleTerminal.meshClient')}]══╦${netArrow}[${t('app.idleTerminal.meshGateway')}: ${netLabel} ${telemetry.rttMs}ms]`,
+        `          ╠${netArrow}[${t('app.idleTerminal.meshLocation')}: ${locationName}]`,
+        `          ╚${netArrow}[${t('app.idleTerminal.meshCluster')}: ${t('app.idleTerminal.meshOnlineCount', { online: telemetry.onlinePlayers, idle: telemetry.offlineIdlePlayers })}]`,
+      ].join('\n')
 
+  const pane01Title = isEn ? '+--[ 01 // CHARACTER & RESOURCES ]' : t('app.idleTerminal.pane01Title')
+  const pane02Title = isEn ? '+--[ 02 // ACTIVE ACTION & EFFICIENCY ]' : t('app.idleTerminal.pane02Title')
+  const pane03Title = isCombatEntry
+    ? (isEn ? '+--[ 03 // LIVE COMBAT & UNIT HP ]' : t('app.idleTerminal.pane03CombatTitle'))
+    : (isEn ? '+--[ 03 // NODE MESH & COMPUTE LOAD ]' : t('app.idleTerminal.pane03NodeTitle'))
+  const pane04Title = isEn ? '+--[ 04 // REAL-TIME ACTIVITY & LOOT LOG ]' : t('app.idleTerminal.pane04Title')
   const pane05Title = inspectorTab === 'queue'
-    ? t('app.idleTerminal.pane05TitleQueue')
+    ? (isEn ? '+--[ 05 // ACTION QUEUE & AUTO-SUPPLY ]' : t('app.idleTerminal.pane05TitleQueue'))
     : inspectorTab === 'yield'
-      ? t('app.idleTerminal.pane05TitleYield')
+      ? (isEn ? '+--[ 05 // CURRENT REPORT TOP YIELDS ]' : t('app.idleTerminal.pane05TitleYield'))
       : inspectorTab === 'skills'
-        ? t('app.idleTerminal.pane05TitleSkills')
-        : t('app.idleTerminal.pane05TitleHex')
+        ? (isEn ? '+--[ 05 // LIFE TECHNIQUES PROGRESS ]' : t('app.idleTerminal.pane05TitleSkills'))
+        : (isEn ? '+--[ 05 // MEMORY FRAME HEX DUMP ]' : t('app.idleTerminal.pane05TitleHex'))
 
   return (
-    <div className="term-idle-root" role="region" aria-label={t('app.idleTerminal.regionAria')}>
+    <div
+      className="term-idle-root"
+      role="region"
+      aria-label={isEn ? 'Idle monitoring terminal' : t('app.idleTerminal.regionAria')}
+    >
       <header className="term-idle-topbar">
         <div className="term-idle-topbar-left">
-          <span className="term-idle-session-badge">[{t('app.idleTerminal.badge')}]</span>
+          <span className="term-idle-session-badge">
+            [{isEn ? 'IDLE-TERM' : t('app.idleTerminal.badge')}]
+          </span>
           <span className="term-tone-bright">{cultivatorDisplay} @ {locationName}</span>
-          <nav className="term-idle-tmux-tabs" aria-label={t('app.idleTerminal.panesAria')}>
+          <nav
+            className="term-idle-tmux-tabs"
+            aria-label={isEn ? 'Inspector tabs' : t('app.idleTerminal.panesAria')}
+          >
             {(
               [
-                { id: 'queue', label: t('app.idleTerminal.tabQueue') },
-                { id: 'yield', label: t('app.idleTerminal.tabYield') },
-                { id: 'skills', label: t('app.idleTerminal.tabSkills') },
-                { id: 'hex', label: t('app.idleTerminal.tabHex') },
+                { id: 'queue', label: isEn ? '1:Queue & Supply' : t('app.idleTerminal.tabQueue') },
+                { id: 'yield', label: isEn ? '2:Loot & Yield' : t('app.idleTerminal.tabYield') },
+                { id: 'skills', label: isEn ? '3:Techniques' : t('app.idleTerminal.tabSkills') },
+                { id: 'hex', label: isEn ? '4:Hex Dump' : t('app.idleTerminal.tabHex') },
               ] as const
             ).map(tab => (
               <button
@@ -647,14 +756,18 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
         </div>
 
         <div className="term-idle-topbar-center">
-          <span className="term-tone-dim">{t('app.idleTerminal.netLabel')}:</span>
+          <span className="term-tone-dim">{isEn ? 'NET' : t('app.idleTerminal.netLabel')}:</span>
           <span className={`term-tone-${telemetry.netTone}`}>
             {netLabel}{telemetry.netState === 'online' ? ` (${telemetry.rttMs}ms)` : ''}
           </span>
           <span className="term-tone-dim">|</span>
-          <span>{t('app.idleTerminal.onlinePlayers', { n: telemetry.onlinePlayers })}</span>
+          <span>
+            {isEn
+              ? `Online ${telemetry.onlinePlayers}`
+              : t('app.idleTerminal.onlinePlayers', { n: telemetry.onlinePlayers })}
+          </span>
           <span className="term-tone-dim">|</span>
-          <span className="term-tone-dim">{t('app.idleTerminal.uptimeLabel')}:</span>
+          <span className="term-tone-dim">{isEn ? 'Uptime' : t('app.idleTerminal.uptimeLabel')}:</span>
           <span>{sessionUptime}</span>
           <span className="term-tone-dim">|</span>
           <span>{formatClockHms(nowMs)}</span>
@@ -666,163 +779,190 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
               type="button"
               className="term-idle-action-btn term-idle-action-btn--warn"
               onClick={handleReconnect}
-              aria-label={t('app.idleTerminal.reconnectAria')}
+              aria-label={isEn ? 'Reconnect to server' : t('app.idleTerminal.reconnectAria')}
             >
-              {t('app.idleTerminal.reconnectBtn')}
+              {isEn ? '[ ! RECONNECT ]' : t('app.idleTerminal.reconnectBtn')}
             </button>
           )}
           <button
             type="button"
             className="term-idle-action-btn"
-            onClick={handleExit}
-            aria-label={t('app.idleTerminal.exitAria')}
+            onClick={toggleLang}
+            aria-label={isEn ? 'Switch idle terminal to Chinese' : t('app.idleTerminal.langToggleZhAria')}
           >
-            {t('app.idleTerminal.exitBtn')}
+            {isEn ? '[ ZH / EN* ]' : t('app.idleTerminal.langToggleZhActive')}
+          </button>
+          <button
+            type="button"
+            className="term-idle-action-btn"
+            onClick={handleExit}
+            aria-label={isEn ? 'Exit idle terminal mode' : t('app.idleTerminal.exitAria')}
+          >
+            {isEn ? '[ x EXIT ]' : t('app.idleTerminal.exitBtn')}
           </button>
         </div>
       </header>
 
       <div className="term-idle-grid">
         {/* 窗格 01：角色状态、气血灵力、修为进度与随身资产 */}
-        <section className="term-idle-pane term-idle-pane--role" aria-label={t('app.idleTerminal.pane01Title')}>
+        <section className="term-idle-pane term-idle-pane--role" aria-label={pane01Title}>
           <div className="term-idle-pane-header">
-            <span>{t('app.idleTerminal.pane01Title')}</span>
+            <span>{pane01Title}</span>
             {isPendingBreakthrough ? (
-              <span className="term-badge term-badge--warn">{t('app.idleTerminal.breakthroughReady')}</span>
+              <span className="term-badge term-badge--warn">
+                {isEn ? '[BREAKTHROUGH]' : t('app.idleTerminal.breakthroughReady')}
+              </span>
             ) : (
-              <span className="term-tone-ok">{t('app.idleTerminal.realmLevelSuffix', { level: realmProgress.level })}</span>
+              <span className="term-tone-ok">
+                {isEn ? `Lv.${realmProgress.level}` : t('app.idleTerminal.realmLevelSuffix', { level: realmProgress.level })}
+              </span>
             )}
           </div>
           <div className="term-idle-pane-body">
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.realmLabel')}</span>
-              <span className="term-kv-val term-tone-gold">{realmInfo.fullDisplayName}</span>
+              <span className="term-kv-label">{isEn ? 'Realm' : t('app.idleTerminal.realmLabel')}</span>
+              <span className="term-kv-val term-tone-gold">{realmDisplayText}</span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.realmExpLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Experience' : t('app.idleTerminal.realmExpLabel')}</span>
               <span className="term-kv-val term-tone-info">
-                [{renderAsciiBar(realmRatio, 12)}] {(realmRatio * 100).toFixed(1)}% ({formatNumber(realmProgress.currentLayerExp)}/{formatNumber(Math.max(1, realmProgress.expToNext))})
+                [{renderAsciiBar(realmRatio, 12)}] {(realmRatio * 100).toFixed(1)}% ({fmtNum(realmProgress.currentLayerExp)}/{fmtNum(Math.max(1, realmProgress.expToNext))})
               </span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.hpLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'HP' : t('app.idleTerminal.hpLabel')}</span>
               <span className={`term-kv-val term-tone-${telemetry.hpTone}`}>
-                [{renderAsciiBar(telemetry.hpRatio, 12)}] {formatNumber(telemetry.hpCurrent)}/{formatNumber(telemetry.hpMax)}
-                {telemetry.hpTone === 'crit' ? ` ${t('app.idleTerminal.hpLowWarn')}` : ''}
+                [{renderAsciiBar(telemetry.hpRatio, 12)}] {fmtNum(telemetry.hpCurrent)}/{fmtNum(telemetry.hpMax)}
+                {telemetry.hpTone === 'crit' ? ` ${isEn ? '[LOW HP]' : t('app.idleTerminal.hpLowWarn')}` : ''}
               </span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.mpLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'MP' : t('app.idleTerminal.mpLabel')}</span>
               <span className={`term-kv-val term-tone-${telemetry.mpTone}`}>
-                [{renderAsciiBar(telemetry.mpRatio, 12)}] {formatNumber(telemetry.mpCurrent)}/{formatNumber(telemetry.mpMax)}
+                [{renderAsciiBar(telemetry.mpRatio, 12)}] {fmtNum(telemetry.mpCurrent)}/{fmtNum(telemetry.mpMax)}
               </span>
             </div>
             <div className="term-divider">------------------------------------------------------------</div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.spiritStoneLabel')}</span>
-              <span className="term-kv-val term-tone-gold">{formatNumber(spiritStones)}</span>
+              <span className="term-kv-label">{isEn ? 'Spirit Stones' : t('app.idleTerminal.spiritStoneLabel')}</span>
+              <span className="term-kv-val term-tone-gold">{fmtNum(spiritStones)}</span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.meritLabel')} / {t('app.idleTerminal.foundationLabel')}</span>
+              <span className="term-kv-label">
+                {isEn ? 'Merit / Foundation' : `${t('app.idleTerminal.meritLabel')} / ${t('app.idleTerminal.foundationLabel')}`}
+              </span>
               <span className="term-kv-val term-tone-bright">
-                {formatNumber(totalMerit)} / {formatNumber(foundation)}
+                {fmtNum(totalMerit)} / {fmtNum(foundation)}
               </span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.waveNetLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Net Pulse' : t('app.idleTerminal.waveNetLabel')}</span>
               <span className="term-kv-val term-tone-info">{rxSparkline}</span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.waveOpsLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Throughput' : t('app.idleTerminal.waveOpsLabel')}</span>
               <span className="term-kv-val term-tone-ok">{opsSparkline}</span>
             </div>
           </div>
         </section>
 
         {/* 窗格 02：当前行动、单轮进度、剩余耗时与每日效率 */}
-        <section className="term-idle-pane term-idle-pane--job" aria-label={t('app.idleTerminal.pane02Title')}>
+        <section className="term-idle-pane term-idle-pane--job" aria-label={pane02Title}>
           <div className="term-idle-pane-header">
-            <span>{t('app.idleTerminal.pane02Title')}</span>
+            <span>{pane02Title}</span>
             <span className={`term-badge term-badge--${telemetry.jobTone}`}>[{jobStatusLabel}]</span>
           </div>
           <div className="term-idle-pane-body">
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.currentActionLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Action' : t('app.idleTerminal.currentActionLabel')}</span>
               <span className="term-kv-val term-tone-bright">{headActionName}</span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.roundProgressLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Progress' : t('app.idleTerminal.roundProgressLabel')}</span>
               <span className={`term-kv-val term-tone-${telemetry.jobTone}`}>
                 [{renderAsciiBar(telemetry.jobProgressRatio, 14)}] {roundProgressRightText}
               </span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.estimateLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Remaining' : t('app.idleTerminal.estimateLabel')}</span>
               <span className="term-kv-val term-tone-gold">{estimatedRemainingText}</span>
             </div>
             <div className="term-kv-row">
-              <span className="term-kv-label">{t('app.idleTerminal.queueConfigLabel')}</span>
+              <span className="term-kv-label">{isEn ? 'Queue Info' : t('app.idleTerminal.queueConfigLabel')}</span>
               <span className="term-kv-val">
-                {t('app.idleTerminal.queueConfigValue', {
-                  depth: telemetry.queueDepth,
-                  cycles: telemetry.completedCycles,
-                  loop: queue.loopEnabled ? t('app.idleTerminal.toggleOn') : t('app.idleTerminal.toggleOff'),
-                  travel: queue.autoTravelEnabled ? t('app.idleTerminal.toggleOn') : t('app.idleTerminal.toggleOff'),
-                })}
+                {isEn
+                  ? `${telemetry.queueDepth} queued | Done ${telemetry.completedCycles} | Loop:${queue.loopEnabled ? 'ON' : 'OFF'} | AutoTravel:${queue.autoTravelEnabled ? 'ON' : 'OFF'}`
+                  : t('app.idleTerminal.queueConfigValue', {
+                      depth: telemetry.queueDepth,
+                      cycles: telemetry.completedCycles,
+                      loop: queue.loopEnabled ? t('app.idleTerminal.toggleOn') : t('app.idleTerminal.toggleOff'),
+                      travel: queue.autoTravelEnabled ? t('app.idleTerminal.toggleOn') : t('app.idleTerminal.toggleOff'),
+                    })}
               </span>
             </div>
             <div className="term-divider">------------------------------------------------------------</div>
             {briefStats && duel?.currentReport ? (
               <>
                 <div className="term-kv-row">
-                  <span className="term-kv-label">{t('app.idleTerminal.dailyRevenueLabel')}</span>
+                  <span className="term-kv-label">{isEn ? 'Stones / Day' : t('app.idleTerminal.dailyRevenueLabel')}</span>
                   <span className="term-kv-val term-tone-gold">
-                    {t('app.idleTerminal.dailyRevenueValue', {
-                      daily: formatNumber(briefStats.dailyRevenue),
-                      hourly: formatNumber(briefStats.revenuePerHour),
-                    })}
+                    {isEn
+                      ? `+${fmtNum(briefStats.dailyRevenue)} /d (+${fmtNum(briefStats.revenuePerHour)} /h)`
+                      : t('app.idleTerminal.dailyRevenueValue', {
+                          daily: fmtNum(briefStats.dailyRevenue),
+                          hourly: fmtNum(briefStats.revenuePerHour),
+                        })}
                   </span>
                 </div>
                 <div className="term-kv-row">
-                  <span className="term-kv-label">{t('app.idleTerminal.expRateLabel')}</span>
+                  <span className="term-kv-label">{isEn ? 'Exp Rate' : t('app.idleTerminal.expRateLabel')}</span>
                   <span className="term-kv-val term-tone-info">
-                    {t('app.idleTerminal.expRateValue', {
-                      hourly: formatNumber(briefStats.cultivationPerHour),
-                      daily: formatNumber(briefStats.dailyCultivation),
-                    })}
+                    {isEn
+                      ? `+${fmtNum(briefStats.cultivationPerHour)} /h (~+${fmtNum(briefStats.dailyCultivation)} /d)`
+                      : t('app.idleTerminal.expRateValue', {
+                          hourly: fmtNum(briefStats.cultivationPerHour),
+                          daily: fmtNum(briefStats.dailyCultivation),
+                        })}
                   </span>
                 </div>
                 <div className="term-kv-row">
-                  <span className="term-kv-label">{t('app.idleTerminal.freqLabel')}</span>
+                  <span className="term-kv-label">{isEn ? 'Frequency' : t('app.idleTerminal.freqLabel')}</span>
                   <span className="term-kv-val term-tone-ok">
                     {briefStats.isCombat
-                      ? t('app.idleTerminal.freqCombatValue', {
-                          rate: briefStats.encountersPerHour.toFixed(1),
-                          total: duel.currentReport.cycles,
-                          deaths: duel.currentReport.deaths ?? 0,
-                        })
-                      : t('app.idleTerminal.freqLifeValue', {
-                          rate: briefStats.cyclesPerHour.toFixed(1),
-                          total: duel.currentReport.cycles,
-                        })}
+                      ? isEn
+                        ? `${briefStats.encountersPerHour.toFixed(1)} battles/h (Total ${duel.currentReport.cycles} · Deaths ${duel.currentReport.deaths ?? 0})`
+                        : t('app.idleTerminal.freqCombatValue', {
+                            rate: briefStats.encountersPerHour.toFixed(1),
+                            total: duel.currentReport.cycles,
+                            deaths: duel.currentReport.deaths ?? 0,
+                          })
+                      : isEn
+                        ? `${briefStats.cyclesPerHour.toFixed(1)} cycles/h (Total ${duel.currentReport.cycles})`
+                        : t('app.idleTerminal.freqLifeValue', {
+                            rate: briefStats.cyclesPerHour.toFixed(1),
+                            total: duel.currentReport.cycles,
+                          })}
                   </span>
                 </div>
               </>
             ) : (
-              <div className="term-tone-dim">{t('app.idleTerminal.noReportHint')}</div>
+              <div className="term-tone-dim">
+                {isEn
+                  ? 'Awaiting first completed cycle to compute live efficiency rates...'
+                  : t('app.idleTerminal.noReportHint')}
+              </div>
             )}
           </div>
         </section>
 
         {/* 窗格 03：战斗中展示实时纯字符敌我气血条；非战斗展示节点链路与算力 */}
-        <section
-          className="term-idle-pane term-idle-pane--battle"
-          aria-label={isCombatEntry ? t('app.idleTerminal.pane03CombatTitle') : t('app.idleTerminal.pane03NodeTitle')}
-        >
+        <section className="term-idle-pane term-idle-pane--battle" aria-label={pane03Title}>
           <div className="term-idle-pane-header">
-            <span>{isCombatEntry ? t('app.idleTerminal.pane03CombatTitle') : t('app.idleTerminal.pane03NodeTitle')}</span>
+            <span>{pane03Title}</span>
             {expedition?.waveNumber ? (
-              <span className="term-tone-gold">{t('app.idleTerminal.waveBadge', { wave: expedition.waveNumber })}</span>
+              <span className="term-tone-gold">
+                {isEn ? `Wave ${expedition.waveNumber}` : t('app.idleTerminal.waveBadge', { wave: expedition.waveNumber })}
+              </span>
             ) : (
               <span className={`term-tone-${telemetry.netTone}`}>{netLabel}</span>
             )}
@@ -836,22 +976,25 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                     const cur = Math.max(0, Math.round(ally.hitpoints))
                     const ratio = clamp01(cur / max)
                     const isSelf = expedition.selfIndex === ally.memberIndex
+                    const allyLabel = isEn
+                      ? `${isSelf ? '[SELF]' : '[ALLY]'} ${isSelf ? cultivatorDisplay : `Member#${ally.memberIndex + 1}`}`
+                      : `${isSelf ? t('app.idleTerminal.selfTag') : t('app.idleTerminal.allyTag')} ${ally.displayName}`
                     return (
                       <div key={ally.playerId} className="term-unit-row">
-                        <span className="term-unit-name term-tone-ok">
-                          {isSelf ? t('app.idleTerminal.selfTag') : t('app.idleTerminal.allyTag')} {ally.displayName}
-                        </span>
+                        <span className="term-unit-name term-tone-ok">{allyLabel}</span>
                         <span className={cur <= 0 ? 'term-tone-crit' : 'term-tone-ok'}>
-                          [{renderAsciiBar(ratio, 10)}] {cur <= 0 ? t('app.idleTerminal.unitDead') : `${formatNumber(cur)}/${formatNumber(max)}`}
+                          [{renderAsciiBar(ratio, 10)}] {cur <= 0 ? (isEn ? 'DEAD' : t('app.idleTerminal.unitDead')) : `${fmtNum(cur)}/${fmtNum(max)}`}
                         </span>
                       </div>
                     )
                   })
                 ) : (
                   <div className="term-unit-row">
-                    <span className="term-unit-name term-tone-ok">{t('app.idleTerminal.selfTag')} {name}</span>
+                    <span className="term-unit-name term-tone-ok">
+                      {isEn ? `[SELF] ${cultivatorDisplay}` : `${t('app.idleTerminal.selfTag')} ${name}`}
+                    </span>
                     <span className={`term-tone-${telemetry.hpTone}`}>
-                      [{renderAsciiBar(telemetry.hpRatio, 10)}] {formatNumber(telemetry.hpCurrent)}/{formatNumber(telemetry.hpMax)}
+                      [{renderAsciiBar(telemetry.hpRatio, 10)}] {fmtNum(telemetry.hpCurrent)}/{fmtNum(telemetry.hpMax)}
                     </span>
                   </div>
                 )}
@@ -861,13 +1004,13 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                 {expedition?.duel ? (
                   <div className="term-unit-row">
                     <span className="term-unit-name term-tone-warn">
-                      {t('app.idleTerminal.duelFoeTag')} {expedition.duel.opponentName}
+                      {isEn ? '[OPPONENT] Rival' : `${t('app.idleTerminal.duelFoeTag')} ${expedition.duel.opponentName}`}
                     </span>
                     <span className="term-tone-warn">
                       [{renderAsciiBar(
                         clamp01(expedition.duel.opponentHitpoints / Math.max(1, expedition.duel.opponentMaxHitpoints ?? 1)),
                         10,
-                      )}] {formatNumber(Math.max(0, Math.round(expedition.duel.opponentHitpoints)))}/{formatNumber(Math.max(1, Math.round(expedition.duel.opponentMaxHitpoints ?? 1)))}
+                      )}] {fmtNum(Math.max(0, Math.round(expedition.duel.opponentHitpoints)))}/{fmtNum(Math.max(1, Math.round(expedition.duel.opponentMaxHitpoints ?? 1)))}
                     </span>
                   </div>
                 ) : expedition?.enemies && expedition.enemies.length > 0 ? (
@@ -876,28 +1019,31 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                     const cur = Math.max(0, Math.round(foe.hitpoints))
                     const ratio = clamp01(cur / max)
                     const rankTag = foe.rank === 'boss'
-                      ? t('app.idleTerminal.rankBoss')
+                      ? (isEn ? '[BOSS]' : t('app.idleTerminal.rankBoss'))
                       : foe.rank === 'elite'
-                        ? t('app.idleTerminal.rankElite')
-                        : t('app.idleTerminal.rankNormal')
+                        ? (isEn ? '[ELITE]' : t('app.idleTerminal.rankElite'))
+                        : (isEn ? '[MOB]' : t('app.idleTerminal.rankNormal'))
                     const rankClass = foe.rank === 'boss'
                       ? 'term-tone-crit'
                       : foe.rank === 'elite'
                         ? 'term-tone-gold'
                         : 'term-tone-info'
+                    const foeName = isEn ? humanizeEntityId(foe.enemyId, foe.enemyId) : foe.name
                     return (
                       <div key={`${foe.enemyId}-${idx}`} className="term-unit-row">
                         <span className={`term-unit-name ${rankClass}`}>
-                          {rankTag} {foe.name}
+                          {rankTag} {foeName}
                         </span>
                         <span className={cur <= 0 ? 'term-tone-dim' : rankClass}>
-                          [{renderAsciiBar(ratio, 10)}] {cur <= 0 ? t('app.idleTerminal.unitDead') : `${formatNumber(cur)}/${formatNumber(max)}`}
+                          [{renderAsciiBar(ratio, 10)}] {cur <= 0 ? (isEn ? 'DEAD' : t('app.idleTerminal.unitDead')) : `${fmtNum(cur)}/${fmtNum(max)}`}
                         </span>
                       </div>
                     )
                   })
                 ) : (
-                  <div className="term-tone-dim">{t('app.idleTerminal.combatIdleHint')}</div>
+                  <div className="term-tone-dim">
+                    {isEn ? 'Searching for next enemy wave...' : t('app.idleTerminal.combatIdleHint')}
+                  </div>
                 )}
               </div>
             ) : (
@@ -907,7 +1053,9 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                 <div className="term-cpu-grid">
                   {telemetry.cpuCores.map((val, idx) => (
                     <div key={idx} className="term-kv-row">
-                      <span className="term-tone-dim">{t('app.idleTerminal.coreLabel', { n: idx })}</span>
+                      <span className="term-tone-dim">
+                        {isEn ? `Core#${idx}` : t('app.idleTerminal.coreLabel', { n: idx })}
+                      </span>
                       <span className={val > 0.75 ? 'term-tone-warn' : 'term-tone-ok'}>
                         [{renderAsciiBar(val, 8)}] {(val * 100).toFixed(0).padStart(3, ' ')}%
                       </span>
@@ -920,15 +1068,19 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
         </section>
 
         {/* 窗格 04：实时修行、采集制造与战斗掉落纯文本日志流 */}
-        <section className="term-idle-pane term-idle-pane--stream" aria-label={t('app.idleTerminal.pane04Title')}>
+        <section className="term-idle-pane term-idle-pane--stream" aria-label={pane04Title}>
           <div className="term-idle-pane-header">
-            <span>{t('app.idleTerminal.pane04Title')}</span>
-            <div className="term-filter-group" role="group" aria-label={t('app.idleTerminal.filterAria')}>
+            <span>{pane04Title}</span>
+            <div
+              className="term-filter-group"
+              role="group"
+              aria-label={isEn ? 'Log channel filter' : t('app.idleTerminal.filterAria')}
+            >
               {(
                 [
-                  { id: 'all', label: t('app.idleTerminal.filterAll') },
-                  { id: 'system', label: t('app.idleTerminal.filterSystem') },
-                  { id: 'combat', label: t('app.idleTerminal.filterCombat') },
+                  { id: 'all', label: isEn ? 'ALL' : t('app.idleTerminal.filterAll') },
+                  { id: 'system', label: isEn ? 'LOOT/SYS' : t('app.idleTerminal.filterSystem') },
+                  { id: 'combat', label: isEn ? 'COMBAT' : t('app.idleTerminal.filterCombat') },
                 ] as const
               ).map(f => (
                 <button
@@ -945,7 +1097,11 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
           <div className="term-idle-pane-body">
             <div className="term-log-list" ref={logContainerRef}>
               {mergedLogs.length === 0 ? (
-                <div className="term-tone-dim">{t('app.idleTerminal.logEmpty')}</div>
+                <div className="term-tone-dim">
+                  {isEn
+                    ? 'Terminal log stream ready; listening for live cultivation, crafting, and combat loot events...'
+                    : t('app.idleTerminal.logEmpty')}
+                </div>
               ) : (
                 mergedLogs.map(entry => (
                   <div key={entry.id} className={`term-log-line term-tone-${entry.tone}`}>
@@ -955,9 +1111,9 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
               )}
             </div>
             <div className="term-prompt-bar">
-              <span className="term-tone-ok">{name || 'player'}</span>
+              <span className="term-tone-ok">{isEn ? cultivatorDisplay.toLowerCase() : (name || 'player')}</span>
               <span className="term-tone-dim">:/</span>
-              <span className="term-tone-info">{t('app.idleTerminal.promptSuffix')}</span>
+              <span className="term-tone-info">{isEn ? 'idle-monitor' : t('app.idleTerminal.promptSuffix')}</span>
               <span className="term-tone-dim">$ </span>
               <span>{typedCommand}</span>
               <span className="term-cursor" aria-hidden="true">█</span>
@@ -975,21 +1131,26 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
             {inspectorTab === 'queue' && (
               <>
                 {queue.entries.length === 0 ? (
-                  <div className="term-tone-dim">{t('app.idleTerminal.queueEmpty')}</div>
+                  <div className="term-tone-dim">
+                    {isEn
+                      ? 'Action queue is empty. Exit idle mode to add actions.'
+                      : t('app.idleTerminal.queueEmpty')}
+                  </div>
                 ) : (
                   <table className="term-table">
                     <thead>
                       <tr>
                         <th>{t('app.idleTerminal.colIndex')}</th>
-                        <th>{t('app.idleTerminal.colAction')}</th>
-                        <th>{t('app.idleTerminal.colState')}</th>
-                        <th>{t('app.idleTerminal.colRepeats')}</th>
+                        <th>{isEn ? 'Queued Action' : t('app.idleTerminal.colAction')}</th>
+                        <th>{isEn ? 'Status' : t('app.idleTerminal.colState')}</th>
+                        <th>{isEn ? 'Repeats' : t('app.idleTerminal.colRepeats')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {queue.entries.slice(0, 5).map((entry, idx) => {
                         const rowName = formatEntryDisplayName(
                           entry,
+                          lang,
                           actions,
                           items,
                           equipment,
@@ -998,15 +1159,15 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                           n => t('app.idleTerminal.difficultyBadge', { n }),
                         )
                         const stateLabel = queue.paused && idx === 0
-                          ? t('app.idleTerminal.statusPaused')
+                          ? (isEn ? 'PAUSED' : t('app.idleTerminal.statusPaused'))
                           : entry.status === 'running'
-                            ? t('app.idleTerminal.statusRun')
+                            ? (isEn ? 'RUNNING' : t('app.idleTerminal.statusRun'))
                             : entry.status === 'blocked'
-                              ? t('app.idleTerminal.statusBlocked')
-                              : t('app.idleTerminal.statusQueued')
+                              ? (isEn ? 'BLOCKED' : t('app.idleTerminal.statusBlocked'))
+                              : (isEn ? 'QUEUED' : t('app.idleTerminal.statusQueued'))
                         const repeatsText = entry.remainingRepeats < 0
-                          ? t('app.queue.repeatsInfinite')
-                          : t('common.repeatsCount', { n: entry.remainingRepeats })
+                          ? (isEn ? 'INF' : t('app.queue.repeatsInfinite'))
+                          : (isEn ? `x${entry.remainingRepeats}` : t('common.repeatsCount', { n: entry.remainingRepeats }))
                         return (
                           <tr
                             key={entry.entryId}
@@ -1024,35 +1185,41 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                 )}
 
                 <div className="term-sub-heading">
-                  {t('app.idleTerminal.supplyHeader', { bar: supplyInspection.barLabel })}
+                  {isEn
+                    ? `Auto-Supply Slots (${supplyInspection.barLabel})`
+                    : t('app.idleTerminal.supplyHeader', { bar: supplyInspection.barLabel })}
                 </div>
                 {supplyInspection.rows.length === 0 ? (
-                  <div className="term-tone-dim">{t('app.idleTerminal.supplyEmpty')}</div>
+                  <div className="term-tone-dim">
+                    {isEn
+                      ? 'No auto-use consumables configured in this slot bar.'
+                      : t('app.idleTerminal.supplyEmpty')}
+                  </div>
                 ) : (
                   <table className="term-table">
                     <thead>
                       <tr>
-                        <th>{t('app.idleTerminal.colSlot')}</th>
-                        <th>{t('app.idleTerminal.colItem')}</th>
-                        <th>{t('app.idleTerminal.colStock')}</th>
-                        <th>{t('app.idleTerminal.colSupplyState')}</th>
+                        <th>{isEn ? 'Slot' : t('app.idleTerminal.colSlot')}</th>
+                        <th>{isEn ? 'Consumable' : t('app.idleTerminal.colItem')}</th>
+                        <th>{isEn ? 'Stock' : t('app.idleTerminal.colStock')}</th>
+                        <th>{isEn ? 'State' : t('app.idleTerminal.colSupplyState')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {supplyInspection.rows.map(row => {
                         const exhausted = row.stock <= 0
                         const stateText = !row.enabled
-                          ? t('app.idleTerminal.supplyDisabled')
+                          ? (isEn ? 'OFF' : t('app.idleTerminal.supplyDisabled'))
                           : exhausted
-                            ? t('app.idleTerminal.supplyExhausted')
+                            ? (isEn ? 'EMPTY(0)' : t('app.idleTerminal.supplyExhausted'))
                             : row.activeSec > 0
-                              ? t('app.idleTerminal.supplyActiveSec', { s: row.activeSec })
-                              : t('app.idleTerminal.supplyReady')
+                              ? (isEn ? `ACTIVE(${row.activeSec}s)` : t('app.idleTerminal.supplyActiveSec', { s: row.activeSec }))
+                              : (isEn ? 'READY' : t('app.idleTerminal.supplyReady'))
                         return (
                           <tr key={row.slotLabel} className={exhausted ? 'is-danger' : undefined}>
                             <td>{row.slotLabel}</td>
                             <td>{row.itemName}</td>
-                            <td>{exhausted ? t('app.idleTerminal.supplyExhausted') : formatNumber(row.stock)}</td>
+                            <td>{exhausted ? (isEn ? 'EMPTY(0)' : t('app.idleTerminal.supplyExhausted')) : fmtNum(row.stock)}</td>
                             <td>{stateText}</td>
                           </tr>
                         )
@@ -1068,30 +1235,36 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
                 <table className="term-table">
                   <thead>
                     <tr>
-                      <th>{t('app.idleTerminal.colYieldItem')}</th>
-                      <th>{t('app.idleTerminal.colYieldTotal')}</th>
-                      <th>{t('app.idleTerminal.colYieldDaily')}</th>
-                      <th>{t('app.idleTerminal.colYieldValue')}</th>
+                      <th>{isEn ? 'Item' : t('app.idleTerminal.colYieldItem')}</th>
+                      <th>{isEn ? 'Gained' : t('app.idleTerminal.colYieldTotal')}</th>
+                      <th>{isEn ? 'Est./Day' : t('app.idleTerminal.colYieldDaily')}</th>
+                      <th>{isEn ? 'Value/Day' : t('app.idleTerminal.colYieldValue')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {briefStats.topYields.slice(0, 8).map((y, idx) => {
-                      const itemName = findItemInCatalog(items, y.itemId)?.name
-                        ?? findEquipmentInCatalog(equipment, y.itemId)?.name
-                        ?? y.itemId
+                      const itemName = isEn
+                        ? humanizeEntityId(y.itemId, y.itemId)
+                        : (findItemInCatalog(items, y.itemId)?.name
+                          ?? findEquipmentInCatalog(equipment, y.itemId)?.name
+                          ?? y.itemId)
                       return (
                         <tr key={y.itemId} className={idx === 0 ? 'is-highlight' : undefined}>
                           <td>{itemName}</td>
-                          <td>+{formatNumber(y.quantity)}</td>
-                          <td>+{formatNumber(y.dailyQty)}</td>
-                          <td>+{formatNumber(y.dailyVal)}</td>
+                          <td>+{fmtNum(y.quantity)}</td>
+                          <td>+{fmtNum(y.dailyQty)}</td>
+                          <td>+{fmtNum(y.dailyVal)}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
               ) : (
-                <div className="term-tone-dim">{t('app.idleTerminal.yieldEmpty')}</div>
+                <div className="term-tone-dim">
+                  {isEn
+                    ? 'No item drops recorded in current action report yet.'
+                    : t('app.idleTerminal.yieldEmpty')}
+                </div>
               )
             )}
 
@@ -1099,10 +1272,10 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
               <table className="term-table">
                 <thead>
                   <tr>
-                    <th>{t('app.idleTerminal.colTechName')}</th>
-                    <th>{t('app.idleTerminal.colTechLevel')}</th>
-                    <th>{t('app.idleTerminal.colTechProgress')}</th>
-                    <th>{t('app.idleTerminal.colTechBonus')}</th>
+                    <th>{isEn ? 'Technique' : t('app.idleTerminal.colTechName')}</th>
+                    <th>{isEn ? 'Level' : t('app.idleTerminal.colTechLevel')}</th>
+                    <th>{isEn ? 'Progress' : t('app.idleTerminal.colTechProgress')}</th>
+                    <th>{isEn ? 'Speed Bonus' : t('app.idleTerminal.colTechBonus')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1128,8 +1301,16 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
       </div>
 
       <footer className="term-idle-statusbar">
-        <span>{t('app.idleTerminal.statusLeft', { version, rtt: telemetry.rttMs })}</span>
-        <span>{t('app.idleTerminal.statusRight')}</span>
+        <span>
+          {isEn
+            ? `DaoHua CLI Console | Text-Only View | Sync #${version} | RTT ${telemetry.rttMs}ms`
+            : t('app.idleTerminal.statusLeft', { version, rtt: telemetry.rttMs })}
+        </span>
+        <span>
+          {isEn
+            ? 'TYPE KEYS + [ENTER] FOR LIVE SNAPSHOT  //  CLICK [ x EXIT ] TO RETURN'
+            : t('app.idleTerminal.statusRight')}
+        </span>
       </footer>
     </div>
   )

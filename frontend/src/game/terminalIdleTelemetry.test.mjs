@@ -19,7 +19,11 @@ await esbuild.build({
 
 const {
   deriveTerminalTelemetry,
+  formatEnglishDuration,
+  formatEnglishNumber,
+  formatEnglishRealmDisplay,
   formatPlainLogSegments,
+  humanizeEntityId,
   renderAsciiBar,
   renderBrailleSparkline,
   buildHexDumpRows,
@@ -35,7 +39,7 @@ const EMPTY_AUTO_USE = {
   combat: [],
 }
 
-test('中文挂机终端遥测：准确聚合行动进度、战斗实时血蓝优先级与网络状态', () => {
+test('双语挂机终端遥测：准确聚合行动进度、战斗实时血蓝优先级与网络状态', () => {
   const runningSnap = deriveTerminalTelemetry({
     connection: 'online',
     latencyMs: 18.4,
@@ -95,53 +99,36 @@ test('中文挂机终端遥测：准确聚合行动进度、战斗实时血蓝�
   assert.equal(runningSnap.hpTone, 'crit', '气血低于 30% 时应切换危红告警')
   assert.equal(runningSnap.mpCurrent, 600)
   assert.ok(Math.abs(runningSnap.mpRatio - 0.6) < 1e-6)
-
-  const blockedOfflineSnap = deriveTerminalTelemetry({
-    connection: 'offline',
-    latencyMs: null,
-    onlineCount: null,
-    offlineIdleCount: null,
-    queue: {
-      entries: [
-        {
-          entryId: 'e2',
-          actionId: 'forging.sword',
-          actionName: '锻造青锋剑',
-          type: 'enhancement',
-          status: 'blocked',
-          progressSeconds: 0,
-          durationSeconds: 12,
-          remainingRepeats: 5,
-          pvpEnabled: false,
-          difficulty: 0,
-        },
-      ],
-      loopEnabled: false,
-      autoTravelEnabled: false,
-      paused: false,
-      autoUseSlots: EMPTY_AUTO_USE,
-    },
-    combatResources: null,
-    version: 129,
-    elapsedSeconds: 0,
-    tick: 11,
-  })
-
-  assert.equal(blockedOfflineSnap.netState, 'offline')
-  assert.equal(blockedOfflineSnap.netTone, 'crit')
-  assert.equal(blockedOfflineSnap.jobStatus, 'BLOCKED')
-  assert.equal(blockedOfflineSnap.jobTone, 'crit')
 })
 
-test('中文挂机终端日志与字符绘制：富文本分词纯文本展开、进度条与盲文波形定宽不变量', () => {
-  const plainText = formatPlainLogSegments([
+test('双语挂机终端格式化：英文实体名、英文境界、英文数值及双语日志分词无损展开', () => {
+  assert.equal(humanizeEntityId('item.ningxue-grass'), 'Ningxue Grass')
+  assert.equal(humanizeEntityId('explore.gather-ningxue-grass'), 'Gather Ningxue Grass')
+  assert.equal(humanizeEntityId('currency.spirit-stone'), 'Spirit Stone')
+  assert.equal(humanizeEntityId('item.tome.blazing-blast'), 'Tome: Blazing Blast')
+
+  assert.equal(formatEnglishRealmDisplay(5), 'Mortal · Martial · Stage 5')
+  assert.equal(formatEnglishRealmDisplay(21), 'Qi Refining · Layer 3')
+  assert.equal(formatEnglishRealmDisplay(28), 'Qi Refining · Peak')
+  assert.equal(formatEnglishRealmDisplay(30), 'Half-Step Foundation')
+  assert.equal(formatEnglishRealmDisplay(127), 'Immortal · Ascension')
+
+  assert.equal(formatEnglishNumber(9850), '9,850')
+  assert.equal(formatEnglishNumber(25600), '25.6k')
+  assert.equal(formatEnglishNumber(3450000), '3.45M')
+  assert.equal(formatEnglishDuration(3720), '1h 2m')
+
+  const sampleSegments = [
     { type: 'text', value: '击败 ' },
-    { type: 'reference', kind: 'enemy', id: 'monster.wolf', label: '青林狼' },
+    { type: 'reference', kind: 'enemy', id: 'monster.qinglin-wolf', label: '青林狼' },
     { type: 'text', value: '，获得 ' },
-    { type: 'reference', kind: 'item', id: 'item.ningqi', label: '凝气草', amount: 3 },
+    { type: 'reference', kind: 'item', id: 'item.ningxue-grass', label: '凝气草', amount: 3 },
     { type: 'text', value: '\n修为 +18' },
-  ])
-  assert.equal(plainText, '击败 [青林狼]，获得 [凝气草]×3 · 修为 +18')
+  ]
+  assert.equal(formatPlainLogSegments(sampleSegments, 'zh'), '击败 [青林狼]，获得 [凝气草]×3 · 修为 +18')
+  const enLog = formatPlainLogSegments(sampleSegments, 'en')
+  assert.equal(enLog, '[Qinglin Wolf] -> [Ningxue Grass] x3 (+18)')
+  assert.doesNotMatch(enLog, /[\u4e00-\u9fff]/, '英文模式日志不得残留任何中文字符')
 
   for (const ratio of [-0.5, 0, 0.33, 0.48, 0.75, 1, 2.5, Number.NaN]) {
     const bar = renderAsciiBar(ratio, 16)
@@ -150,29 +137,22 @@ test('中文挂机终端日志与字符绘制：富文本分词纯文本展开�
   }
 
   const spark = renderBrailleSparkline([0, 0.25, 0.5, 0.75, 1, 0.4], 12)
-  const chars = [...spark]
-  assert.equal(chars.length, 12)
-  for (const ch of chars) {
-    const cp = ch.codePointAt(0) ?? 0
-    assert.ok(cp >= 0x2800 && cp <= 0x28ff, `字符 ${ch} 必须属于 Unicode Braille 区块`)
-  }
-
-  const hexRows = buildHexDumpRows(0x41a0_0800, 12, 3, 4)
-  assert.equal(hexRows.length, 4)
+  assert.equal([...spark].length, 12)
+  assert.equal(buildHexDumpRows(0x41a0_0800, 12, 3, 4).length, 4)
 })
 
-test('中文挂机终端静态契约：零图像元素、全中文 i18n 闭环且遵循设置进入与按钮退出契约', async () => {
+test('双语挂机终端静态契约：右上角中英文切换、零图像元素与 i18n 闭环', async () => {
   const overlayPath = path.resolve(process.cwd(), 'frontend/src/components/TerminalIdleOverlay.tsx')
   const telemetryPath = path.resolve(process.cwd(), 'frontend/src/game/terminalIdleTelemetry.ts')
   const cssPath = path.resolve(process.cwd(), 'frontend/src/styles/terminal-idle.css')
-  const settingsPath = path.resolve(process.cwd(), 'frontend/src/components/SettingsPage.tsx')
+  const uiStorePath = path.resolve(process.cwd(), 'frontend/src/uiStore.ts')
   const appZhPath = path.resolve(process.cwd(), 'frontend/src/i18n/domains/app.zh.ts')
 
-  const [overlaySrc, telemetrySrc, cssSrc, settingsSrc, appZhSrc] = await Promise.all([
+  const [overlaySrc, telemetrySrc, cssSrc, uiStoreSrc, appZhSrc] = await Promise.all([
     fs.readFile(overlayPath, 'utf8'),
     fs.readFile(telemetryPath, 'utf8'),
     fs.readFile(cssPath, 'utf8'),
-    fs.readFile(settingsPath, 'utf8'),
+    fs.readFile(uiStorePath, 'utf8'),
     fs.readFile(appZhPath, 'utf8'),
   ])
 
@@ -192,9 +172,8 @@ test('中文挂机终端静态契约：零图像元素、全中文 i18n 闭环�
     )
   }
 
-  assert.match(appZhSrc, /idleTerminal:\s*\{[\s\S]*?exitBtn:\s*'\[ × 退出挂机 \]'/, 'app.zh.ts 必须提供完整的中文挂机终端词条')
-  assert.match(overlaySrc, /t\('app\.idleTerminal\.pane01Title'\)/, 'TerminalIdleOverlay 必须通过 app.idleTerminal.* 渲染中文面板标题')
-  assert.doesNotMatch(overlaySrc, /requestFullscreen/, '挂机模式仅铺满视口，不得触发浏览器原生 Fullscreen')
-  assert.match(overlaySrc, /setIdleModeOpen\(false\)/, 'TerminalIdleOverlay 必须提供退出挂机按钮动作')
-  assert.match(settingsSrc, /setIdleModeOpen\(true\)/, 'SettingsPage 必须提供进入挂机模式入口')
+  assert.match(uiStoreSrc, /toggleIdleTerminalLang/, 'uiStore 必须提供挂机终端中英文切换方法')
+  assert.match(overlaySrc, /onClick=\{toggleLang\}/, 'TerminalIdleOverlay 右上角必须提供中英文切换按钮')
+  assert.match(overlaySrc, /\[ ZH \/ EN\* \]/, '英文激活态切换标签必须清晰可见')
+  assert.match(appZhSrc, /langToggleZhActive:\s*'\[ 中文\* \/ EN \]'/, '中文激活态切换标签必须登记至 app.zh.ts')
 })

@@ -65,6 +65,29 @@ export type EnhancementSubTab = 'enhance' | 'liquefy' | 'disassemble' | 'convert
 
 /** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
 export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'
+
+/** 挂机终端界面语言模式：中文直观视图 ('zh') vs 英文直译视图 ('en') */
+export type IdleTerminalLang = 'zh' | 'en'
+
+const IDLE_TERMINAL_LANG_KEY = 'daohua.idleTerminalLang'
+
+function readInitialIdleTerminalLang(): IdleTerminalLang {
+  if (typeof window === 'undefined') return 'zh'
+  try {
+    return window.localStorage.getItem(IDLE_TERMINAL_LANG_KEY) === 'en' ? 'en' : 'zh'
+  } catch {
+    return 'zh'
+  }
+}
+
+function persistIdleTerminalLang(lang: IdleTerminalLang): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(IDLE_TERMINAL_LANG_KEY, lang)
+  } catch {
+    // 隐私模式写存储受限时保持内存态即可
+  }
+}
 /**
  * UI 视图切换状态机接口
  */
@@ -176,6 +199,12 @@ interface UiStore {
   idleModeOpen: boolean
   /** 开启或退出纯字符终端挂机伪装模式 */
   setIdleModeOpen: (open: boolean) => void
+  /** 挂机终端当前显示语言（'zh' 中文 | 'en' 英文，独立于主界面全局语言） */
+  idleTerminalLang: IdleTerminalLang
+  /** 设置挂机终端显示语言并持久化 */
+  setIdleTerminalLang: (lang: IdleTerminalLang) => void
+  /** 在中英文之间一键切换挂机终端显示语言 */
+  toggleIdleTerminalLang: () => void
   /** 新手引导浮层当前是否处于可见状态（用于与更新日志等开局弹窗互斥避让） */
   tutorialOverlayActive: boolean
   /** 同步新手引导浮层当前可见状态 */
@@ -335,6 +364,17 @@ export const useUiStore = create<UiStore>(set => ({
   setCheckinModalOpen: checkinModalOpen => set({ checkinModalOpen }),
   idleModeOpen: false,
   setIdleModeOpen: idleModeOpen => set({ idleModeOpen }),
+  idleTerminalLang: readInitialIdleTerminalLang(),
+  setIdleTerminalLang: idleTerminalLang => {
+    persistIdleTerminalLang(idleTerminalLang)
+    set({ idleTerminalLang })
+  },
+  toggleIdleTerminalLang: () =>
+    set(state => {
+      const next: IdleTerminalLang = state.idleTerminalLang === 'zh' ? 'en' : 'zh'
+      persistIdleTerminalLang(next)
+      return { idleTerminalLang: next }
+    }),
   tutorialOverlayActive: false,
   setTutorialOverlayActive: tutorialOverlayActive => set({ tutorialOverlayActive }),
   tutorialExternalSkipSeq: 0,

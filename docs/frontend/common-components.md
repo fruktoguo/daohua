@@ -703,11 +703,11 @@
 
 ---
 
-## 44. 纯字符中文终端挂机模式遮罩 (`TerminalIdleOverlay`)
+## 44. 纯字符双语终端挂机模式遮罩 (`TerminalIdleOverlay`)
 
 - **适用场景**：
   - 从「设置 → 显示」一键进入铺满整个视口的黑客模拟器 / CMD 命令行监控终端视图（由 `uiStore.idleModeOpen` 驱动，挂载于 `App.tsx` 最顶层）；
-  - 严格执行**零图像**（无 `<img>`/`<svg>`/`<canvas>`/Emoji）约束，采用全中文直观展示玩家真实境界修为、气血灵力、灵石功德底蕴、当前行动进度与剩余耗时预估、每日灵石/修为效率、纯字符实时战斗敌我血条、行动队列与自动消耗品库存余量、生活技艺进度及 `gameLogService` 实时纯文本掉落日志流；支持断线原地重连、压制底层 `Notice` 与自动弹窗，仅通过右上角 `[ × 退出挂机 ]` 纯字符按钮退出。
+  - 严格执行**零图像**（无 `<img>`/`<svg>`/`<canvas>`/Emoji）约束，右上角提供中英文直译模式一键切换（`uiStore.idleTerminalLang`，持久化至 `localStorage`），直观展示玩家真实境界修为（`Realm / Experience`）、气血灵力（`HP / MP`）、灵石功德底蕴（`Spirit Stones / Merit / Foundation`）、当前行动进度与剩余耗时预估、每日灵石/修为效率、纯字符实时战斗敌我血条、行动队列与自动消耗品库存余量、生活技艺进度及 `gameLogService` 实时纯文本掉落日志流；支持断线原地重连、压制底层 `Notice` 与自动弹窗，仅通过右上角退出按钮返回常规界面。
 - **组件与纯逻辑源码**：
   - [`frontend/src/components/TerminalIdleOverlay.tsx`](../../frontend/src/components/TerminalIdleOverlay.tsx)
   - [`frontend/src/game/terminalIdleTelemetry.ts`](../../frontend/src/game/terminalIdleTelemetry.ts)
