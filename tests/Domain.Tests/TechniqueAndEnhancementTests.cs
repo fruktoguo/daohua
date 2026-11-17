@@ -931,23 +931,80 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(10 / (1 + expectedRatio), SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
     }
 
-    /// <summary>装备强化商店回收折旧遵循总纲 §4.6.2 闭式常数公式，白板绝对保底且随等级递增。</summary>
+    /// <summary>装备强化商店回收折旧遵循总纲 §4.6.2 闭式常数公式（同装备裸件代护 P=V0），白板绝对保底且随等级递增。</summary>
     [Fact]
     public void EquipmentSellPriceDepreciationFollowsClosedFormula()
     {
         const double v0 = 312.0; // 青锋剑白板基础售价
-        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 0));
-        Assert.Equal(478.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 1));
-        Assert.Equal(691.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 2));
-        Assert.Equal(1495.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 5));
-        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 10));
-        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 20));
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 0));
+        Assert.Equal(478.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 1));
+        Assert.Equal(691.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 2));
+        Assert.Equal(1495.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 5));
+        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 10));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 20));
 
         // 越界截断保护
-        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, -1));
-        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 99));
-        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(0, 5));
-        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(-10, 5));
+        Assert.Equal(312.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, -1));
+        Assert.Equal(9672.0, EnhancementRules.CalculateEquipmentSellPrice(v0, v0, 99));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(0, v0, 5));
+        Assert.Equal(0.0, EnhancementRules.CalculateEquipmentSellPrice(-10, v0, 5));
+
+        // 保护单价非法入参按 V0 兜底
+        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 0, 10));
+        Assert.Equal(3449.0, EnhancementRules.CalculateEquipmentSellPrice(v0, double.NaN, 10));
+
+        // 低价特殊保护材料：强化增值只按保护单价折旧，不按白板价放大
+        Assert.Equal(312.0 + 77.0 + 739.0, EnhancementRules.CalculateEquipmentSellPrice(v0, 10, 10));
+    }
+
+    /// <summary>强化回收价按配表 enhanceProtectionItems 最低回收价折算保护单价；未配置时按白板价兜底。</summary>
+    [Fact]
+    public void EquipmentSellPriceScalesWithConfiguredProtectionPrice()
+    {
+        var guardOre = new ItemDefinition(new ItemId("item.guard-ore"), "护矿石", "", true, 10);
+        var priceyGuard = new ItemDefinition(new ItemId("item.pricey-guard"), "贵护符", "", true, 500);
+        var darkIron = new ItemDefinition(new ItemId("item.dark-iron"), "乌铁", "", true, 5);
+        var swordAction = new ActionDefinition(
+            new ActionId("forge.guarded-sword"),
+            "锻造白名单剑",
+            ActionKind.Alchemy,
+            10,
+            new Dictionary<ItemId, double> { [darkIron.Id] = 10 }, // 成本: 50 → V0 = 100
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, Item: new ItemId("equipment.guarded-sword"))]);
+        var catalog = new GameDataCatalog("test", "fp", new ActionCatalog([swordAction]),
+            items: new Dictionary<ItemId, ItemDefinition>
+            {
+                [guardOre.Id] = guardOre, [priceyGuard.Id] = priceyGuard, [darkIron.Id] = darkIron
+            },
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                ["equipment.guarded-sword"] = Json("""{"id":"equipment.guarded-sword","name":"白名单剑","enhanceProtectionItems":["item.guard-ore","item.pricey-guard"]}"""),
+                ["equipment.plain-sword"] = Json("""{"id":"equipment.plain-sword","name":"裸护剑"}""")
+            });
+
+        const double v0 = 100.0;
+        // 白名单列表取最低回收价（10 < 500）
+        Assert.Equal(10.0, EnhancementRules.ResolveProtectionUnitPrice(catalog, "equipment.guarded-sword", v0));
+        // +10：100 + 7.687*10 + 739 = 915.87 → 916
+        Assert.Equal(916.0, EnhancementRules.ComputeEquipmentSellPrice(catalog, "equipment.guarded-sword", 10));
+
+        // 未配置保护白名单：按白板价 V0 代护
+        var plainAction = new ActionDefinition(
+            new ActionId("forge.plain-sword"),
+            "锻造裸护剑",
+            ActionKind.Alchemy,
+            10,
+            new Dictionary<ItemId, double> { [darkIron.Id] = 10 },
+            [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, Item: new ItemId("equipment.plain-sword"))]);
+        var plainCatalog = new GameDataCatalog("test", "fp", new ActionCatalog([plainAction]),
+            items: new Dictionary<ItemId, ItemDefinition> { [darkIron.Id] = darkIron },
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                ["equipment.plain-sword"] = Json("""{"id":"equipment.plain-sword","name":"裸护剑"}""")
+            });
+        Assert.Equal(100.0, EnhancementRules.ResolveProtectionUnitPrice(plainCatalog, "equipment.plain-sword", v0));
+        // +10：100 + 7.687*100 + 739 = 1607.7 → 1608
+        Assert.Equal(1608.0, EnhancementRules.ComputeEquipmentSellPrice(plainCatalog, "equipment.plain-sword", 10));
     }
 
     /// <summary>白板装备基础售价计算等于锻造原材料成本的 2.0 倍（制造翻倍铁律）。</summary>

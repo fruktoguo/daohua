@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using Domain.GameData;
 using Domain.Persistence;
 using Domain.Player;
@@ -22,8 +21,8 @@ public sealed class PartyValuationService
     private readonly PostgresSectionRepository _sections;
     private readonly MarketRuntime? _market;
     private readonly GameDataCatalog _catalog;
-    /// <summary>装备白板商店基础回收售价预热缓存（原料成本×2.0工匠增值），构造期一次性构建不可变映射，彻底杜绝并发写竞争。</summary>
-    private readonly FrozenDictionary<string, double> _baseSellPrices;
+    /// <summary>装备回收定价参数簿预热缓存（白板价与强化保护单价），构造期一次性构建不可变映射，彻底杜绝并发写竞争。</summary>
+    private readonly ValuationMath.EquipmentSellPriceBook _sellPriceBook;
     /// <summary>展示估值缓存：playerId → (估值细分结果, TickCount64 过期点)。</summary>
     private readonly ConcurrentDictionary<Guid, (ValuationResult Value, long ExpiresAt)> _displayCache = new();
 
@@ -38,7 +37,7 @@ public sealed class PartyValuationService
         _sections = sections;
         _market = market;
         _catalog = catalog;
-        _baseSellPrices = ValuationMath.BuildBaseSellPrices(catalog);
+        _sellPriceBook = ValuationMath.BuildSellPriceBook(catalog);
     }
 
     /// <summary>实时身家细分：入队裁决、名片构建与匹配自动并入使用，不走缓存。</summary>
@@ -138,7 +137,7 @@ public sealed class PartyValuationService
 
     /// <summary>按口径合计战斗装备、功法与技艺工具价值；非有限结果归零。</summary>
     private ValuationResult Compute(PlayerLoadoutDocument loadout)
-        => ValuationMath.Compute(loadout, _catalog, _baseSellPrices, _market);
+        => ValuationMath.Compute(loadout, _catalog, _sellPriceBook, _market);
 }
 
 /// <summary>身家估值细分计算结果。</summary>

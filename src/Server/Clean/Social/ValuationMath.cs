@@ -20,38 +20,47 @@ public static class ValuationMath
     /// <summary>单本残卷研读注入的标准经验点数（EcsPlayerRuntimeAdapter 对齐）。</summary>
     private const double ExpPerFragment = 500d;
 
-    /// <summary>一次性构建全量装备白板商店基础回收售价只读字典，消除运行期并发写入。</summary>
-    public static FrozenDictionary<string, double> BuildBaseSellPrices(GameDataCatalog catalog)
+    /// <summary>装备回收定价参数簿：白板价 V0 与强化保护单价 P 双字典（构造期一次性物化，杜绝并发写竞争）。</summary>
+    public sealed record EquipmentSellPriceBook(
+        FrozenDictionary<string, double> BaseSellPrices,
+        FrozenDictionary<string, double> ProtectionUnitPrices);
+
+    /// <summary>一次性构建全量装备回收定价参数簿（白板价与保护单价同趟解算），消除运行期并发写入。</summary>
+    public static EquipmentSellPriceBook BuildSellPriceBook(GameDataCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         var costCache = new Dictionary<string, double>(StringComparer.Ordinal);
         var basePrices = new Dictionary<string, double>(catalog.RawEquipments.Count, StringComparer.Ordinal);
+        var protectionPrices = new Dictionary<string, double>(catalog.RawEquipments.Count, StringComparer.Ordinal);
         foreach (var equipmentId in catalog.RawEquipments.Keys)
         {
             if (EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, equipmentId, costCache) is { } price && price > 0)
             {
                 basePrices[equipmentId] = price;
+                protectionPrices[equipmentId] = EnhancementRules.ResolveProtectionUnitPrice(catalog, equipmentId, price, costCache);
             }
         }
-        return basePrices.ToFrozenDictionary(StringComparer.Ordinal);
+        return new EquipmentSellPriceBook(
+            basePrices.ToFrozenDictionary(StringComparer.Ordinal),
+            protectionPrices.ToFrozenDictionary(StringComparer.Ordinal));
     }
 
     /// <summary>按口径合计战斗装备、功法与技艺工具价值；非有限结果归零。</summary>
     public static ValuationResult Compute(
         PlayerLoadoutDocument loadout,
         GameDataCatalog catalog,
-        IReadOnlyDictionary<string, double> baseSellPrices,
+        EquipmentSellPriceBook sellPriceBook,
         MarketRuntime? market)
     {
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(baseSellPrices);
+        ArgumentNullException.ThrowIfNull(sellPriceBook);
 
         var equipmentTotal = 0d;
         var toolsTotal = 0d;
         foreach (var slot in loadout.Equipment)
         {
-            var price = EquipmentUnitPrice(slot.ItemId, slot.EnhancementLevel, catalog, baseSellPrices, market);
+            var price = EquipmentUnitPrice(slot.ItemId, slot.EnhancementLevel, catalog, sellPriceBook, market);
             if (IsTool(slot.ItemId, catalog))
                 toolsTotal += price;
             else
@@ -97,7 +106,7 @@ public static class ValuationMath
         string itemIdText,
         double enhancementLevel,
         GameDataCatalog catalog,
-        IReadOnlyDictionary<string, double> baseSellPrices,
+        EquipmentSellPriceBook sellPriceBook,
         MarketRuntime? market)
     {
         if (!catalog.RawEquipments.ContainsKey(itemIdText)) return 0;
@@ -109,9 +118,10 @@ public static class ValuationMath
         var refPrice = market?.TryGetReferencePrice(instrument);
         if (refPrice is > 0) return refPrice.Value;
 
-        if (baseSellPrices.TryGetValue(itemIdText, out var basePrice) && basePrice > 0)
+        if (sellPriceBook.BaseSellPrices.TryGetValue(itemIdText, out var basePrice) && basePrice > 0)
         {
-            return EnhancementRules.CalculateEquipmentSellPrice(basePrice, levelInt);
+            var protectionPrice = sellPriceBook.ProtectionUnitPrices.GetValueOrDefault(itemIdText, basePrice);
+            return EnhancementRules.CalculateEquipmentSellPrice(basePrice, protectionPrice, levelInt);
         }
         return 0;
     }

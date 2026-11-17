@@ -1422,10 +1422,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             double unitSellPrice;
                             if (isEquipment)
                             {
-                                var baseSellPrice = EnhancementRules.ComputeEquipmentBaseSellPrice(gameData, disposeItemId);
-                                if (baseSellPrice is not { } basePrice || basePrice <= 0)
+                                if (EnhancementRules.ComputeEquipmentSellPrice(gameData, disposeItemId, variantLevel) is not { } equipPrice || equipPrice <= 0)
                                     return new PlayerCommandResult(false, "ITEM_NOT_SELLABLE", "该装备不支持系统回收。", before);
-                                unitSellPrice = EnhancementRules.CalculateEquipmentSellPrice(basePrice, variantLevel);
+                                unitSellPrice = equipPrice;
                             }
                             else
                             {

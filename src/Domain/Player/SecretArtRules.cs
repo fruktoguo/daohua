@@ -30,10 +30,7 @@ public static class SecretArtRules
     {
         if (gameData.RawEquipments.ContainsKey(itemId))
         {
-            var basePrice = EnhancementRules.ComputeEquipmentBaseSellPrice(gameData, itemId);
-            return basePrice is > 0
-                ? EnhancementRules.CalculateEquipmentSellPrice(basePrice.Value, enhancementLevel)
-                : 0;
+            return EnhancementRules.ComputeEquipmentSellPrice(gameData, itemId, enhancementLevel) ?? 0;
         }
 
         return gameData.Items.TryGetValue(new ItemId(itemId), out var item) && item.SellPrice > 0

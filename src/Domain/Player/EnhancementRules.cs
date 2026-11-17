@@ -462,7 +462,7 @@ public static class EnhancementRules
 
     /// <summary>
     /// 装备强化各等级受保折旧常数表（总纲 §4.6.2，alpha = 0.50）：
-    /// Beta: 累计期望保护消耗底模数加成系数；
+    /// Beta: 累计期望保护消耗件数加成系数（无量纲，须乘单件保护单价 P 折算灵石）；
     /// Fee: 累计期望手续费残值返还（灵石）。
     /// </summary>
     private static readonly (double Beta, double Fee)[] EnhancementDepreciationTable =
@@ -491,16 +491,59 @@ public static class EnhancementRules
     ];
 
     /// <summary>
-    /// 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外造价折旧闭式查表）：
-    /// SellPrice(+N) = round(V0 * (1 + beta_N) + F_N)；
+    /// 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外期望造价折旧闭式查表）：
+    /// SellPrice(+N) = round(V0 + beta_N * P + F_N)；
+    /// P 为单件保护材料回收单价（见 <see cref="ResolveProtectionUnitPrice"/>），非法入参按 V0 兜底；
     /// N=0 时恒等于 V0；N 越界按 [0, MaxLevel] 截断。
     /// </summary>
-    public static double CalculateEquipmentSellPrice(double baseSellPrice, int enhancementLevel)
+    public static double CalculateEquipmentSellPrice(double baseSellPrice, double protectionUnitPrice, int enhancementLevel)
     {
         if (baseSellPrice <= 0 || !double.IsFinite(baseSellPrice)) return 0;
         var level = Math.Clamp(enhancementLevel, 0, MaxLevel);
         var (beta, fee) = EnhancementDepreciationTable[level];
-        return Math.Round(baseSellPrice * (1.0 + beta) + fee);
+        var unitProtection = protectionUnitPrice > 0 && double.IsFinite(protectionUnitPrice)
+            ? protectionUnitPrice
+            : baseSellPrice;
+        return Math.Round(baseSellPrice + beta * unitProtection + fee);
+    }
+
+    /// <summary>
+    /// 单件强化保护材料的系统回收单价 P（总纲 §4.6.2）：
+    /// 装备配表 enhanceProtectionItems 非空时取列表内可回收材料的最低回收单价
+    /// （item.* 按 sellPrice、equipment.* 按其白板回收价递归解算，理性玩家恒选最廉代护）；
+    /// 未配置或全部不可定价时按白板价 V0 兜底（同装备无强化基础件代护）。
+    /// </summary>
+    public static double ResolveProtectionUnitPrice(GameDataCatalog gameData, string equipmentId,
+        double baseSellPrice, IDictionary<string, double>? costCache = null)
+    {
+        if (baseSellPrice <= 0 || !double.IsFinite(baseSellPrice)) return 0;
+        if (!gameData.RawEquipments.TryGetValue(equipmentId, out var equipment)) return baseSellPrice;
+        var allowed = ReadProtectionItems(equipment);
+        if (allowed is null) return baseSellPrice;
+        var min = double.PositiveInfinity;
+        foreach (var id in allowed)
+        {
+            double? price = id.StartsWith("equipment.", StringComparison.Ordinal)
+                ? ComputeEquipmentBaseSellPrice(gameData, id, costCache)
+                : gameData.Items.TryGetValue(new ItemId(id), out var item) && item.SellPrice > 0
+                    ? item.SellPrice
+                    : null;
+            if (price is { } p && p < min) min = p;
+        }
+        return double.IsFinite(min) ? min : baseSellPrice;
+    }
+
+    /// <summary>
+    /// 一步到位解算装备指定强化等级的商店回收单价：白板价 V0 与保护单价 P 一并推导；
+    /// 配方不存在或材料无回收价时返回 null（不可回收口径）。
+    /// </summary>
+    public static double? ComputeEquipmentSellPrice(GameDataCatalog gameData, string equipmentId,
+        int enhancementLevel, IDictionary<string, double>? costCache = null)
+    {
+        if (ComputeEquipmentBaseSellPrice(gameData, equipmentId, costCache) is not { } basePrice || basePrice <= 0)
+            return null;
+        var protectionPrice = ResolveProtectionUnitPrice(gameData, equipmentId, basePrice, costCache);
+        return CalculateEquipmentSellPrice(basePrice, protectionPrice, enhancementLevel);
     }
 
     /// <summary>

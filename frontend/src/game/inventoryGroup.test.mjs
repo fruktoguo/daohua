@@ -120,6 +120,22 @@ test('inventoryGroup: resolveInventoryItemUnitPrice 正确解析不同品类单�
   assert.ok(pricePlus1 > 432, `+1 售价 (${pricePlus1}) 应高于白板 (432)`)
 })
 
+test('inventoryGroup: 强化装备回收价按保护白名单最低回收价折算，不按白板价放大', () => {
+  const items = [
+    { itemId: 'item.guard-ore', kind: 'material', category: 'material', sellPrice: 10 },
+    { itemId: 'item.pricey-guard', kind: 'material', category: 'material', sellPrice: 500 },
+  ]
+  const equipment = [
+    { equipmentId: 'equipment.guarded-sword', sellPrice: 1000, enhanceProtectionItems: ['item.guard-ore', 'item.pricey-guard'] },
+    { equipmentId: 'equipment.plain-sword', sellPrice: 1000 },
+  ]
+
+  // 白名单取最低价 10：+10 = round(1000 + 7.687*10 + 739) = 1816
+  assert.equal(resolveInventoryItemUnitPrice('equipment.guarded-sword', '+10', items, equipment), 1816)
+  // 未配置白名单按白板价代护：+10 = round(1000 + 7.687*1000 + 739) = 9426
+  assert.equal(resolveInventoryItemUnitPrice('equipment.plain-sword', '+10', items, equipment), 9426)
+})
+
 test('inventoryGroup: calculateInventoryGroupTotalValue 正确扣除占用并合计总价值', () => {
   const items = [
     { itemId: 'item.ningxue-grass', kind: 'material', category: 'material', sellPrice: 5 },

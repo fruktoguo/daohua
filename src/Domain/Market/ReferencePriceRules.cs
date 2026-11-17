@@ -237,11 +237,10 @@ public static class ReferencePriceRules
         if (gameData.RawEquipments.ContainsKey(assetId))
         {
             var level = EnhancementRules.ParseLevel(variant ?? string.Empty) ?? 0;
-            var baseSellPrice = EnhancementRules.ComputeEquipmentBaseSellPrice(gameData, assetId);
-            if (baseSellPrice is { } bp && bp > 0)
+            var equipSellPrice = EnhancementRules.ComputeEquipmentSellPrice(gameData, assetId, level);
+            if (equipSellPrice is { } price && price > 0)
             {
-                var equipSellPrice = EnhancementRules.CalculateEquipmentSellPrice(bp, level);
-                return Math.Max(AbsoluteFloor, equipSellPrice);
+                return Math.Max(AbsoluteFloor, price);
             }
             return AbsoluteFloor;
         }

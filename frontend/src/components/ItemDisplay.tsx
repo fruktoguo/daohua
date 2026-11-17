@@ -2,7 +2,7 @@ import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { calculateEquipmentSellPrice, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { calculateEquipmentSellPrice, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, resolveProtectionUnitPrice, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import { BUFF_CHANNELS, formatBuffChannelValue, isBuffEffectChannel, specToBuffEffects, type BuffEffectEntry } from '../game/buffChannels'
@@ -1235,14 +1235,18 @@ function resolveMarketStatsAsideCard(
     || itemId.startsWith('equipment.')
   if (!tradable) return null
   const t = getT()
-  const stats = useGameStore.getState().marketStats[marketStatsKey(itemId, enhancementLevel)]
+  const gameState = useGameStore.getState()
+  const stats = gameState.marketStats[marketStatsKey(itemId, enhancementLevel)]
   const eqBasePrice = (eqDef !== undefined || itemId.startsWith('equipment.'))
     ? resolveEquipmentBaseSellPrice(itemId, eqDef)
+    : 0
+  const protectionPrice = eqBasePrice > 0
+    ? resolveProtectionUnitPrice(eqBasePrice, eqDef, gameState.items, gameState.equipment)
     : 0
   const vendorPrice = itemDef?.sellPrice && itemDef.sellPrice > 0
     ? itemDef.sellPrice
     : eqBasePrice > 0
-      ? calculateEquipmentSellPrice(eqBasePrice, enhancementLevel)
+      ? calculateEquipmentSellPrice(eqBasePrice, protectionPrice, enhancementLevel)
       : null
   const spiritUnit = t('market.spiritUnit')
 

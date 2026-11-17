@@ -233,23 +233,45 @@ for (const file of fs.readdirSync(equipmentDir).sort()) {
       console.error(`警告: 装备 ${id} 缺少锻造配方或材料无回收价，跳过挂售。`);
       continue;
     }
-    equipments.push({ id, name: String(equipment.name ?? id), cost });
+    const protectionItems = Array.isArray(equipment.enhanceProtectionItems)
+      ? equipment.enhanceProtectionItems.filter(entry => typeof entry === 'string' && entry.length > 0)
+      : null;
+    equipments.push({ id, name: String(equipment.name ?? id), cost, protectionItems });
   }
 }
 equipments.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 
-// 装备强化变体挂售档位：+10/+20 对齐 EnhancementRules.CalculateEquipmentSellPrice(2 * cost, N) 地板定价，
-// 避免按 +0 成本挂单导致 40 倍套利倒挂。
+// 强化保护单价 P（总纲 §4.6.2）：配了 enhanceProtectionItems 取列表内最低回收价
+//（item.* 按 sellPrice、equipment.* 按其白板回收价递归），未配置按白板价 V0 兜底（同装备裸件代护）。
+function resolveProtectionUnitPrice(protectionItems, baseSellPrice) {
+  if (!protectionItems || protectionItems.length === 0) return baseSellPrice;
+  let min = Infinity;
+  for (const id of protectionItems) {
+    let price = null;
+    if (id.startsWith('equipment.')) {
+      const nested = equipmentMaterialCost(id, 0);
+      price = nested === null ? null : nested * 2;
+    } else {
+      const sellPrice = sellPriceById.get(id);
+      price = typeof sellPrice === 'number' && sellPrice > 0 ? sellPrice : null;
+    }
+    if (price !== null && price < min) min = price;
+  }
+  return Number.isFinite(min) ? min : baseSellPrice;
+}
+
+// 装备强化变体挂售档位：+10/+20 对齐 EnhancementRules.CalculateEquipmentSellPrice(2*cost, P, N) 地板定价，
+// 避免按 +0 成本挂单导致套利倒挂。
 const enhancedSeedLevels = [10, 20];
 const enhancementDepreciation = {
   10: { beta: 7.687, fee: 739 },
   20: { beta: 19.353, fee: 3322 },
 };
-function calculateEnhancedEquipmentSeedPrice(baseMaterialCost, level) {
+function calculateEnhancedEquipmentSeedPrice(baseMaterialCost, protectionUnitPrice, level) {
   const row = enhancementDepreciation[level];
   if (!row) return baseMaterialCost;
   const baseSellPrice = baseMaterialCost * 2;
-  return Math.round(baseSellPrice * (1 + row.beta) + row.fee);
+  return Math.round(baseSellPrice + row.beta * protectionUnitPrice + row.fee);
 }
 
 // 统一挂售清单：物品价 = 回收价一半、装备 +0 = 材料成本价、强化变体 +10/+20 = 含强化折旧公式单价；定价基准写入 SQL 注释备查。
@@ -260,10 +282,11 @@ const listings = [
   ...equipments.flatMap(equipment => [
     { id: equipment.id, variant: '', name: equipment.name, price: equipment.cost, basis: `锻造材料成本价 ${equipment.cost}` },
     ...enhancedSeedLevels.map(level => {
-      const price = calculateEnhancedEquipmentSeedPrice(equipment.cost, level);
+      const protectionPrice = resolveProtectionUnitPrice(equipment.protectionItems, equipment.cost * 2);
+      const price = calculateEnhancedEquipmentSeedPrice(equipment.cost, protectionPrice, level);
       return {
         id: equipment.id, variant: `+${level}`, name: `${equipment.name} +${level}`,
-        price, basis: `含强化地板价 Math.round(2*${equipment.cost}*(1+${enhancementDepreciation[level].beta})+${enhancementDepreciation[level].fee}) = ${price}`,
+        price, basis: `含强化地板价 Math.round(2*${equipment.cost}+${enhancementDepreciation[level].beta}*${protectionPrice}+${enhancementDepreciation[level].fee}) = ${price}`,
       };
     }),
   ]),
@@ -273,7 +296,7 @@ const esc = (text) => String(text).replace(/'/g, "''");
 const lines = [];
 lines.push(`-- 由 scripts/seed-market-system-listings.sh 生成：系统身份坊市挂售种子`);
 lines.push(`-- 分区 ${partitionId}，挂单 ${listings.length} 条（物品 ${items.length} + 装备 ${equipments.length}×3 档变体），每条 ${listingQuantity} 份`);
-lines.push(`-- 挂售价口径：物品 = 回收价 / 2，装备 +0 = 材料成本价，+10/+20 = CalculateEquipmentSellPrice(2*cost, level)`);
+lines.push(`-- 挂售价口径：物品 = 回收价 / 2，装备 +0 = 材料成本价，+10/+20 = CalculateEquipmentSellPrice(2*cost, protectionPrice, level)`);
 lines.push('BEGIN;');
 lines.push('');
 lines.push('-- 系统身份：不可登录账号 + 货架玩家（固定 UUID 幂等）');

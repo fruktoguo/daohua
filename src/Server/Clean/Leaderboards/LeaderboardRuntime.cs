@@ -26,7 +26,7 @@ public sealed class LeaderboardRuntime
     private readonly IPlayerRuntime _players;
     private readonly MarketRuntime? _market;
     private readonly GameDataCatalog _gameData;
-    private readonly FrozenDictionary<string, double> _baseSellPrices;
+    private readonly ValuationMath.EquipmentSellPriceBook _sellPriceBook;
     private readonly ILogger<LeaderboardRuntime> _logger;
     private readonly SemaphoreSlim _rebuildLock = new(1, 1);
 
@@ -48,7 +48,7 @@ public sealed class LeaderboardRuntime
         _players = players;
         _market = market;
         _gameData = gameData;
-        _baseSellPrices = ValuationMath.BuildBaseSellPrices(gameData);
+        _sellPriceBook = ValuationMath.BuildSellPriceBook(gameData);
         _logger = logger;
     }
 
@@ -287,7 +287,7 @@ public sealed class LeaderboardRuntime
                     try
                     {
                         var loadout = SectionCodec.DecodeLoadout(stored);
-                        offlineValuations[pid] = ValuationMath.Compute(loadout, _gameData, _baseSellPrices, _market);
+                        offlineValuations[pid] = ValuationMath.Compute(loadout, _gameData, _sellPriceBook, _market);
                         if (loadout.TechniqueExperiences is { Count: > 0 })
                             offlineTechniques[pid] = loadout.TechniqueExperiences;
                     }
@@ -330,7 +330,7 @@ public sealed class LeaderboardRuntime
                     var onlineStones = FindSpiritStones(online.Assets);
                     if (onlineStones is { } os) stones = os;
 
-                    valuation = ValuationMath.Compute(online.State.Loadout, _gameData, _baseSellPrices, _market);
+                    valuation = ValuationMath.Compute(online.State.Loadout, _gameData, _sellPriceBook, _market);
                     techniqueExps = online.State.Loadout.TechniqueExperiences;
                 }
                 else

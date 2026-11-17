@@ -936,7 +936,7 @@ export function parseEnhancementVariant(variant?: string | null): number {
 
 /**
  * 装备强化各等级受保折旧常数表（总纲 §4.6.2，alpha = 0.50）：
- * beta: 累计期望保护消耗底模数加成系数；
+ * beta: 累计期望保护消耗件数加成系数（无量纲，须乘单件保护单价 P 折算灵石）；
  * fee: 累计期望手续费残值返还（灵石）。
  */
 const ENHANCEMENT_DEPRECIATION_TABLE: readonly { beta: number; fee: number }[] = [
@@ -964,24 +964,65 @@ const ENHANCEMENT_DEPRECIATION_TABLE: readonly { beta: number; fee: number }[] =
 ]
 
 /**
- * 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外造价折旧闭式查表）：
- * SellPrice(+N) = round(V0 * (1 + beta_N) + F_N)；
+ * 计算指定强化等级的装备商店回收单价（总纲 §4.6.2 50% 额外期望造价折旧闭式查表）：
+ * SellPrice(+N) = round(V0 + beta_N * P + F_N)；
+ * P 为单件保护材料回收单价（见 resolveProtectionUnitPrice），非法入参按 V0 兜底；
  * N=0 时恒等于 V0；N 越界按 [0, 20] 截断。
  */
-export function calculateEquipmentSellPrice(baseSellPrice: number, enhancementLevel: number): number {
+export function calculateEquipmentSellPrice(baseSellPrice: number, protectionUnitPrice: number, enhancementLevel: number): number {
   if (baseSellPrice <= 0 || !Number.isFinite(baseSellPrice)) return 0
   const level = Math.max(0, Math.min(20, Math.floor(enhancementLevel)))
   const entry = ENHANCEMENT_DEPRECIATION_TABLE[level]
   if (!entry) return Math.round(baseSellPrice)
-  return Math.round(baseSellPrice * (1 + entry.beta) + entry.fee)
+  const unitProtection = protectionUnitPrice > 0 && Number.isFinite(protectionUnitPrice)
+    ? protectionUnitPrice
+    : baseSellPrice
+  return Math.round(baseSellPrice + entry.beta * unitProtection + entry.fee)
 }
 
-/** 45 件装备白板商店基础回收售价字典（V0 = 锻造原材料成本 * 2.0，总纲 §4.6.1 双倍增值铁律） */
+/**
+ * 单件强化保护材料的系统回收单价 P（总纲 §4.6.2）：
+ * 装备配表 enhanceProtectionItems 非空时取列表内可回收材料的最低回收单价
+ *（item.* 按配表 sellPrice、equipment.* 按其白板回收价解算，理性玩家恒选最廉代护）；
+ * 未配置或全部不可定价时按白板价 V0 兜底（同装备无强化基础件代护）。
+ */
+export function resolveProtectionUnitPrice(
+  baseSellPrice: number,
+  eqDef?: CombatEquipmentDefinition | null,
+  itemMap?: Map<string, ItemDefinition> | readonly ItemDefinition[] | null,
+  eqMap?: Map<string, CombatEquipmentDefinition> | readonly CombatEquipmentDefinition[] | null,
+): number {
+  if (baseSellPrice <= 0 || !Number.isFinite(baseSellPrice)) return 0
+  const configured = eqDef?.enhanceProtectionItems?.filter(id => typeof id === 'string' && id.length > 0)
+  if (!configured || configured.length === 0) return baseSellPrice
+  let min = Infinity
+  for (const id of configured) {
+    let price = 0
+    if (id.startsWith('equipment.')) {
+      const nestedEq = eqMap
+        ? (eqMap instanceof Map ? eqMap.get(id) : findEquipmentInCatalog(eqMap, id))
+        : undefined
+      price = resolveEquipmentBaseSellPrice(id, nestedEq)
+    } else {
+      const itemDef = itemMap
+        ? (itemMap instanceof Map ? itemMap.get(id) : findItemInCatalog(itemMap, id))
+        : undefined
+      price = itemDef?.sellPrice ?? resolveDefaultItemDefinition(id)?.sellPrice ?? 0
+    }
+    if (price > 0 && price < min) min = price
+  }
+  return Number.isFinite(min) ? min : baseSellPrice
+}
+
+/** 装备白板商店基础回收售价字典（V0 = 锻造原材料成本 * 2.0，总纲 §4.6.1 双倍增值铁律） */
 export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
   'equipment.shouya-pendant': 312,
   'equipment.taomu-talisman': 324,
+  'equipment.canglang-ring': 316,
+  'equipment.bibo-pendant': 330,
   'equipment.chiwen-ring': 1560,
   'equipment.juling-pendant': 1588,
+  'equipment.rongling-pendant': 24880,
   'equipment.shufa-scarf': 312,
   'equipment.baina-armor': 432,
   'equipment.zhakou-pants': 312,
@@ -991,6 +1032,15 @@ export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
   'equipment.hunyuan-scarf': 324,
   'equipment.suma-robe': 432,
   'equipment.xingqi-pants': 312,
+  'equipment.xuantie-headband': 360,
+  'equipment.suozi-armor': 480,
+  'equipment.diejia-leggings': 360,
+  'equipment.canglang-cap': 316,
+  'equipment.canglang-vest': 436,
+  'equipment.canglang-pants': 316,
+  'equipment.liuyun-ribbon': 330,
+  'equipment.bishui-robe': 450,
+  'equipment.zhishui-pants': 330,
   'equipment.chijin-helmet': 1560,
   'equipment.yulin-armor': 2160,
   'equipment.tazhen-greaves': 1560,
@@ -1000,14 +1050,20 @@ export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
   'equipment.ziwu-crown': 1588,
   'equipment.pichen-shirt': 2160,
   'equipment.liuyun-skirt': 1560,
+  'equipment.handi-armor': 20200,
+  'equipment.mingsha-crown': 93600,
+  'equipment.fentian-greaves': 107480,
   'equipment.fan-tie-dart': 312,
   'equipment.qingmu-bead': 324,
   'equipment.tiepi-guard': 312,
   'equipment.ganlu-flask': 324,
+  'equipment.tiemu-shield': 360,
+  'equipment.ningshui-charm': 330,
   'equipment.xuantie-dart': 1560,
   'equipment.yaoling-bead': 1588,
   'equipment.xuanjia-guard': 1560,
   'equipment.huichun-bell': 1584,
+  'equipment.baihu-dagger': 13240,
   'equipment.tool-herb-hoe': 100,
   'equipment.tool-prospect-compass': 144,
   'equipment.tool-flame-ding': 144,
@@ -1019,10 +1075,16 @@ export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
   'equipment.pishan-blade': 432,
   'equipment.jiujie-staff': 444,
   'equipment.suxin-zither': 444,
+  'equipment.xuantie-sword': 480,
+  'equipment.piyan-blade': 480,
+  'equipment.kuteng-staff': 450,
+  'equipment.mingquan-zither': 450,
   'equipment.pogang-sword': 2160,
   'equipment.zhansha-blade': 2160,
   'equipment.chaoyuan-staff': 2188,
   'equipment.songfeng-zither': 2188,
+  'equipment.duanchen-blade': 122080,
+  'equipment.demon-core-staff': 159480,
 }
 
 /**
@@ -1069,7 +1131,8 @@ export function getItemReferencePrice(
 
   const eqBase = resolveEquipmentBaseSellPrice(itemId)
   if (eqBase > 0) {
-    return calculateEquipmentSellPrice(eqBase, enhancementLevel)
+    // 无装备定义上下文时按同装备裸件代护口径（P = V0）折算。
+    return calculateEquipmentSellPrice(eqBase, eqBase, enhancementLevel)
   }
 
   const defaultDef = resolveDefaultItemDefinition(itemId)
@@ -1100,7 +1163,8 @@ export function resolveInventoryItemUnitPrice(
     const eqBase = resolveEquipmentBaseSellPrice(itemId, eqDef)
     if (eqBase > 0) {
       const enhancementLevel = parseEnhancementVariant(variant)
-      return calculateEquipmentSellPrice(eqBase, enhancementLevel)
+      const protectionPrice = resolveProtectionUnitPrice(eqBase, eqDef, itemMap, eqMap)
+      return calculateEquipmentSellPrice(eqBase, protectionPrice, enhancementLevel)
     }
   }
 
