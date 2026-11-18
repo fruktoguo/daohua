@@ -107,7 +107,9 @@ scripts/docker-build-prod.sh --push
 scripts/docker-build-prod.sh --push-existing
 ```
 
-日常发布拒绝 dirty worktree；`--allow-dirty` 只用于首次引导或明确排障。
+常规发布拒绝 dirty worktree。服务端、YuoCore 和私有模块分别从固定提交归档，镜像对记录三方 revision 与应用支持的库/载荷标签；`--allow-dirty` 不会将工作区内容纳入镜像。
+
+Web（npm/Docker）和 APK 基线清单均要求可读的 Vite manifest；其中的源路径以 Vite 项目根 `frontend/` 为基准，不以调用目录为基准。道具源文件缺失、不是可读取尺寸头的 48×48 WebP，或 manifest 缺失、不可解析时构建失败。独立 HD 画质包使用 `--no-vite-manifest`，不受 Web 道具图标尺寸限制。
 
 ## 首次部署与更新
 
@@ -117,21 +119,23 @@ scripts/deploy-prod.sh \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<ComputeNode digest>
 ```
 
-脚本会只读检查远端 Docker/Compose/权限，校验 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`（仅数据库初始化）、`DB_APP_USER`/`DB_APP_PASSWORD`、`DB_WORKER_USER`/`DB_WORKER_PASSWORD`、`COMPUTE_TOKEN` 与 `BACKUP_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对 digest 镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
+受控更新固定 Server/ComputeNode 成对 digest，核对构建来源和两个 schema 标签，在共享更新锁中接管 timer、停写、备份、迁移并启动候选。只有健康、回环 `/readyz` 和配置的烟测通过后，才提交候选并解除维护。应用只绑定 `127.0.0.1:15128`，公网由 Caddy 转发；Caddy 验证或 reload 失败时自动还原本次改动的配置，不重启共享服务。
 
 部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）和 `daohua-ledger-archive.timer`（每日清理超过 30 天的遗留归档分区）；单机生产默认禁用连续 WAL 归档并停用 `daohua-wal-archive.timer`，避免 WAL 积压占满 40G 根分区。任一启用的定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
 部署脚本在替换镜像前会强制执行一次数据库迁移闸门（`/opt/daohua/migrate-prod-db.sh`）：
 
 1. 从仓库源码读出两个独立目标：`EXPECTED_SCHEMA_VERSION`（`PostgresSchema.Version`）与 `EXPECTED_SECTION_VERSION`（`SectionCodec.CurrentSchemaVersion`）。两者**不相等**（例如库 v41 对应存档标签 v38），用错会把标签推进到解码器拒绝的值，脚本因此拒绝在缺少目标时继续。
-2. 校验 `daohua-app` 与 `daohua-compute` 已停止写者；未停且未显式 `--allow-running` 时直接失败。**这是硬要求**：旧版本进程在迁移窗口内仍会按旧标签写存档，使新版本加载玩家时抛 `section schema 版本不受支持` 并无限重连（2026-10-22 生产事故）。
+2. 写入维护标记、停用自动更新，并确认 API、Worker、计算节点均已停写。独立迁移脚本不会重新启动写者；只有外层发布流程可在校验通过后启动匹配的候选。
 3. 全库 `pg_dump -Fc` 备份到 `/opt/daohua/backups/pre-migration/`（失败即中止，`--skip-backup` 可跳过）。
 4. 按 `platform.schema_version` 链式应用 `migrations/` 中落后脚本（日常开发完成时应已逐版本增量编写，并在 `prod-release` 前依据 [`db-version-changes.md`](../backend/db-version-changes.md) 与 `git diff` 查漏补齐；若发版走停写人工迁移，则在此前已完成版本与标签收敛，此处闸门核对通过即放行），涉及真实资产退款的脚本拒绝自动执行。
 5. 校验库版本达到代码要求，并要求 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version` **无任何一行**偏离当前解码器版本；不满足即非零退出，绝不带着旧标签启动新镜像。
 
-迁移完成后再由 `ccr-auto-update.sh` 重建容器。`migrations/` 不在镜像内，由部署链同步到 `/opt/daohua/migrations/`；凡持久化变更在完成时均须登记 [`db-version-changes.md`](../backend/db-version-changes.md) 并增量编写对应 `.sql`。
+跨 schema 的候选失败时保留维护与停写；不会自动启动旧镜像。优先修复前向部署；若需恢复到旧 schema，须另行授权并用迁移前的完整备份恢复，再启动与备份匹配的镜像。迁移脚本不进入运行镜像。
 
-`daohua-ccr-auto-update.timer` 每分钟检查 `prod`：Server 与 ComputeNode 镜像 ID 均未变化时不重建；替换前先把当前运行镜像标记为 `daohua-rollback:app-previous` / `daohua-rollback:compute-previous`，随后 `compose up --force-recreate` 先替换再 `wait_healthy`/`wait_ready`；任一环节失败即经回滚标签恢复上一版本，并把失败的 `app_id|compute_id` 组合 marker 写入 `/opt/daohua/failed-image.id`，CCR 出现新版本前不再重试该候选。成功后在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。自动更新 timer 只做镜像替换，**不执行迁移**；携带 schema 变更的发布必须走 `deploy-prod.sh`。
+`daohua-ccr-auto-update.timer` 每分钟检查 `prod` 镜像对；同一镜像 ID 不重建。自动更新不执行迁移，只允许构建来源一致且库与载荷标签相同的候选。只有同 schema 更新失败才能回滚镜像对，并记录失败组合以免反复尝试。
+
+自动更新最多等待共享备份锁 `/run/lock/daohua-db-backup.lock` 30 秒。锁被备份任务占用而等待超时时，写入 journal 并正常跳过本轮，留待下一轮检查；`flock` 的其他错误使服务非零退出。只有持有备份锁且数据库校验通过后才创建维护标记；等待超时或加锁失败不会触发维护或变更容器。
 
 查看状态：
 
@@ -146,9 +150,11 @@ ssh yuohira 'curl -fsS http://127.0.0.1:15128/readyz'
 
 ## 备份、恢复与硬盘控制
 
-当前备份链路保留两类本机热证据并同步到计算节点：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，本地热保留最近 6 小时 / 3 天日备，完整历史由计算节点 `BackupArchiveWorker` / `backup-pull-sync.sh` 拉取长期归档）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线（本地保留最新 1 份）。单机 `2c4g/40g` 生产默认关闭连续 WAL 归档（`archive_mode=off`）并移除旧的 `wal-archive` 挂载，禁止手动删除 `pg_wal`。
+当前备份链路保留两类本机热证据并同步到计算节点：`backup.sh` 每小时生成 custom dump（`pg_restore --list` + SHA-256，本地热保留最近 6 小时 / 3 天日备，完整历史由计算节点 `BackupArchiveWorker` / `backup-pull-sync.sh` 拉取长期归档）；`base-backup.sh` 每日生成带 `backup_manifest` 的物理基线。单机 `2c4g/40g` 生产默认关闭连续 WAL 归档（`archive_mode=off`）并移除旧的 `wal-archive` 挂载，禁止手动删除 `pg_wal`。
 
-验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump 与物理备份 `backup_manifest`（`pg_verifybackup`）。追加 `VERIFY_BACKUP_ISOLATED_RESTORE=1` 时启动隔离恢复实例并检查 ready 与最小业务 SQL；否则仅能报告格式/manifest通过。隔离实例使用 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`，库名与运行中数据库的 `POSTGRES_DB` 一致；恢复载荷挂载于 `/var/lib/postgresql/data` 时必须显式指定同路径的 `PGDATA`，不允许 PostgreSQL 18 默认新建 `18/docker` 空库冒充恢复。如需对独立基线目录做恢复演练：
+热备默认仅备份任务可读。若启用 Caddy 或 rsync 异地读取，在受控部署前配置已存在的专用 `BACKUP_READER_GROUP`，核对备份根与 Caddy 路径一致、现有 ACL，以及运行中的读取进程实际持有该组。受管理目录与归档分别使用 `0750`、`0640`；不对其他用户开放。脚本不自动创建组、调整成员或重启 Caddy；`reload` 不刷新进程组身份。迁移前快照另存且不对异地读取端开放。
+
+验证入口为 `/opt/daohua/verify-backup.sh`：它会校验最新 custom dump 与物理备份 `backup_manifest`（`pg_verifybackup`）。追加 `VERIFY_BACKUP_ISOLATED_RESTORE=1` 时启动隔离恢复实例并检查 ready 与最小业务 SQL；否则仅能报告格式与 manifest 校验通过。逻辑备份超过 3 小时、物理基线超过 36 小时即不通过新鲜度门禁；没有连续 WAL 时，物理基线可验证或恢复，但不宣称支持任意时间点恢复。隔离实例使用 `DB_BOOTSTRAP_USER`/`DB_BOOTSTRAP_PASSWORD`，库名与运行中数据库的 `POSTGRES_DB` 一致；恢复载荷挂载于 `/var/lib/postgresql/data` 时必须显式指定同路径的 `PGDATA`，不允许 PostgreSQL 18 默认新建 `18/docker` 空库冒充恢复。以下按时间点的演练命令仅适用于已具备连续 WAL 的独立归档：
 
 ```bash
 sudo /opt/daohua/pitr-restore.sh \

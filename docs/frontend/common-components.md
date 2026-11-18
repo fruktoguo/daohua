@@ -254,6 +254,7 @@
 ## 14. 日志实体引用、复合物品胶囊与重复项乘数胶囊 (Log Entity Reference & Repeat Capsule)
 
 - **适用场景**：
+  - **实体名称兜底**：日志生产端传递 `{{kind:id|label}}`，不把内部 ID 当普通文本写入正文（强化成功和失败都引用目标装备）。前端公共实体引用、物品元数据与瓦片共享名称校验 `frontend/src/game/entityNames.ts`：跳过空白、原 ID 和缺失翻译键，优先使用已有可读名称，最终按类别显示「未知物品 / 未知功法」等；ID 仍用于图标、悬浮详情和导航。
   - **事件日志、更新日志与战报中的实体胶囊引用**（覆盖物品/装备 `item`、功法技能 `ability`、特质 `trait`、建筑 `building`、状态 `buff`、妖兽敌人 `enemy` / `encounter`、行动 `action`、地点 `location`、角色 `character`、机制 `mechanic`；统一由 `RichTemplateText` / `EntityReference` 复用万象图鉴同款 `FloatingPopover` + `FloatingInfoCard`、`MonsterTooltipTarget`、`resolveTraitAsideCards`、`BuildingInfoCard` 与 `extractBuffBonusItems` 渲染，并在 `LogTemplateText` 中复用；机制胶囊支持 `break` 破招橙、`crit` 暴击金、`dodge` 闪避水绿、`parry` 化解冰蓝等修仙专属色调；行内全部胶囊统一垂直居中对齐）。
   - **复合物品胶囊**（将物品名称与数量如 `灵石 × 41` 组合为一整个不可分割的紧凑修仙药丸胶囊，包含物品品质色调、微光背景与下划线数量，支持悬浮弹出物品属性卡片） -> `ItemReference`, `.item-reference-compound`。
   - **完全相同日志连续折叠与乘数胶囊**（挂机采集、连续战斗等产生的完全相同模板日志在尾部自动合并显示微光乘数胶囊形如 `× 3`，更新为最新触发时刻并保留历史缓冲容量） -> `.log-repeat-capsule`, `collapseLogEntries`。

@@ -105,7 +105,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api`、`/ops/api` 和 `/ws` �
 
 ## 冷挂机计算节点
 
-`ComputeNode` 只接受带 `X-Compute-Token` 的内部批处理 HTTP 请求，或反向拨入主服的内部 WebSocket 链路；它验证契约版本、配置指纹、任务数量和载荷大小后执行无状态确定性补算。它不接受公网业务流量，不处理账号、在线连接、市场写入，也不持有 PostgreSQL 凭据。令牌只提供节点鉴权，不提供传输加密。远程部署必须使用 `https`/`wss`；生产 Compose 的内部 HTTP/WS 仅在隔离容器网络并显式启用 `AllowInsecureLoopback` 时允许，不能暴露到公网或不可信网络。
+`ComputeNode` 只接受带 `X-Compute-Token` 的内部批处理 HTTP 请求，或反向拨入主服的内部 WebSocket 链路。主服在 WebSocket 升级前核验令牌已配置，随后用 Hello 声明的节点名核验专属令牌；只有未配置专属令牌的节点才使用共享令牌。计算节点验证契约版本、配置指纹、任务数量和载荷大小后执行无状态确定性补算。它不接受公网业务流量，不处理账号、在线连接、市场写入，也不持有 PostgreSQL 凭据。令牌只提供节点鉴权，不提供传输加密。远程部署必须使用 `https`/`wss`；生产 Compose 的内部 HTTP/WS 仅在隔离容器网络并显式启用 `AllowInsecureLoopback` 时允许，不能暴露到公网或不可信网络。
 
 ```bash
 ComputeNode__Token='<内部随机令牌>' \

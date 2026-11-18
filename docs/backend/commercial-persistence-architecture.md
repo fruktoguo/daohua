@@ -69,7 +69,7 @@
 | 身份管理 | ASP.NET Core Authentication；需要完整账号生命周期时使用 Identity + PostgreSQL | 身份和权限使用独立 schema；游戏状态不依赖登录会话缓存。 |
 | 公共 HTTP | JSON + OpenAPI + ProblemDetails，/api/v1 | 浏览器、运营工具和第三方接入易调试；不暴露 Entity 或数据库模型。 |
 | 浏览器实时通道 | WebSocket + DHW1 二进制 envelope + JSON payload | 固定 36 字节头、明确协议版本和单调序列；只传当前状态和增量，不保存帧历史。Protobuf 编码位保留但当前浏览器不启用。 |
-| 内部服务通道 | 内部 HTTP + `X-Compute-Token` | 仅用于 Server ↔ ComputeNode 等受控服务；ComputeNode 没有生产数据库写权限。需要 mTLS 时在独立网络边界启用，不把证书逻辑塞入冷挂机节点。 |
+| 内部服务通道 | 内部 HTTP + `X-Compute-Token` | 仅用于 Server ↔ ComputeNode 等受控服务。反向 WebSocket 升级前须命中一个已配置的令牌，Hello 再按节点名校验专属令牌；未配置专属令牌的节点才可使用共享令牌。ComputeNode 没有生产数据库写权限。需要 mTLS 时在独立网络边界启用，不把证书逻辑塞入冷挂机节点。 |
 | 前端 | React 19 + Vite 7 + TypeScript 5.9 | 正式入口只有 frontend；静态资源由同源 ASP.NET/Caddy 提供。 |
 | 反向代理 | Caddy 2.x | HTTPS、WebSocket、压缩、安全响应头和 debug/metrics 路径拦截。 |
 | 观测 | OpenTelemetry .NET + OTLP 发送到远端平台 | 本机只保留极小错误日志；指标、追踪和长期检索不占用 40GB 数据盘。 |
