@@ -1,6 +1,8 @@
-using System.Text.Json;
+using DaoHua.Ecs;
 using Domain.Common;
+using Domain.Economy;
 using Domain.GameData;
+using Domain.Player;
 using Domain.Simulation;
 using Server.Clean;
 using Protocol;
@@ -32,6 +34,36 @@ public sealed class SimulationLogMapperTests
 
         var template = Assert.Single(logs).Template;
         Assert.Contains("{{item:equipment.kuteng-staff|枯藤法杖|1}}", template, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, "强化成功：{{item:equipment.juling-pendant|聚灵佩}} 提升至 +1。")]
+    [InlineData(false, "强化失败：{{item:equipment.juling-pendant|聚灵佩}} 回落至 +0。")]
+    public void EnhancementRound_LogsNamedEquipmentReference(bool success, string expectedTemplate)
+    {
+        var catalog = LoadCatalogFiles("equipment/accessories.json", "actions/enhancement.json");
+        var at = DateTimeOffset.UnixEpoch;
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "强化修士", at, catalog.Fingerprint);
+        var equipmentId = new ItemId("equipment.juling-pendant");
+        var equipmentKey = new AssetKey(equipmentId);
+        var stoneKey = new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId));
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Credit(equipmentKey, 1, "test");
+        wallet.Credit(stoneKey, 500, "test");
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), 1, TargetItemId: equipmentId.Value);
+        var prep = EnhancementRules.Resolve(player.Loadout, intent,
+            new Dictionary<AssetKey, double> { [equipmentKey] = 1, [stoneKey] = 500 },
+            catalog, 0, out _, out _);
+        Assert.NotNull(prep);
+        var instanceId = Enumerable.Range(1, 100).Select(n => new Guid(n, 0, 0, new byte[8]))
+            .First(id => (EnhancementRules.Roll(id, 0, prep) == EnhancementRules.Outcome.Success) == success);
+        player.EnqueuePriority(intent, at, catalog.Actions, actionInstanceId: instanceId);
+
+        var events = SimulationEngine.AdvanceTo(player, at.AddSeconds(7), catalog, wallet).Events;
+        var logs = SimulationLogMapper.ToLogEvents(events, catalog, new PlayerLogBuffer(16));
+        var log = Assert.Single(logs, log => log.Template.StartsWith("强化", StringComparison.Ordinal));
+        Assert.Equal(LogChannels.System, log.Channel);
+        Assert.Equal(expectedTemplate, log.Template);
     }
 
     [Fact]

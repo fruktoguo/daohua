@@ -8,7 +8,8 @@ import {
   DISASSEMBLE_ACTION_ID,
   DISASSEMBLE_BASE_DURATION,
   LIQUEFY_ACTION_ID,
-  LIQUEFY_BASE_DURATION,
+  liquefyDurationSeconds,
+  liquefySuccessRate,
   TECHNIQUE_SPEED_RATIO_PER_LEVEL,
 } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
@@ -168,12 +169,6 @@ export const SecretArtOperations = memo(function SecretArtOperations({
       ? DISASSEMBLE_ACTION_ID
       : CONVERT_ACTION_ID
 
-  const baseDuration = operation === 'liquefy'
-    ? LIQUEFY_BASE_DURATION
-    : operation === 'disassemble'
-      ? DISASSEMBLE_BASE_DURATION
-      : CONVERT_BASE_DURATION
-
   const activeEntry = useMemo(
     () => queueEntries?.find(e => e.actionId === currentActionId) ?? null,
     [queueEntries, currentActionId],
@@ -193,6 +188,15 @@ export const SecretArtOperations = memo(function SecretArtOperations({
     }
     return null
   }, [candidates, selectedKey])
+
+  // 感悟经验与化灵耗时/成功率按目标物品自身显式 level 结算（与服务端 ResolveItemLevel 同口径，缺省 1，强化 +N 不计入）
+  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition)
+
+  const baseDuration = operation === 'liquefy'
+    ? liquefyDurationSeconds(itemLevel)
+    : operation === 'disassemble'
+      ? DISASSEMBLE_BASE_DURATION
+      : CONVERT_BASE_DURATION
 
   // 秘法技艺等级与加速（统称秘法速度，与增强曲线同源立方公式）
   const techniqueLevel = calculateTechniqueProgress(techniqueExperiences?.['enhancement'] ?? 0).level
@@ -239,8 +243,9 @@ export const SecretArtOperations = memo(function SecretArtOperations({
     return Math.round(resolveInventoryItemUnitPrice(selected.itemId, selected.variant, items, equipment) * 2)
   }, [equipment, items, operation, selected])
 
-  // 感悟经验按目标物品自身显式 level 结算（与服务端 ResolveItemLevel 同口径，缺省 1）
-  const itemLevel = resolveCatalogItemLevel(selected?.equipmentDefinition, selected?.definition)
+  // 化灵成功率：秘法技艺等级低于物品等级时每低 1 级 −5%，下限 20%
+  const liquefyChance = operation === 'liquefy' ? liquefySuccessRate(itemLevel, techniqueLevel) : 1
+
   const yields = useMemo(
     () => calculateSecretArtYields(itemLevel, baseDuration),
     [itemLevel, baseDuration],
@@ -375,7 +380,22 @@ export const SecretArtOperations = memo(function SecretArtOperations({
               <dt>{t('app.secretArt.previewSectionYield')}</dt>
               <dd>
                 {operation === 'liquefy' && (
-                  <ItemReference amount={liquefyUnitPrice} itemId="currency.spirit-stone" />
+                  <div className="secret-art-convert-yields">
+                    <div className="convert-yield-row">
+                      <ItemReference amount={liquefyUnitPrice} itemId="currency.spirit-stone" />
+                      <span className="yield-chance-tag">
+                        {formatNumber(liquefyChance * 100, { maxDecimals: 0 })}%
+                      </span>
+                    </div>
+                    {liquefyChance < 1 && (
+                      <div className="convert-yield-row">
+                        <span className="setting-desc">{t('app.secretArt.liquefyFailNote')}</span>
+                        <span className="yield-chance-tag yield-chance-tag--rare">
+                          {formatNumber((1 - liquefyChance) * 100, { maxDecimals: 0 })}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {operation === 'disassemble' && (
                   disassemblyReturns.length > 0 ? (

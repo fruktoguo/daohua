@@ -923,11 +923,12 @@ internal static partial class ActionExecutionRules
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         CompleteSustainedAutoUse(player, definition, consumedSeconds, gameData, target, ref events);
         events ??= new SimulationEventTail();
+        var targetMarkup = FormatItemMarkup(prep.ItemId.Value, ResolveItemDisplayName(gameData, prep.ItemId.Value));
         events.Add(new SimulationEvent(target,
-            outcome == EnhancementRules.Outcome.Success ? "enhance.succeeded" : "enhance.failed",
-            outcome == EnhancementRules.Outcome.Success
-                ? $"强化成功：{prep.ItemId} 提升至 +{resultLevel}。"
-                : $"强化失败：{prep.ItemId} 回落至 +{resultLevel}。",
+            isSuccess ? "enhance.succeeded" : "enhance.failed",
+            isSuccess
+                ? $"强化成功：{targetMarkup} 提升至 +{resultLevel}。"
+                : $"强化失败：{targetMarkup} 回落至 +{resultLevel}。",
             definition.Id));
         var targetCap = EnhancementRules.MaxLevel;
         if (action.Intent.Parameters is not null
@@ -1167,8 +1168,12 @@ internal static partial class ActionExecutionRules
         var (targetKey, initialLevel, tomeId) = resolved;
         var targetItemId = targetKey.ItemId.Value;
         var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        // 化灵按目标物品配表显式 level 取动态基础耗时（5 + 0.3×(等级−1)），其余秘法沿用配表静态时长。
+        var baseDurationSeconds = definition.Id.Value == SecretArtRules.LiquefyActionId && gameData is not null
+            ? SecretArtRules.LiquefyDurationSeconds(CraftingRecipeRules.ResolveItemLevel(targetItemId, gameData))
+            : definition.DurationSeconds;
         // 持续消耗品按本轮实际经过时间扣减（与普通/强化行动一致），经验仍按基础耗时结算。
-        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : definition.DurationSeconds;
+        var consumedSeconds = action.ProgressSeconds > 0 ? action.ProgressSeconds : baseDurationSeconds;
         action.ProgressSeconds = 0;
         PlayerActionQueueRules.RecordCompletedRound(action);
         completedActions += 1;
@@ -1189,11 +1194,25 @@ internal static partial class ActionExecutionRules
         var eventDesc = string.Empty;
         if (definition.Id.Value == SecretArtRules.LiquefyActionId && gameData is not null)
         {
-            var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, initialLevel);
-            var spiritGain = unitPrice * SecretArtRules.LiquefactionMultiplier;
-            AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), spiritGain);
-            var spiritMarkup = FormatItemMarkup(EnhancementRules.SpiritStoneItemId, spiritName, spiritGain);
-            eventDesc = $"化灵成功：消耗 1 件 {targetDisplay}，获得 {spiritMarkup}。";
+            // 化灵成功率按秘法技艺等级与物品等级差折算（每低 1 级 −5%，下限 20%）；
+            // 判定失败物品照常焚毁不产出灵石，技艺/神识经验仍按当次耗时入账。
+            var itemLevel = CraftingRecipeRules.ResolveItemLevel(targetItemId, gameData);
+            var techniqueLevel = TechniqueCatalog.LevelFor(
+                player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
+                gameData.RealmProgression);
+            var successChance = SecretArtRules.LiquefySuccessChance(techniqueLevel, itemLevel);
+            if (SecretArtRules.LiquefySucceeds(action.Id, action.CompletedRepeats, successChance))
+            {
+                var unitPrice = SecretArtRules.ResolveRecycleUnitPrice(gameData, targetItemId, initialLevel);
+                var spiritGain = unitPrice * SecretArtRules.LiquefactionMultiplier;
+                AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), spiritGain);
+                var spiritMarkup = FormatItemMarkup(EnhancementRules.SpiritStoneItemId, spiritName, spiritGain);
+                eventDesc = $"化灵成功：消耗 1 件 {targetDisplay}，获得 {spiritMarkup}。";
+            }
+            else
+            {
+                eventDesc = $"化灵失败：{targetDisplay} 在秘法真火中焚毁，未凝出灵石。";
+            }
         }
         else if (definition.Id.Value == SecretArtRules.DisassembleActionId && gameData is not null)
         {
@@ -1242,7 +1261,7 @@ internal static partial class ActionExecutionRules
             }
         }
 
-        var (techExp, consciousnessExp) = SecretArtRules.ComputeYieldExperience(gameData, targetItemId, definition.DurationSeconds);
+        var (techExp, consciousnessExp) = SecretArtRules.ComputeYieldExperience(gameData, targetItemId, baseDurationSeconds);
         GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement, techExp, gameData, atUnix);
         if (gameData?.RealmProgression is not null)
             GrantRootExperience(player, CoreAspectKind.Consciousness, consciousnessExp, gameData, action.Id, atUnix);

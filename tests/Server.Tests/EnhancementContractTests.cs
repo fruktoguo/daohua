@@ -555,6 +555,10 @@ public sealed class EnhancementContractTests
             simulationClock: clock, startAt: DateTimeOffset.UnixEpoch);
         await runtime.LoadAsync(playerId);
 
+        // 秘法技艺等级高于物品等级（兽皮/青锋剑配表 level=1）：化灵成功率恒 100%，保证本用例走成功分支。
+        await runtime.MutateOwnedAsync(playerId, aggregate =>
+            aggregate.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement] = 1_000_000);
+
         var req1 = Guid.NewGuid();
         var enq1 = await runtime.ExecuteAsync(playerId, "action.enqueue",
             JsonSerializer.SerializeToElement(new ActionIntentRequest(

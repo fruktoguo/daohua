@@ -7,7 +7,8 @@ using Domain.World;
 namespace Domain.Simulation;
 
 /// <summary>
-/// 计时行动耗时计算纯领域规则：强化按目标等级取 5+t 动态时长，其余取配表静态时长；
+/// 计时行动耗时计算纯领域规则：强化按目标等级取 5+t 动态时长，化灵按目标物品等级取
+/// 5 + 0.3×(物品等级−1) 动态时长，其余取配表静态时长；
 /// 节点建筑速度乘区独立除法，技艺等级速度乘区（每级 +5%）与已装备技艺工具
 /// techniqueBonus.speedRatio 并入同一除数（duration /= 1 + 0.05×L + Σ工具加成），
 /// 保持同点加算语义与确定性。
@@ -86,7 +87,7 @@ public static class TimedActionDurationRules
 
         var consumableSpeed = EffectiveConsumableSpeedRatio(player.Settings.AutoUseSlots, definition, gameData);
         return CalculateCore(
-            definition.DurationSeconds,
+            ResolveBaseDuration(definition, action.Intent.TargetItemId, gameData),
             definition.Kind,
             definition.Technique,
             player.World.EffectiveNodeBuildingEffects,
@@ -117,7 +118,7 @@ public static class TimedActionDurationRules
 
         var consumableSpeed = EffectiveConsumableSpeedRatio(state.Settings.AutoUseSlots, definition, gameData);
         return CalculateCore(
-            definition.DurationSeconds,
+            ResolveBaseDuration(definition, action.Intent.TargetItemId, gameData),
             definition.Kind,
             definition.Technique,
             state.World.EffectiveNodeBuildingEffects,
@@ -127,6 +128,18 @@ public static class TimedActionDurationRules
             targetLevel,
             state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty,
             consumableSpeed);
+    }
+
+    /// <summary>
+    /// 解析行动单轮基础耗时：化灵按目标物品配表显式 level 动态取 5 + 0.3×(等级−1)，
+    /// 其余行动（含强化 5+t 分支之外的秘法操作）沿用配表静态时长。
+    /// </summary>
+    private static double ResolveBaseDuration(ActionDefinition definition, string? targetItemId, GameDataCatalog? gameData)
+    {
+        if (definition.Id.Value == SecretArtRules.LiquefyActionId
+            && gameData is not null && targetItemId is { } targetId)
+            return SecretArtRules.LiquefyDurationSeconds(CraftingRecipeRules.ResolveItemLevel(targetId, gameData));
+        return definition.DurationSeconds;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 
@@ -16,7 +17,43 @@ public static class SecretArtRules
     public const double LiquefactionMultiplier = 3;
     public const double DisassemblyReturnRatio = 0.70;
     public const double FragmentTomeChance = 0.05;
+    /// <summary>化灵单轮基础耗时基数（秒）：实际 = 基数 + 每级耗时 × (物品等级 − 1)。</summary>
+    public const double LiquefyBaseDurationSeconds = 5;
+    /// <summary>化灵目标物品等级每提升 1 级的额外耗时（秒）。</summary>
+    public const double LiquefyDurationPerLevelSeconds = 0.3;
+    /// <summary>秘法技艺等级每低于物品等级 1 级的化灵成功率衰减点数。</summary>
+    public const double LiquefySuccessPenaltyPerLevel = 0.05;
+    /// <summary>化灵成功率下限。</summary>
+    public const double LiquefyMinSuccessChance = 0.2;
+    /// <summary>化灵判定独立通道：与强化判定（0xE0A1）、区间产出判定（0x11A7）及战斗随机流完全隔离。</summary>
+    private const ulong LiquefyRollChannel = 0xE0A2;
     private const int MaxRecipeDepth = 4;
+
+    /// <summary>化灵单轮基础耗时（秒）：5 + 0.3 × (物品等级 − 1)，物品等级按配表显式 level 计（不含强化 +N）。</summary>
+    public static double LiquefyDurationSeconds(int itemLevel)
+        => LiquefyBaseDurationSeconds + LiquefyDurationPerLevelSeconds * Math.Max(0, itemLevel - 1);
+
+    /// <summary>
+    /// 化灵成功率：秘法技艺等级不低于物品等级时恒 100%；每低 1 级 −5%，下限 20%。
+    /// </summary>
+    public static double LiquefySuccessChance(double techniqueLevel, int itemLevel)
+    {
+        var deficit = Math.Max(0, itemLevel - (int)Math.Floor(Math.Max(0, techniqueLevel)));
+        return Math.Clamp(1.0 - LiquefySuccessPenaltyPerLevel * deficit, LiquefyMinSuccessChance, 1.0);
+    }
+
+    /// <summary>
+    /// 化灵当轮确定性判定：种子取行动实例 Id 前 8 字节，计数维度用已完成轮次，
+    /// 独立通道保证与强化判定、区间产出判定及战斗随机流互不影响；同一实例同一轮次必得同一结果。
+    /// </summary>
+    public static bool LiquefySucceeds(Guid actionInstanceId, double completedRepeats, double successChance)
+    {
+        if (!double.IsFinite(successChance) || successChance < 0 || successChance > 1)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "化灵成功率无效。");
+        var seed = BitConverter.ToInt64(actionInstanceId.ToByteArray(), 0);
+        var roll = DeterministicRoll.Next(seed, 0, completedRepeats, LiquefyRollChannel);
+        return roll < successChance;
+    }
 
     /// <summary>只接受配表中的功法残卷，并解析同一后缀的完整秘籍。</summary>
     internal static bool TryResolveFragmentTome(GameDataCatalog? gameData, string fragmentItemId, out ItemId tomeId)

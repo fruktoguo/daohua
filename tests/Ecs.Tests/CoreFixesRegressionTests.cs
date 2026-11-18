@@ -92,6 +92,17 @@ public sealed class CoreFixesRegressionTests
         return player;
     }
 
+    /// <summary>枚举化灵确定性判定的动作实例 Id：completedRepeats 游标为结算时已完成轮次（首轮为 1）。</summary>
+    private static Guid FindLiquefyActionId(double completedRepeats, double chance, bool wantSuccess)
+    {
+        for (var i = 1; i <= 100_000; i++)
+        {
+            var id = new Guid(i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x42);
+            if (SecretArtRules.LiquefySucceeds(id, completedRepeats, chance) == wantSuccess) return id;
+        }
+        throw new InvalidOperationException("未在枚举窗口内命中预期化灵判定分支。");
+    }
+
     private static Guid FindConvertActionId(long targetMs, bool wantTome)
     {
         for (var i = 1; i <= 10_000; i++)
@@ -249,6 +260,8 @@ public sealed class CoreFixesRegressionTests
         // 1. +0 穿戴在身时，化灵 +3 剑必须放行并按 +3 计价且日志含 {{item:...}} +3
         var liquefyPlayer = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "化灵变体者", SeedTime, catalog.Fingerprint);
         PlayerAttributeResolver.Apply(liquefyPlayer, catalog);
+        // 秘法技艺等级高于物品等级（青锋剑配表 level=1）：化灵成功率恒 100%，保证本用例走成功分支。
+        liquefyPlayer.Loadout.TechniqueExperiences[TechniqueCatalog.Enhancement] = 1_000_000;
         liquefyPlayer.ReplaceCombatSlots([], [new PlayerEquipmentSlot(swordId.Value, 0)]);
         var liquefyBalances = new[]
         {
@@ -432,6 +445,67 @@ public sealed class CoreFixesRegressionTests
         Assert.Empty(runtime.DrainSimulationResult(id)!.AssetDeltas);
         Assert.Equal(before.Progression.Foundation, after.Progression.Foundation);
         Assert.Equal(before.Loadout.TechniqueExperiences, after.Loadout.TechniqueExperiences);
+    }
+
+    /// <summary>化灵成功率判定：秘法等级低于物品等级按差值 −5%/级衰减（下限 20%）；失败物品焚毁无产出，耗时与感悟经验照常结算。</summary>
+    [Fact]
+    public async Task SecretArtLiquefy_LevelDeficitRollsDeterministicallyAndBurnsOnFailure()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var danId = new ItemId("item.demon-dan");
+        var itemLevel = CraftingRecipeRules.ResolveItemLevel(danId.Value, catalog);
+        Assert.Equal(12, itemLevel);
+        // 技艺 0 级 vs 12 级妖丹：成功率 = max(0.2, 1 − 0.05×12) = 40%。
+        var chance = SecretArtRules.LiquefySuccessChance(0, itemLevel);
+        Assert.Equal(0.4, chance, 9);
+
+        var successActionId = FindLiquefyActionId(1, chance, wantSuccess: true);
+        var failActionId = FindLiquefyActionId(1, chance, wantSuccess: false);
+        var expectedSpirit = SecretArtRules.ResolveRecycleUnitPrice(catalog, danId.Value, 0) * SecretArtRules.LiquefactionMultiplier;
+
+        // 成功分支：扣 1 妖丹并按三倍回收价发放灵石。
+        var successPlayer = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "化灵有成", SeedTime, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(successPlayer, catalog);
+        using (var runtime = new EcsGameRuntime(catalog, SeedTime))
+        {
+            var id = runtime.CreatePlayer(successPlayer.ExportState(),
+                [new AssetBalance(successPlayer.PlayerId, new AssetKey(danId), 2, 0)]);
+            runtime.EnqueueActionIntent(id, new ActionIntent(
+                new ActionId(SecretArtRules.LiquefyActionId), RepeatCount: 1, TargetItemId: danId.Value), successActionId);
+
+            // 12 级物品基础耗时 5 + 0.3×11 = 8.3 秒；推进 9 秒完成一轮。
+            await runtime.RunPlayerOnceAsync(id, SeedTime.AddSeconds(9));
+            var result = runtime.DrainSimulationResult(id)!;
+            Assert.Contains(result.AssetDeltas, d => d.Asset == new AssetKey(danId) && d.QuantityDelta == -1);
+            Assert.Contains(result.AssetDeltas, d => d.Asset.ItemId.Value == EnhancementRules.SpiritStoneItemId && d.QuantityDelta == expectedSpirit);
+            var ev = Assert.Single(runtime.DrainSimulationEvents(id), e => e.Code == "secret_art.completed");
+            Assert.Contains("化灵成功", ev.Message);
+        }
+
+        // 失败分支：扣 1 妖丹焚毁、无灵石增量，感悟经验仍按动态耗时入账。
+        var failPlayer = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "化灵焚毁", SeedTime, catalog.Fingerprint);
+        PlayerAttributeResolver.Apply(failPlayer, catalog);
+        using (var runtime = new EcsGameRuntime(catalog, SeedTime))
+        {
+            var id = runtime.CreatePlayer(failPlayer.ExportState(),
+                [new AssetBalance(failPlayer.PlayerId, new AssetKey(danId), 2, 0)]);
+            runtime.EnqueueActionIntent(id, new ActionIntent(
+                new ActionId(SecretArtRules.LiquefyActionId), RepeatCount: 1, TargetItemId: danId.Value), failActionId);
+
+            await runtime.RunPlayerOnceAsync(id, SeedTime.AddSeconds(9));
+            var result = runtime.DrainSimulationResult(id)!;
+            Assert.Contains(result.AssetDeltas, d => d.Asset == new AssetKey(danId) && d.QuantityDelta == -1);
+            Assert.DoesNotContain(result.AssetDeltas, d => d.Asset.ItemId.Value == EnhancementRules.SpiritStoneItemId);
+            var ev = Assert.Single(runtime.DrainSimulationEvents(id), e => e.Code == "secret_art.completed");
+            Assert.Contains("化灵失败", ev.Message);
+            Assert.Contains("焚毁", ev.Message);
+
+            var (expectedTechExp, _) = SecretArtRules.ComputeYieldExperience(catalog, danId.Value,
+                SecretArtRules.LiquefyDurationSeconds(itemLevel));
+            var techniqueExps = runtime.ExportSnapshot(id).State.Loadout?.TechniqueExperiences;
+            Assert.NotNull(techniqueExps);
+            Assert.Equal(expectedTechExp, techniqueExps![TechniqueCatalog.Enhancement], 9);
+        }
     }
 
     /// <summary>组队阵盘：teamWide == false 仅注入施放者自身，后序队友同阵盘空槽不得抹除前序队友已激活的全队阵盘。</summary>

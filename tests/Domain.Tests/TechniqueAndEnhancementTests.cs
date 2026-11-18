@@ -67,6 +67,42 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(12d, senseLv3);
     }
 
+    /// <summary>化灵单轮基础耗时按物品等级线性增长：5 + 0.3×(等级−1)，1 级仍为 5 秒。</summary>
+    [Fact]
+    public void LiquefyDurationSeconds_ScalesWithItemLevel()
+    {
+        Assert.Equal(5d, SecretArtRules.LiquefyDurationSeconds(1));
+        Assert.Equal(5d, SecretArtRules.LiquefyDurationSeconds(0));
+        Assert.Equal(5d, SecretArtRules.LiquefyDurationSeconds(-3));
+        Assert.Equal(5.3, SecretArtRules.LiquefyDurationSeconds(2), 9);
+        Assert.Equal(8.0, SecretArtRules.LiquefyDurationSeconds(11), 9);
+        Assert.Equal(8.3, SecretArtRules.LiquefyDurationSeconds(12), 9);
+    }
+
+    /// <summary>化灵成功率：秘法等级不低于物品等级恒 100%；每低 1 级 −5%，下限 20%。</summary>
+    [Fact]
+    public void LiquefySuccessChance_PenalizesDeficitWithFloor()
+    {
+        Assert.Equal(1d, SecretArtRules.LiquefySuccessChance(3, 3));
+        Assert.Equal(1d, SecretArtRules.LiquefySuccessChance(10, 3));
+        Assert.Equal(1d, SecretArtRules.LiquefySuccessChance(0, 0));
+        Assert.Equal(0.95, SecretArtRules.LiquefySuccessChance(0, 1), 9);
+        Assert.Equal(0.75, SecretArtRules.LiquefySuccessChance(5, 10), 9);
+        Assert.Equal(0.2, SecretArtRules.LiquefySuccessChance(0, 21), 9);
+        Assert.Equal(0.2, SecretArtRules.LiquefySuccessChance(0, 30), 9);
+        // 技艺等级小数取下整后再比较（floor(2.9)=2 → deficit=2）
+        Assert.Equal(0.9, SecretArtRules.LiquefySuccessChance(2.9, 4), 9);
+
+        // 确定性判定：同实例同轮次恒同值；chance 0 必败、1 必胜、非法值拒绝
+        var actionId = Guid.NewGuid();
+        Assert.Equal(SecretArtRules.LiquefySucceeds(actionId, 1, 0.5),
+            SecretArtRules.LiquefySucceeds(actionId, 1, 0.5));
+        Assert.False(SecretArtRules.LiquefySucceeds(actionId, 1, 0));
+        Assert.True(SecretArtRules.LiquefySucceeds(actionId, 1, 1));
+        Assert.Throws<DomainException>(() => SecretArtRules.LiquefySucceeds(actionId, 1, 1.5));
+        Assert.Throws<DomainException>(() => SecretArtRules.LiquefySucceeds(actionId, 1, double.NaN));
+    }
+
     /// <summary>技艺经验逐段推进：不足一段停在当前级，曲线封顶后不再升。</summary>
     [Fact]
     public void TechniqueLevelAdvancesSegmentBySegment()
@@ -1223,7 +1259,8 @@ public sealed class TechniqueAndEnhancementTests
     }
 
     /// <summary>
-    /// 排队版秘法行动即使携带 initialLevel（如 +20 装备化灵/分解），也不得套用强化 5+t 时长分支（否则 +20 会坍缩为 0 秒）。
+    /// 排队版秘法行动即使携带 initialLevel（如 +20 装备化灵/分解），也不得套用强化 5+t 时长分支（否则 +20 会坍缩为 0 秒）；
+    /// 化灵改为按目标物品配表显式 level 取 5 + 0.3×(等级−1) 动态基础耗时（强化 +N 不计入）。
     /// </summary>
     [Fact]
     public void TimedActionDurationRules_SecretArtWithInitialLevelDoesNotUseEnhancementFormula()
@@ -1237,8 +1274,9 @@ public sealed class TechniqueAndEnhancementTests
             Baseline,
             catalog.Actions);
 
+        // 青锋剑配表 level=1：基础耗时恒 5 秒（+20 initialLevel 不参与耗时计算）。
         var expected = TimedActionDurationRules.CalculateCore(
-            def.DurationSeconds,
+            SecretArtRules.LiquefyDurationSeconds(CraftingRecipeRules.ResolveItemLevel("equipment.qingfeng-sword", catalog)),
             def.Kind,
             def.Technique,
             player.World.EffectiveNodeBuildingEffects,
@@ -1251,6 +1289,35 @@ public sealed class TechniqueAndEnhancementTests
         Assert.True(expected > 0);
         Assert.Equal(expected, runtimeDuration, 9);
         Assert.Equal(expected, snapshotDuration, 9);
+    }
+
+    /// <summary>化灵耗时挂钩物品等级：12 级妖丹基础耗时 8.3 秒（运行时与快照两条路径一致）。</summary>
+    [Fact]
+    public void TimedActionDurationRules_LiquefyDurationScalesWithItemLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var def = catalog.Actions.Get(new ActionId(SecretArtRules.LiquefyActionId));
+        var player = CreatePlayer("化灵耗时");
+        var action = player.Enqueue(
+            new ActionIntent(def.Id, 1, TargetItemId: "item.demon-dan"),
+            Baseline,
+            catalog.Actions);
+
+        var itemLevel = CraftingRecipeRules.ResolveItemLevel("item.demon-dan", catalog);
+        Assert.Equal(12, itemLevel);
+        var expected = TimedActionDurationRules.CalculateCore(
+            SecretArtRules.LiquefyDurationSeconds(itemLevel),
+            def.Kind,
+            def.Technique,
+            player.World.EffectiveNodeBuildingEffects,
+            player.Loadout.TechniqueExperiences,
+            player.Loadout.Equipment,
+            catalog);
+
+        Assert.Equal(expected, TimedActionDurationRules.Calculate(player, action, def, catalog, assets: null), 9);
+        Assert.Equal(expected,
+            TimedActionDurationRules.Calculate(player.ExportState(), player.ExportState().Actions[0], def, catalog), 9);
+        Assert.Equal(8.3, expected, 9);
     }
 
     /// <summary>
