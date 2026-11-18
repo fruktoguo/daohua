@@ -1,7 +1,25 @@
-import { CARD_ASPECT, cardFace, isRed, type JokerLabels } from './doudizhuArt'
+import { CARD_ASPECT, isRed } from './doudizhuArt'
 
 interface Point { x: number; y: number }
 interface Rect { left: number; top: number; width: number; height: number }
+interface FlightFace { card: number; svg: SVGSVGElement }
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+function symbolArt(id: string, className: string, viewBox: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', className)
+  svg.setAttribute('viewBox', viewBox)
+  const use = document.createElementNS(SVG_NS, 'use')
+  use.setAttribute('href', `#${id}`)
+  svg.append(use)
+  return svg
+}
+
+function createCardBack(): HTMLElement {
+  const back = document.createElement('i')
+  back.className = 'ddz-card-back'
+  return back
+}
 
 /** 只操作独立效果层，不持有或推演牌局状态；组件卸载时统一取消所有动画与预约。 */
 export class DouDiZhuMotion {
@@ -10,9 +28,8 @@ export class DouDiZhuMotion {
   private arena: HTMLElement
   private layer: HTMLElement
   private onArrival: () => void
-  private jokerLabels: JokerLabels
-  constructor(arena: HTMLElement, layer: HTMLElement, onArrival: () => void, jokerLabels: JokerLabels) {
-    this.arena = arena; this.layer = layer; this.onArrival = onArrival; this.jokerLabels = jokerLabels
+  constructor(arena: HTMLElement, layer: HTMLElement, onArrival: () => void) {
+    this.arena = arena; this.layer = layer; this.onArrival = onArrival
   }
 
   schedule(at: number, fn: (elapsed: number) => void): void {
@@ -37,11 +54,14 @@ export class DouDiZhuMotion {
   }
   shuffle(stack: HTMLElement, startedAt: number): void {
     const elapsed = Date.now() - startedAt
-    if (elapsed >= 2600) return
+    if (elapsed >= 2600) {
+      stack.replaceChildren(...Array.from({ length: 4 }, createCardBack))
+      return
+    }
     stack.replaceChildren()
     for (let i = 0; i < 24; i++) {
-      const el = document.createElement('i'), side = i % 2 ? 1 : -1, depth = i / 24
-      el.className = 'ddz-card-back'; el.style.zIndex = String(i)
+      const el = createCardBack(), side = i % 2 ? 1 : -1, depth = i / 24
+      el.style.zIndex = String(i)
       const square = `translate(${depth * 3}px,${-depth * 6}px) rotate(0deg)`
       el.style.transform = square; stack.append(el)
       this.animate(el, [
@@ -56,26 +76,27 @@ export class DouDiZhuMotion {
     }
   }
   /** 从牌堆或底牌飞到实际牌槽；自己的牌在空中翻开，对手只展示背面。 */
-  fly(seat: number, card: number | null, source: Rect, to: Rect, duration: number, elapsed = 0, alreadyFaceUp = false): void {
+  fly(seat: number, face: FlightFace | null, source: Rect, to: Rect, duration: number, elapsed = 0, alreadyFaceUp = false): void {
     if (elapsed >= duration) return
     const origin = this.layer.getBoundingClientRect(), scaleX = origin.width / this.layer.clientWidth, scaleY = origin.height / this.layer.clientHeight
-    const w = (card === null ? Math.max(40, to.width) : to.width) / scaleX, h = w * CARD_ASPECT
+    const w = (face === null ? Math.max(40, to.width) : to.width) / scaleX, h = w * CARD_ASPECT
     const from = { x: (source.left + source.width / 2 - origin.left) / scaleX, y: (source.top + source.height / 2 - origin.top) / scaleY }
     const end = { x: (to.left + to.width / 2 - origin.left) / scaleX, y: (to.top + to.height / 2 - origin.top) / scaleY }
     const control = { x: (from.x + end.x) / 2, y: Math.min(from.y, end.y) - 60 }
     const el = document.createElement('div'); el.className = 'ddz-card-flight'
     el.style.cssText = `width:${w}px;height:${h}px;--w:${w}px;--h:${h}px`
     // 未知牌不生成正面，任何动画节点都不会泄露对手手牌。
-    if (card !== null) {
-      const face = document.createElement('span'); face.className = `ddz-card ddz-flight-front${isRed(card) ? ' ddz-red' : ''}${card >= 52 ? ' ddz-joker' : ''}`
-      face.innerHTML = cardFace(card, this.jokerLabels); el.append(face)
+    if (face !== null) {
+      const front = document.createElement('span')
+      front.className = `ddz-card ddz-flight-front${isRed(face.card) ? ' ddz-red' : ''}${face.card >= 52 ? ' ddz-joker' : ''}`
+      front.append(face.svg.cloneNode(true)); el.append(front)
     }
-    const back = document.createElement('i'); back.className = 'ddz-card-back ddz-flight-back'; el.append(back); this.layer.append(el)
+    const back = createCardBack(); back.classList.add('ddz-flight-back'); el.append(back); this.layer.append(el)
     const frames = Array.from({ length: 21 }, (_, i) => {
       const t = i / 20, p = 1 - (1 - t) ** 2, q = 1 - p, flip = Math.min(1, Math.max(0, (t - .24) / .64))
       const x = q * q * from.x + 2 * q * p * control.x + p * p * end.x
       const y = q * q * from.y + 2 * q * p * control.y + p * p * end.y
-      const angle = alreadyFaceUp ? card !== null ? 0 : 180 * flip : card !== null ? 180 * (1 - flip) : 180
+      const angle = alreadyFaceUp ? face !== null ? 0 : 180 * flip : face !== null ? 180 * (1 - flip) : 180
       return { offset: t, transform: `translate(${x - w / 2}px,${y - h / 2}px) perspective(700px) rotateZ(${Math.sin(Math.PI * t) * (seat === 1 ? -12 : 12)}deg) rotateY(${angle}deg) scale(${(source.width + (to.width - source.width) * p) / scaleX / w})` }
     })
     this.animate(el, frames, duration, () => { this.onArrival(); el.remove() }, elapsed)
@@ -91,7 +112,7 @@ export class DouDiZhuMotion {
   prop(sender: number, target: number, kind: string, elapsed: number): void {
     if (elapsed >= 820) { if (elapsed < 1600) this.impact(target, kind); return }
     const from = this.point(sender), to = this.point(target), el = document.createElement('div'), shadow = document.createElement('i')
-    el.className = 'ddz-social-projectile'; el.innerHTML = `<svg class="ddz-prop-art" viewBox="0 0 64 64"><use href="#ddz-prop-${kind}"/></svg>`
+    el.className = 'ddz-social-projectile'; el.append(symbolArt(`ddz-prop-${kind}`, 'ddz-prop-art', '0 0 64 64'))
     shadow.className = 'ddz-social-shadow'; this.layer.append(shadow, el)
     const size = el.offsetWidth, frames: Keyframe[] = [], shadows: Keyframe[] = []
     for (let i = 0; i <= 24; i++) {
@@ -106,7 +127,9 @@ export class DouDiZhuMotion {
   private impact(seat: number, kind: string): void {
     const p = this.point(seat), el = document.createElement('div')
     el.className = 'ddz-social-impact'; el.style.left = `${p.x - 40}px`; el.style.top = `${p.y - 40}px`
-    el.innerHTML = kind === 'tomato' ? '<svg class="ddz-impact-svg" viewBox="0 0 100 100"><path fill="#c44035" d="M49 16C58 3 61 25 70 23S94 14 84 35 108 56 87 63 88 93 72 84 55 108 45 87 18 98 21 77 0 68 18 53 0 24 23 29 35 3 42 24Z"/><path fill="#e36e4c" d="M33 34Q61 18 74 47T48 76Q22 63 33 34Z"/><ellipse cx="46" cy="43" rx="3" ry="6" fill="#efb16b"/></svg>' : `<svg class="ddz-prop-art" viewBox="0 0 64 64"><use href="#ddz-prop-${kind}"/></svg>`
+    el.append(kind === 'tomato'
+      ? symbolArt('ddz-impact-tomato', 'ddz-impact-svg', '0 0 100 100')
+      : symbolArt(`ddz-prop-${kind}`, 'ddz-prop-art', '0 0 64 64'))
     this.layer.append(el)
     this.animate(el, [{ offset: 0, transform: 'scale(.3) rotate(-8deg)', opacity: 0 }, { offset: .09, transform: 'scale(1.15) rotate(5deg)', opacity: 1 }, { offset: .17, transform: 'scale(1)', opacity: 1 }, { offset: .65, transform: 'translateY(2px)', opacity: .9 }, { offset: 1, transform: `translateY(${kind === 'tomato' ? 34 : -24}px) scale(1.1)`, opacity: 0 }], 1600)
     const actor = this.arena.querySelector<HTMLElement>(`[data-seat="${seat}"] .ddz-avatar-row`)!

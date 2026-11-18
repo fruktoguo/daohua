@@ -8,7 +8,8 @@ import { CharacterAvatar } from '../CharacterAvatar'
 import { ItemIcon } from '../ItemDisplay'
 import { FloatingPopover } from '../FloatingPopover'
 import { Modal } from '../Modal'
-import { cardFace, cardName, isRed, visualSymbols, type JokerLabels } from './doudizhuArt'
+import { cardName, isRed, type JokerLabels } from './doudizhuArt'
+import { CardFace, VisualSymbols } from './doudizhuSvg'
 import { beats, evaluate, legalMoves, sortCards, type PatternKind } from './doudizhuRules'
 import { resolveDouDiZhuBidChoice } from './doudizhuState'
 import { DouDiZhuMotion } from './doudizhuMotion'
@@ -34,7 +35,7 @@ const clampCount = (count: number): number => Math.max(0, Math.min(17, count))
 const patternKey = (kind: PatternKind): string => `social.doudizhu.pattern.${kind}`
 const cardClass = (card: number): string => `ddz-card${isRed(card) ? ' ddz-red' : ''}${card >= 52 ? ' ddz-joker' : ''}`
 const Card = memo(function Card({ card, jokerLabels, className = '', style }: { card: number; jokerLabels: JokerLabels; className?: string; style?: CSSProperties }): React.JSX.Element {
-  return <span className={`${cardClass(card)} ${className}`} aria-label={cardName(card, jokerLabels)} style={style} dangerouslySetInnerHTML={{ __html: cardFace(card, jokerLabels) }} />
+  return <span className={`${cardClass(card)} ${className}`} aria-label={cardName(card, jokerLabels)} style={style}><CardFace card={card} jokers={jokerLabels} /></span>
 })
 
 /** 真正的牌桌仅消费私有投影和公开记录；动画、提示与选牌不修改游戏资产。 */
@@ -60,6 +61,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const [portrait, setPortrait] = useState(() => window.matchMedia('(orientation: portrait)').matches)
   const [layout, setLayout] = useState(() => measureHand(550, 480, portrait))
   const arenaRef = useRef<HTMLDivElement>(null), effectRef = useRef<HTMLDivElement>(null), stackRef = useRef<HTMLDivElement>(null)
+  const flightFacesRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLElement>(null)
   const handAreaRef = useRef<HTMLDivElement>(null), handRef = useRef<HTMLDivElement>(null)
   const motion = useRef<DouDiZhuMotion | null>(null), hintCursor = useRef(0)
@@ -211,20 +213,23 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     beforePositions.current = positions; previousGeometry.current = geometry
   }, [handKey, reserved, layout, game.gameId, game.dealNumber])
   useEffect(() => {
-    const animator = new DouDiZhuMotion(arenaRef.current!, effectRef.current!, () => { setNow(Date.now()); sound('deal') }, jokerLabels)
+    const animator = new DouDiZhuMotion(arenaRef.current!, effectRef.current!, () => { setNow(Date.now()); sound('deal') })
     motion.current = animator
     const started = game.dealStartedAtUnixMilliseconds - clockOffset
     if (Date.now() - started < 8250) {
       animator.shuffle(stackRef.current!, started)
-      if (Date.now() - started >= 2600) stackRef.current!.innerHTML = '<i class="ddz-card-back"></i>'.repeat(4)
-      for (let i = 0; i < 51; i++) animator.schedule(started + 2790 + i * 68, elapsed => {
-        const seat = i % 3, card = seat === mySeat ? game.dealHand[Math.floor(i / 3)] : null
-        const source = stackRef.current!.getBoundingClientRect()
-        const destination = seat === mySeat ? handSlot(Math.floor(i / 3)) : arenaRef.current!.querySelector<HTMLElement>(`[data-seat="${seat}"] .ddz-mini-back`)!.getBoundingClientRect()
-        animator.fly(seat, card, source, destination, seat === mySeat ? 570 : 480, elapsed)
-        const cards = [...stackRef.current!.children] as HTMLElement[]
-        cards.forEach((el, index) => { el.style.visibility = index < Math.max(3, Math.ceil((54 - i) / 54 * cards.length)) ? 'visible' : 'hidden' })
-      })
+      for (let i = 0; i < 51; i++) {
+        const seat = i % 3, slot = Math.floor(i / 3)
+        const card = seat === mySeat ? game.dealHand[slot] : undefined
+        const face = card === undefined ? null : { card, svg: flightFacesRef.current!.querySelector<SVGSVGElement>(`[data-flight-card="${card}"]`)! }
+        animator.schedule(started + 2790 + i * 68, elapsed => {
+          const source = stackRef.current!.getBoundingClientRect()
+          const destination = seat === mySeat ? handSlot(slot) : arenaRef.current!.querySelector<HTMLElement>(`[data-seat="${seat}"] .ddz-mini-back`)!.getBoundingClientRect()
+          animator.fly(seat, face, source, destination, seat === mySeat ? 570 : 480, elapsed)
+          const cards = [...stackRef.current!.children] as HTMLElement[]
+          cards.forEach((el, index) => { el.style.visibility = index < Math.max(3, Math.ceil((54 - i) / 54 * cards.length)) ? 'visible' : 'hidden' })
+        })
+      }
       for (let i = 0; i < 3; i++) animator.schedule(started + 6770 + i * 145, elapsed => {
         const destination = arenaRef.current!.querySelectorAll<HTMLElement>('.ddz-bottom-slot')[i].getBoundingClientRect()
         animator.fly(-1, null, stackRef.current!.getBoundingClientRect(), destination, 430, elapsed)
@@ -239,10 +244,12 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     const at = serverAt - clockOffset
     if (Date.now() - at >= 2400) return
     for (let i = 0; i < 3; i++) animator.schedule(at + 600 + i * 190, elapsed => {
-      const source = arenaRef.current!.querySelectorAll<HTMLElement>('.ddz-bottom-slot')[i].getBoundingClientRect()
+      const source = arenaRef.current!.querySelectorAll<HTMLElement>('.ddz-bottom-slot')[i]
       const seat = game.landlordSeat!
       const destination = seat === mySeat ? handSlot(17 + i) : arenaRef.current!.querySelector<HTMLElement>(`[data-seat="${seat}"] .ddz-mini-back`)!.getBoundingClientRect()
-      animator.fly(seat, seat === mySeat ? game.bottomCards[i] : null, source, destination, seat === mySeat ? 570 : 480, elapsed, true)
+      const card = seat === mySeat ? game.bottomCards[i] : undefined
+      const face = card === undefined ? null : { card, svg: source.querySelector<SVGSVGElement>('.ddz-card-face')! }
+      animator.fly(seat, face, source.getBoundingClientRect(), destination, seat === mySeat ? 570 : 480, elapsed, true)
     })
   }, [game.gameId, game.landlordConfirmedAtUnixMilliseconds])
   useEffect(() => {
@@ -395,7 +402,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   }
 
   return <section ref={node => { shellRef.current = node }} className={`ddz-shell${portrait ? ' is-portrait' : ''}${fallbackFullscreen ? ' is-fullscreen' : ''}`}>
-    <svg className="ddz-symbols" aria-hidden="true"><defs dangerouslySetInnerHTML={{ __html: visualSymbols }} /></svg>
+    <VisualSymbols />
     <header className="ddz-header"><div className="ddz-brand"><strong>{t('social.doudizhu.title')}</strong><span>{phaseText}</span></div>
       <div className="ddz-stats"><span>{t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })}</span><b>×{multiplier}</b>
         <button type="button" onClick={() => setRulesOpen(true)}>{t('social.doudizhu.rules')}</button>
@@ -442,9 +449,11 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
             cards[Math.max(0, Math.min(cards.length - 1, index + delta))]?.focus()
           }
         }}>
-          {hand.map((card, index) => <button key={card} ref={node => { if (node) cardNodes.current.set(card, node); else cardNodes.current.delete(card) }} data-card={card} type="button" aria-label={cardName(card, jokerLabels)} aria-pressed={selected.includes(card)} disabled={!canSelect} className={`${cardClass(card)} ddz-hand-card${selected.includes(card) ? ' ddz-selected' : ''}${hovered === card ? ' ddz-hovered' : ''}`} style={{ '--i': index, width: layout.width, height: layout.height, ...handPosition(index, reserved, layout) } as CSSProperties} tabIndex={index === 0 ? 0 : -1} onClick={event => { if (event.detail === 0 && canSelect) selectAt(index, selected, !selected.includes(card)) }} dangerouslySetInnerHTML={{ __html: cardFace(card, jokerLabels) }} />)}
+          {hand.map((card, index) => <button key={card} ref={node => { if (node) cardNodes.current.set(card, node); else cardNodes.current.delete(card) }} data-card={card} type="button" aria-label={cardName(card, jokerLabels)} aria-pressed={selected.includes(card)} disabled={!canSelect} className={`${cardClass(card)} ddz-hand-card${selected.includes(card) ? ' ddz-selected' : ''}${hovered === card ? ' ddz-hovered' : ''}`} style={{ '--i': index, width: layout.width, height: layout.height, ...handPosition(index, reserved, layout) } as CSSProperties} tabIndex={index === 0 ? 0 : -1} onClick={event => { if (event.detail === 0 && canSelect) selectAt(index, selected, !selected.includes(card)) }}><CardFace card={card} jokers={jokerLabels} /></button>)}
         </div>
       </div>
+      {/* 只有自己的发牌副本；飞牌复制 React SVG，不提前显示牌面。 */}
+      <div ref={flightFacesRef} hidden>{dealAge < 8250 && game.dealHand.map(card => <CardFace key={card} card={card} jokers={jokerLabels} flight />)}</div>
       <div className="ddz-effects" ref={effectRef} aria-hidden="true" />
       {notice && <div className="ddz-announcement" key={notice} aria-live="polite"><strong>{notice}</strong>{game.phase === 'finished' && game.spring && <span>{t(game.landlordWon ? 'social.doudizhu.spring' : 'social.doudizhu.antiSpring')}</span>}</div>}
       {game.phase === 'finished' && <div className="ddz-result-layer"><section className="ddz-result">

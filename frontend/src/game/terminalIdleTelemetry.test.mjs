@@ -1,21 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import { compileFunction } from 'node:vm'
+import { build } from 'esbuild'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
-const require = createRequire(import.meta.url)
-const esbuild = require('esbuild')
-const tempOut = path.join(tmpdir(), `daohua-terminal-idle-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/terminalIdleTelemetry.ts')],
+const { outputFiles: [bundle] } = await build({
+  stdin: {
+    resolveDir: fileURLToPath(new URL('.', import.meta.url)),
+    contents: `
+      export * from './terminalIdleTelemetry'
+      export { TerminalIdleOverlay } from '../components/TerminalIdleOverlay'
+      export { useUiStore } from '../uiStore'
+    `,
+  },
   bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
+  packages: 'external',
+  platform: 'node',
+  format: 'cjs',
+  jsx: 'automatic',
+  define: { 'import.meta.env': '{}' },
+  logOverride: { 'empty-import-meta': 'silent' },
+  write: false,
 })
+const evaluate = compileFunction(bundle.text, ['require', 'module', 'exports'])
+const require = createRequire(import.meta.url)
+function loadTerminal() {
+  const module = { exports: {} }
+  evaluate(require, module, module.exports)
+  return module.exports
+}
 
 const {
   deriveTerminalTelemetry,
@@ -27,7 +44,7 @@ const {
   renderAsciiBar,
   renderBrailleSparkline,
   buildHexDumpRows,
-} = await import(pathToFileURL(tempOut).href)
+} = loadTerminal()
 
 const EMPTY_AUTO_USE = {
   exploration: [],
@@ -141,39 +158,79 @@ test('双语挂机终端格式化：英文实体名、英文境界、英文数�
   assert.equal(buildHexDumpRows(0x41a0_0800, 12, 3, 4).length, 4)
 })
 
-test('双语挂机终端静态契约：右上角中英文切换、零图像元素与 i18n 闭环', async () => {
-  const overlayPath = path.resolve(process.cwd(), 'frontend/src/components/TerminalIdleOverlay.tsx')
-  const telemetryPath = path.resolve(process.cwd(), 'frontend/src/game/terminalIdleTelemetry.ts')
-  const cssPath = path.resolve(process.cwd(), 'frontend/src/styles/terminal-idle.css')
-  const uiStorePath = path.resolve(process.cwd(), 'frontend/src/uiStore.ts')
-  const appZhPath = path.resolve(process.cwd(), 'frontend/src/i18n/domains/app.zh.ts')
-
-  const [overlaySrc, telemetrySrc, cssSrc, uiStoreSrc, appZhSrc] = await Promise.all([
-    fs.readFile(overlayPath, 'utf8'),
-    fs.readFile(telemetryPath, 'utf8'),
-    fs.readFile(cssPath, 'utf8'),
-    fs.readFile(uiStorePath, 'utf8'),
-    fs.readFile(appZhPath, 'utf8'),
-  ])
-
-  const stripComments = text => text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '')
-
-  for (const [name, src] of [
-    ['TerminalIdleOverlay.tsx', overlaySrc],
-    ['terminalIdleTelemetry.ts', telemetrySrc],
-    ['terminal-idle.css', cssSrc],
-  ]) {
-    assert.doesNotMatch(
-      stripComments(src),
-      /<img\b|<svg\b|<canvas\b|<picture\b|<video\b|url\s*\(/i,
-      `${name} 严禁包含任何图像标签或外部图片 url()`,
-    )
+test('零时长战斗行动使用真实搜寻进度，非计时阶段保持有限的指示进度', () => {
+  const input = {
+    connection: 'online', latencyMs: 18, onlineCount: 1, offlineIdleCount: 0,
+    queue: {
+      entries: [{ status: 'running', progressSeconds: 0, durationSeconds: 0, completedRepeats: 2 }],
+      paused: false, autoUseSlots: EMPTY_AUTO_USE,
+    },
+    combatResources: null, version: 1, elapsedSeconds: 30, tick: 8,
   }
+  const search = deriveTerminalTelemetry({
+    ...input, expedition: { phase: 'search', progress: 0.25, durationSeconds: 12 },
+  })
+  assert.equal(search.jobStatus, 'RUN')
+  assert.equal(search.jobProgressRatio, 0.25, '不能按 0 秒的队列时长计算搜寻进度')
+  const combat = deriveTerminalTelemetry({
+    ...input, expedition: { phase: 'combat', progress: 0, durationSeconds: 0 },
+  })
+  assert.ok(combat.jobProgressRatio > 0 && combat.jobProgressRatio < 1)
+})
 
-  assert.match(uiStoreSrc, /toggleIdleTerminalLang/, 'uiStore 必须提供挂机终端中英文切换方法')
-  assert.match(overlaySrc, /onClick=\{toggleLang\}/, 'TerminalIdleOverlay 右上角必须提供中英文切换按钮')
-  assert.match(overlaySrc, /\[ ZH \/ EN\* \]/, '英文激活态切换标签必须清晰可见')
-  assert.match(appZhSrc, /langToggleZhActive:\s*'\[ 中文\* \/ EN \]'/, '中文激活态切换标签必须登记至 app.zh.ts')
+test('连接中、重连和断线不显示上一条在线延迟，并区分告警级别', () => {
+  for (const [connection, expectedState, expectedTone] of [
+    ['connecting', 'reconnecting', 'warn'],
+    ['reconnecting', 'reconnecting', 'warn'],
+    ['offline', 'offline', 'crit'],
+  ]) {
+    const snapshot = deriveTerminalTelemetry({
+      connection, latencyMs: 220, onlineCount: null, offlineIdleCount: null,
+      queue: { entries: [], paused: false, autoUseSlots: EMPTY_AUTO_USE },
+      combatResources: null, version: 1, elapsedSeconds: 0, tick: 8,
+    })
+    assert.equal(snapshot.netState, expectedState, connection)
+    assert.equal(snapshot.netTone, expectedTone, connection)
+    assert.equal(snapshot.rttMs, 0, connection)
+  }
+})
+
+test('真实终端语言切换可持久化，重新进入后渲染对应的中英文终端内容', t => {
+  const storage = new Map()
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'window', descriptor)
+    else delete globalThis.window
+  })
+  globalThis.window = {
+    localStorage: {
+      getItem: key => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+    },
+  }
+  const zh = loadTerminal()
+  const render = ({ TerminalIdleOverlay }) => renderToStaticMarkup(createElement(TerminalIdleOverlay))
+  const zhMarkup = render(zh)
+  assert.match(zhMarkup, /\[挂机终端\]/)
+  assert.match(zhMarkup, /\[1:队列与补给\*\]/)
+  assert.match(zhMarkup, /aria-label="切换挂机终端为英文显示">\[ 中文\* \/ EN \]/)
+
+  zh.useUiStore.getState().toggleIdleTerminalLang()
+  assert.equal(zh.useUiStore.getState().idleTerminalLang, 'en')
+  const en = loadTerminal()
+  assert.equal(en.useUiStore.getState().idleTerminalLang, 'en', '重新初始化时应保留刚选择的语言')
+  const enMarkup = render(en)
+  assert.match(enMarkup, /DaoHua CLI Console/)
+  assert.match(enMarkup, /aria-label="Switch idle terminal to Chinese">\[ ZH \/ EN\* \]/)
+  assert.doesNotMatch(enMarkup, /队列与补给/)
+  for (const markup of [zhMarkup, enMarkup]) assert.doesNotMatch(markup, /<(img|svg|canvas|picture|video)\b/i)
+
+  en.useUiStore.getState().toggleIdleTerminalLang()
+  assert.equal(en.useUiStore.getState().idleTerminalLang, 'zh')
+  assert.match(render(loadTerminal()), /\[1:队列与补给\*\]/)
+})
+
+test('双语挂机终端样式不包含外部图像', async () => {
+  const css = await fs.readFile(new URL('../styles/terminal-idle.css', import.meta.url), 'utf8')
+  assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ''), /url\s*\(/i)
 })

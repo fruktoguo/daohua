@@ -10,7 +10,7 @@
 import { getPlayerAvatarSrc } from '../game/avatarStore'
 import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
 import { calculateRealmProgress, serverExpToNextCap } from '../game/combatConstants'
-import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
+import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, ITEM_META_MAP, resolveActionDefinition, resolveAssetLabel, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
 import {
   COMBAT_TRIGGER_COMPARATORS,
   COMBAT_TRIGGER_CONDITIONS,
@@ -1477,7 +1477,7 @@ function mapAsset(asset: AssetBalanceDto): InventoryItem {
   return {
     itemId: asset.assetId,
     variant: asset.variant ?? null,
-    name: metadata?.label ?? asset.assetId,
+    name: metadata?.label ?? resolveAssetLabel(asset.assetId),
     subCategory: resolveItemSubCategory(asset.assetId, undefined, undefined, ITEM_META_MAP[asset.assetId]?.subCategory) ?? 'general',
     amount: asset.quantity,
     tone: metadata?.tone ?? 'gray',
