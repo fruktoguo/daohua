@@ -15,6 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Server.Tests" />
+    <InternalsVisibleTo Include="Server" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

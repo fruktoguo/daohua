@@ -51,12 +51,7 @@ public sealed class WebSocketBoundaryTests
     [Fact]
     public async Task ComputeHandshakeSlotIsReturnedWhenUpgradeFails()
     {
-        using var services = new ServiceCollection().AddLogging()
-            .AddSingleton(GameDataCatalog.LoadEmbedded())
-            .AddSingleton<ComputeLinkRegistry>()
-            .AddSingleton(ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(
-                new Dictionary<string, string?> { ["Storage:ConnectionString"] = "unused" }).Build()))
-            .BuildServiceProvider();
+        using var services = CreateComputeServices();
         for (var i = 0; i < 17; i++)
         {
             var context = new DefaultHttpContext { RequestServices = services };
@@ -65,6 +60,37 @@ public sealed class WebSocketBoundaryTests
             await Assert.ThrowsAsync<IOException>(() => ComputeLinkEndpoint.HandleAsync(context));
         }
     }
+
+    [Fact]
+    public async Task ComputeUpgradeRequiresOneConfiguredCredentialAndAcceptsMappedCredential()
+    {
+        using var services = CreateComputeServices();
+        foreach (var headers in new string[][] { [], ["incorrect"], ["unit-test", "unit-test"] })
+        {
+            var context = new DefaultHttpContext { RequestServices = services };
+            context.Features.Set<IHttpWebSocketFeature>(new FailingAccept());
+            if (headers.Length > 0) context.Request.Headers[ComputeLinkContract.TokenHeader] = headers;
+            await ComputeLinkEndpoint.HandleAsync(context);
+            Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        }
+
+        var mapped = new DefaultHttpContext { RequestServices = services };
+        mapped.Features.Set<IHttpWebSocketFeature>(new FailingAccept());
+        mapped.Request.Headers[ComputeLinkContract.TokenHeader] = "mapped-test-token";
+        await Assert.ThrowsAsync<IOException>(() => ComputeLinkEndpoint.HandleAsync(mapped));
+    }
+
+    private static ServiceProvider CreateComputeServices() => new ServiceCollection().AddLogging()
+        .AddSingleton(GameDataCatalog.LoadEmbedded())
+        .AddSingleton<ComputeLinkRegistry>()
+        .AddSingleton(ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Storage:ConnectionString"] = "unused",
+                ["ComputeNode:Token"] = "unit-test",
+                ["ComputeNode:Tokens:node-a"] = "mapped-test-token"
+            }).Build()))
+        .BuildServiceProvider();
 
     private sealed class FailingAccept : IHttpWebSocketFeature
     {

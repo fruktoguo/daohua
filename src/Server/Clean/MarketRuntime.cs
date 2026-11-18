@@ -50,7 +50,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private readonly LogThrottle _persistenceErrorLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _recoveryLog = new(TimeSpan.FromMinutes(1));
     // 坏到期单短期隔离冷却：避免单笔损坏订单在 ExpireBatchAsync 回滚后锁死 30s 恢复死循环。
-    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _quarantinedExpiredOrders = new();
+    private readonly ExpiringRetryCache<Guid, bool> _quarantinedExpiredOrders = new(1024, TimeSpan.FromMinutes(5));
     private CancellationToken PartitionToken => _lifetime?.Token ?? CancellationToken.None;
 
     /// <summary>创建分片运行时实例；不触库，租约抢占与盘口恢复延迟到 <see cref="StartAsync"/>。</summary>
@@ -592,6 +592,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                         [new ParticipationAssetKey(ownerId.Value, instrument.ItemId.Value, instrument.Variant)], partitionToken);
                 if (!await _store.CancelAsync(orderId.Value, ownerId.Value, PartitionId, _fenceToken, idempotencyKey, partitionToken))
                     throw new InvalidOperationException("市场撤单事务未提交。");
+                _quarantinedExpiredOrders.Remove(orderId.Value);
                 Interlocked.Increment(ref _cancelCount);
                 // 撤单退款已入账属主钱包：在线玩家的缓存余额需要失效重读。
                 NotifyWalletsCredited([ownerId.Value]);
@@ -726,11 +727,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     // 批量退款失败时降级为逐笔闭合，自愈幽灵分叉订单并隔离毒订单，阻断 30s 恢复死循环。
     private async Task ExpireOrdersCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (_quarantinedExpiredOrders.Count > 1024)
-        {
-            foreach (var pair in _quarantinedExpiredOrders)
-                if (pair.Value <= now) _quarantinedExpiredOrders.TryRemove(new KeyValuePair<Guid, DateTimeOffset>(pair.Key, pair.Value));
-        }
+        _quarantinedExpiredOrders.PruneExpired(now);
         var dueBooks = new List<OrderBook>();
         var booksWithQuarantined = new HashSet<OrderBook>();
         var targets = new List<MarketExpiryOrder>();
@@ -745,7 +742,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 var bookAdded = false;
                 foreach (var order in due)
                 {
-                    if (_quarantinedExpiredOrders.TryGetValue(order.OrderId.Value, out var qUntil) && now < qUntil)
+                    if (_quarantinedExpiredOrders.TryGet(order.OrderId.Value, now, out _))
                     {
                         booksWithQuarantined.Add(book);
                         continue;
@@ -840,7 +837,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             }
             else
             {
-                _quarantinedExpiredOrders[target.OrderId] = now.AddMinutes(5);
+                _quarantinedExpiredOrders.Set(target.OrderId, true, now);
                 _logger.LogCritical(singleEx, "市场到期单笔持久化闭合失败，已临时隔离 5 分钟避免拖死分片 order={OrderId} player={PlayerId}",
                     target.OrderId, target.OwnerPlayerId);
             }

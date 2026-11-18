@@ -2,12 +2,9 @@ namespace Server.Clean;
 
 /// <summary>
 /// /internal/compute-link 端点：计算节点反向拨入的 WebSocket 握手与收发循环。
-/// 流程：升级校验 → 节点数上限 → accept → 首帧 hello（解析节点名 → X-Compute-Token
-/// 按 ComputeNode:Tokens 映射/共享令牌固定时间比对 → 契约版本 + 配表指纹校验）→
-/// 注册节点 → 发送循环（Outbound 队列）与接收循环（result 帧路由回注册表）→
+/// 升级前验证令牌属于已配置的计算节点凭证，再限制待完成握手数；首帧 Hello 按节点名
+/// 核验专属令牌（无映射才回退共享凭证），随后校验契约与配表指纹、注册节点并开始收发。
 /// 断开即注销并在飞批次全部失败。
-/// 凭证裁决必须在 hello 之后：节点名只随 hello 帧到达，命中 ComputeNode:Tokens 映射的
-/// 节点只认其映射令牌（共享令牌失效），未命中节点回退共享令牌。
 /// </summary>
 public static class ComputeLinkEndpoint
 {
@@ -23,6 +20,18 @@ public static class ComputeLinkEndpoint
     private static readonly LogThrottle HandshakeRejectLog = new(TimeSpan.FromSeconds(30));
     /// <summary>未完成 hello 裁决的并发握手数上限：防止慢连接在升级后空占每连接缓冲与接收循环。</summary>
     private static readonly SemaphoreSlim HandshakeGate = new(16, 16);
+
+    private static bool TokenMatches(ReadOnlySpan<byte> digest, string? configured)
+        => configured is { Length: > 0 and <= MaxTokenLength }
+            && CryptographicOperations.FixedTimeEquals(digest, SHA256.HashData(Encoding.UTF8.GetBytes(configured)));
+
+    private static bool MatchesConfiguredToken(ServerOptions options, ReadOnlySpan<byte> digest)
+    {
+        var matches = TokenMatches(digest, options.ComputeNodeToken);
+        // 不在找到匹配时提前退出，避免暴露匹配的是哪一个节点凭证。
+        foreach (var token in options.ComputeNodeTokens.Values) matches |= TokenMatches(digest, token);
+        return matches;
+    }
 
     /// <summary>端点主流程。</summary>
     public static async Task HandleAsync(HttpContext context)
@@ -40,6 +49,20 @@ public static class ComputeLinkEndpoint
         var metrics = context.RequestServices.GetService<ComputeLinkMetrics>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ComputeLinkEndpoint");
 
+        var tokenHeaders = context.Request.Headers[ComputeLinkContract.TokenHeader];
+        var presentedToken = tokenHeaders.Count == 1 ? tokenHeaders[0] : null;
+        var presentedDigest = presentedToken is { Length: > 0 and <= MaxTokenLength }
+            ? SHA256.HashData(Encoding.UTF8.GetBytes(presentedToken)) : null;
+        if (presentedDigest is null || !MatchesConfiguredToken(options, presentedDigest))
+        {
+            metrics?.RecordTokenRejected();
+            if (TokenRejectLog.TryAcquire())
+                logger.LogWarning("compute-link 升级前令牌校验失败 remote={Remote}", context.Connection.RemoteIpAddress);
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { code = "UNAUTHORIZED", message = "需要有效的内部计算令牌。" });
+            return;
+        }
+
         if (registry.NodeCount >= ComputeLinkContract.MaxConnectedNodes)
         {
             metrics?.RecordNodeLimitRejected();
@@ -51,15 +74,7 @@ public static class ComputeLinkEndpoint
             return;
         }
 
-        // 升级前预检：令牌头缺失或超长直接 401，不得消耗升级后每连接缓冲与接收循环；
-        // 握手并发槽满即拒（不等锁排队），慢连接不得在裁决前堆叠占用资源。
-        var presentedToken = context.Request.Headers[ComputeLinkContract.TokenHeader].ToString();
-        if (presentedToken.Length is 0 or > MaxTokenLength)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { code = "UNAUTHORIZED", message = "需要有效的内部计算令牌。" });
-            return;
-        }
+        // 已知凭证也不允许无限制占用等待 Hello 的连接。
         if (!HandshakeGate.Wait(0))
         {
             metrics?.RecordHandshakeRejected();
@@ -89,19 +104,11 @@ public static class ComputeLinkEndpoint
             if (name.Length > ComputeLinkContract.MaxNodeNameLength)
                 name = name[..ComputeLinkContract.MaxNodeNameLength];
 
-            // 凭证裁决先于版本/指纹协商：未授权拨入不泄露任何握手细节。
-            // 节点名命中 ComputeNode:Tokens 映射时只认映射令牌，未命中回退共享令牌；
-            // 双方各取 SHA256 定长摘要再固定时间比较，消除令牌长度侧信道（令牌本体绝不进日志）。
-            var presented = presentedToken;
+            // 不能用映射给其他节点的有效凭证冒充本节点；共享令牌仅适用于无专属映射的节点。
             var expected = options.ComputeNodeTokens.TryGetValue(name, out var mappedToken)
                 ? mappedToken
-                : options.ComputeNodeToken ?? string.Empty;
-            var tokensMatch = expected.Length is > 0 and <= MaxTokenLength
-                && presented.Length is > 0 and <= MaxTokenLength
-                && CryptographicOperations.FixedTimeEquals(
-                    SHA256.HashData(Encoding.UTF8.GetBytes(presented)),
-                    SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
-            if (!tokensMatch)
+                : options.ComputeNodeToken;
+            if (!TokenMatches(presentedDigest, expected))
             {
                 metrics?.RecordTokenRejected();
                 if (TokenRejectLog.TryAcquire())

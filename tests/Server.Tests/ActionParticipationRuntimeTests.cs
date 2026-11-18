@@ -128,6 +128,31 @@ public sealed class ActionParticipationRuntimeTests
         Assert.Equal(1, Assert.Single(await fixture.Store.LoadPendingAsync(fixture.Members[0])).Sequence);
     }
 
+    [Fact]
+    public async Task MissingActiveScanCannotClearUnknownCommitFenceButAuthoritativeEndCan()
+    {
+        var fixture = new Fixture();
+        await fixture.Presence.RegisterAsync(fixture.Members[0], "甲", fixture.Spec.NodeId);
+        await fixture.Runtime.CreateAsync(Guid.NewGuid(), fixture.Spec);
+        fixture.Store.UnknownBeforeCommit = true;
+        var target = StartedAt.AddSeconds(60);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Runtime
+            .AdvanceForMemberAsync(fixture.Members[0], target).AsTask());
+        var attempts = fixture.Store.CommitAttempts;
+
+        fixture.Store.SkipNextActiveSnapshot = true;
+        await fixture.Runtime.AdvanceOnlineAsync(target);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Runtime.LoadPendingAsync(fixture.Members[0]).AsTask());
+        Assert.Equal(attempts, fixture.Store.CommitAttempts);
+
+        // 模拟另一权威宿主已正常提交终态；旧宿主只回收围栏并消费已落库结算，不重放旧提交。
+        await fixture.NewRuntime().EndAsync(fixture.Spec.SessionId, target, "member-left");
+        await fixture.Runtime.AdvanceOfflineDueAsync(target, TimeSpan.FromMinutes(1));
+        var pending = await fixture.Runtime.LoadPendingAsync(fixture.Members[0]);
+        Assert.Equal(new long[] { 1, 2 }, pending.Select(item => item.Sequence));
+        Assert.Equal(attempts + 1, fixture.Store.CommitAttempts);
+    }
+
     /// <summary>散场最终结算与 ended 检查点一起交付；重复散场不再生成个人结算。</summary>
     [Fact]
     public async Task EndPersistsFinalSettlementOnceForEveryFrozenMember()
@@ -557,6 +582,7 @@ public sealed class ActionParticipationRuntimeTests
         public DateTimeOffset? OfflineExpiry;
         public string? InvalidationReason;
         public Func<ValueTask>? BeforeListActive;
+        public bool SkipNextActiveSnapshot;
 
         public int EconomyTransactionCount { get { lock (_gate) return _transactions.Count; } }
 
@@ -586,7 +612,15 @@ public sealed class ActionParticipationRuntimeTests
                 BeforeListActive = null;
                 await before();
             }
-            lock (_gate) return _sessions.Values.Where(item => item.EndedAt is null).ToArray();
+            lock (_gate)
+            {
+                if (SkipNextActiveSnapshot)
+                {
+                    SkipNextActiveSnapshot = false;
+                    return [];
+                }
+                return _sessions.Values.Where(item => item.EndedAt is null).ToArray();
+            }
         }
 
         public ValueTask<IReadOnlyList<ActionParticipationSessionRecord>> ListActiveForMemberAsync(Guid playerId, CancellationToken cancellationToken = default)

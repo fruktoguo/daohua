@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace DaoHua.ComputeNode;
@@ -33,7 +35,10 @@ public sealed record BackupArchiveOptions(
 /// </summary>
 public sealed class BackupArchiveWorker : BackgroundService
 {
-    private static readonly Regex FilePattern = new(@"daohua-postgres-[a-zA-Z0-9._-]+", RegexOptions.Compiled);
+    // 只接受归档生成器的文件名；.partial、下载临时文件等不属于源备份清单。
+    private static readonly Regex FilePattern = new(
+        @"(?<![a-zA-Z0-9._-])daohua-postgres-(hourly|daily|weekly|base)-([0-9]{8}T[0-9]{6}Z)\.(dump|tar\.gz)(\.sha256)?(?![a-zA-Z0-9._-])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly string[] Categories = ["hourly", "daily", "weekly", "base"];
 
     private readonly BackupArchiveOptions _options;
@@ -75,7 +80,6 @@ public sealed class BackupArchiveWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _state.LastError = ex.Message;
                 _logger.LogError(ex, "内置备份归档同步失败，将在下个周期重试。");
             }
             try
@@ -91,46 +95,54 @@ public sealed class BackupArchiveWorker : BackgroundService
 
     public async Task SyncOnceAsync(CancellationToken cancellationToken)
     {
-        _state.LastSyncStartedAt = DateTimeOffset.UtcNow;
-        _logger.LogInformation("开始执行备份归档增量拉取与对账...");
-
-        Directory.CreateDirectory(_options.Directory);
-        foreach (var cat in Categories)
-        {
-            Directory.CreateDirectory(Path.Combine(_options.Directory, cat));
-        }
-
-        foreach (var category in Categories)
-        {
-            await SyncCategoryAsync(category, cancellationToken).ConfigureAwait(false);
-        }
-
-        // 全量哈希比对
-        var (verified, failed) = await VerifyAllHashesAsync(cancellationToken).ConfigureAwait(false);
-        _state.VerifiedCount = verified;
-        _state.FailedCount = failed;
-
-        // 老化清理本地旧 hourly 备份（默认 90 天）
-        PruneOldHourlyArchives();
-
-        _state.LastSyncCompletedAt = DateTimeOffset.UtcNow;
-        _state.LastError = failed > 0 ? $"存在 {failed} 个文件缺失或哈希校验失败" : null;
-
-        _logger.LogInformation("备份归档同步与对账完成: verified={Verified} failed={Failed}", verified, failed);
-    }
-
-    private async Task SyncCategoryAsync(string category, CancellationToken cancellationToken)
-    {
-        var categoryDir = Path.Combine(_options.Directory, category);
-        var url = $"{_options.BaseUrl.TrimEnd('/')}/{category}/";
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Add("X-Backup-Token", _options.Token);
-
-        HttpResponseMessage response;
+        var now = DateTimeOffset.UtcNow;
+        _state.LastSyncStartedAt = now;
+        var verified = 0;
         try
         {
-            response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            foreach (var category in Categories)
+            {
+                var categoryDir = Path.Combine(_options.Directory, category);
+                Directory.CreateDirectory(categoryDir);
+                var url = $"{_options.BaseUrl.TrimEnd('/')}/{category}/";
+                using var request = BackupRequest(url);
+                using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                var html = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var extension = category == "base" ? "tar.gz" : "dump";
+                var files = FilePattern.Matches(html)
+                    .Where(m => m.Groups[1].Value == category && m.Groups[3].Value == extension)
+                    .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+                var newest = DateTimeOffset.MinValue;
+                foreach (var filename in files.Where(name => !name.EndsWith(".sha256", StringComparison.Ordinal)))
+                {
+                    if (!files.Contains(filename + ".sha256"))
+                        throw new InvalidDataException($"源备份缺少校验对: {filename}");
+                    var stamp = filename.AsSpan("daohua-postgres-".Length + category.Length + 1, 16);
+                    if (!DateTimeOffset.TryParseExact(stamp, "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var created)
+                        || created > now.AddMinutes(5))
+                        throw new InvalidDataException($"源备份时间无效: {filename}");
+                    if (created > newest) newest = created;
+                    await SyncPairAsync(url, categoryDir, filename, cancellationToken).ConfigureAwait(false);
+                    verified++;
+                }
+                if (files.Any(name => name.EndsWith(".sha256", StringComparison.Ordinal) && !files.Contains(name[..^7])))
+                    throw new InvalidDataException($"源备份目录 {category} 存在无数据文件的边车。");
+
+                // daily/weekly 在首次启用对应计划前可为空；小时与物理基线必须来自本轮源目录。
+                var maxAge = category switch { "hourly" => TimeSpan.FromHours(3), "base" => TimeSpan.FromHours(36), _ => TimeSpan.Zero };
+                if (maxAge > TimeSpan.Zero && now - newest > maxAge)
+                    throw new InvalidDataException($"源备份目录 {category} 缺少新鲜校验对。");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            PruneOldHourlyArchives();
+            _state.VerifiedCount = verified;
+            _state.FailedCount = 0;
+            _state.LastError = null;
+            _state.LastSyncCompletedAt = DateTimeOffset.UtcNow;
+            _logger.LogInformation("备份归档同步与对账完成: verified={Verified}", verified);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -138,117 +150,69 @@ public sealed class BackupArchiveWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("无法连接主服备份目录 url={Url} error={Error}", url, ex.Message);
-            return;
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("获取主服备份目录失败 status={Status} url={Url}", response.StatusCode, url);
-            return;
-        }
-
-        var html = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var matches = FilePattern.Matches(html);
-        var filenames = matches.Select(m => m.Value).Distinct(StringComparer.Ordinal).ToArray();
-
-        foreach (var filename in filenames)
-        {
-            var localPath = Path.Combine(categoryDir, filename);
-            var fileUrl = $"{_options.BaseUrl.TrimEnd('/')}/{category}/{filename}";
-
-            // 若已有本地文件和 sha256 校验文件且哈希比对一致，跳过下载
-            if (!filename.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase)
-                && File.Exists(localPath)
-                && File.Exists(localPath + ".sha256"))
-            {
-                if (CheckHash(localPath, localPath + ".sha256"))
-                {
-                    continue;
-                }
-            }
-
-            try
-            {
-                await DownloadFileAsync(fileUrl, localPath, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "下载备份文件失败: {File}", filename);
-            }
+            _state.VerifiedCount = verified;
+            _state.FailedCount = 1;
+            // /healthz 不返回请求 URI、本地路径或未过滤的内部异常。
+            _state.LastError = ex is HttpRequestException { StatusCode: { } status }
+                ? $"源备份请求失败: HTTP {(int)status}" : "备份目录、下载、校验或新鲜度检查失败";
+            throw;
         }
     }
 
-    private async Task DownloadFileAsync(string fileUrl, string localPath, CancellationToken cancellationToken)
+    private HttpRequestMessage BackupRequest(string url)
     {
-        var tempPath = localPath + ".downloading";
-        using var request = new HttpRequestMessage(HttpMethod.Get, fileUrl);
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("X-Backup-Token", _options.Token);
-
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        await using (var remoteStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var localStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            await remoteStream.CopyToAsync(localStream, cancellationToken).ConfigureAwait(false);
-        }
-
-        File.Move(tempPath, localPath, overwrite: true);
+        return request;
     }
 
-    private async Task<(int Verified, int Failed)> VerifyAllHashesAsync(CancellationToken cancellationToken)
+    private async Task SyncPairAsync(string url, string categoryDir, string filename, CancellationToken cancellationToken)
     {
-        var verified = 0;
-        var failed = 0;
-
-        var shaFiles = Directory.EnumerateFiles(_options.Directory, "*.sha256", SearchOption.AllDirectories).ToArray();
-        foreach (var shaFile in shaFiles)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var targetFile = shaFile[..^7]; // 截掉 ".sha256"
-            if (!File.Exists(targetFile))
-            {
-                failed++;
-                _logger.LogError("备份文件缺失（校验目标不存在）: {File}", targetFile);
-                continue;
-            }
-
-            if (CheckHash(targetFile, shaFile))
-            {
-                verified++;
-            }
-            else
-            {
-                failed++;
-                _logger.LogError("文件完整性校验失败: {File}", targetFile);
-            }
-        }
-
-        return (verified, failed);
-    }
-
-    private static bool CheckHash(string targetFile, string shaFile)
-    {
+        var target = Path.Combine(categoryDir, filename);
+        var sidecar = target + ".sha256";
+        var tempSuffix = $".{Guid.NewGuid():N}.downloading";
+        var tempData = target + tempSuffix;
+        var tempSha = sidecar + tempSuffix;
         try
         {
-            var content = File.ReadAllText(shaFile).Trim();
-            var expected = content.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)[0].ToLowerInvariant();
+            using var request = BackupRequest(url + filename + ".sha256");
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var text = (await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)).TrimEnd('\r', '\n');
+            if (text.Length < 66 || text[..64].Any(c => !Uri.IsHexDigit(c))
+                || (text[64..] != "  " + filename && text[64..] != " *" + filename))
+                throw new InvalidDataException($"备份摘要格式或文件名不符: {filename}");
 
-            using var stream = File.OpenRead(targetFile);
-            var actualBytes = SHA256.HashData(stream);
-            var actual = Convert.ToHexString(actualBytes).ToLowerInvariant();
-
-            return string.Equals(expected, actual, StringComparison.Ordinal);
+            var expected = text[..64];
+            if (!await CheckHashAsync(target, expected, cancellationToken).ConfigureAwait(false))
+            {
+                using var dataRequest = BackupRequest(url + filename);
+                using var dataResponse = await _httpClient.SendAsync(dataRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                dataResponse.EnsureSuccessStatusCode();
+                await using (var remote = await dataResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+                await using (var local = new FileStream(tempData, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                    await remote.CopyToAsync(local, cancellationToken).ConfigureAwait(false);
+                if (!await CheckHashAsync(tempData, expected, cancellationToken).ConfigureAwait(false))
+                    throw new InvalidDataException($"下载内容与备份摘要不符: {filename}");
+            }
+            await File.WriteAllTextAsync(tempSha, text + "\n", cancellationToken).ConfigureAwait(false);
+            if (File.Exists(tempData)) File.Move(tempData, target, overwrite: true);
+            File.Move(tempSha, sidecar, overwrite: true);
         }
-        catch
+        finally
         {
-            return false;
+            File.Delete(tempData);
+            File.Delete(tempSha);
         }
+    }
+
+    private static async Task<bool> CheckHashAsync(string targetFile, string expected, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(targetFile)) return false;
+        await using var stream = new FileStream(targetFile, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        if (stream.Length == 0) return false;
+        var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+        return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
     }
 
     private void PruneOldHourlyArchives()

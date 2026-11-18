@@ -18,13 +18,15 @@ public sealed class ActionParticipationRuntime(
     private readonly TimeSpan _offlineLimit = Domain.Player.PlayerLifecycleRules.OfflineIdleLimit;
     private readonly object _gateRegistryLock = new();
     private readonly Dictionary<string, SessionGate> _gates = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Exception> _fencedSessions = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Exception> _corruptSessions = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, SessionFailureBackoff> _sessionBackoffs = new(StringComparer.Ordinal);
+    // 提交证据不是缓存：不能因 TTL 或容量挤压解除围栏，也不保留整个异常对象图。
+    private readonly ConcurrentDictionary<string, CommitFence> _fencedSessions = new(StringComparer.Ordinal);
+    private readonly ExpiringRetryCache<string, long> _corruptSessions = new(4096, TimeSpan.FromMinutes(5), StringComparer.Ordinal);
+    private readonly ExpiringRetryCache<string, SessionFailureBackoff> _sessionBackoffs = new(4096, TimeSpan.FromMinutes(5), StringComparer.Ordinal);
     private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
     private readonly ILogger<ActionParticipationRuntime> _logger = logger;
     private long _nextBoundaryTicks;
 
+    private sealed record CommitFence(long ExpectedVersion, bool IsInitialization);
     private readonly record struct SessionFailureBackoff(int ConsecutiveFailures, DateTimeOffset BackoffUntilUtc);
     private readonly ConcurrentDictionary<Guid, string> _participants = new();
     private readonly SemaphoreSlim _restoreGate = new(1, 1);
@@ -40,8 +42,7 @@ public sealed class ActionParticipationRuntime(
         await EnsureRelationsRestoredAsync(cancellationToken);
         using var relations = await AcquireRelationGatesAsync(spec.Members.Select(member => Guid.Parse(member.PlayerId)), cancellationToken);
         using var gate = await AcquireGateAsync(spec.SessionId, cancellationToken);
-        if (_fencedSessions.TryGetValue(spec.SessionId, out var fence))
-            throw new InvalidOperationException($"会话 {spec.SessionId} 开场提交结局未确认。", fence);
+        ThrowIfFenced(spec.SessionId);
         if (await store.LoadAsync(spec.SessionId, cancellationToken) is { } existing)
         {
             if (existing.PartyId != partyId || !JsonEquals(JsonSerializer.Serialize(ReadSpec(existing), PersistenceJson.Options), JsonSerializer.Serialize(spec, PersistenceJson.Options)))
@@ -78,7 +79,8 @@ public sealed class ActionParticipationRuntime(
                 }
                 catch (Exception failure)
                 {
-                    _fencedSessions[spec.SessionId] = failure;
+                    _fencedSessions[spec.SessionId] = new(exception.Version, IsInitialization: true);
+                    _logger.LogError(failure, "组队开场提交证据读取失败，已隔离 session={SessionId}", spec.SessionId);
                     throw;
                 }
                 _logger.LogWarning(exception, "会话 {SessionId} 开场提交响应丢失，已读取版本 {Version} 确认权威检查点。", spec.SessionId, stored.Version);
@@ -106,13 +108,13 @@ public sealed class ActionParticipationRuntime(
         online.UnionWith(_connectingMembers.Keys);
         Volatile.Write(ref _nextBoundaryTicks, 0);
         var sessions = await store.ListActiveAsync(cancellationToken);
-        PruneSessionState(sessions);
+        await PruneSessionStateAsync(sessions, cancellationToken);
         List<Exception>? failures = null;
         foreach (var session in sessions)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (_fencedSessions.ContainsKey(session.SessionId)
-                || _corruptSessions.ContainsKey(session.SessionId)
+                || IsCorruptCheckpoint(session)
                 || IsSessionBackedOff(session.SessionId, target))
                 continue;
             try
@@ -122,11 +124,11 @@ public sealed class ActionParticipationRuntime(
                 var memberOnline = spec.Members.Any(member => online.Contains(Guid.Parse(member.PlayerId)));
                 if (!memberOnline && ReadDocument(session).InventoryMode == ActionParticipationInventoryMode.Offline)
                 {
-                    _sessionBackoffs.TryRemove(session.SessionId, out _);
+                    _sessionBackoffs.Remove(session.SessionId);
                     continue;
                 }
                 var boundary = await AdvanceSessionAsync(session.SessionId, target, endReason: null, desiredOnline: memberOnline, replenishOffline: false, cancellationToken);
-                _sessionBackoffs.TryRemove(session.SessionId, out _);
+                _sessionBackoffs.Remove(session.SessionId);
                 if (memberOnline && boundary is { } next)
                 {
                     var current = Volatile.Read(ref _nextBoundaryTicks);
@@ -135,8 +137,8 @@ public sealed class ActionParticipationRuntime(
             }
             catch (Exception exception) when (exception is JsonException or InvalidDataException or FormatException)
             {
-                _corruptSessions[session.SessionId] = exception;
-                _logger.LogError(exception, "在线组队会话检查点载荷损坏，已永久隔离 session={SessionId}", session.SessionId);
+                _corruptSessions.Set(session.SessionId, session.Version, clock.UtcNow);
+                _logger.LogError(exception, "在线组队会话检查点载荷损坏，已短期隔离并等待重查 session={SessionId}", session.SessionId);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -157,13 +159,13 @@ public sealed class ActionParticipationRuntime(
         var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
         online.UnionWith(_connectingMembers.Keys);
         var sessions = await store.ListActiveAsync(cancellationToken);
-        PruneSessionState(sessions);
+        await PruneSessionStateAsync(sessions, cancellationToken);
         var advanced = new HashSet<Guid>();
         foreach (var session in sessions)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (_fencedSessions.ContainsKey(session.SessionId)
-                || _corruptSessions.ContainsKey(session.SessionId)
+                || IsCorruptCheckpoint(session)
                 || IsSessionBackedOff(session.SessionId, now))
                 continue;
             try
@@ -178,18 +180,18 @@ public sealed class ActionParticipationRuntime(
                     || await store.GetOfflineExpiryAsync(session.SessionId, _offlineLimit, online, cancellationToken) is { } expiry && expiry <= now;
                 if (!due)
                 {
-                    _sessionBackoffs.TryRemove(session.SessionId, out _);
+                    _sessionBackoffs.Remove(session.SessionId);
                     continue;
                 }
                 await AdvanceSessionAsync(session.SessionId, now, endReason: null, desiredOnline: false,
                     replenishOffline: document.InventoryMode == ActionParticipationInventoryMode.Offline, cancellationToken);
-                _sessionBackoffs.TryRemove(session.SessionId, out _);
+                _sessionBackoffs.Remove(session.SessionId);
                 foreach (var memberId in memberIds) advanced.Add(memberId);
             }
             catch (Exception exception) when (exception is JsonException or InvalidDataException or FormatException)
             {
-                _corruptSessions[session.SessionId] = exception;
-                _logger.LogError(exception, "离线组队会话检查点载荷损坏，已永久隔离 session={SessionId}", session.SessionId);
+                _corruptSessions.Set(session.SessionId, session.Version, clock.UtcNow);
+                _logger.LogError(exception, "离线组队会话检查点载荷损坏，已短期隔离并等待重查 session={SessionId}", session.SessionId);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -236,8 +238,7 @@ public sealed class ActionParticipationRuntime(
         foreach (var sessionId in initial.Select(item => item.SessionId).Distinct(StringComparer.Ordinal))
         {
             using var gate = await AcquireGateAsync(sessionId, cancellationToken);
-            if (_fencedSessions.TryGetValue(sessionId, out var fence))
-                throw new InvalidOperationException($"会话已隔离，不能消费不确定的结算 session={sessionId}。", fence);
+            ThrowIfFenced(sessionId);
             // 再读一次，避免等待会话门时已产生新批次，却把更晚检查点投影到旧批次终值。
             var pending = (await store.LoadPendingAsync(playerId, cancellationToken))
                 .Where(item => item.SessionId == sessionId).OrderBy(item => item.Sequence).ToArray();
@@ -265,17 +266,42 @@ public sealed class ActionParticipationRuntime(
         return result;
     }
 
-    /// <summary>会话终态离开 ListActiveAsync 后回收会话级隔离/退避状态，防止字典随历史会话只增不减。</summary>
-    private void PruneSessionState(IReadOnlyList<ActionParticipationSessionRecord> activeSessions)
+    private bool IsCorruptCheckpoint(ActionParticipationSessionRecord session)
+        => _corruptSessions.TryGet(session.SessionId, clock.UtcNow, out var version) && version == session.Version;
+
+    private void ThrowIfFenced(string sessionId)
     {
-        if (_fencedSessions.IsEmpty && _corruptSessions.IsEmpty && _sessionBackoffs.IsEmpty) return;
-        var activeIds = new HashSet<string>(activeSessions.Select(session => session.SessionId), StringComparer.Ordinal);
-        foreach (var sessionId in _fencedSessions.Keys)
-            if (!activeIds.Contains(sessionId)) _fencedSessions.TryRemove(sessionId, out _);
-        foreach (var sessionId in _corruptSessions.Keys)
-            if (!activeIds.Contains(sessionId)) _corruptSessions.TryRemove(sessionId, out _);
-        foreach (var sessionId in _sessionBackoffs.Keys)
-            if (!activeIds.Contains(sessionId)) _sessionBackoffs.TryRemove(sessionId, out _);
+        if (_fencedSessions.TryGetValue(sessionId, out var fence))
+            throw new InvalidOperationException($"会话提交结局未确认，禁止推进或消费结算 session={sessionId} expectedVersion={fence.ExpectedVersion}。");
+    }
+
+    private async ValueTask PruneSessionStateAsync(IReadOnlyList<ActionParticipationSessionRecord> activeSessions, CancellationToken cancellationToken)
+    {
+        _corruptSessions.PruneExpired(clock.UtcNow);
+        _sessionBackoffs.PruneExpired(clock.UtcNow);
+        if (_fencedSessions.IsEmpty) return;
+        var activeIds = activeSessions.Select(session => session.SessionId).ToHashSet(StringComparer.Ordinal);
+        foreach (var (sessionId, fence) in _fencedSessions)
+        {
+            if (activeIds.Contains(sessionId) && !fence.IsInitialization) continue;
+            // 活动快照缺项不等于终态；可能是快照之后刚开场，或开场提交结局未定。
+            using var gate = await AcquireGateAsync(sessionId, cancellationToken);
+            if (!_fencedSessions.TryGetValue(sessionId, out var currentFence) || !ReferenceEquals(currentFence, fence)) continue;
+            try
+            {
+                var current = await store.LoadAsync(sessionId, cancellationToken);
+                // 初始化的唯一键写入本身幂等：确认缺行可重试，确认落库则从权威检查点继续。
+                // 推进不是初始化重放；只有权威终态才能释放仍未确认的推进围栏。
+                if (current is null ? fence.IsInitialization
+                    : current.Version >= fence.ExpectedVersion && (fence.IsInitialization || current.EndedAt is not null))
+                    _fencedSessions.TryRemove(sessionId, out _);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (_loopErrorLog.TryAcquire())
+                    _logger.LogWarning(exception, "无法复查组队会话提交证据，继续隔离 session={SessionId}", sessionId);
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -300,10 +326,7 @@ public sealed class ActionParticipationRuntime(
     private async ValueTask<DateTimeOffset?> AdvanceSessionUnderGateAsync(string sessionId, DateTimeOffset requestedTarget,
         string? requestedEndReason, bool? desiredOnline, bool replenishOffline, CancellationToken cancellationToken)
     {
-        if (_fencedSessions.TryGetValue(sessionId, out var fence))
-            throw new InvalidOperationException($"会话 {sessionId} 提交结局未确认，禁止推进。", fence);
-        if (_corruptSessions.TryGetValue(sessionId, out var corrupt))
-            throw new InvalidOperationException($"会话 {sessionId} 数据损坏，禁止推进。", corrupt);
+        ThrowIfFenced(sessionId);
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var target = AtSimulationPrecision(requestedTarget);
@@ -311,6 +334,8 @@ public sealed class ActionParticipationRuntime(
             var previous = await store.LoadAsync(sessionId, cancellationToken)
                 ?? throw new InvalidOperationException($"会话检查点尚未初始化 session={sessionId}。");
             if (previous.EndedAt is not null) return null;
+            if (IsCorruptCheckpoint(previous))
+                throw new InvalidDataException($"会话检查点损坏，禁止推进 session={sessionId} version={previous.Version}。");
             var document = ReadDocument(previous);
             RegisterMembers(document.Spec);
             if (endReason is null && await store.GetInvalidationReasonAsync(sessionId, cancellationToken) is { } invalidationReason)
@@ -389,14 +414,14 @@ public sealed class ActionParticipationRuntime(
                 catch (Exception readFailure)
                 {
                     var unresolved = new AggregateException("会话未知提交的持久化证据读取失败。", exception, readFailure);
-                    _fencedSessions[sessionId] = unresolved;
+                    _fencedSessions[sessionId] = new(exception.Version, IsInitialization: false);
                     throw unresolved;
                 }
                 if (current is null || current.Version != nextDocument.Sequence || current.LastSimulatedAt != lastSimulatedAt
                     || current.EndedAt != endedAt || current.EndReason != endReason || !JsonEquals(current.StateJson, stateJson))
                 {
                     var unresolved = new InvalidOperationException($"会话提交结局无法确认 session={sessionId} expectedVersion={nextDocument.Sequence} actualVersion={current?.Version}。", exception);
-                    _fencedSessions[sessionId] = unresolved;
+                    _fencedSessions[sessionId] = new(exception.Version, IsInitialization: false);
                     throw unresolved;
                 }
                 _logger.LogWarning(exception, "会话 {SessionId} 提交响应丢失，已确认版本 {Version}。", sessionId, current.Version);
@@ -512,7 +537,7 @@ public sealed class ActionParticipationRuntime(
                 }
                 catch (Exception exception) when (exception is JsonException or InvalidDataException or FormatException)
                 {
-                    _corruptSessions[row.SessionId] = exception;
+                    _corruptSessions.Set(row.SessionId, row.Version, clock.UtcNow);
                     _logger.LogError(exception, "恢复组队会话成员映射时发现损坏规格，已跳过并隔离 session={SessionId}", row.SessionId);
                 }
             }
@@ -566,7 +591,7 @@ public sealed class ActionParticipationRuntime(
     }
 
     private bool IsSessionBackedOff(string sessionId, DateTimeOffset target)
-        => _sessionBackoffs.TryGetValue(sessionId, out var entry)
+        => _sessionBackoffs.TryGet(sessionId, clock.UtcNow, out var entry)
             && entry.ConsecutiveFailures >= 2
             && target < entry.BackoffUntilUtc;
 
@@ -574,15 +599,13 @@ public sealed class ActionParticipationRuntime(
     {
         _sessionBackoffs.AddOrUpdate(
             sessionId,
-            _ => new SessionFailureBackoff(1, now),
-            (_, existing) =>
+            new SessionFailureBackoff(1, now),
+            static (existing, next) =>
             {
-                var nextFailures = existing.ConsecutiveFailures + 1;
-                if (nextFailures < 2)
-                    return new SessionFailureBackoff(nextFailures, now);
-                var seconds = Math.Min(60d, Math.Pow(2, Math.Min(6, nextFailures - 1)));
-                return new SessionFailureBackoff(nextFailures, now.AddSeconds(seconds));
-            });
+                var failures = Math.Min(7, existing.ConsecutiveFailures + 1);
+                var seconds = Math.Min(60d, Math.Pow(2, failures - 1));
+                return new SessionFailureBackoff(failures, next.BackoffUntilUtc.AddSeconds(seconds));
+            }, clock.UtcNow);
     }
 
     private static async ValueTask<IDisposable> AcquireRelationGatesAsync(IEnumerable<Guid> players, CancellationToken cancellationToken)
