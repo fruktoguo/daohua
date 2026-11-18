@@ -21,7 +21,7 @@ export { getApiUrl, getHttpBase }
 const REQUEST_TIMEOUT_MS = 15_000
 
 /**
- * 最近一次配表响应的游戏数据指纹（ETag 裸值，已去引号与压缩代理追加的编码后缀）。
+ * 最近一批通过一致性校验的配表指纹，与 HTTP 表示的 ETag 独立。
  * WebSocket Hello 握手回传该值，服务端不一致时以 GAME_DATA_MISMATCH 拒绝并触发配表重载。
  */
 let catalogFingerprint: string | null = null
@@ -34,7 +34,7 @@ export function getCatalogFingerprint(): string | null {
 /**
  * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法/可建造建筑/Buff 词表/触发规约）。
  * 副作用：baseAttributes 拉取后注册进 combatConstants 锚点表，境界/属性推算依赖其结果。
- * 任一端点失败或批量 ETag 不一致即整体抛错（旧版容忍空列表会导致词表在会话内永久为空）。
+ * 任一端点失败，或整批重拉后指纹仍缺失或不一致，均不发布新指纹。
  */
 export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   actions: ActionDefinition[]
@@ -47,30 +47,36 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   buffs: TriggerBuffOption[]
   triggerSpec: TriggerSpec
 }> {
-  const load = (reload: boolean) => Promise.all([
-    requestJsonDetailed<ActionDefinition[]>('/api/v1/catalog/actions', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<ItemDefinition[]>('/api/v1/catalog/items', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<BuildingDefinition[]>('/api/v1/catalog/buildings', { signal, cache: reload ? 'reload' : undefined }),
-    // Buff 词表与触发条件规约常量：服务端单一权威，前端条件编辑器不得另写一份。
-    requestJsonDetailed<TriggerBuffOption[]>('/api/v1/catalog/buffs', { signal, cache: reload ? 'reload' : undefined }),
-    requestJsonDetailed<TriggerSpec>('/api/v1/catalog/triggers', { signal, cache: reload ? 'reload' : undefined }),
-  ])
-  let batch = await load(false)
-  // 10 路并发可能跨越发版窗口或命中部分旧缓存：ETag 不一致说明拿到半套新旧混拼装表，
-  // 必须整批 cache:reload 重拉对齐——混拼装表配单端点指纹照样能通过 Hello 校验跑歪数据。
-  if (batch.some(entry => entry.etag !== batch[0].etag)) {
-    batch = await load(true)
-    if (batch.some(entry => entry.etag !== batch[0].etag)) {
-      catalogFingerprint = null
-      throw new Error('游戏配表版本不一致，请稍后重试。')
-    }
+  const load = (cache: RequestCache) => {
+    // catalog 为公开静态数据：不发 Cookie；首轮允许浏览器条件验证，冲突时整批 reload。
+    const init: RequestInit = { signal, cache, credentials: 'omit' }
+    return Promise.all([
+      requestJsonDetailed<ActionDefinition[]>('/api/v1/catalog/actions', init),
+      requestJsonDetailed<WorldMapDefinition[]>('/api/v1/catalog/maps', init),
+      requestJsonDetailed<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', init),
+      requestJsonDetailed<ItemDefinition[]>('/api/v1/catalog/items', init),
+      requestJsonDetailed<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', init),
+      requestJsonDetailed<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', init),
+      requestJsonDetailed<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', init),
+      requestJsonDetailed<BuildingDefinition[]>('/api/v1/catalog/buildings', init),
+      // Buff 词表与触发条件规约常量：服务端单一权威，前端条件编辑器不得另写一份。
+      requestJsonDetailed<TriggerBuffOption[]>('/api/v1/catalog/buffs', init),
+      requestJsonDetailed<TriggerSpec>('/api/v1/catalog/triggers', init),
+    ])
   }
-  catalogFingerprint = batch[0].etag
+  const getAlignedFingerprint = (batch: Awaited<ReturnType<typeof load>>) => {
+    const fingerprint = batch[0].fingerprint
+    return fingerprint && batch.every(entry => entry.fingerprint === fingerprint) ? fingerprint : null
+  }
+  let batch = await load('no-cache')
+  let fingerprint = getAlignedFingerprint(batch)
+  // 并发请求可能跨越发版窗口；缺头（含未正确暴露的跨域响应）或混版都不能通过握手。
+  if (!fingerprint) {
+    batch = await load('reload')
+    fingerprint = getAlignedFingerprint(batch)
+    if (!fingerprint) throw new Error('游戏配表版本不一致，请稍后重试。')
+  }
+  signal?.throwIfAborted()
   const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec]
     = batch.map(entry => entry.data) as [
       ActionDefinition[], WorldMapDefinition[], CombatEncounterDefinition[], ItemDefinition[],
@@ -78,6 +84,7 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
       BuildingDefinition[], TriggerBuffOption[], TriggerSpec,
     ]
   registerBaseAttributeAnchors(baseAttributes)
+  catalogFingerprint = fingerprint
   return { actions, maps, encounters, items, equipment, abilities, buildings, buffs, triggerSpec }
 }
 
@@ -118,7 +125,7 @@ async function parseError(response: Response): Promise<Error> {
 
 /**
  * 同源 JSON API 请求基座。
- * 携带 HttpOnly Cookie（credentials: include）、强制 JSON 头、15 秒超时中止，
+ * 默认携带 HttpOnly Cookie（credentials: include）、强制 JSON 头、15 秒超时中止，
  * 并转发调用方 AbortSignal；非 2xx 解析错误体抛出可读 Error，204 返回 undefined。
  */
 export async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -126,10 +133,9 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
 }
 
 /**
- * requestJson 的明细变体：额外返回规范化后的配表 ETag（catalog 指纹，剥离弱校验与压缩后缀）。
- * 供 fetchGameCatalog 做批量 ETag 一致性校验；非 catalog 端点 etag 恒为 null。
+ * requestJson 的明细变体：返回配表指纹响应头供批次校验，不用 HTTP 缓存验证器作为指纹。
  */
-async function requestJsonDetailed<T>(path: string, init: RequestInit = {}): Promise<{ data: T; etag: string | null }> {
+async function requestJsonDetailed<T>(path: string, init: RequestInit = {}): Promise<{ data: T; fingerprint: string | null }> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -149,19 +155,13 @@ async function requestJsonDetailed<T>(path: string, init: RequestInit = {}): Pro
       ...init,
       signal: controller.signal,
       headers,
-      credentials: 'include',
+      credentials: init.credentials ?? 'include',
       cache: init.cache ?? (init.method && init.method !== 'GET' ? 'no-store' : 'no-cache'),
     })
     if (!response.ok) throw await parseError(response)
-    // 配表端点的 ETag 即游戏数据指纹，随每次成功响应刷新，供 Hello 握手回传。
-    // 压缩代理会改写 ETag 表示压缩变体（Caddy encode 追加 -zstd/-gzip 等后缀），
-    // 指纹必须与传输层解耦：剥离编码后缀还原服务端权威值，否则握手恒 GAME_DATA_MISMATCH。
-    const etag = path.startsWith('/api/v1/catalog/')
-      ? response.headers.get('ETag')?.replace(/^(?:W\/)?"|"$/g, '').replace(/-(?:zstd|gzip|br|deflate)$/, '') ?? null
-      : null
-    if (etag) catalogFingerprint = etag
-    if (response.status === 204) return { data: undefined as T, etag }
-    return { data: await response.json() as T, etag }
+    const fingerprint = path.startsWith('/api/v1/catalog/') ? response.headers.get('X-Game-Data-Fingerprint') : null
+    if (response.status === 204) return { data: undefined as T, fingerprint }
+    return { data: await response.json() as T, fingerprint }
   } catch (error) {
     if (timedOut) throw new Error('网络请求超时，请稍后重试。')
     throw error

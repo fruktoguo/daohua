@@ -98,6 +98,56 @@ public sealed class WebSocketRuntimeTests
     }
 
     [Fact]
+    public async Task FragmentedInput_AllowsExactLimitAndReusesReaderForNextMessage()
+    {
+        var payload = new byte[4096];
+        payload[0] = 0x42;
+        payload[^1] = 0x2A;
+        using var frames = new MemoryStream();
+        // 不带掩码的服务器帧：未结束的二进制分片、空结束分片、下一条消息。
+        frames.Write(new byte[] { 0x02, 126, 0x10, 0x00 });
+        frames.Write(payload);
+        frames.Write(new byte[] { 0x80, 0x00, 0x82, 0x01, 0x55 });
+        frames.Position = 0;
+        using var socket = WebSocket.CreateFromStream(frames, false, null, Timeout.InfiniteTimeSpan);
+        using var reader = new PlayerWebSocketMessageReader(payload.Length);
+        Assert.Equal(payload, (await reader.ReadAsync(socket, CancellationToken.None))!.Value.ToArray());
+        Assert.Equal(new byte[] { 0x55 }, (await reader.ReadAsync(socket, CancellationToken.None))!.Value.ToArray());
+
+        frames.Position = 0;
+        using var socketAgain = WebSocket.CreateFromStream(frames, false, null, Timeout.InfiniteTimeSpan);
+        using var smallerReader = new PlayerWebSocketMessageReader(payload.Length - 1);
+        await Assert.ThrowsAsync<WebSocketException>(() => smallerReader.ReadAsync(socketAgain, CancellationToken.None).AsTask());
+    }
+
+    [Fact]
+    public async Task SaturatedQueue_DoesNotEncodeDroppedFrames_AndKeepsReliableOrder()
+    {
+        var session = new WebSocketSession(Guid.NewGuid(), 1);
+        var first = Guid.NewGuid();
+        var required = Guid.NewGuid();
+        var last = Guid.NewGuid();
+        Assert.True(session.TrySendJsonDroppable(WireMessageType.LogBatch, first, new { }));
+        var write = session.SendJsonAsync(WireMessageType.Pong, required, new { }, CancellationToken.None);
+        Assert.False(write.IsCompleted);
+        // 这个负载若被投影/编码会抛异常；不应为注定丢弃的帧消耗 CPU。
+        Assert.False(session.TrySendJsonDroppable(WireMessageType.LogBatch, Guid.NewGuid(), new MustNotSerialize()));
+        Assert.True(session.Outbound.TryRead(out var firstPacket));
+        await write.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.True(session.Outbound.TryRead(out var requiredPacket));
+        Assert.True(session.TrySendJsonDroppable(WireMessageType.LogBatch, last, new { }));
+        Assert.True(session.Outbound.TryRead(out var lastPacket));
+        var envelopes = new[] { firstPacket, requiredPacket, lastPacket }.Select(packet => WireEnvelopeCodec.Decode(packet)).ToArray();
+        Assert.Equal(new[] { first, required, last }, envelopes.Select(e => e.RequestId));
+        Assert.Equal(new long[] { 1, 2, 3 }, envelopes.Select(e => e.Sequence));
+    }
+
+    private sealed class MustNotSerialize
+    {
+        public int Value => throw new InvalidOperationException();
+    }
+
+    [Fact]
     public async Task SendLoopAsync_WhenOperationCanceled_ExitsWithoutError()
     {
         var playerId = Guid.NewGuid();

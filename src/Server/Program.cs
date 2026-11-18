@@ -345,22 +345,19 @@ if (processRole == ServerProcessRole.Api)
     });
 
     var catalog = app.MapGroup("/api/v1/catalog");
-    catalog.MapGet("/abilities", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/abilities", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
         var result = gameData.Abilities.OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => ToAbilityDto(pair.Key, pair.Value)).ToArray();
-        return Results.Ok(result);
+        return result;
     });
-    catalog.MapGet("/base-attributes", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/base-attributes", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(gameData.BaseAttributes!.Anchors);
+        return gameData.BaseAttributes!.Anchors;
     });
-    catalog.MapGet("/actions", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/actions", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(gameData.Actions.All
+        return gameData.Actions.All
             .OrderBy(action => action.Id.Value, StringComparer.Ordinal)
             .Select(action => new
             {
@@ -403,52 +400,45 @@ if (processRole == ServerProcessRole.Api)
                 }).ToArray(),
                 availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
                 excludedNodeIds = action.ExcludedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()
-            }));
+            });
     });
-    catalog.MapGet("/items", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/items", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(StaticGameCatalogMapper.Items(gameData));
+        return StaticGameCatalogMapper.Items(gameData);
     });
     // 触发条件可引用的 Buff 词表：由配表派生（消耗品 buffs / 功法 buff / 行动产出 Buff / 特质注入），
     // 前端条件编辑器只能从这里取项，杜绝引用配表中不存在的 Buff 造成层数恒 0 的死条件。
-    catalog.MapGet("/buffs", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/buffs", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(gameData.TriggerBuffs
+        return gameData.TriggerBuffs
             .OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => new { buffId = pair.Key, name = pair.Value })
-            .ToArray());
+            .ToArray();
     });
     // 触发条件判定规约常量：条数上限与等值容差由领域层单源给出，前端不得另写一份。
-    catalog.MapGet("/triggers", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/triggers", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(new
+        return new
         {
             maxTriggersPerList = SkillTriggerEvaluator.MaxTriggersPerList,
             equalTolerance = SkillTriggerEvaluator.EqualTolerance
-        });
+        };
     });
-    catalog.MapGet("/equipment", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/equipment", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(StaticGameCatalogMapper.Equipments(gameData));
+        return StaticGameCatalogMapper.Equipments(gameData);
     });
-    catalog.MapGet("/maps", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/maps", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(StaticGameCatalogMapper.Maps(gameData));
+        return StaticGameCatalogMapper.Maps(gameData);
     });
-    catalog.MapGet("/encounters", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/encounters", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(StaticGameCatalogMapper.Encounters(gameData));
+        return StaticGameCatalogMapper.Encounters(gameData);
     });
-    catalog.MapGet("/buildings", (HttpContext context, GameDataCatalog gameData) =>
+    catalog.MapCatalogGet("/buildings", (GameDataCatalog gameData) =>
     {
-        ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(StaticGameCatalogMapper.Buildings(gameData));
+        return StaticGameCatalogMapper.Buildings(gameData);
     });
 
     // 全图节点公共建筑索引：地图地点详情合并展示玩家建筑；
@@ -1065,12 +1055,6 @@ static void StampSessionCookie(HttpContext context, string token, TimeSpan lifet
         MaxAge = lifetime,
         Path = "/"
     });
-}
-
-static void ApplyCatalogHeaders(HttpContext context, string fingerprint)
-{
-    context.Response.Headers.ETag = $"\"{fingerprint}\"";
-    context.Response.Headers.CacheControl = "public,max-age=300,stale-while-revalidate=60";
 }
 
 static object ToAbilityDto(string id, JsonElement raw)

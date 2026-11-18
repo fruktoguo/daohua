@@ -38,6 +38,8 @@ public sealed class WebSocketSession(
     });
     private readonly TaskCompletionSource _teardownCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _outboundSequence;
+    private int _reliableWaiters;
+    private long _lastPushedStateVersion;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
     private IReadOnlyDictionary<string, string>? _lastPushedSectionChecksums;
     private volatile UnitInspectDto? _inspectedUnit;
@@ -105,34 +107,53 @@ public sealed class WebSocketSession(
     /// 锁外取号与写入分离会让并发生产者把合法帧倒序入队，被客户端按序号丢弃。
     /// </summary>
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
-    /// <summary>向输出通道异步投递待发送的数据包（满时等待背压）</summary>
-    public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
-    /// <summary>尝试非阻塞投递数据包（不区分可丢弃性，不进入慢消费者统计）</summary>
-    public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
-
-    /// <summary>
-    /// 必达 JSON 帧的有序投递：取号-编码-首次入队尝试在 <see cref="OutboundSync"/> 内整体完成，
-    /// 与并发推送的基线临界区互斥，保证通道物理序严格等于序号递增序；
-    /// 满队列时退回锁外阻塞发送（必达帧不丢，慢消费者由可丢弃帧与踢线阈值兜底）。
-    /// </summary>
-    public async ValueTask SendJsonAsync<T>(WireMessageType messageType, Guid requestId, T payload, CancellationToken cancellationToken)
+    /// <summary>不区分可丢弃性的即时入队；生产者须持有出站锁完成取号和入队。</summary>
+    public bool TrySend(byte[] packet)
     {
-        byte[] packet;
-        bool enqueued;
+        lock (OutboundSync) return _outbound.Writer.TryWrite(packet);
+    }
+
+    public ValueTask SendJsonAsync<T>(WireMessageType type, Guid requestId, T payload, CancellationToken token) =>
+        SendReliableAsync((type, requestId, payload), static (session, state) =>
+            session.TrySend(WireEnvelopeCodec.EncodeJson(state.type, state.requestId, session.NextOutboundSequence(), state.payload)), token);
+
+    /// <summary>必达帧只在取得队列位置后取号、编码和入队。等待时给必达帧留出下一空位，不阻塞模拟线程。</summary>
+    internal async ValueTask SendReliableAsync<T>(T state, Action<WebSocketSession, T> enqueue, CancellationToken token)
+    {
         lock (OutboundSync)
         {
-            packet = WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload);
-            enqueued = TrySend(packet);
+            if (CloseHint is not null) return;
+            token.ThrowIfCancellationRequested();
+            if (_outbound.Reader.Count < capacity)
+            {
+                enqueue(this, state);
+                return;
+            }
+            _reliableWaiters++;
         }
-        if (enqueued) return;
+        var ownsReservation = true;
         try
         {
-            await SendAsync(packet, cancellationToken).ConfigureAwait(false);
+            while (await _outbound.Writer.WaitToWriteAsync(token).ConfigureAwait(false))
+            {
+                lock (OutboundSync)
+                {
+                    if (CloseHint is not null) return;
+                    token.ThrowIfCancellationRequested();
+                    if (_outbound.Reader.Count >= capacity) continue;
+                    _reliableWaiters--;
+                    ownsReservation = false;
+                    enqueue(this, state);
+                    return;
+                }
+            }
         }
-        catch (ChannelClosedException)
+        finally
         {
-            // 阻塞等待期间慢消费者证据达阈值并发起 RequestClose 完成通道：连接已进入关闭流程，
-            // 必达帧随连接一并作废（客户端重连后以全量快照恢复），不得让异常以 1011 形态掩盖 4009 语义。
+            if (ownsReservation)
+            {
+                lock (OutboundSync) _reliableWaiters--;
+            }
         }
     }
 
@@ -144,7 +165,7 @@ public sealed class WebSocketSession(
     public bool TrySendJsonDroppable<T>(WireMessageType messageType, Guid requestId, T payload)
     {
         lock (OutboundSync)
-            return TrySendDroppable(WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload));
+            return CanQueueDroppable() && TryWriteDroppable(WireEnvelopeCodec.EncodeJson(messageType, requestId, NextOutboundSequence(), payload));
     }
 
     /// <summary>
@@ -153,8 +174,8 @@ public sealed class WebSocketSession(
     public bool TrySendDroppableEnvelope(WireMessageType messageType, Guid requestId, ReadOnlyMemory<byte> payload)
     {
         lock (OutboundSync)
-            return TrySendDroppable(WireEnvelopeCodec.Encode(
-                WireEnvelope.Create(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload)));
+            return CanQueueDroppable() && TryWriteDroppable(WireEnvelopeCodec.Encode(
+                WireEnvelope.Create(messageType, requestId, NextOutboundSequence(), payload)));
     }
 
     /// <summary>
@@ -164,27 +185,34 @@ public sealed class WebSocketSession(
     /// <returns>帧已进入发送队列返回 true；被丢弃（或会话已在关闭流程）返回 false。</returns>
     public bool TrySendDroppable(byte[] packet)
     {
+        lock (OutboundSync) return CanQueueDroppable() && TryWriteDroppable(packet);
+    }
+
+    // 只在出站锁内检查；同一锁内生产者之外只有消费者，检查通过后空位不会消失。
+    internal bool CanQueueDroppable()
+    {
         if (CloseHint is not null) return false;
-        if (_outbound.Writer.TryWrite(packet))
-        {
-            // 队列恢复可写：清零连续丢弃窗口，慢消费者证据随消化能力恢复失效。
-            if (Volatile.Read(ref _consecutiveDrops) != 0)
-            {
-                Interlocked.Exchange(ref _consecutiveDrops, 0);
-                Interlocked.Exchange(ref _firstDropUtcTicks, 0L);
-            }
-            return true;
-        }
-        var drops = Interlocked.Increment(ref _consecutiveDrops);
+        if (_outbound.Reader.Count < capacity)
+            return _reliableWaiters == 0;
         var nowTicks = DateTimeOffset.UtcNow.Ticks;
-        Interlocked.CompareExchange(ref _firstDropUtcTicks, nowTicks, 0L);
-        var saturatedTicks = nowTicks - Interlocked.Read(ref _firstDropUtcTicks);
-        if (drops >= SlowConsumerMaxDrops || saturatedTicks >= SlowConsumerSaturationWindow.Ticks)
+        if (_consecutiveDrops++ == 0) _firstDropUtcTicks = nowTicks;
+        if (_consecutiveDrops >= SlowConsumerMaxDrops || nowTicks - _firstDropUtcTicks >= SlowConsumerSaturationWindow.Ticks)
             RequestClose(SlowConsumerCloseCode, "slow consumer");
         return false;
     }
+
+    internal bool TryWriteDroppable(byte[] packet)
+    {
+        if (!_outbound.Writer.TryWrite(packet)) return false;
+        _consecutiveDrops = 0;
+        return true;
+    }
+
     /// <summary>标记输出通道完成并关闭</summary>
-    public void Complete() => _outbound.Writer.TryComplete();
+    public void Complete()
+    {
+        lock (OutboundSync) _outbound.Writer.TryComplete();
+    }
 
     /// <summary>
     /// 请求服务端主动终止本会话：可选地先把一个通知帧排入发送队列，再完成输出通道，
@@ -220,30 +248,34 @@ public sealed class WebSocketSession(
     /// 帧成功入队后提交本次推送基线：分段校验和与资产余额原子成对前移；
     /// 可丢弃帧被丢弃时不得调用，基线保持在上次已送达内容，下一次增量重新携带缺失分段。
     /// </summary>
-    public void CommitPushBaseline(IReadOnlyDictionary<string, string> sectionChecksums, IReadOnlyList<AssetBalanceDto> assets)
+    public void CommitPushBaseline(IReadOnlyDictionary<string, string> sectionChecksums, IReadOnlyList<AssetBalanceDto> assets, long stateVersion = 0)
     {
         lock (OutboundSync)
         {
             _lastPushedSectionChecksums = sectionChecksums;
             _lastPushedAssets = assets;
+            _lastPushedStateVersion = stateVersion;
         }
     }
+
+    internal bool IsOlderThanPushBaseline(long stateVersion) => stateVersion < _lastPushedStateVersion;
 
     /// 是否存在被拥塞丢弃且尚未补投的快照增量：为 true 时发送循环排空后应触发一次全段重投。
     public bool DeltaResyncPending => _deltaResyncPending;
     /// 快照增量入队失败时登记重投需求：只由快照推送路径调用，聊天/战报等其它可丢弃帧各有回放通道不置位。
     public void MarkDeltaDropped() => _deltaResyncPending = true;
-    /// 全段重投帧成功入队后解除标记；窄化增量与回执的基线提交不视作补投——它们不覆盖被丢的未触及分段。
+    /// 全量已入队后才解除标记；窄化增量不覆盖被丢的未触及分段。
     public void CompleteDeltaResync() => _deltaResyncPending = false;
     /// 握手全量快照已入队（基线已提交）前禁止实时增量推送：装载期模拟推进改走丢帧重投通道。
     public bool HandshakeSnapshotPending => _handshakeSnapshotPending;
-    /// <summary>握手快照入队并提交基线后原子解除抑制；与增量构建共用 OutboundSync 避免竞态。</summary>
-    public void CompleteHandshakeSnapshot(IReadOnlyDictionary<string, string> sectionChecksums, IReadOnlyList<AssetBalanceDto> assets)
+    /// <summary>入队全量快照后提交基线；首帧同时解除握手期间的增量抑制。</summary>
+    public void CommitFullSnapshot(PlayerSnapshotDto snapshot)
     {
+        var checksums = new Dictionary<string, string>(snapshot.Sections.Count, StringComparer.Ordinal);
+        foreach (var section in snapshot.Sections) checksums[section.Section] = section.Checksum;
         lock (OutboundSync)
         {
-            _lastPushedSectionChecksums = sectionChecksums;
-            _lastPushedAssets = assets;
+            CommitPushBaseline(checksums, snapshot.Assets, snapshot.StateVersion);
             _handshakeSnapshotPending = false;
         }
     }
@@ -430,6 +462,25 @@ public static class WebSocketEndpoint
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = linked.Token;
+        // 静止角色可能不再推进；发送循环在队列排空时补投。
+        // 全量帧可修复同 StateVersion 的分段漂移，增量帧可能被客户端版本门禁略过。
+        void ResyncDroppedDelta()
+        {
+            lock (session.OutboundSync)
+            {
+                if (!session.DeltaResyncPending || session.HandshakeSnapshotPending || !session.CanQueueDroppable()) return;
+                var snapshot = runtime.TryGetLoaded(session.PlayerId);
+                if (snapshot is null || session.IsOlderThanPushBaseline(snapshot.StateVersion)) return;
+                var inspect = session.PendingInspectedUnit;
+                var attributesProjected = false;
+                var full = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData,
+                    inspect, () => attributesProjected = true);
+                if (!session.TryWriteDroppable(EncodeJson(WireMessageType.Snapshot, Guid.NewGuid(), session.NextOutboundSequence(), full))) return;
+                session.CommitFullSnapshot(full);
+                if (attributesProjected) session.MarkInspectedAttributesDelivered(inspect);
+                session.CompleteDeltaResync();
+            }
+        }
         async ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
         {
             if (snapshot.PlayerId != session.PlayerId || token.IsCancellationRequested) return;
@@ -445,7 +496,8 @@ public static class WebSocketEndpoint
                 return;
             }
             // 入队失败（或握手全量快照基线尚在途中）由 TryPushDelta 在 OutboundSync 锁内原子登记重投：静止态角色可能再无推送事件。
-            TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections);
+            if (!TryPushDelta(session, snapshot, gameData, snapshot.TouchedSections) && session.Outbound.Count == 0)
+                ResyncDroppedDelta(); // 若发送循环在标记置位前已排空，生产者兜底唤起补投。
         }
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events)
             => eventPlayerId != session.PlayerId || token.IsCancellationRequested
@@ -466,15 +518,6 @@ public static class WebSocketEndpoint
         social.StateChanged += OnSocialStateChanged;
         try
         {
-            // 丢帧重投：增量被丢后基线停在旧内容，静止角色可能再无 SnapshotUpdated 触发补发；
-            // 由发送循环在通道排空时回调，按当前已装载快照全段重建差集（touched=null）补投。
-            void ResyncDroppedDelta()
-            {
-                if (!session.DeltaResyncPending || session.HandshakeSnapshotPending) return;
-                var snapshot = runtime.TryGetLoaded(session.PlayerId);
-                if (snapshot is not null)
-                    TryPushDelta(session, snapshot, gameData, null, resyncOnly: true);
-            }
             var sendTask = SendLoopAsync(socket, session, ResyncDroppedDelta, token, logger);
             var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
                 accountRisk, riskContext, context, accountId, isBot, grace, presenceStats);
@@ -545,11 +588,11 @@ public static class WebSocketEndpoint
     /// <summary>
     /// 增量推送共用路径：「读基线 → 按触及分段窄化编码 → 取号入队 → 提交基线」在会话锁内整体串行——
     /// 推送可由模拟循环与斗法撮合多线程并发触发，交错会把未送达内容误记为已推送基线。
-    /// touchedSections 为 null 时退化为全段重编码、校验和裁决，供丢帧重投兜住所有漂移分段。
+    /// touchedSections 为 null 时检查所有分段，例如会话订阅的单位详情发生变化。
     /// </summary>
-    /// <returns>帧已入队返回 true；出站队列拥塞被丢弃返回 false，由调用方登记 <see cref="WebSocketSession.MarkDeltaDropped"/>。</returns>
+    /// <returns>帧已入队返回 true；拥塞或落后的快照不入队，并登记排空后补投。</returns>
     private static bool TryPushDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot,
-        Domain.GameData.GameDataCatalog gameData, IReadOnlySet<PlayerSectionKind>? touchedSections, bool resyncOnly = false)
+        Domain.GameData.GameDataCatalog gameData, IReadOnlySet<PlayerSectionKind>? touchedSections)
     {
         lock (session.OutboundSync)
         {
@@ -558,8 +601,16 @@ public static class WebSocketEndpoint
                 session.MarkDeltaDropped();
                 return false;
             }
-            if (resyncOnly && !session.DeltaResyncPending)
-                return true;
+            if (session.IsOlderThanPushBaseline(snapshot.StateVersion))
+            {
+                session.MarkDeltaDropped();
+                return false;
+            }
+            if (!session.CanQueueDroppable())
+            {
+                session.MarkDeltaDropped();
+                return false;
+            }
             var (previousSections, previousAssets) = session.ReadPushBaseline();
             // 按需属性为一次性交付：仅「登记后尚未送达」期间投影；本帧实际写入属性且入队成功才解除武装，
             // 被慢消费者丢弃时保留武装由下一拍重投，保证客户端最终拿到面板数据。
@@ -572,14 +623,13 @@ public static class WebSocketEndpoint
                 pendingInspect, () => attributesProjected = true);
             var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
             // 可丢弃帧入队成功才前移基线并原子更新丢帧重投标记；被丢弃时标记重投，消除锁外竞态覆盖。
-            if (!session.TrySendDroppable(packet))
+            if (!session.TryWriteDroppable(packet))
             {
                 session.MarkDeltaDropped();
                 return false;
             }
             if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
-            session.CommitPushBaseline(nextSections, nextAssets);
-            if (touchedSections is null) session.CompleteDeltaResync();
+            session.CommitPushBaseline(nextSections, nextAssets, snapshot.StateVersion);
             return true;
         }
     }
@@ -590,9 +640,9 @@ public static class WebSocketEndpoint
         {
             await foreach (var packet in session.Outbound.ReadAllAsync(cancellationToken))
             {
-                await socket.SendAsync(packet, WebSocketMessageType.Binary, true, cancellationToken);
+                await socket.SendAsync(packet.AsMemory(), WebSocketMessageType.Binary, true, cancellationToken);
                 // 被丢增量在通道排空（Count==0）时补投：仍拥塞时重投必然再丢且白费全段编码，
-                // 排空瞬间即最早可送达时机；若竞态再满，重投失败由标记保留等下一次排空。
+                // 排空是最早可补投时机；若竞态再满，则保留标记等待下一次排空。
                 if (session.DeltaResyncPending && session.Outbound.Count == 0)
                     deltaResync();
             }
@@ -625,7 +675,7 @@ public static class WebSocketEndpoint
         DisconnectGraceRegistry grace,
         Social.IPlayerPresenceStatsService presenceStats)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
+        using var messageReader = new PlayerWebSocketMessageReader(options.MaxWebSocketMessageBytes);
         long lastInboundSequence = 0;
         var paceTracker = new CommandPaceTracker();
         var handshaken = false;
@@ -639,18 +689,9 @@ public static class WebSocketEndpoint
         {
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
-                using var stream = new MemoryStream();
-                WebSocketReceiveResult result;
-                do
-                {
-                    result = await socket.ReceiveAsync(buffer, cancellationToken);
-                    if (result.MessageType == WebSocketMessageType.Close) return;
-                    if (result.MessageType != WebSocketMessageType.Binary) throw new WebSocketException("只接受二进制协议帧。");
-                    if (stream.Length + result.Count > options.MaxWebSocketMessageBytes) throw new WebSocketException("消息超过大小限制。");
-                    stream.Write(buffer, 0, result.Count);
-                } while (!result.EndOfMessage);
-
-                if (!WireEnvelopeCodec.TryDecode(stream.ToArray(), out var envelope))
+                var message = await messageReader.ReadAsync(socket, cancellationToken);
+                if (message is null) return;
+                if (!WireEnvelopeCodec.TryDecodeBorrowed(message.Value, out var envelope))
                 {
                     await QueueJsonAsync(session, WireMessageType.Error, Guid.NewGuid(), new ErrorDto("INVALID_PACKET", "无法解析协议帧。"), cancellationToken);
                     continue;
@@ -743,21 +784,17 @@ public static class WebSocketEndpoint
                             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
                             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
                             .FirstOrDefault()?.InformationalVersion ?? "unknown";
-                        // HelloAck 序号内嵌载荷（客户端据此对齐下行序）：取号-编码在同一会话锁内完成，
-                        // 与可能并发的快照推送保持「序号递增序 = 通道物理序」，随后锁外阻塞投递保证必达。
                         var initialStats = await presenceStats.GetStatsAsync(cancellationToken);
-                        byte[] helloAckPacket;
-                        lock (session.OutboundSync)
-                        {
-                            var helloAckSequence = session.NextOutboundSequence();
-                            // 会话准入模块决定是否下发标签页互斥开关；开放语义不下发该配置。
-                            var tabGuardConfig = admission.TabGuardEnabled(riskPolicy) ? new AntiMultiOpenConfigDto(true) : null;
-                            helloAckPacket = EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
-                                new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
-                                    tabGuardConfig,
-                                    initialStats));
-                        }
-                        await session.SendAsync(helloAckPacket, cancellationToken);
+                        var tabGuardConfig = admission.TabGuardEnabled(riskPolicy) ? new AntiMultiOpenConfigDto(true) : null;
+                        // HelloAck 信封与载荷共用入队时分配的序号。
+                        await session.SendReliableAsync((envelope.RequestId, serverVersion, gameData.Fingerprint, tabGuardConfig, initialStats),
+                            static (target, data) =>
+                            {
+                                var sequence = target.NextOutboundSequence();
+                                target.TrySend(EncodeJson(WireMessageType.HelloAck, data.RequestId, sequence,
+                                    new HelloResponse(data.serverVersion, ProtocolConstants.CurrentVersion, data.Fingerprint, sequence,
+                                        data.tabGuardConfig, data.initialStats)));
+                            }, cancellationToken);
                         // 重连取消在途宽限：未触发的定时作废；收尾已在执行则等待完成，保证与装载串行（§14.3）。
                         await grace.CancelAsync(session.PlayerId, cancellationToken);
                         await using (var connectionInventory = await social.PrepareConnectionAsync(session.PlayerId, cancellationToken))
@@ -788,15 +825,13 @@ public static class WebSocketEndpoint
                             initial.State.World.EdgeId is null ? initial.State.World.NodeId : null,
                             initial.State.Progression.RealmLevel, 0, initial.State.Settings.Avatar, isBot, cancellationToken);
                         var initialSnapshot = await snapshotTask;
-                        await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
-                        // 握手快照必达：属性面板实际写入即解除一次性交付武装。
-                        if (inspectAttributesProjected) session.MarkInspectedAttributesDelivered(handshakeInspect);
-                        // 初始快照帧已进入发送队列：在同一锁内提交推送基线并原子解除实时增量抑制；
-                        // 期间被抑制的推进经 DeltaResyncPending 在通道排空后全段重投补齐。
-                        var initialSectionChecksums = new Dictionary<string, string>(initialSnapshot.Sections.Count, StringComparer.Ordinal);
-                        foreach (var section in initialSnapshot.Sections)
-                            initialSectionChecksums[section.Section] = section.Checksum;
-                        session.CompleteHandshakeSnapshot(initialSectionChecksums, initialSnapshot.Assets);
+                        await session.SendReliableAsync((initialSnapshot, inspectAttributesProjected, handshakeInspect),
+                            static (target, data) =>
+                            {
+                                if (!target.TrySend(EncodeJson(WireMessageType.Snapshot, Guid.NewGuid(), target.NextOutboundSequence(), data.initialSnapshot))) return;
+                                if (data.inspectAttributesProjected) target.MarkInspectedAttributesDelivered(data.handshakeInspect);
+                                target.CommitFullSnapshot(data.initialSnapshot);
+                            }, cancellationToken);
                         // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)
@@ -922,9 +957,9 @@ public static class WebSocketEndpoint
                             continue;
                         }
                         // 回执快照双形态：触及差集精确且已有推送基线 → delta；否则全量兜底。
-                        var receiptPacket = BuildCommandResultPacket(
-                            session, commandEnvelope.RequestId, envelope.RequestId, commandResult, gameData, out var receiptEnqueued);
-                        if (!receiptEnqueued) await session.SendAsync(receiptPacket, cancellationToken);
+                        await session.SendReliableAsync((commandEnvelope.RequestId, EnvelopeId: envelope.RequestId, commandResult, gameData),
+                            static (target, data) => EnqueueCommandResult(target, data.RequestId, data.EnvelopeId, data.commandResult, data.gameData),
+                            cancellationToken);
                         break;
                     case WireMessageType.ChatSend:
                         if (!handshaken)
@@ -1086,7 +1121,6 @@ public static class WebSocketEndpoint
         {
             handshakeDeadline.Cancel();
             await deadlineTask;
-            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -1109,78 +1143,42 @@ public static class WebSocketEndpoint
         }
     }
 
-    /// <summary>
-    /// 构造命令回执帧：成功路径的精确触及差集复用会话推送基线窄化为 delta 形态；
-    /// 失败、幂等重放（TouchedSections 未知）或尚无推送基线时回退全量 snapshot 形态。
-    /// delta 帧与实时推送共用同一条基线，「读基线 → 编码 → 入队 → 提交基线」在 <see cref="WebSocketSession.OutboundSync"/>
-    /// 内整体串行：回执帧在通道中物理先于任何按新基线编码的并发推送，客户端按序合并后与全量状态逐位一致。
-    /// 回执帧不可丢：入队成功才提交基线；满队列时退回锁外阻塞发送（enqueued=false），基线不前移让后续增量补发。
-    /// </summary>
-    /// <param name="session">目标会话；提供推送基线读取/提交与发送队列。</param>
-    /// <param name="requestId">业务请求 ID，原样回填到 CommandResultDto 供客户端匹配请求。</param>
-    /// <param name="envelopeRequestId">信封头请求 ID，与出站序号一起写入帧头。</param>
-    /// <param name="result">运行时命令回执；TouchedSections 非空且会话已有基线时编码为 delta 形态。</param>
-    /// <param name="gameData">配表目录，提供快照/差量编码所需的指纹与定义。</param>
-    /// <param name="enqueued">true 表示帧已进入发送队列；false 时调用方须在锁外 SendAsync 同一数据包。</param>
-    public static byte[] BuildCommandResultPacket(
-        WebSocketSession session,
-        string requestId,
-        Guid envelopeRequestId,
-        PlayerCommandResult result,
-        Domain.GameData.GameDataCatalog gameData,
-        out bool enqueued)
+    /// <summary>必达回执在出站锁内编码、入队并更新基线；落后于基线的回执不能回退分段校验和。</summary>
+    private static void EnqueueCommandResult(WebSocketSession session, string requestId, Guid envelopeRequestId,
+        PlayerCommandResult result, Domain.GameData.GameDataCatalog gameData)
     {
-        if (result.Snapshot.TouchedSections is { } touched)
+        var snapshot = result.Snapshot;
+        var pendingInspect = session.PendingInspectedUnit;
+        var attributesProjected = false;
+        var data = result.Data is null ? (JsonElement?)null : JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options);
+        var (previousSections, previousAssets) = session.ReadPushBaseline();
+        if (snapshot.TouchedSections is { } touched && previousSections is not null && !session.IsOlderThanPushBaseline(snapshot.StateVersion))
         {
-            lock (session.OutboundSync)
+            var delta = ProtocolSnapshotMapper.BuildDelta(snapshot, gameData.Fingerprint, gameData, touched,
+                previousSections, previousAssets, out var nextSections, out var nextAssets,
+                pendingInspect, () => attributesProjected = true);
+            if (Enqueue(CommandResultSnapshotForms.Delta, delta))
             {
-                var (previousSections, previousAssets) = session.ReadPushBaseline();
-                if (previousSections is not null)
-                {
-                    var pendingInspect = session.PendingInspectedUnit;
-                    var attributesProjected = false;
-                    var delta = ProtocolSnapshotMapper.BuildDelta(
-                        result.Snapshot, gameData.Fingerprint, gameData, touched,
-                        previousSections, previousAssets,
-                        out var nextSections, out var nextAssets,
-                        pendingInspect, () => attributesProjected = true);
-                    var customDataElement = result.Data is not null
-                        ? (JsonElement?)JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options)
-                        : null;
-                    var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(),
-                        new CommandResultDto(requestId, result.Success, result.Code, result.Message,
-                            result.Snapshot.StateVersion, CommandResultSnapshotForms.Delta,
-                            JsonSerializer.SerializeToElement(delta, ProtocolJson.Options),
-                            Data: customDataElement));
-                    enqueued = session.TrySend(packet);
-                    if (enqueued) session.CommitPushBaseline(nextSections, nextAssets);
-                    // 回执帧必达：入队失败由调用方锁外 SendAsync 阻塞投递，属性交付直接记账。
-                    if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
-                    return packet;
-                }
+                session.CommitPushBaseline(nextSections, nextAssets, snapshot.StateVersion);
+                if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
             }
+            return;
         }
-        var pendingInspectFull = session.PendingInspectedUnit;
-        var attributesProjectedFull = false;
-        var fullSnapshot = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData,
-            pendingInspectFull, () => attributesProjectedFull = true);
-        if (attributesProjectedFull) session.MarkInspectedAttributesDelivered(pendingInspectFull);
-        var customDataElementFull = result.Data is not null
-            ? (JsonElement?)JsonSerializer.SerializeToElement(result.Data, ProtocolJson.Options)
-            : null;
-        var full = new CommandResultDto(
-            requestId, result.Success, result.Code, result.Message,
-            result.Snapshot.StateVersion, CommandResultSnapshotForms.Snapshot,
-            JsonSerializer.SerializeToElement(fullSnapshot, ProtocolJson.Options),
-            Data: customDataElementFull);
-        // 全量兜底回执同样取号-编码-入队在会话锁内完成，保持与并发推送的序号次序一致；
-        // 满队列时 enqueued=false 由调用方锁外 SendAsync 阻塞投递。
-        lock (session.OutboundSync)
+        var full = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData,
+            pendingInspect, () => attributesProjected = true);
+        if (!Enqueue(CommandResultSnapshotForms.Snapshot, full)) return;
+        if (session.IsOlderThanPushBaseline(snapshot.StateVersion))
+            session.MarkDeltaDropped();
+        else
         {
-            var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(), full);
-            enqueued = session.TrySend(packet);
-            return packet;
+            session.CommitFullSnapshot(full);
+            session.CompleteDeltaResync();
+            if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspect);
         }
+
+        bool Enqueue<T>(string form, T payload) => session.TrySend(EncodeJson(WireMessageType.CommandResult, envelopeRequestId,
+            session.NextOutboundSequence(), new CommandResultDto(requestId, result.Success, result.Code, result.Message,
+                snapshot.StateVersion, form, JsonSerializer.SerializeToElement(payload, ProtocolJson.Options), Data: data)));
     }
 
     /// <summary>社交失败原因到协议错误码的映射。</summary>

@@ -25,6 +25,20 @@ public sealed class WireEnvelopeTests
         Assert.Equal("player.presence", command!.Command);
     }
 
+    [Fact]
+    public void BorrowedEnvelope_UsesOnlyTheValidBufferSlice()
+    {
+        var packet = WireEnvelopeCodec.EncodeJson(WireMessageType.Ping, Guid.NewGuid(), 1, new { });
+        var buffer = new byte[packet.Length + 20];
+        packet.CopyTo(buffer, 10);
+        var validSlice = buffer.AsMemory(10, packet.Length);
+        Assert.True(WireEnvelopeCodec.TryDecodeBorrowed(validSlice, out var borrowed));
+        Assert.Equal("{}"u8.ToArray(), borrowed.Payload.ToArray());
+        buffer[10 + 36] = (byte)'[';
+        Assert.Equal((byte)'[', borrowed.Payload.Span[0]);
+        Assert.False(WireEnvelopeCodec.TryDecodeBorrowed(buffer, out _));
+    }
+
     /// <summary>角色卡沿用原信封，可用钱包与不可售储备分别往返，不合并数量。</summary>
     [Fact]
     public void PlayerCardEnvelope_RoundTripsAvailableWalletAndOfflineReserveSeparately()

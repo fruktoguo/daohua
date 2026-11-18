@@ -13,6 +13,8 @@ public static class ComputeLinkEndpoint
 {
     /// <summary>握手令牌长度上限：与节点侧 TokenValidator.MaxTokenLength 对齐的防御边界。</summary>
     private const int MaxTokenLength = 512;
+    private const int MaxHandshakeMessageBytes = 16 * 1024;
+    private static readonly TimeSpan RejectWriteTimeout = TimeSpan.FromSeconds(5);
 
     // 拒绝路径日志各自独立节流：拨入方重连刷量时保留证据但不被同一类拒绝刷满磁盘。
     private static readonly LogThrottle TokenRejectLog = new(TimeSpan.FromSeconds(30));
@@ -74,9 +76,11 @@ public static class ComputeLinkEndpoint
             socket = await context.WebSockets.AcceptWebSocketAsync();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
             var token = linked.Token;
-            // 首帧必须是 hello：凭证、契约版本、节点容量与配表指纹都在这里裁决。
-            var first = await ReceiveMessageAsync(socket, token)
-                .WaitAsync(ComputeLinkContract.HelloTimeout, token);
+            using var handshake = CancellationTokenSource.CreateLinkedTokenSource(token);
+            handshake.CancelAfter(ComputeLinkContract.HelloTimeout);
+            var handshakeToken = handshake.Token;
+            // 让截止时间取消底层接收；不能在尚存一条接收时再启动 WebSocket 关闭握手。
+            var first = await ReceiveMessageAsync(socket, MaxHandshakeMessageBytes, handshakeToken);
             if (first is not ComputeLinkHello hello)
                 throw new InvalidDataException("首帧必须是 hello。");
             var name = string.IsNullOrWhiteSpace(hello.NodeName)
@@ -103,7 +107,7 @@ public static class ComputeLinkEndpoint
                 if (TokenRejectLog.TryAcquire())
                     logger.LogWarning("compute-link 令牌校验失败，拒绝拨入 name={Name} remote={Remote}",
                         name, context.Connection.RemoteIpAddress);
-                await SendCloseAsync(socket, "UNAUTHORIZED", "需要有效的内部计算令牌。", token);
+                await SendCloseAsync(socket, "UNAUTHORIZED", "需要有效的内部计算令牌。", handshakeToken);
                 return;
             }
 
@@ -132,7 +136,7 @@ public static class ComputeLinkEndpoint
                         "计算节点配表指纹不匹配，拒绝接入 name={Name} remote={Remote} expected={Expected} actual={Actual}",
                         name, context.Connection.RemoteIpAddress, gameData.Fingerprint, actualFingerprint);
                 await SendCloseAsync(socket, "GAME_DATA_FINGERPRINT_MISMATCH",
-                    $"配表指纹不匹配，节点需与主服同版本：expected={gameData.Fingerprint}", token);
+                    $"配表指纹不匹配，节点需与主服同版本：expected={gameData.Fingerprint}", handshakeToken);
                 return;
             }
 
@@ -149,7 +153,7 @@ public static class ComputeLinkEndpoint
                 if (NodeLimitLog.TryAcquire())
                     logger.LogWarning("计算节点注册被拒绝：在线节点数已达上限 name={Name} remote={Remote}",
                         name, context.Connection.RemoteIpAddress);
-                await SendCloseAsync(socket, "NODE_LIMIT", "在线计算节点数已达上限。", token);
+                await SendCloseAsync(socket, "NODE_LIMIT", "在线计算节点数已达上限。", handshakeToken);
                 return;
             }
             logger.LogInformation(
@@ -160,8 +164,9 @@ public static class ComputeLinkEndpoint
 
             await socket.SendAsync(
                 ComputeLinkCodec.Encode(new ComputeLinkWelcome(
-                    ComputeLinkContract.Version, node.NodeId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())),
-                WebSocketMessageType.Text, true, token);
+                    ComputeLinkContract.Version, node.NodeId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())).AsMemory(),
+                WebSocketMessageType.Text, true, handshakeToken);
+            handshake.CancelAfter(Timeout.InfiniteTimeSpan);
             handshakePending = false;
             HandshakeGate.Release();
 
@@ -178,6 +183,12 @@ public static class ComputeLinkEndpoint
             logger.LogInformation("计算节点链路被对端关闭 name={Name} remote={Remote}",
                 node?.Name ?? "handshake", context.Connection.RemoteIpAddress);
         }
+        catch (OperationCanceledException) when (socket is not null && handshakePending && !context.RequestAborted.IsCancellationRequested)
+        {
+            metrics?.RecordHandshakeRejected();
+            if (HandshakeRejectLog.TryAcquire())
+                logger.LogWarning("计算节点握手超时 remote={Remote}", context.Connection.RemoteIpAddress);
+        }
         catch (InvalidDataException exception) when (socket is not null && node is null)
         {
             // 握手期协议违规（hello 缺失/契约版本不符/能力声明非法）：计数 + 节流留证据，
@@ -188,7 +199,7 @@ public static class ComputeLinkEndpoint
                     context.Connection.RemoteIpAddress, exception.Message);
             try
             {
-                await SendCloseAsync(socket, "LINK_ERROR", exception.Message, CancellationToken.None);
+                await SendCloseAsync(socket, "LINK_ERROR", exception.Message, context.RequestAborted);
             }
             catch { }
         }
@@ -197,7 +208,7 @@ public static class ComputeLinkEndpoint
             logger.LogWarning(exception, "计算节点链路异常中止 remote={Remote}", context.Connection.RemoteIpAddress);
             try
             {
-                await SendCloseAsync(socket, "LINK_ERROR", exception.Message, CancellationToken.None);
+                await SendCloseAsync(socket, "LINK_ERROR", exception.Message, context.RequestAborted);
             }
             catch { }
         }
@@ -222,7 +233,7 @@ public static class ComputeLinkEndpoint
         var lateResultLog = new LogThrottle(TimeSpan.FromSeconds(30));
         while (!token.IsCancellationRequested)
         {
-            var message = await ReceiveMessageAsync(socket, token);
+            var message = await ReceiveMessageAsync(socket, ComputeLinkContract.MaxMessageBytes, token);
             switch (message)
             {
                 case ComputeLinkResult result:
@@ -262,43 +273,52 @@ public static class ComputeLinkEndpoint
     }
 
     /// <summary>读取一条完整文本帧（处理分片），超过单帧上限即抛异常。</summary>
-    private static async Task<object> ReceiveMessageAsync(WebSocket socket, CancellationToken token)
+    internal static async Task<object> ReceiveMessageAsync(WebSocket socket, int maxMessageBytes, CancellationToken token)
     {
-        var buffer = new ArrayBufferWriter<byte>(64 * 1024);
-        var scratch = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        // 直接收进组包缓冲。保留一个探测字节：刚好达到上限后仍可接受空结束分片。
+        var readLimit = maxMessageBytes + 1;
+        var pool = ArrayPool<byte>.Shared;
+        var buffer = pool.Rent(Math.Min(16 * 1024, readLimit));
+        var written = 0;
         try
         {
             while (true)
             {
-                var received = await socket.ReceiveAsync(scratch, token);
+                if (written == buffer.Length)
+                {
+                    var expanded = pool.Rent(Math.Min(buffer.Length * 2, readLimit));
+                    buffer.AsSpan(0, written).CopyTo(expanded);
+                    pool.Return(buffer);
+                    buffer = expanded;
+                }
+
+                var received = await socket.ReceiveAsync(buffer.AsMemory(written, Math.Min(buffer.Length, readLimit) - written), token);
                 if (received.MessageType == WebSocketMessageType.Close)
                     throw new ComputeNodeDisconnectedException("peer");
-                if (received.MessageType == WebSocketMessageType.Binary)
+                if (received.MessageType != WebSocketMessageType.Text)
                     throw new InvalidDataException("链路只接受文本帧。");
-                if (buffer.WrittenCount + received.Count > ComputeLinkContract.MaxMessageBytes)
+                written += received.Count;
+                if (written > maxMessageBytes)
                     throw new InvalidDataException("链路帧超过大小上限。");
-                buffer.Write(scratch.AsSpan(0, received.Count));
-                if (received.EndOfMessage) break;
+                if (received.EndOfMessage) return ComputeLinkCodec.Decode(buffer.AsMemory(0, written));
             }
-            return ComputeLinkCodec.Decode(buffer.WrittenMemory);
         }
-        finally { ArrayPool<byte>.Shared.Return(scratch); }
+        finally { pool.Return(buffer); }
     }
 
-    /// <summary>先送 error 帧再发关闭帧，让节点拿到拒绝原因。</summary>
+    /// <summary>尽力在截止时间内送 error 和关闭帧；不等对端应答才归还握手槽。</summary>
     private static async Task SendCloseAsync(WebSocket socket, string code, string message, CancellationToken token)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(RejectWriteTimeout);
         try
         {
             await socket.SendAsync(
-                ComputeLinkCodec.Encode(new ComputeLinkError(code, message)),
-                WebSocketMessageType.Text, true, token);
+                ComputeLinkCodec.Encode(new ComputeLinkError(code, message)).AsMemory(),
+                WebSocketMessageType.Text, true, deadline.Token);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, code, deadline.Token);
         }
-        catch { }
-        try
-        {
-            await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, code, CancellationToken.None);
-        }
-        catch { }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
+        catch (WebSocketException) { }
     }
 }

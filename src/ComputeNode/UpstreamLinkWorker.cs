@@ -45,6 +45,8 @@ public sealed class UpstreamLinkWorker(
     private readonly IReadOnlyList<string> _upstreams = upstreamUrls is { Count: > 0 }
         ? upstreamUrls
         : throw new ArgumentException("至少配置一个主服上游地址（ComputeNode:UpstreamUrls）。", nameof(upstreamUrls));
+    private const int MaxHandshakeMessageBytes = 16 * 1024;
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan MinRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
     /// <summary>会话健康存活阈值：超过该时长的链路断开视为偶发断线，退避复位而非继续翻倍。</summary>
@@ -52,7 +54,7 @@ public sealed class UpstreamLinkWorker(
     /// <summary>节点停机排空窗口：上报 draining 后给在飞批次跑完回传的有界时间，窗口外取消按租约退回。</summary>
     private static readonly TimeSpan NodeDrainWindow = TimeSpan.FromSeconds(10);
     private readonly ILogger _logger = loggerFactory.CreateLogger("ComputeNode.Upstream");
-    /// <summary>主服下发 drain 后置位：本链路在飞批次跑完即主动断链，消费后复位并立即重连。</summary>
+    /// <summary>主服下发 drain 后置位：本链路在飞批次跑完即主动断链，消费后复位到最小退避档重连。</summary>
     private int _drainRequested;
     /// <summary>在飞批次数（ProcessBatchAsync 簿记）：排空等待以此判定"手头算力已清空"。</summary>
     private int _inFlightBatches;
@@ -86,7 +88,7 @@ public sealed class UpstreamLinkWorker(
             }
             catch (Exception exception)
             {
-                // 主服排空断链不算故障：完成在飞后主动断开，立即重连（落点可能是已恢复/其他主服实例）。
+                // 主服排空断链不算故障：完成在飞后主动断开，以最小退避换入口（保留抖动以避免集中重连）。
                 var drained = Interlocked.Exchange(ref _drainRequested, 0) != 0;
                 // 存活超过健康阈值的链路断开视为偶发断线：退避复位到最小档，不空等满退避；
                 // 快断快连的会话保留当前退避并继续翻倍，避免弱网设备刷重连压垮主服握手。
@@ -130,16 +132,34 @@ public sealed class UpstreamLinkWorker(
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(60);
         var uri = BuildWebSocketUri(upstream, allowInsecureInternal);
-        await socket.ConnectAsync(uri, cancellationToken);
+        using (var connect = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            connect.CancelAfter(ConnectTimeout);
+            try { await socket.ConnectAsync(uri, connect.Token); }
+            catch (OperationCanceledException) when (connect.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("拨入主服 WebSocket 超时。");
+            }
+        }
 
-        await socket.SendAsync(
-            LinkCodec.Encode(new LinkHello(
-                ComputeLinkContract.Version, NodeName, maxConcurrentBatches, gameData.Fingerprint,
-                maxJobsPerBatch, ComputeContract.MaxBatchBytes, NodeRuntime.Fingerprint)),
-            WebSocketMessageType.Text, true, cancellationToken);
-
-        var first = await ReceiveMessageAsync(socket, cancellationToken)
-            .WaitAsync(ComputeLinkContract.WelcomeTimeout, cancellationToken);
+        object first;
+        using (var handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            handshake.CancelAfter(ComputeLinkContract.WelcomeTimeout);
+            try
+            {
+                await socket.SendAsync(
+                    LinkCodec.Encode(new LinkHello(
+                        ComputeLinkContract.Version, NodeName, maxConcurrentBatches, gameData.Fingerprint,
+                        maxJobsPerBatch, ComputeContract.MaxBatchBytes, NodeRuntime.Fingerprint)).AsMemory(),
+                    WebSocketMessageType.Text, true, handshake.Token);
+                first = await ReceiveMessageAsync(socket, MaxHandshakeMessageBytes, handshake.Token);
+            }
+            catch (OperationCanceledException) when (handshake.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("主服 welcome 握手超时。");
+            }
+        }
         switch (first)
         {
             case LinkError error:
@@ -249,7 +269,7 @@ public sealed class UpstreamLinkWorker(
         long nextTaskId = 0;
         while (!token.IsCancellationRequested)
         {
-            var message = await ReceiveMessageAsync(socket, token);
+            var message = await ReceiveMessageAsync(socket, ComputeLinkContract.MaxMessageBytes, token);
             switch (message)
             {
                 case LinkBatch batch:
@@ -377,23 +397,37 @@ public sealed class UpstreamLinkWorker(
     }
 
     /// <summary>读取一条完整文本帧（处理分片），超过单帧上限即抛异常。</summary>
-    private static async Task<object> ReceiveMessageAsync(WebSocket socket, CancellationToken token)
+    private static async Task<object> ReceiveMessageAsync(WebSocket socket, int maxMessageBytes, CancellationToken token)
     {
-        var buffer = new ArrayBufferWriter<byte>(64 * 1024);
-        var scratch = new byte[64 * 1024];
-        while (true)
+        // 与主服镜像：直接收进池化缓冲；一个探测字节区分超限与正好到上限的空尾分片。
+        var readLimit = maxMessageBytes + 1;
+        var pool = ArrayPool<byte>.Shared;
+        var buffer = pool.Rent(Math.Min(16 * 1024, readLimit));
+        var written = 0;
+        try
         {
-            var received = await socket.ReceiveAsync(scratch, token);
-            if (received.MessageType == WebSocketMessageType.Close)
-                throw new InvalidOperationException("主服关闭了链路。");
-            if (received.MessageType == WebSocketMessageType.Binary)
-                throw new InvalidDataException("链路只接受文本帧。");
-            if (buffer.WrittenCount + received.Count > ComputeLinkContract.MaxMessageBytes)
-                throw new InvalidDataException("链路帧超过大小上限。");
-            buffer.Write(scratch.AsSpan(0, received.Count));
-            if (received.EndOfMessage) break;
+            while (true)
+            {
+                if (written == buffer.Length)
+                {
+                    var expanded = pool.Rent(Math.Min(buffer.Length * 2, readLimit));
+                    buffer.AsSpan(0, written).CopyTo(expanded);
+                    pool.Return(buffer);
+                    buffer = expanded;
+                }
+
+                var received = await socket.ReceiveAsync(buffer.AsMemory(written, Math.Min(buffer.Length, readLimit) - written), token);
+                if (received.MessageType == WebSocketMessageType.Close)
+                    throw new InvalidOperationException("主服关闭了链路。");
+                if (received.MessageType != WebSocketMessageType.Text)
+                    throw new InvalidDataException("链路只接受文本帧。");
+                written += received.Count;
+                if (written > maxMessageBytes)
+                    throw new InvalidDataException("链路帧超过大小上限。");
+                if (received.EndOfMessage) return LinkCodec.Decode(buffer.AsMemory(0, written));
+            }
         }
-        return LinkCodec.Decode(buffer.WrittenMemory);
+        finally { pool.Return(buffer); }
     }
 
     /// <summary>把安全 http(s) 上游地址归一化为 WebSocket URI；明文仅允许显式开启的回环或 Compose 内部主机。</summary>

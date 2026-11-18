@@ -237,6 +237,21 @@ public static class WireEnvelopeCodec
     /// <returns>解析成功返回 true，否则返回 false</returns>
     public static bool TryDecode(ReadOnlySpan<byte> bytes, out WireEnvelope envelope)
     {
+        if (!TryReadHeader(bytes, out envelope)) return false;
+        envelope = envelope with { Payload = bytes[HeaderBytes..].ToArray() };
+        return true;
+    }
+
+    /// <summary>借用输入内存中的载荷；调用方必须保持输入有效直至信封处理结束。</summary>
+    public static bool TryDecodeBorrowed(ReadOnlyMemory<byte> bytes, out WireEnvelope envelope)
+    {
+        if (!TryReadHeader(bytes.Span, out envelope)) return false;
+        envelope = envelope with { Payload = bytes[HeaderBytes..] };
+        return true;
+    }
+
+    private static bool TryReadHeader(ReadOnlySpan<byte> bytes, out WireEnvelope envelope)
+    {
         envelope = default;
         if (bytes.Length < HeaderBytes || bytes.Length > HeaderBytes + ProtocolConstants.MaxFrameBytes) return false;
         if (BinaryPrimitives.ReadUInt32BigEndian(bytes[..4]) != Magic) return false;
@@ -248,7 +263,7 @@ public static class WireEnvelopeCodec
         var sequence = BinaryPrimitives.ReadInt64BigEndian(bytes.Slice(24, 8));
         var payloadLength = BinaryPrimitives.ReadInt32BigEndian(bytes.Slice(32, 4));
         if (version != ProtocolConstants.CurrentVersion || requestId == Guid.Empty || sequence < 0 || payloadLength < 0 || payloadLength > ProtocolConstants.MaxFrameBytes || payloadLength != bytes.Length - HeaderBytes) return false;
-        envelope = new WireEnvelope(version, type, requestId, sequence, codec, bytes.Slice(HeaderBytes, payloadLength).ToArray());
+        envelope = new WireEnvelope(version, type, requestId, sequence, codec, ReadOnlyMemory<byte>.Empty);
         return true;
     }
 

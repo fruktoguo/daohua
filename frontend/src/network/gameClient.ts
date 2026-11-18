@@ -114,10 +114,9 @@ export class GameClient {
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   /** 待处理请求计时器；连接关闭后保留元数据，避免把可能已执行的命令静默判定为失败。 */
   private readonly pendingRequests = new Map<string, number>()
-  /** 在途 Ping 的发送信息（requestId -> { sentAt, timer }），用于 RTT 测算与 Pong 超时判死。 */
-  private readonly pendingPings = new Map<string, { sentAt: number; timer: number }>()
-  /** 手动测速的最小间隔，避免悬停抖动刷 Ping。 */
-  private lastManualPingAt = 0
+  /** 手动测速与周期探活共用一份在途探测。 */
+  private pendingPing: { requestId: string; sentAt: number; timer: number } | undefined
+  private lastPingAt = -Infinity
   private readonly awaitingReconnectRequests = new Set<string>()
   /** 当前连接是否已完成 HelloAck：区分「从未握上就断」与「正常会话中断」 */
   private helloAckReceived = false
@@ -135,10 +134,14 @@ export class GameClient {
    */
   private messageChain: Promise<void> = Promise.resolve()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
+  private static readonly HEARTBEAT_INTERVAL_MS = 25_000
   /** Ping 发送后等待 Pong 响应的超时上限：超时视为半开死连接，主动关闭触发重连。 */
   private static readonly PONG_TIMEOUT_MS = 10_000
   /** 自动重连熔断上限（约 70 秒退避累加后暂停后台自动重连，由用户点击重试恢复）。 */
   private static readonly MAX_RECONNECT_ATTEMPTS = 12
+  /** 已建立快照基线的连接持续一段时间，才视为恢复，避免短连反复重置退避。 */
+  private static readonly RECONNECT_STABLE_MS = 30_000
+  private static readonly SESSION_PROBE_FAILURE_INTERVAL = 3
   /** 坊市行情统计轮询间隔（15 秒）：悬浮行情卡为低频只读面，不需要盘口级实时性。 */
   private static readonly MARKET_STATS_REFRESH_INTERVAL_MS = 15_000
   /** 行情轮询的页面可见性监听句柄：随 start/stop 成对挂载卸载。 */
@@ -158,58 +161,51 @@ export class GameClient {
     }
   }
 
-  private startHeartbeat(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): void {
-    this.stopHeartbeat()
-    this.heartbeatTimer = window.setInterval(() => {
-      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId) || sourceSocket.readyState !== WebSocket.OPEN) return
+  private armHeartbeat(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): void {
+    window.clearTimeout(this.heartbeatTimer)
+    this.heartbeatTimer = window.setTimeout(() => {
       this.sendPing(sourceSocket, sourceGeneration, sourcePlayerId)
-    }, 25_000)
+    }, GameClient.HEARTBEAT_INTERVAL_MS)
   }
 
-  /** 发送一次 Ping 并登记发送时间与 Pong 超时定时器；Pong 超时主动关闭死连接触发重连。 */
+  /** 单飞探活：主动测速也续订下一次心跳，不重复消耗 Ping 序号与服务端 Pong 统计。 */
   private sendPing(sourceSocket: WebSocket, sourceGeneration: number, sourcePlayerId: string): void {
+    if (!this.helloAckReceived || this.pendingPing || sourceSocket.readyState !== WebSocket.OPEN
+      || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
     const requestId = createRequestId()
-    const sentAt = Date.now()
+    const sentAt = performance.now()
+    this.lastPingAt = sentAt
+    this.armHeartbeat(sourceSocket, sourceGeneration, sourcePlayerId)
     const timer = window.setTimeout(() => {
-      if (!this.pendingPings.delete(requestId)) return
-      if (!this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
-      if (sourceSocket.readyState === WebSocket.OPEN) {
+      if (this.pendingPing?.requestId !== requestId) return
+      this.pendingPing = undefined
+      if (this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId) && sourceSocket.readyState === WebSocket.OPEN) {
         sourceSocket.close(4000, '心跳响应超时')
       }
     }, GameClient.PONG_TIMEOUT_MS)
-    this.pendingPings.set(requestId, { sentAt, timer })
+    this.pendingPing = { requestId, sentAt, timer }
     try {
-      sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, requestId, this.nextOutboundSequence(), { clientTime: sentAt }))
+      sourceSocket.send(encodeJsonEnvelope(WireMessageType.Ping, requestId, this.nextOutboundSequence(), { clientTime: Date.now() }))
     } catch {
       window.clearTimeout(timer)
-      this.pendingPings.delete(requestId)
+      this.pendingPing = undefined
       // 发送失败由 WebSocket close 事件统一处理。
     }
   }
 
-  /** 立即发送一次 Ping 测往返延迟（悬停连接灯触发）；仅连接已打开时生效，1 秒内重复调用去重。 */
+  /** 握手完成后可主动测速；距离任意 Ping 不足 1 秒时复用最近探测。 */
   pingNow(): void {
     const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) return
-    const now = Date.now()
-    if (now - this.lastManualPingAt < 1000) return
-    this.lastManualPingAt = now
+    if (!socket || performance.now() - this.lastPingAt < 1000) return
     this.sendPing(socket, this.sessionGeneration, this.playerId)
   }
 
-  private clearPendingPings(): void {
-    for (const pending of this.pendingPings.values()) {
-      window.clearTimeout(pending.timer)
-    }
-    this.pendingPings.clear()
-  }
-
   private stopHeartbeat(): void {
-    if (this.heartbeatTimer !== undefined) {
-      window.clearInterval(this.heartbeatTimer)
-      this.heartbeatTimer = undefined
-    }
-    this.clearPendingPings()
+    window.clearTimeout(this.heartbeatTimer)
+    this.heartbeatTimer = undefined
+    window.clearTimeout(this.pendingPing?.timer)
+    this.pendingPing = undefined
+    this.lastPingAt = -Infinity
   }
 
   /**
@@ -267,7 +263,8 @@ export class GameClient {
     useGameStore.getState().setConnection('reconnecting')
     const generation = this.sessionGeneration
     const accountGeneration = this.accountGeneration
-    const delay = this.reconnectDelay
+    // 同一批客户端故障恢复时打散拨号；达到 8 秒上界后仍保留抖动区间。
+    const delay = this.reconnectDelay - Math.floor(Math.random() * (this.reconnectDelay / 5))
     this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
     this.reconnectTimer = window.setTimeout(() => {
       if (!this.isCurrentDisconnectedGeneration(generation, accountGeneration)) return
@@ -596,8 +593,6 @@ export class GameClient {
     if (!this.hasConnectionBaseline) this.baselineSince = Date.now()
     this.hasConnectionBaseline = true
     this.clearFirstSnapshotTimer()
-    this.reconnectDelay = 500
-    this.reconnectAttempts = 0
     this.awaitingReconnectRequests.clear()
     if (this.helloAckReceived) store.setConnection('online')
   }
@@ -676,7 +671,6 @@ export class GameClient {
     this.baselineSince = null
     this.snapshotRecoveryPending = false
     this.clearFirstSnapshotTimer()
-    this.clearPendingPings()
     this.messageChain = Promise.resolve()
     this.outboundSequence = 0
     this.lastServerSequence = 0
@@ -706,9 +700,7 @@ export class GameClient {
         socket.close(1000, '客户端已停止')
         return
       }
-      // WebSocket transport open 仅代表 TCP 已建立；在合法 HelloAck 前仍保持 connecting。
-      useGameStore.getState().setConnection('connecting')
-      this.startHeartbeat(socket, sourceGeneration, sourcePlayerId)
+      // WebSocket 打开不代表会话就绪；等待合法 HelloAck 后才开始探活。
       void this.sendHello(socket, sourceGeneration, sourcePlayerId)
     })
     socket.addEventListener('message', event => {
@@ -734,6 +726,10 @@ export class GameClient {
       // 连接中断时在途名片/队友战报/模拟器导入请求必然失效：统一清理，避免加载态永久悬挂。
       useSocialStore.getState().cancelPendingCardRequests()
       if (this.disposed || this.snapshotTerminal) return
+      if (this.helloAckReceived && this.baselineSince !== null && Date.now() - this.baselineSince >= GameClient.RECONNECT_STABLE_MS) {
+        this.reconnectDelay = 500
+        this.reconnectAttempts = 0
+      }
       if (this.snapshotRecoveryPending) {
         this.scheduleReconnect()
         return
@@ -760,8 +756,8 @@ export class GameClient {
       }
       if (!this.helloAckReceived) this.consecutiveConnectFailures += 1
       else this.consecutiveConnectFailures = 0
-      if (this.consecutiveConnectFailures >= 3) {
-        // 连续三次连接未握上：探测 HTTP 会话，把「会话已过期」与「服务暂不可达」区分开。
+      if (this.consecutiveConnectFailures > 0 && this.consecutiveConnectFailures % GameClient.SESSION_PROBE_FAILURE_INTERVAL === 0) {
+        // 首次达到阈值仍探测会话；持续失败时限频，避免每轮都串行等待 HTTP 超时。
         void this.probeSessionValidity()
         return
       }
@@ -870,7 +866,8 @@ export class GameClient {
           if (this.hasConnectionBaseline) useGameStore.getState().setConnection('online')
           this.consecutiveConnectFailures = 0
           this.lastOutageReasonKey = null
-          this.sendPing(sourceSocket, sourceGeneration, sourcePlayerId)
+          // HelloAck 已携带在线统计，不在每次重连后立即再发一轮 Ping。
+          this.armHeartbeat(sourceSocket, sourceGeneration, sourcePlayerId)
           this.startMarketStatsSync(sourceSocket, sourceGeneration, sourcePlayerId)
           // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
           const inspectReplay = this.lastInspectTarget
@@ -1049,11 +1046,11 @@ export class GameClient {
           break
         }
         case WireMessageType.Pong: {
-          const pending = this.pendingPings.get(envelope.requestId)
-          if (pending !== undefined) {
+          const pending = this.pendingPing
+          if (pending?.requestId === envelope.requestId) {
             window.clearTimeout(pending.timer)
-            this.pendingPings.delete(envelope.requestId)
-            useGameStore.getState().setLatencyMs(Math.max(0, Date.now() - pending.sentAt))
+            this.pendingPing = undefined
+            useGameStore.getState().setLatencyMs(Math.max(0, performance.now() - pending.sentAt))
           }
           const pong = decodeJsonPayload<PongResponse>(envelope)
           if (pong && typeof pong.onlineCount === 'number') {

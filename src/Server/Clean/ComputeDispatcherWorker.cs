@@ -293,9 +293,7 @@ public sealed class ComputeDispatcherWorker(
             fits.Select(entry => entry.Request).ToArray())));
         try
         {
-            // 出站队列 bounded 64：并行派发下可能顶满，补写入超时防止派发任务被挂死。
-            await node.Outbound.Writer.WriteAsync(frame, cancellationToken)
-                .AsTask().WaitAsync(options.ComputeOutboundWriteTimeout, cancellationToken);
+            await WriteBatchFrameAsync(node.Outbound.Writer, frame, options.ComputeOutboundWriteTimeout, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -387,6 +385,22 @@ public sealed class ComputeDispatcherWorker(
                     catch { /* 释放失败由租约到期孤儿恢复 */ }
                 }
             });
+    }
+
+    internal static async ValueTask WriteBatchFrameAsync(
+        ChannelWriter<byte[]> outbound, byte[] frame, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (outbound.TryWrite(frame)) return;
+
+        // 超时必须撤销实际等待中的写入，否则租约已退回重派的批次仍会在队列腾空后下发。
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+        try { await outbound.WriteAsync(frame, deadline.Token); }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("计算链路出站队列写入超时。");
+        }
     }
 
     /// <summary>

@@ -8,6 +8,7 @@ import { build } from 'esbuild'
 // 真实前端 Store、解码器和 GameClient；仅替代浏览器时钟、HTTP 与 WebSocket 传输。
 const modules = {
   account: ['useAccountStore'],
+  apiClient: ['fetchGameCatalog', 'getCatalogFingerprint'],
   gameClient: ['gameClient'],
   protocol: ['WireMessageType', 'createRequestId', 'encodeJsonEnvelope', 'decodeEnvelope'],
   sessionState: ['setSessionAccount', 'getSessionAccount', 'getSessionGeneration'],
@@ -35,7 +36,7 @@ const compiled = { exports: {} }
 new Function('require', 'module', 'exports', bundle.text)(createRequire(import.meta.url), compiled, compiled.exports)
 const {
   useAccountStore, useGameStore, useSocialStore, useMailStore, useCheckinStore, useAvatarStore,
-  gameClient, WireMessageType: Wire, createRequestId, encodeJsonEnvelope, decodeEnvelope,
+  fetchGameCatalog, getCatalogFingerprint, gameClient, WireMessageType: Wire, createRequestId, encodeJsonEnvelope, decodeEnvelope,
   setSessionAccount, getSessionAccount, getSessionGeneration, SNAPSHOT_SCHEMA_VERSION, decodePlayerSnapshotDto,
 } = compiled.exports
 
@@ -53,6 +54,10 @@ function deferred() {
 function setup(t, fetch = async input => assert.fail(`未预期 HTTP 请求：${input}`)) {
   const previous = { window: globalThis.window, document: globalThis.document, WebSocket: globalThis.WebSocket, fetch: globalThis.fetch }
   let id = 0
+  let elapsed = 0
+  t.mock.method(Date, 'now', () => Date.parse(now) + elapsed)
+  t.mock.method(performance, 'now', () => elapsed)
+  const random = t.mock.method(Math, 'random', () => 0)
   const timers = new Map()
   const sockets = []
   const data = new Map()
@@ -78,7 +83,11 @@ function setup(t, fetch = async input => assert.fail(`未预期 HTTP 请求：${
     sent = []
     sequence = 0
     constructor(url) { super(); assert.equal(url, 'ws://localhost/ws'); sockets.push(this) }
-    send(data) { this.sent.push(decodeEnvelope(new Uint8Array(data))) }
+    send(data) {
+      const envelope = decodeEnvelope(new Uint8Array(data))
+      this.sent.push(envelope)
+      this.dispatchEvent(Object.assign(new Event('sent'), { envelope }))
+    }
     accept() { this.readyState = 1 }
     close(code = 1006) { this.readyState = 3; this.dispatchEvent(Object.assign(new Event('close'), { code })) }
     deliver(type, body, requestId = createRequestId()) {
@@ -86,9 +95,22 @@ function setup(t, fetch = async input => assert.fail(`未预期 HTTP 请求：${
       this.dispatchEvent(new MessageEvent('message', { data }))
       return gameClient.messageChain
     }
-    async hello() {
+    sendHello() {
+      const result = new Promise(resolve => {
+        const listener = ({ envelope }) => {
+          if (envelope.messageType !== Wire.Hello) return
+          this.removeEventListener('sent', listener)
+          resolve(envelope)
+        }
+        this.addEventListener('sent', listener)
+      })
       this.accept()
-      await this.deliver(Wire.HelloAck, { protocolVersion: 1, serverVersion: 'dev', gameDataFingerprint: 'test', serverSequence: this.sequence + 1 })
+      this.dispatchEvent(new Event('open'))
+      return result
+    }
+    async hello(gameDataFingerprint = 'test') {
+      this.accept()
+      await this.deliver(Wire.HelloAck, { protocolVersion: 1, serverVersion: 'dev', gameDataFingerprint, serverSequence: this.sequence + 1 })
     }
   }
   useAccountStore.setState({ currentAccount: null, sessionChecked: false, logoutState: 'idle', savedAccounts: [] })
@@ -102,15 +124,19 @@ function setup(t, fetch = async input => assert.fail(`未预期 HTTP 请求：${
   t.after(() => { reset(); setSessionAccount(null); Object.assign(globalThis, previous) })
   return {
     sockets,
+    random,
     login(name = 'a') {
       reset()
       setSessionAccount(account(name))
       gameClient.connect()
       return sockets.at(-1)
     },
+    advance(ms) { elapsed += ms },
+    timerCount(delay) { return [...timers.values()].filter(timer => timer.delay === delay).length },
     fire(delay) {
       const entry = [...timers].find(([, value]) => value.delay === delay)
       assert.ok(entry, `缺少 ${delay} ms 定时器`)
+      elapsed += delay
       timers.delete(entry[0]); entry[1].fn()
       return sockets.at(-1)
     },
@@ -184,7 +210,7 @@ test('坏首快照立即重连；有效全量、合法跳版本和同版本资�
   assert.equal(socket.readyState, WebSocket.CLOSED)
   assert.equal(useGameStore.getState().inventory[0].amount, 9)
   assert.equal(useAvatarStore.getState().avatarId, avatarBefore, '坏资产帧不可留下半提交的头像')
-  socket = env.fire(500)
+  socket = env.fire(1000)
   await socket.hello()
   await socket.deliver(Wire.Snapshot, snapshot(account().playerId, 17))
   assert.equal(useGameStore.getState().connection, 'online')
@@ -230,6 +256,97 @@ test('不可读版本进入更新终态；更高标签但可读地板仍正常�
   await socket.hello()
   await socket.deliver(Wire.Snapshot, snapshot(account('b').playerId))
   assert.equal(useGameStore.getState().connection, 'online')
+})
+
+test('Hello 前不探活；手动测速与心跳共用一个在途 Ping，匹配 Pong 后才解除超时', async t => {
+  const env = setup(t)
+  const socket = env.login()
+  const helloSent = socket.sendHello()
+  gameClient.pingNow()
+  assert.equal(socket.sent.length, 0)
+  assert.equal(await helloSent, socket.sent[0])
+  assert.equal(socket.sent[0].sequence, 1)
+  assert.equal(env.timerCount(25_000), 0)
+  await socket.hello()
+  assert.deepEqual(socket.sent.map(frame => frame.messageType), [Wire.Hello], 'HelloAck 已有在线统计，不立即重发探测')
+  assert.equal(env.timerCount(25_000), 1)
+  gameClient.pingNow()
+  assert.deepEqual(socket.sent.map(frame => frame.messageType), [Wire.Hello, Wire.Ping])
+  const ping = socket.sent[1]
+  env.advance(2000)
+  gameClient.pingNow()
+  assert.equal(socket.sent.length, 2)
+  await socket.deliver(Wire.Pong, {}, createRequestId())
+  assert.equal(env.timerCount(10_000), 1, '无关 Pong 不能解除在途探测')
+  await socket.deliver(Wire.Pong, {}, ping.requestId)
+  assert.equal(useGameStore.getState().latencyMs, 2000)
+  assert.equal(env.timerCount(10_000), 0)
+  gameClient.pingNow()
+  await socket.deliver(Wire.Pong, {}, socket.sent[2].requestId)
+  assert.equal(env.timerCount(25_000), 1, '手动测速只保留一轮后续心跳')
+  env.fire(25_000)
+  await socket.deliver(Wire.Pong, {}, socket.sent[3].requestId)
+  gameClient.pingNow()
+  assert.equal(socket.sent.length, 4, '刚完成周期探测时复用最近的 RTT')
+  env.fire(25_000)
+  env.fire(10_000)
+  assert.equal(socket.readyState, WebSocket.CLOSED)
+  assert.equal(env.timerCount(25_000), 0)
+  assert.equal(env.pendingRetries(), 1)
+})
+
+test('短连收到全量快照也继续退避，稳定后恢复初始间隔，反复短连最终熔断', async t => {
+  const env = setup(t)
+  let socket = env.login()
+  const closeAfterBaseline = async (onlineMs = 0) => {
+    await socket.hello()
+    await socket.deliver(Wire.Snapshot, snapshot(account().playerId))
+    assert.equal(useGameStore.getState().connection, 'online')
+    env.advance(onlineMs)
+    socket.close()
+  }
+  await closeAfterBaseline()
+  socket = env.fire(500)
+  await closeAfterBaseline()
+  socket = env.fire(1000)
+  await closeAfterBaseline(30_000)
+  for (const delay of [500, 1000, 2000, 4000, ...Array(8).fill(8000)]) {
+    socket = env.fire(delay)
+    await closeAfterBaseline()
+  }
+  assert.equal(useGameStore.getState().disconnectReason, 'common.net.reconnectCircuitBroken')
+  assert.equal(env.pendingRetries(), 0)
+})
+
+test('重连抖动在上限阶段仍打散掉线客户端', async t => {
+  const env = setup(t)
+  env.random.mock.mockImplementation(() => 0.5)
+  let socket = env.login()
+  for (const delay of [450, 900, 1800, 3600, 7200, 7200]) {
+    await socket.hello()
+    socket.close()
+    socket = env.fire(delay)
+  }
+})
+
+test('握手连续失败只在第 3、6、9、12 次探测会话，401 仍立即停连', async t => {
+  let probes = 0
+  const env = setup(t, async (input, init) => {
+    assert.equal(new URL(input).pathname, '/api/v1/auth/session')
+    assert.equal(init.credentials, 'include')
+    assert.equal(init.cache, 'no-store')
+    return new Response(null, { status: ++probes === 4 ? 401 : 503 })
+  })
+  let socket = env.login()
+  const retryDelays = [500, 1000, 2000, 4000, ...Array(7).fill(8000)]
+  for (let failure = 1; failure <= 12; failure++) {
+    socket.close()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(probes, Math.floor(failure / 3))
+    if (failure <= retryDelays.length) socket = env.fire(retryDelays[failure - 1])
+  }
+  assert.equal(env.pendingRetries(), 0)
+  assert.equal(useGameStore.getState().disconnectReason, 'common.net.sessionExpired')
 })
 
 // C4：触发真实 close → 退避 → Probe 路径，跨登录后分别释放 HTTP 头与错误正文。
@@ -389,4 +506,58 @@ test('退出完成前不发出下一次登录；真实 HTTP 失败进入可恢�
   assert.equal((await login).success, true)
   assert.equal(store().logoutState, 'idle')
   assert.equal(getSessionAccount()?.playerId, account('b').playerId)
+})
+
+// 使用不同表示的 ETag 模拟真实服务端/代理，不从 ETag 推断整批配表的逻辑版本。
+test('配表仅在整批指纹一致并校验成功后发布，混版整批 reload，缺头不回退到 ETag', async t => {
+  const calls = []
+  const lastBody = deferred()
+  const readingLastBody = deferred()
+  const anchors = [Object.fromEntries('level hp mp ad ap armor mr acc eva crit cavoid breakPt parry hpRegen mpRegen'.split(' ').map(key => [key, 1]))]
+  let mode = 'base'
+  const env = setup(t, async (input, init) => {
+    const path = new URL(input).pathname
+    assert.ok(path.startsWith('/api/v1/catalog/'))
+    assert.equal(init.credentials, 'omit')
+    calls.push({ path, cache: init.cache })
+    const headers = new Headers({ ETag: mode === 'missing' ? 'W/"legacy"' : `W/"${path}-gzip"` })
+    const last = path.endsWith('/triggers')
+    const data = path.endsWith('/base-attributes') && mode !== 'bad-body' ? anchors : []
+    if (mode !== 'missing') {
+      const fingerprint = mode === 'base' || (mode === 'mixed' && init.cache !== 'reload' && last)
+        ? 'base' : mode === 'bad-body' ? 'broken' : 'next'
+      headers.set('X-Game-Data-Fingerprint', fingerprint)
+    }
+    if (mode === 'mixed' && init.cache === 'reload' && last) {
+      return { ok: true, status: 200, headers, json: () => { readingLastBody.resolve(); return lastBody.promise } }
+    }
+    return Response.json(data, { headers })
+  })
+  await fetchGameCatalog()
+  assert.equal(getCatalogFingerprint(), 'base')
+  assert.equal(calls.length, 10)
+  assert.ok(calls.every(call => call.cache === 'no-cache'))
+  calls.length = 0
+  mode = 'mixed'
+  const loading = fetchGameCatalog()
+  await readingLastBody.promise
+  assert.equal(getCatalogFingerprint(), 'base', '等待迟到响应体时不能将新指纹交给 Hello')
+  const initialPaths = calls.filter(call => call.cache === 'no-cache').map(call => call.path)
+  assert.equal(initialPaths.length, 10)
+  assert.deepEqual(calls.filter(call => call.cache === 'reload').map(call => call.path), initialPaths)
+  lastBody.resolve({})
+  await loading
+  assert.equal(getCatalogFingerprint(), 'next')
+
+  mode = 'missing'
+  calls.length = 0
+  await assert.rejects(fetchGameCatalog(), /配表版本不一致/)
+  assert.equal(calls.length, 20)
+  assert.equal(getCatalogFingerprint(), 'next', '失败批次不覆盖最后一次有效指纹')
+  mode = 'bad-body'
+  await assert.rejects(fetchGameCatalog(), /锚点无效/)
+  assert.equal(getCatalogFingerprint(), 'next')
+  const socket = env.login()
+  const hello = await socket.sendHello()
+  assert.equal(JSON.parse(new TextDecoder().decode(hello.payload)).gameDataFingerprint, 'next')
 })
