@@ -30,6 +30,9 @@ public static class HeavenGateRules
     /// <summary>开天门抽取的总值上限：五系全部 100 满值时为 500。</summary>
     public const int RollTotalMax = 500;
 
+    /// <summary>灵根总值超过该阈值后，确认入天门或采纳新灵根时必须将可分配点数完全用尽。</summary>
+    public const int RequireFullAllocationTotalThreshold = 300;
+
     /// <summary>是否已到达可开天门的境界。</summary>
     /// <param name="realmLevel">当前境界等级。</param>
     public static bool IsHeavenGateRealm(int realmLevel) => realmLevel >= HeavenGateRealmLevel;
@@ -232,6 +235,7 @@ public static class HeavenGateRules
 
     /// <summary>
     /// 校验重分配是否成立：五系点数合法、剩余点数不得为负、且至少保留一条有效灵根。
+    /// 适用于中间调配暂存；最终入天门/采纳需调用 <see cref="IsValidFinalAllocation"/>。
     /// </summary>
     /// <param name="innate">抽取时的先天分布（原生点数基准）。</param>
     /// <param name="candidate">玩家提交的分布。</param>
@@ -239,6 +243,25 @@ public static class HeavenGateRules
         => candidate.IsValid
             && ResolveRemainingPoints(innate, candidate) >= 0
             && candidate.EffectiveCount > 0;
+
+    /// <summary>先天灵根总值是否超过必须全部分配完点数的阈值（300 点）。</summary>
+    /// <param name="innate">抽取时的先天分布。</param>
+    public static bool RequiresFullAllocation(LinggenValues innate)
+        => innate.Total > RequireFullAllocationTotalThreshold;
+
+    /// <summary>
+    /// 校验最终入天门 / 采纳新灵根是否成立：
+    /// 除满足 <see cref="IsValidAllocation"/> 外，若先天总值超过 300，剩余可分配点数必须为 0。
+    /// </summary>
+    /// <param name="innate">抽取时的先天分布（原生点数基准）。</param>
+    /// <param name="candidate">玩家提交的最终分布。</param>
+    public static bool IsValidFinalAllocation(LinggenValues innate, LinggenValues candidate)
+    {
+        if (!IsValidAllocation(innate, candidate)) return false;
+        if (RequiresFullAllocation(innate) && Math.Abs(ResolveRemainingPoints(innate, candidate)) > 1e-9)
+            return false;
+        return true;
+    }
 
     /// <summary>
     /// 灵根提供的五行增伤点数：每点灵根提供 0.25 点增伤，100 点即 25%（Linear 直加，总纲 §7.7.5.1）。

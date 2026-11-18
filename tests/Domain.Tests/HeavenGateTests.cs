@@ -136,6 +136,24 @@ public sealed class HeavenGateTests
 
         // 五系归零没有有效灵根，禁止确认。
         Assert.False(HeavenGateRules.IsValidAllocation(innate, LinggenValues.Empty));
+
+        // 边界：总值 <= 300 时允许留有未分配点数直接入天门。
+        Assert.False(HeavenGateRules.RequiresFullAllocation(innate));
+        Assert.True(HeavenGateRules.IsValidFinalAllocation(innate, new LinggenValues(0, 60, 60, 60, 60)));
+
+        // 超过 300 点后：中间调配允许暂存，但最终入天门/采纳必须用完所有可分配点数。
+        var highInnate = new LinggenValues(100, 100, 100, 100, 100);
+        var singleRoot = new LinggenValues(100, 0, 0, 0, 0);
+        Assert.True(HeavenGateRules.RequiresFullAllocation(highInnate));
+        Assert.True(HeavenGateRules.IsValidAllocation(highInnate, singleRoot));
+        Assert.False(HeavenGateRules.IsValidFinalAllocation(highInnate, singleRoot));
+        Assert.True(HeavenGateRules.IsValidFinalAllocation(highInnate, highInnate));
+
+        // 301 点微超阈值同样触发全额分配要求。
+        var overThreshold = new LinggenValues(80, 80, 80, 61, 0);
+        Assert.True(HeavenGateRules.RequiresFullAllocation(overThreshold));
+        Assert.False(HeavenGateRules.IsValidFinalAllocation(overThreshold, new LinggenValues(80, 80, 80, 0, 0)));
+        Assert.True(HeavenGateRules.IsValidFinalAllocation(overThreshold, new LinggenValues(100, 90, 80, 1, 0)));
     }
 
     /// <summary>

@@ -14,6 +14,8 @@ import {
   shouldShowOpenHeavenGate,
   getAllLinggenBonuses,
   getHeavenGateExpectedPoints,
+  requiresFullAllocation,
+  hasUnspentFullAllocationBlock,
 } from './linggenCalculations.ts'
 
 test('linggenCalculations：增减伤合并文本与斗法面板同口径（增伤 Linear、减伤 NonLinear）', () => {
@@ -184,4 +186,32 @@ test('linggenCalculations：getHeavenGateExpectedPoints 期望总点数计算与
   // 超过 40 次：硬上限 500 点不溢出
   assert.equal(getHeavenGateExpectedPoints(50), 500)
   assert.equal(getHeavenGateExpectedPoints(100), 500)
+})
+
+test('linggenCalculations：总值超过 300 后必须全部分配完点数，<= 300 不受限制', () => {
+  const normalInnate = { metal: 60, wood: 60, water: 60, fire: 60, earth: 60 }
+  assert.equal(requiresFullAllocation(normalInnate), false)
+  assert.equal(
+    hasUnspentFullAllocationBlock(normalInnate, { metal: 60, wood: 0, water: 0, fire: 0, earth: 0 }),
+    false,
+  )
+
+  const over500 = { metal: 100, wood: 100, water: 100, fire: 100, earth: 100 }
+  assert.equal(requiresFullAllocation(over500), true)
+  assert.equal(
+    hasUnspentFullAllocationBlock(over500, { metal: 100, wood: 0, water: 0, fire: 0, earth: 0 }),
+    true,
+  )
+  assert.equal(hasUnspentFullAllocationBlock(over500, over500), false)
+
+  const over301 = { metal: 80, wood: 80, water: 80, fire: 61, earth: 0 }
+  assert.equal(requiresFullAllocation(over301), true)
+  assert.equal(
+    hasUnspentFullAllocationBlock(over301, { metal: 80, wood: 80, water: 80, fire: 0, earth: 0 }),
+    true,
+  )
+  assert.equal(
+    hasUnspentFullAllocationBlock(over301, { metal: 100, wood: 90, water: 80, fire: 1, earth: 0 }),
+    false,
+  )
 })

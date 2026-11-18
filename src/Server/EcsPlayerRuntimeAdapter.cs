@@ -992,9 +992,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 var confirmedEnter = TryReadLinggen(payload, out var directCandidate)
                                     ? directCandidate
                                     : gateProgression.HeavenGateConfirmed ?? rolledEnter;
-                                if (!HeavenGateRules.IsValidAllocation(rolledEnter, confirmedEnter))
-                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION",
-                                        "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
+                                if (!HeavenGateRules.IsValidFinalAllocation(rolledEnter, confirmedEnter))
+                                {
+                                    var message = HeavenGateRules.IsValidAllocation(rolledEnter, confirmedEnter)
+                                        && HeavenGateRules.RequiresFullAllocation(rolledEnter)
+                                        ? $"灵根总值超过 {HeavenGateRules.RequireFullAllocationTotalThreshold} 后，须将全部可分配点数用尽方可入天门。"
+                                        : "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。";
+                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION", message, before);
+                                }
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;
@@ -1059,9 +1064,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 var confirmedNew = TryReadLinggen(payload, out var directCandidate)
                                     ? directCandidate
                                     : candidateRoll;
-                                if (!HeavenGateRules.IsValidAllocation(candidateRoll, confirmedNew))
-                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION",
-                                        "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。", before);
+                                if (!HeavenGateRules.IsValidFinalAllocation(candidateRoll, confirmedNew))
+                                {
+                                    var message = HeavenGateRules.IsValidAllocation(candidateRoll, confirmedNew)
+                                        && HeavenGateRules.RequiresFullAllocation(candidateRoll)
+                                        ? $"灵根总值超过 {HeavenGateRules.RequireFullAllocationTotalThreshold} 后，须将全部可分配点数用尽方可采纳新灵根。"
+                                        : "五行分配超出可分配点数（散功 2 返 1、灌注 1:1）或未保留有效灵根。";
+                                    return new PlayerCommandResult(false, "INVALID_ALLOCATION", message, before);
+                                }
                                 touched = ecs.MutatePlayer(playerId, aggregate =>
                                 {
                                     var gate = aggregate.Progression.HeavenGate;

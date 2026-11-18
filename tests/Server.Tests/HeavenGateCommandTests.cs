@@ -429,6 +429,95 @@ public sealed class HeavenGateCommandTests
         Assert.Equal(afterFirst.HeavenGateRerollCount, replay.Snapshot.State.Progression.HeavenGateRerollCount);
     }
 
+    /// <summary>
+    /// 灵根总值超过 300 后：allocate 允许暂存，但 enter 与 accept 必须将可分配点数用尽；
+    /// 总值 <= 300 时仍允许保留未分配点数直接入天门。
+    /// </summary>
+    [Fact]
+    public async Task EnterAndAcceptRequireFullPointAllocationWhenInnateExceeds300()
+    {
+        // 1. 总值 = 300：散功留有未分配点数仍可直接入天门
+        var normalPlayer = Guid.NewGuid();
+        var normalInnate = new LinggenValues(60, 60, 60, 60, 60);
+        await using (var normalRuntime = CreateRuntime(normalPlayer, aggregate =>
+        {
+            GateAtFullExperience(aggregate);
+            aggregate.Progression.HeavenGate.Apply(normalInnate, null, entered: false, rerollCount: 0);
+        }))
+        {
+            await normalRuntime.LoadAsync(normalPlayer);
+            var entered = await Execute(normalRuntime, normalPlayer, new
+            {
+                action = "enter",
+                metal = 60, wood = 0, water = 0, fire = 0, earth = 0
+            });
+            Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
+        }
+
+        // 2. 总值 = 500 (>300)：allocate 可暂存单灵根，但 enter 拒绝并提示须用尽点数；用尽后成功
+        var highPlayer = Guid.NewGuid();
+        var highInnate = new LinggenValues(100, 100, 100, 100, 100);
+        await using (var highRuntime = CreateRuntime(highPlayer, aggregate =>
+        {
+            GateAtFullExperience(aggregate);
+            aggregate.Progression.HeavenGate.Apply(highInnate, null, entered: false, rerollCount: 0);
+        }))
+        {
+            await highRuntime.LoadAsync(highPlayer);
+
+            var allocated = await Execute(highRuntime, highPlayer, new
+            {
+                action = "allocate",
+                metal = 100, wood = 0, water = 0, fire = 0, earth = 0
+            });
+            Assert.True(allocated.Success, $"{allocated.Code}: {allocated.Message}");
+
+            var blockedEnter = await Execute(highRuntime, highPlayer, new
+            {
+                action = "enter",
+                metal = 100, wood = 0, water = 0, fire = 0, earth = 0
+            });
+            Assert.False(blockedEnter.Success);
+            Assert.Equal("INVALID_ALLOCATION", blockedEnter.Code);
+            Assert.Contains("300", blockedEnter.Message);
+
+            var fullEnter = await Execute(highRuntime, highPlayer, new
+            {
+                action = "enter",
+                metal = 100, wood = 100, water = 100, fire = 100, earth = 100
+            });
+            Assert.True(fullEnter.Success, $"{fullEnter.Code}: {fullEnter.Message}");
+        }
+
+        // 3. 改命采纳（accept）当候选总值 > 300 时同样拒绝未用尽点数的单灵根
+        var rerollPlayer = Guid.NewGuid();
+        var existing = new LinggenValues(60, 0, 0, 0, 0);
+        var pendingHigh = new LinggenValues(80, 80, 80, 61, 0);
+        await using var rerollRuntime = CreateRuntime(rerollPlayer, aggregate =>
+        {
+            GateAtFullExperience(aggregate);
+            aggregate.Progression.HeavenGate.Apply(pendingHigh, existing, entered: true, rerollCount: 1);
+        });
+        await rerollRuntime.LoadAsync(rerollPlayer);
+
+        var blockedAccept = await Execute(rerollRuntime, rerollPlayer, new
+        {
+            action = "accept",
+            metal = 80, wood = 0, water = 0, fire = 0, earth = 0
+        });
+        Assert.False(blockedAccept.Success);
+        Assert.Equal("INVALID_ALLOCATION", blockedAccept.Code);
+        Assert.Contains("300", blockedAccept.Message);
+
+        var fullAccept = await Execute(rerollRuntime, rerollPlayer, new
+        {
+            action = "accept",
+            metal = 100, wood = 90, water = 80, fire = 1, earth = 0
+        });
+        Assert.True(fullAccept.Success, $"{fullAccept.Code}: {fullAccept.Message}");
+        Assert.Equal(new LinggenValues(100, 90, 80, 1, 0), fullAccept.Snapshot.State.Progression.HeavenGateConfirmed);
+    }
+
     /// <summary>叩天门境界、本级修为圆满的开局配置。</summary>
     private static void GateAtFullExperience(PlayerAggregate aggregate)
     {

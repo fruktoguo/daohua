@@ -15,6 +15,7 @@ import {
   applyAxisDrag,
   getAllLinggenBonuses,
   getHeavenGateExpectedPoints,
+  hasUnspentFullAllocationBlock,
   linggenCultivationMultiplier,
   projectPointerToAxis,
   remainingPoints,
@@ -203,6 +204,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
     ? 'allocating'
     : (entered ? 'finalized' : hasRolled ? 'allocating' : 'unrolled')
   const remaining = remainingPoints(innate, roots)
+  const mustUseAllPoints = boardState === 'allocating' && hasRolled && hasUnspentFullAllocationBlock(innate, roots)
   const currentTotal = roots.metal + roots.wood + roots.water + roots.fire + roots.earth
   const immutableTotal = innate.metal + innate.wood + innate.water + innate.fire + innate.earth
   const isAtInnate = LINGGEN_AXES.every(axis => roots[axis.key] === innate[axis.key])
@@ -309,8 +311,12 @@ export const HeavenGateModal = memo(function HeavenGateModal({
       showToast(t('insight.heavenGate.toast.insufficient'))
       return
     }
+    if (mustUseAllPoints) {
+      showToast(t('insight.heavenGate.toast.mustUseAllPoints'))
+      return
+    }
     setConfirmAction('enter')
-  }, [hasActiveRoot, remaining, showToast, t])
+  }, [hasActiveRoot, mustUseAllPoints, remaining, showToast, t])
 
   const executeEnter = useCallback(() => {
     setConfirmAction(null)
@@ -327,8 +333,12 @@ export const HeavenGateModal = memo(function HeavenGateModal({
       showToast(t('insight.heavenGate.toast.insufficient'))
       return
     }
+    if (mustUseAllPoints) {
+      showToast(t('insight.heavenGate.toast.mustUseAllPoints'))
+      return
+    }
     setConfirmAction('accept')
-  }, [hasActiveRoot, remaining, showToast, t])
+  }, [hasActiveRoot, mustUseAllPoints, remaining, showToast, t])
 
   const executeAccept = useCallback(() => {
     setConfirmAction(null)
@@ -750,6 +760,9 @@ export const HeavenGateModal = memo(function HeavenGateModal({
           {boardState === 'allocating' && !hasActiveRoot && (
             <div className="hg-board__single-notice">{t('insight.heavenGate.toast.allZero')}</div>
           )}
+          {boardState === 'allocating' && hasActiveRoot && mustUseAllPoints && (
+            <div className="hg-board__single-notice">{t('insight.heavenGate.mustUseAllPointsNotice')}</div>
+          )}
         </div>
 
         {/* C 底部状态区（精简为未分配、总、后续破镜难度三栏） */}
@@ -827,7 +840,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   ref={confirmRef}
                   type="button"
                   className="hg-btn hg-btn--primary"
-                  disabled={!hasActiveRoot || remaining < 0}
+                  disabled={!hasActiveRoot || remaining < 0 || mustUseAllPoints}
                   onClick={handleAcceptClick}
                 >
                   {t('insight.heavenGate.acceptBtn')}
@@ -856,7 +869,7 @@ export const HeavenGateModal = memo(function HeavenGateModal({
                   ref={confirmRef}
                   type="button"
                   className="hg-btn hg-btn--primary"
-                  disabled={!hasActiveRoot || remaining < 0}
+                  disabled={!hasActiveRoot || remaining < 0 || mustUseAllPoints}
                   onClick={handleEnterClick}
                 >
                   {t('insight.heavenGate.enterBtn')}

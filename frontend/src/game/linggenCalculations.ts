@@ -24,6 +24,9 @@ export { LINGGEN_AXIS_CAP, LINGGEN_ELEMENT_KEYS }
 /** 叩天门境界等级：该级满修为后必须先开天门取得灵根。 */
 export const HEAVEN_GATE_REALM_LEVEL = 18
 
+/** 灵根总值超过该阈值后，确认入天门或采纳新灵根时必须将可分配点数完全用尽。 */
+export const HEAVEN_GATE_FULL_ALLOCATION_THRESHOLD = 300
+
 /**
  * 五行增减伤合并展示文本：`+25% / 20%`。
  *
@@ -233,6 +236,17 @@ export function remainingPoints(innate: LinggenPoints, current: LinggenPoints): 
     0,
   )
   return Math.round(total * 2) / 2
+}
+
+/** 先天灵根总值是否超过必须用尽可分配点数的阈值（300 点）。 */
+export function requiresFullAllocation(innate: LinggenPoints): boolean {
+  const total = LINGGEN_ELEMENT_KEYS.reduce((sum, key) => sum + innate[key], 0)
+  return total > HEAVEN_GATE_FULL_ALLOCATION_THRESHOLD
+}
+
+/** 是否因先天总值超过 300 且尚有未分配点数而禁止确认入天门 / 采纳新灵根。 */
+export function hasUnspentFullAllocationBlock(innate: LinggenPoints, current: LinggenPoints): boolean {
+  return requiresFullAllocation(innate) && remainingPoints(innate, current) > 0
 }
 
 /** 其余四轴让点支持下，该轴可达的最高理论上限（保证 remainingPoints 恒 >= 0，严禁透支）。 */
