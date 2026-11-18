@@ -1,128 +1,132 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# 脚本名称: odin-backup-sync.sh
-# 主要职责: 在 odin 计算节点通过安全的内部 HTTPS 凭据通道拉取主服数据库备份
-#
-# 特性:
-#   1. 443 端口绝对抗阻断: 绕过商业 VPN 对 SSH 22 端口的拦截，100% 稳定运行；
-#   2. X-Backup-Token 安全鉴权: 严格防护，无有效令牌返回 404；
-#   3. 断点续传与增量跳过: 已下载且对账无误的文件跳过；数据文件经 .partial 原子落盘，
-#      哈希对不上的坏前缀直接删除整包重拉，杜绝续传死循环；
-#   4. SHA-256 全量对账: 下载后自动比对 hash，确保备份 100% 完整可用；
-#   5. 本地大容量留存: 保存在本地 /root/daohua-backups/ (360GB+ 空间)，按分类配额自动老化。
-# ==============================================================================
-
+# Odin 经 HTTPS 拉取备份；本轮源目录、下载、SHA-256 及新鲜度均是成功条件。
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-checks.sh"
 ENV_FILE="${ENV_FILE:-/etc/daohua-backup-sync.env}"
 if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  set -a
-  source "$ENV_FILE"
-  set +a
+  set -a; source "$ENV_FILE"; set +a
 fi
 
 BACKUP_URL="${BACKUP_URL:-https://daohua.yuohira.com/internal/backups}"
 BACKUP_TOKEN="${BACKUP_TOKEN:-${DAOHUA_BACKUP_TOKEN:-}}"
 LOCAL_DIR="${LOCAL_DIR:-/root/daohua-backups}"
-LOCK_FILE="/tmp/odin-backup-sync.lock"
 LOCAL_HOURLY_KEEP="${LOCAL_HOURLY_KEEP:-72}"
 LOCAL_DAILY_KEEP="${LOCAL_DAILY_KEEP:-30}"
 LOCAL_WEEKLY_KEEP="${LOCAL_WEEKLY_KEEP:-24}"
 LOCAL_BASE_KEEP="${LOCAL_BASE_KEEP:-8}"
 
-if [[ -z "$BACKUP_TOKEN" ]]; then
-  printf '错误: 未配置 BACKUP_TOKEN / DAOHUA_BACKUP_TOKEN（可在 %s 设置），拒绝执行备份拉取。\n' "$ENV_FILE" >&2
-  exit 1
-fi
+[[ "$BACKUP_URL" == https://* && -n "$BACKUP_TOKEN" && "$BACKUP_TOKEN" != *[$'\r\n']* ]] || {
+  printf '必须配置 HTTPS 备份地址和合法的备份鉴权令牌。\n' >&2; exit 2;
+}
+for keep in "$LOCAL_HOURLY_KEEP" "$LOCAL_DAILY_KEEP" "$LOCAL_WEEKLY_KEEP" "$LOCAL_BASE_KEEP"; do
+  [[ "$keep" =~ ^[1-9][0-9]{0,8}$ ]] || { printf '各分类保留份数必须为正整数。\n' >&2; exit 2; }
+done
 
-exec 8>"$LOCK_FILE"
-if ! flock -n 8; then
-  printf '已有备份拉取任务正在运行，本次跳过。\n' >&2
-  exit 0
-fi
+umask 077
+mkdir -p -- "$LOCAL_DIR"
+LOCAL_DIR="$(cd "$LOCAL_DIR" && pwd -P)"
+exec 8>"${LOCK_FILE:-$LOCAL_DIR/.backup-sync.lock}"
+flock -n -E 75 8 || { rc=$?; printf '未获得备份拉取锁，本轮未验证。\n' >&2; exit "$rc"; }
+stage="$(mktemp -d "$LOCAL_DIR/.sync.XXXXXX")"
+trap 'rm -rf -- "$stage"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+export LC_ALL=C
+shopt -s nullglob
 
-mkdir -p "$LOCAL_DIR/hourly" "$LOCAL_DIR/daily" "$LOCAL_DIR/weekly" "$LOCAL_DIR/base"
+fetch() {
+  local relative="$1" destination="$2" seconds="$3" status
+  local -a bounds=()
+  if [[ "$relative" == *.sha256 ]]; then bounds=(--max-filesize 1024); fi
+  # 不读 curlrc、不跟随重定向、凭据不进 curl argv；只接受完整的 200 响应。
+  if ! status="$(curl -q --silent --show-error --proto '=https' --connect-timeout 15 --max-time "$seconds" \
+      "${bounds[@]}" --header @- --output "$destination" --write-out '%{http_code}' -- "${BACKUP_URL%/}/$relative" \
+      <<<"X-Backup-Token: $BACKUP_TOKEN")" || [[ "$status" != 200 ]]; then
+    printf '源备份请求失败: %s（HTTP %s）\n' "$relative" "${status:-未知}" >&2
+    return 1
+  fi
+}
 
-printf '==> [%s] 开始从主服同步最新备份...\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+verified=0
+categories=(hourly daily weekly base)
+declare -A newest_by_category=()
+for category in "${categories[@]}"; do
+  cache="$LOCAL_DIR/$category"
+  [[ ! -L "$cache" ]] || { printf '拒绝写入符号链接归档目录: %s\n' "$category" >&2; exit 1; }
+  dir="$stage/$category"
+  mkdir -p -- "$dir"
+  fetch "$category/" "$stage/listing" 60
+  extension=dump
+  if [[ "$category" == base ]]; then extension='tar\.gz'; fi
+  # Caddy browse 使用相对 href；严格匹配完整文件名，不把 .partial 当作备份，也不跟随 HTML 中的地址。
+  links="$(grep -oE "href=\"(\./)?daohua-postgres-$category-[0-9]{8}T[0-9]{6}Z\.$extension(\.sha256)?\"" "$stage/listing")" || {
+    rc=$?
+    if ((rc != 1)); then exit "$rc"; fi
+  }
+  unset files
+  declare -A files=()
+  while IFS= read -r link; do
+    [[ -n "$link" ]] || continue
+    name="${link#href=\"}"
+    name="${name%\"}"
+    files["${name#./}"]=1
+  done <<< "$links"
 
-# 抓取各分类下的文件列表并增量下载
-for category in hourly daily weekly base; do
-  html="$(curl -s -H "X-Backup-Token: $BACKUP_TOKEN" "$BACKUP_URL/$category/" || true)"
-  if [[ -z "$html" ]]; then
-    printf '警告: 无法获取 %s 分类目录列表\n' "$category" >&2
-    continue
+  newest=""
+  for name in "${!files[@]}"; do
+    data="${name%.sha256}"
+    [[ ${files[$data]:-} && ${files[$data.sha256]:-} ]] || {
+      printf '源目录缺少校验对: %s/%s\n' "$category" "$data" >&2; exit 1;
+    }
+    [[ "$name" != *.sha256 ]] || continue
+    if [[ "$name" > "$newest" ]]; then newest="$name"; fi
+  done
+  newest_by_category["$category"]="$newest"
+  case "$category" in
+    hourly) max_age="${VERIFY_DUMP_MAX_AGE_SECONDS:-10800}" ;;
+    base) max_age="${VERIFY_BASE_MAX_AGE_SECONDS:-129600}" ;;
+    *) max_age="" ;; # 日/周计划尚未运行时允许空集。
+  esac
+  if [[ -n "$max_age" ]]; then
+    backup_is_fresh "$newest" "$max_age" || { printf '源目录未提供新鲜校验对: %s\n' "$category" >&2; exit 1; }
   fi
 
-  # 提取文件名
-  mapfile -t files < <(echo "$html" | grep -oE 'daohua-postgres-[a-zA-Z0-9._-]+' | sort -u || true)
-  for file in "${files[@]:-}"; do
-    local_file="$LOCAL_DIR/$category/$file"
-    remote_file_url="$BACKUP_URL/$category/$file"
-
-    # 如果是数据文件且本地已存在对应的 sha256 校验且校验通过，跳过下载
-    if [[ "$file" != *.sha256 && -f "$local_file" && -f "${local_file}.sha256" ]]; then
-      expected_hash="$(awk '{print $1}' "${local_file}.sha256" | tr '[:upper:]' '[:lower:]')"
-      actual_hash="$(sha256sum "$local_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
-      if [[ -n "$expected_hash" && "$expected_hash" == "$actual_hash" ]]; then
-        continue
-      fi
-      # 哈希对不上的历史文件是坏前缀：不得以 -C - 续传（坏段永久残留），删除后整包重拉。
-      rm -f -- "$local_file"
+  for name in "${!files[@]}"; do
+    [[ "$name" != *.sha256 ]] || continue
+    sidecar="$dir/$name.sha256"
+    fetch "$category/$name.sha256" "$sidecar" 60
+    if [[ -L "$cache/$name" ]] || ! backup_check_sha "$cache/$name" "$sidecar"; then
+      fetch "$category/$name" "$dir/$name" 7200
+      backup_check_sha "$dir/$name" "$sidecar" || { printf '下载的备份 SHA-256 不符: %s/%s\n' "$category" "$name" >&2; exit 1; }
     fi
-
-    printf '拉取 %s/%s ...\n' "$category" "$file"
-    if [[ "$file" != *.sha256 ]]; then
-      # 数据文件先落到 .partial 再原子替换：断点续传只作用于未决文件，已落盘副本不被半截流污染。
-      if curl -s -f -C - -H "X-Backup-Token: $BACKUP_TOKEN" "$remote_file_url" -o "${local_file}.partial"; then
-        mv -f -- "${local_file}.partial" "$local_file"
-      else
-        printf '警告: 下载失败 %s（保留 .partial 供下轮续传）\n' "$file" >&2
-      fi
-    else
-      # sha256 边车文件体积极小，直接覆盖式拉取即可。
-      curl -s -f -H "X-Backup-Token: $BACKUP_TOKEN" "$remote_file_url" -o "$local_file" || {
-        printf '警告: 下载失败 %s\n' "$file" >&2
-      }
-    fi
+    verified=$((verified + 1))
   done
 done
 
-# 本地灾备池老化：各分类按保留配额清理最旧副本（含 .sha256 边车），防止 360GB 灾备盘无限堆积。
-prune_category() {
-  local dir="$1" keep="$2" stale
-  local -a old=()
-  mapfile -t old < <(find "$dir" -maxdepth 1 -type f \( -name '*.dump' -o -name '*.tar.gz' \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | awk -v keep="$keep" 'NR>keep {print $2}')
-  for stale in "${old[@]:-}"; do
-    [[ -n "$stale" ]] && rm -f -- "$stale" "${stale}.sha256"
+# 全部分类通过后，才发布已核验的数据和边车，再按源文件名时间顺序执行保留策略。
+keeps=("$LOCAL_HOURLY_KEEP" "$LOCAL_DAILY_KEEP" "$LOCAL_WEEKLY_KEEP" "$LOCAL_BASE_KEEP")
+for i in "${!categories[@]}"; do
+  category="${categories[i]}"
+  dest="$LOCAL_DIR/$category"
+  mkdir -p -- "$dest"
+  for path in "$stage/$category"/*; do mv -fT -- "$path" "$dest/${path##*/}"; done
+  ext=dump
+  if [[ "$category" == base ]]; then ext='tar\.gz'; fi
+  backups=()
+  for path in "$dest"/*; do
+    if [[ "${path##*/}" =~ ^daohua-postgres-$category-[0-9]{8}T[0-9]{6}Z\.$ext$ && -f "$path" && ! -L "$path" && -f "$path.sha256" && ! -L "$path.sha256" ]]; then
+      backups+=("$path")
+    fi
   done
-}
-prune_category "$LOCAL_DIR/hourly" "$LOCAL_HOURLY_KEEP"
-prune_category "$LOCAL_DIR/daily" "$LOCAL_DAILY_KEEP"
-prune_category "$LOCAL_DIR/weekly" "$LOCAL_WEEKLY_KEEP"
-prune_category "$LOCAL_DIR/base" "$LOCAL_BASE_KEEP"
-
-printf '==> 开始执行本地 SHA-256 完整性校验...\n'
-verified=0
-failed=0
-
-while IFS= read -r sha_file; do
-  target="${sha_file%.sha256}"
-  if [[ ! -f "$target" ]]; then
-    continue
-  fi
-  expected="$(awk '{print $1}' "$sha_file" | tr '[:upper:]' '[:lower:]')"
-  actual="$(sha256sum "$target" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
-  if [[ -n "$expected" && "$expected" == "$actual" ]]; then
-    verified=$((verified + 1))
-  else
-    printf '错误: 文件校验失败 %s (期望 %s，实际 %s)\n' "$target" "$expected" "$actual" >&2
-    failed=$((failed + 1))
-  fi
-done < <(find "$LOCAL_DIR" -type f -name '*.sha256')
-
-printf '✔ 本地异地灾备同步完毕: 成功校验=%d 损坏=%d\n' "$verified" "$failed"
-
-if (( failed > 0 )); then
-  exit 1
-fi
+  excess=$((${#backups[@]} - keeps[i]))
+  for path in "${backups[@]}"; do
+    if ((excess <= 0)); then break; fi
+    if [[ "${path##*/}" == "${newest_by_category[$category]}" ]]; then continue; fi
+    rm -f -- "$path" "$path.sha256"
+    excess=$((excess - 1))
+  done
+done
+printf 'Odin 异地备份同步完成：本轮源清单校验对=%d，小时与物理基线均新鲜。\n' "$verified"

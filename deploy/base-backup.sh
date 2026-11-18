@@ -3,8 +3,10 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-access.sh"
+
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
-COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
 BASE_BACKUP_RETENTION_COUNT="${BASE_BACKUP_RETENTION_COUNT:-2}"
@@ -20,45 +22,35 @@ if [[ -f "$ENV_FILE" ]]; then
   set -a; source "$ENV_FILE"; set +a
 fi
 
-compose() {
-  if [[ -f "$ENV_FILE" ]]; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
-  else
-    docker compose -f "$COMPOSE_FILE" "$@"
-  fi
-}
-
-mkdir -p "$BACKUP_DIR/base"
+[[ "$BASE_BACKUP_RETENTION_COUNT" =~ ^[1-9][0-9]*$ ]] || { printf 'BASE_BACKUP_RETENTION_COUNT 必须为正整数。\n' >&2; exit 2; }
+umask 077
 exec 9>"$LOCK_FILE"
 flock 9
+backup_prepare_access "$BACKUP_DIR"
 state="$(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$DB_CONTAINER_NAME" 2>/dev/null || true)"
 [[ "$state" == true\ healthy ]] || { printf 'PostgreSQL 容器未健康运行: %s\n' "${state:-missing}" >&2; exit 1; }
 
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 archive="$BACKUP_DIR/base/daohua-postgres-base-${timestamp}.tar.gz"
-partial="${archive}.partial"
+stage="$(mktemp -d "$BACKUP_DIR/.publish.XXXXXX")"
+partial="$stage/base.tar.gz"
+trap 'rm -rf -- "$stage"' EXIT
 
-cleanup() { rm -f "$partial"; }
-trap cleanup EXIT
-
-# 流式基线备份：pg_basebackup 直接以 tar 流输出到标准输出，经宿主机 gzip 落盘，
-# 不在容器 /tmp 落全量未压缩副本，避免「数据卷 + 容器临时副本 + 宿主机归档」三倍瞬时占用。
+# PG18 stdout tar 只支持单表空间、非 stream；fetch 将所需 WAL 收进 base.tar。
+# 保留 PG 原生 manifest，仅在宿主 gzip。高负载需按备份耗时设置足够的 wal_keep_size。
 docker exec "$DB_CONTAINER_NAME" sh -ceu '
   PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 未注入}" \
-    exec pg_basebackup -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D - -Ft -X stream -c fast -P
+    exec pg_basebackup -w -h 127.0.0.1 -U "${POSTGRES_USER:?POSTGRES_USER 未注入}" -D - -Ft -X fetch -c fast -P
 ' | gzip -"${BACKUP_COMPRESS_LEVEL:-6}" >"$partial"
-# 必须在原子移入正式基线目录前校验 gzip/tar 流与 backup_manifest 存在性
-if ! gzip -t "$partial" || ! tar -tzf "$partial" | grep -Eq '^(\./)?backup_manifest$'; then
-  rm -f "$partial"
-  printf '物理基线备份完整性校验失败，已丢弃损坏临时文件。\n' >&2
+# grep 消费完整列表，避免 -q 提前退出使 tar 遭遇 SIGPIPE。
+if ! gzip -t "$partial" || ! tar -tzf "$partial" | grep -Ex '(\./)?backup_manifest' >/dev/null; then
+  printf '物理基线缺少 manifest 或 gzip/tar 损坏，未发布归档。\n' >&2
   exit 1
 fi
-mv "$partial" "$archive"
-(cd "$(dirname "$archive")" && sha256sum "$(basename "$archive")" >"${archive}.sha256")
-printf '物理基线备份完成: %s\n' "$archive"
-printf 'WAL/PITR 校验清单: backup_manifest（位于归档内）\n'
-
-mapfile -t old_archives < <(find "$BACKUP_DIR/base" -maxdepth 1 -type f -name '*.tar.gz' -printf '%T@ %p\n' | sort -rn | awk -v keep="$BASE_BACKUP_RETENTION_COUNT" 'NR>keep {print $2}')
-for old_archive in "${old_archives[@]:-}"; do
-  rm -f -- "$old_archive" "${old_archive}.sha256"
+backup_publish_pair "$partial" "$archive"
+shopt -s nullglob
+archives=("$BACKUP_DIR/base"/daohua-postgres-base-*.tar.gz)
+for (( i=0; i<${#archives[@]}-BASE_BACKUP_RETENTION_COUNT; i++ )); do
+  rm -f -- "${archives[i]}" "${archives[i]}.sha256"
 done
+printf '物理基线备份完成: %s（恢复校验由 verify-backup.sh 执行）\n' "$archive"

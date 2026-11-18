@@ -10,6 +10,7 @@ DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
 WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-checks.sh"
 START_INSTANCE=0
 CONFIRM=0
 if [[ -f "$ENV_FILE" ]]; then
@@ -46,10 +47,9 @@ if [[ "$TARGET_TIME" == *Z ]]; then TARGET_TIME="${TARGET_TIME%Z}+00:00"; fi
 [[ -n "$OUTPUT_DIR" && "$OUTPUT_DIR" == /tmp/daohua-pitr-* ]] || { printf 'output 必须是 /tmp/daohua-pitr-* 隔离目录。\n' >&2; exit 2; }
 [[ ! -e "$OUTPUT_DIR" ]] || { printf '输出目录已存在，为避免覆盖请换用新目录: %s\n' "$OUTPUT_DIR" >&2; exit 1; }
 [[ -d "$WAL_ARCHIVE_DIR" ]] || { printf '找不到 WAL 归档目录: %s\n' "$WAL_ARCHIVE_DIR" >&2; exit 1; }
-WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$SCRIPT_DIR/wal-archive.sh" verify
+WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$SCRIPT_DIR/wal-archive.sh" verify --historical
 
-[[ -f "${BASE_ARCHIVE}.sha256" ]] || { printf '物理备份缺少 SHA-256 校验文件，拒绝恢复。\n' >&2; exit 1; }
-(cd "$(dirname "$BASE_ARCHIVE")" && sha256sum --check "$(basename "${BASE_ARCHIVE}.sha256")")
+backup_check_sha "$BASE_ARCHIVE" || { printf '物理备份缺少有效 SHA-256 校验对，拒绝恢复。\n' >&2; exit 1; }
 
 mkdir -p "$OUTPUT_DIR"
 tar -xzf "$BASE_ARCHIVE" -C "$OUTPUT_DIR"

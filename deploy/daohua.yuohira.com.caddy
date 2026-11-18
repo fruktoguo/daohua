@@ -1,7 +1,8 @@
 daohua.yuohira.com {
 	encode zstd gzip
 	@backup_auth {
-		path /internal/backups/*
+		# 仅导出热备分类目录和正式归档；不把迁移前快照或未完成文件交给 file_server。
+		path_regexp backup_export "^/internal/backups/((hourly|daily|weekly|base)/|(hourly|daily|weekly)/daohua-postgres-(hourly|daily|weekly)-[0-9]{8}T[0-9]{6}Z[.]dump([.]sha256)?|base/daohua-postgres-base-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz([.]sha256)?)$"
 		header X-Backup-Token "{$DAOHUA_BACKUP_TOKEN}"
 	}
 	handle @backup_auth {

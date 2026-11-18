@@ -5,20 +5,17 @@
 #
 # 核心发布流水线:
 #   1. 预检: 本机 Git/Submodule、Docker/CCR 凭据与远端连通性快速探测；
-#   2. 并发构建与准备:
-#      - 流 A: 自动构建 Server/ComputeNode 镜像并推送到 CCR，自动解析 sha256 digest；
-#      - 流 B: 远端 yuohira 自动执行发布前数据安全快照备份与校验；
-#      - 流 C: 本地交叉编译 linux-arm64 ComputeNode 并预传至 odin 临时目录；
+#   2. 通过本次提交的备份门禁后，才并发推送镜像及准备 odin；
 #   3. 主服受控部署: 自动生成合规随机烟测账号，调用 deploy-prod.sh 执行容器更新与双层烟测；
 #   4. odin 原子热切: 切换 odin 目录并热重启进程，看门狗自动拉起；
-#   5. 双端验证与总结: 校验数据指纹一致性、计算节点接入状态，并提取动态 Ops 后台地址。
+#   5. 双端验证与总结: 校验数据指纹一致性、计算节点接入状态，。
 #
 # 选项:
 #   --skip-odin      跳过 odin 计算节点发布（仅发布主服）
-#   --skip-backup    跳过发布前数据库物理/逻辑备份（安全起见默认开启）
+#   --skip-backup    跳过本轮逻辑备份生成，仍必须通过门禁
+#   --refresh-base-backup  显式生成物理基线后再校验（首次引入或基线过期）
 #   --skip-smoke     跳过主服回环与公网烟测
 #   --push-existing  跳过镜像构建，仅推送并使用本机已有镜像
-#   --allow-dirty    允许工作区存在未提交改动（仅排障使用）
 #   --host HOST      主服 SSH 别名（默认 yuohira）
 #   --odin-host HOST odin SSH 别名（默认 odin）
 #   -h, --help       显示帮助
@@ -27,13 +24,13 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REMOTE_HOST="${SSH_HOST:-yuohira}"
-ODIN_HOST="${ODIN_HOST:-odin}"
+HOST_OVERRIDE=""
+ODIN_HOST_OVERRIDE=""
 SKIP_ODIN=0
 SKIP_BACKUP=0
+REFRESH_BASE_BACKUP=0
 SKIP_SMOKE=0
 PUSH_EXISTING=0
-ALLOW_DIRTY=0
 # Web 化后 APK 仅承载原生壳与静态资源基线：默认不再每次发布重打，
 # 仅在原生壳/SDK/权限变更或用户明确要求时通过 --with-apk 构建并发布。
 WITH_APK=0
@@ -50,7 +47,8 @@ usage() {
     '' \
     '选项：' \
     '  --skip-odin      跳过 odin 计算节点发布（仅更新主服）' \
-    '  --skip-backup    跳过发布前远端数据库备份（生产默认保留）' \
+    '  --skip-backup    跳过本轮逻辑备份生成，仍要求新鲜逻辑/物理备份通过门禁' \
+    '  --refresh-base-backup  用本次提交的脚本新建物理基线（先确认磁盘与 WAL 保留预算）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
     '  --skip-caddy     跳过远端 Caddy 站点配置安装与 reload' \
     '  --with-apk       构建 Android 安装包并发布 GitHub Releases（默认跳过：Web 化后仅原生壳变更时需要）' \
@@ -58,11 +56,9 @@ usage() {
     '  --skip-apk-upload 跳过向 GitHub Releases 上传安装包（配合 --with-apk）' \
     '  --skip-hd-pack   跳过 HD 画质资源包上传至主服 /hd/*' \
     '  --push-existing  跳过镜像重新构建，仅推送本机已有镜像' \
-    '  --allow-dirty    允许未提交工作区构建（仅排障）' \
     '  --host HOST      主服 SSH 别名（默认 yuohira）' \
     '  --odin-host HOST odin SSH 别名（默认 odin）' \
-    '  --bump TYPE      自动升级版本号（patch / minor / major）' \
-    '  --version VER    显式指定版本号（如 0.2.1）' \
+    '  --version VER    确认已提交的版本号（如 0.2.1）' \
     '  --tag TAG        显式覆盖发布标签（默认: v<version>）' \
     '  -h, --help       显示帮助信息'
 }
@@ -71,6 +67,7 @@ while (($# > 0)); do
   case "$1" in
     --skip-odin) SKIP_ODIN=1; shift ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
+    --refresh-base-backup) REFRESH_BASE_BACKUP=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
     --skip-caddy) SKIP_CADDY=1; shift ;;
     --with-apk) WITH_APK=1; shift ;;
@@ -78,9 +75,9 @@ while (($# > 0)); do
     --skip-apk-upload) SKIP_APK_UPLOAD=1; shift ;;
     --skip-hd-pack) SKIP_HD_PACK=1; shift ;;
     --push-existing) PUSH_EXISTING=1; shift ;;
-    --allow-dirty) ALLOW_DIRTY=1; shift ;;
-    --host) REMOTE_HOST="${2:?--host 缺少值}"; shift 2 ;;
-    --odin-host) ODIN_HOST="${2:?--odin-host 缺少值}"; shift 2 ;;
+    --allow-dirty) printf '正式发布不允许 --allow-dirty。\n' >&2; exit 2 ;;
+    --host) HOST_OVERRIDE="${2:?--host 缺少值}"; shift 2 ;;
+    --odin-host) ODIN_HOST_OVERRIDE="${2:?--odin-host 缺少值}"; shift 2 ;;
     --bump) BUMP_TYPE="${2:?--bump 缺少类型 (patch|minor|major)}"; shift 2 ;;
     --version) EXPLICIT_VERSION="${2:?--version 缺少值}"; shift 2 ;;
     --tag) EXPLICIT_TAG="${2:?--tag 缺少值}"; shift 2 ;;
@@ -99,12 +96,34 @@ if [[ -f "$ROOT_DIR/.env.release.local" ]]; then
   set +a
 fi
 
-# 临时目录与日志收拢
+REMOTE_HOST="${HOST_OVERRIDE:-${SSH_HOST:-yuohira}}"
+ODIN_HOST="${ODIN_HOST_OVERRIDE:-${ODIN_HOST:-odin}}"
+if [[ ! "$REMOTE_HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ || ( "$SKIP_ODIN" != 1 && ! "$ODIN_HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ) ]]; then
+  printf 'SSH 主机别名非法。\n' >&2; exit 2
+fi
+
+if [[ "$SKIP_BACKUP" != [01] || "$REFRESH_BASE_BACKUP" != [01] ]]; then
+  printf '备份控制参数必须为 0 或 1。\n' >&2; exit 2
+fi
+
+# 清理本地临时产物前，先回收尚未结束的后台流。EXIT 不触碰远端维护标记或 timer。
 RELEASE_TMP="$(mktemp -d /tmp/daohua-release.XXXXXX 2>/dev/null || mktemp -d -t daohua-release.XXXXXX)"
+pids=()
 cleanup() {
-  rm -rf "$RELEASE_TMP" >/dev/null 2>&1 || true
+  local rc=$? pid
+  trap - EXIT
+  trap '' HUP INT TERM
+  for pid in "${pids[@]}"; do
+    # 等待既有流收尾，尤其不能删除仍写入的打包目录或中断远端备份生成。
+    wait "$pid" 2>/dev/null || true
+  done
+  rm -rf -- "$RELEASE_TMP" || true
+  exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 printf '\n======================================================\n'
 printf '        道化太初 · 正式服快速发布流水线\n'
@@ -120,13 +139,10 @@ for cmd in git docker ssh scp openssl date; do
   command -v "$cmd" >/dev/null 2>&1 || { printf '错误: 缺少必要命令 %s\n' "$cmd" >&2; exit 1; }
 done
 
-# 2. 检查 Git 状态与 commit
-git config submodule.vendor/YuoCore.ignore dirty >/dev/null 2>&1 || true
-if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then
-  printf '错误: 工作区存在未提交改动，正式发布拒绝执行。\n' >&2
-  git status --short
-  exit 1
-fi
+# 2. 固定完整发布输入；不修改用户 Git 配置。
+source "$ROOT_DIR/deploy/release-source.sh"
+release_sources "$ROOT_DIR"
+export RELEASE_MAIN_REVISION="$main_revision" RELEASE_YUO_REVISION="$yuo_revision" RELEASE_PRIVATE_REVISION="$private_revision"
 
 # 2.5 前置校验烟测凭据（禁止在脚本中硬编码默认密码）
 if [[ "$SKIP_SMOKE" != "1" ]] && [[ -z "${SMOKE_COOKIE:-}" && -z "${SMOKE_SESSION_TOKEN:-}" ]]; then
@@ -140,7 +156,7 @@ if [[ "$SKIP_SMOKE" != "1" ]] && [[ -z "${SMOKE_COOKIE:-}" && -z "${SMOKE_SESSIO
   fi
 fi
 
-GIT_REV="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+GIT_REV="$RELEASE_MAIN_REVISION"
 printf '  - 本机 Git Commit: %s\n' "$GIT_REV"
 
 # 3. 检查 Docker 运行时
@@ -165,70 +181,43 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   fi
 fi
 
-# 5. 版本号与发布标签解析（SemVer 单源权威）
-if [[ -n "$BUMP_TYPE" ]]; then
-  PKG_VERSION="$(node -e "
-    const fs = require('fs');
-    const vPath = './version.json';
-    const pkgPath = './frontend/package.json';
-    const vData = JSON.parse(fs.readFileSync(vPath, 'utf8'));
-    let [maj, min, pat] = vData.version.split('.').map(Number);
-    if ('$BUMP_TYPE' === 'major') { maj++; min = 0; pat = 0; }
-    else if ('$BUMP_TYPE' === 'minor') { min++; pat = 0; }
-    else if ('$BUMP_TYPE' === 'patch') { pat++; }
-    else { console.error('无效 bump 类型: $BUMP_TYPE'); process.exit(1); }
-    const nextVer = \`\${maj}.\${min}.\${pat}\`;
-    vData.version = nextVer;
-    fs.writeFileSync(vPath, JSON.stringify(vData, null, 2) + '\n');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      pkg.version = nextVer;
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-    }
-    console.log(nextVer);
-  ")"
-  printf '  - 版本号已自动升级 (%s): %s\n' "$BUMP_TYPE" "$PKG_VERSION"
-elif [[ -n "$EXPLICIT_VERSION" ]]; then
-  PKG_VERSION="$(node -e "
-    const fs = require('fs');
-    const vPath = './version.json';
-    const pkgPath = './frontend/package.json';
-    const vData = JSON.parse(fs.readFileSync(vPath, 'utf8'));
-    vData.version = '$EXPLICIT_VERSION';
-    fs.writeFileSync(vPath, JSON.stringify(vData, null, 2) + '\n');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      pkg.version = '$EXPLICIT_VERSION';
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-    }
-    console.log('$EXPLICIT_VERSION');
-  ")"
-  printf '  - 版本号已指定为: %s\n' "$PKG_VERSION"
-else
-  PKG_VERSION="$(node -p "try{require('./version.json').version}catch{try{require('./frontend/package.json').version}catch{'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
-fi
-
-# 镜像构建基于 git archive HEAD：--bump/--version 写入的版本文件必须先提交，
-# 否则镜像内版本与标签不一致且 docker-build-prod 会拒绝 dirty worktree。
-# 在此提前拦截，避免三路并发流空跑后才失败。
-if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then
-  printf '错误: 版本号解析后工作区存在未提交改动。\n' >&2
-  printf '      生产镜像由 git archive HEAD 构建，--bump/--version 产生的版本变更\n' >&2
-  printf '      必须先提交（建议 chore(release): 升级版本至 vX.Y.Z）再执行发布。\n' >&2
-  git status --short >&2
-  exit 1
+# 版本号只来自提交；禁止发布脚本改写用户工作区。
+PKG_VERSION="$(git show "$GIT_REV:version.json" | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version')"
+if [[ -n "$BUMP_TYPE" || ( -n "$EXPLICIT_VERSION" && "$EXPLICIT_VERSION" != "$PKG_VERSION" ) ]]; then
+  printf '请先提交目标 version.json 后再发布；本脚本不改写版本文件。\n' >&2; exit 1
 fi
 
 RELEASE_TAG="${EXPLICIT_TAG:-v${PKG_VERSION}}"
+[[ "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { printf '非法发布标签。\n' >&2; exit 1; }
 printf '  - 发布版本: %s (Tag: %s)\n' "$PKG_VERSION" "$RELEASE_TAG"
 
 # ------------------------------------------------------------------------------
-# 阶段 1: 并发构建、备份与准备
+# 阶段 1: 先验证恢复点，再开始任何 CCR 推送或节点预传。
 # ------------------------------------------------------------------------------
-printf '\n==> [阶段 1/4] 并发启动构建推送、远端备份与 odin 交叉编译...\n'
+printf '\n==> [阶段 1/4] 使用发布提交校验备份门禁（不执行迁移或安装脚本）...\n'
 
-STATUS_FILE="$RELEASE_TMP/status.log"
-touch "$STATUS_FILE"
+# 不依赖主服已安装的旧 verifier/base 参数，不在 /opt 覆盖任何脚本。
+# 用 root 私有临时目录接收固定文件并清理；生成基线必须由操作者显式选择。
+gate_command="$(cat <<'REMOTE_GATE'
+set -Eeuo pipefail
+gate="$(mktemp -d /tmp/daohua-release-gate.XXXXXX)"
+trap "rm -rf -- \"$gate\"" EXIT
+trap "exit 129" HUP
+trap "exit 130" INT
+trap "exit 143" TERM
+tar --no-same-owner -xf - -C "$gate" deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh deploy/wal-archive.sh
+if [[ "$1" == 0 ]]; then bash "$gate/deploy/backup.sh"; fi
+if [[ "$2" == 1 ]]; then bash "$gate/deploy/base-backup.sh"; fi
+bash "$gate/deploy/verify-backup.sh"
+REMOTE_GATE
+)"
+if ! git archive "$GIT_REV" -- deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh deploy/wal-archive.sh |
+    ssh -T -o BatchMode=yes "$REMOTE_HOST" "sudo -n bash -c '$gate_command' bash '$SKIP_BACKUP' '$REFRESH_BASE_BACKUP'"; then
+  printf '备份门禁失败：未推送镜像、未预传或部署。首次引入若缺新鲜物理基线，请先核对磁盘及 WAL 保留预算，再显式使用 --refresh-base-backup。\n' >&2
+  exit 1
+fi
+printf '  ✔ 本次发布提交的备份门禁通过。\n'
+printf '==> 并发启动镜像构建推送与 Odin 交叉编译...\n'
 
 # 流 A: Docker 镜像构建并推送
 STREAM_A_LOG="$RELEASE_TMP/stream_a_docker.log"
@@ -239,29 +228,11 @@ STREAM_A_LOG="$RELEASE_TMP/stream_a_docker.log"
   if [[ "$PUSH_EXISTING" == "1" ]]; then
     BUILD_ARGS=("--push-existing" "--release-tag" "$RELEASE_TAG")
   fi
-  if [[ "$ALLOW_DIRTY" == "1" ]]; then
-    BUILD_ARGS+=("--allow-dirty")
-  fi
   bash "$ROOT_DIR/scripts/docker-build-prod.sh" "${BUILD_ARGS[@]}" > "$STREAM_A_LOG" 2>&1
-  echo "STREAM_A_EXIT:0" >> "$STATUS_FILE"
+
 ) &
 PID_STREAM_A=$!
-
-# 流 B: 远端主服数据库备份
-STREAM_B_LOG="$RELEASE_TMP/stream_b_backup.log"
-if [[ "$SKIP_BACKUP" != "1" ]]; then
-  (
-    set -Eeuo pipefail
-    printf '[流 B] 开始执行远端主服安全快照备份与校验...\n'
-    ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo /opt/daohua/backup.sh && sudo /opt/daohua/verify-backup.sh' > "$STREAM_B_LOG" 2>&1
-    echo "STREAM_B_EXIT:0" >> "$STATUS_FILE"
-  ) &
-  PID_STREAM_B=$!
-else
-  printf '[流 B] 用户指定跳过发布前备份。\n'
-  echo "STREAM_B_EXIT:0" >> "$STATUS_FILE"
-  PID_STREAM_B=""
-fi
+pids+=("$PID_STREAM_A")
 
 # 流 C: odin 掌机 linux-arm64 交叉编译与预传
 STREAM_C_LOG="$RELEASE_TMP/stream_c_odin.log"
@@ -270,20 +241,24 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
     set -Eeuo pipefail
     printf '[流 C] 本地交叉编译 ComputeNode (linux-arm64) 并预传至 odin...\n'
     ODIN_PUBLISH_DIR="$RELEASE_TMP/daohua-compute-odin"
-    rm -rf "$ODIN_PUBLISH_DIR"
+    ODIN_SOURCE="$RELEASE_TMP/odin-source"
+    mkdir -p "$ODIN_SOURCE/vendor/YuoCore"
+    git archive "$GIT_REV" | tar -x -C "$ODIN_SOURCE"
+    git -C "$ROOT_DIR/vendor/YuoCore" archive "$RELEASE_YUO_REVISION" | tar -x -C "$ODIN_SOURCE/vendor/YuoCore"
     ODIN_OUT="$ODIN_PUBLISH_DIR"
     if command -v cygpath >/dev/null 2>&1; then
       ODIN_OUT="$(cygpath -w "$ODIN_PUBLISH_DIR")"
     fi
-    dotnet publish "$ROOT_DIR/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo \
+    dotnet publish "$ODIN_SOURCE/src/ComputeNode" -c Release -r linux-arm64 --self-contained -o "$ODIN_OUT" --nologo \
       -p:ContinuousIntegrationBuild=true -p:DaoHuaObservability=false -p:IncludeSourceRevisionInInformationalVersion=false -p:InformationalVersion="${RELEASE_TAG}" > "$STREAM_C_LOG" 2>&1
     ssh -o BatchMode=yes "$ODIN_HOST" 'rm -rf /root/daohua-compute.new && mkdir -p /root/daohua-compute.new' >> "$STREAM_C_LOG" 2>&1
     tar -czf - -C "$ODIN_PUBLISH_DIR" . | ssh -o BatchMode=yes "$ODIN_HOST" 'tar -xzf - -C /root/daohua-compute.new/' >> "$STREAM_C_LOG" 2>&1
-    echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
+
   ) &
   PID_STREAM_C=$!
+  pids+=("$PID_STREAM_C")
 else
-  echo "STREAM_C_EXIT:0" >> "$STATUS_FILE"
+
   PID_STREAM_C=""
 fi
 
@@ -295,15 +270,6 @@ wait $PID_STREAM_A || {
   exit 1
 }
 printf '  ✔ [流 A] 镜像构建与推送完成。\n'
-
-if [[ -n "$PID_STREAM_B" ]]; then
-  wait $PID_STREAM_B || {
-    printf '\n错误: [流 B] 远端主服发布前备份校验失败！发布已安全中止。日志摘要:\n' >&2
-    tail -n 35 "$STREAM_B_LOG" >&2
-    exit 1
-  }
-  printf '  ✔ [流 B] 远端主服数据安全备份校验通过。\n'
-fi
 
 if [[ -n "$PID_STREAM_C" ]]; then
   wait $PID_STREAM_C || {
@@ -320,34 +286,19 @@ fi
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 2/4] 解析不可变 sha256 镜像引用...\n'
 
-APP_DIGEST="$(docker inspect "ccr.ccs.tencentyun.com/yuohira/daohua:${RELEASE_TAG}" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | grep -oE 'sha256:[a-f0-9]{64}' | head -1 || true)"
-COMPUTE_DIGEST="$(docker inspect "ccr.ccs.tencentyun.com/yuohira/daohua-compute:${RELEASE_TAG}" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | grep -oE 'sha256:[a-f0-9]{64}' | head -1 || true)"
-
-if [[ -z "$APP_DIGEST" ]]; then
-  APP_DIGEST="$(node -e "
-    const fs = require('fs');
-    const txt = fs.readFileSync(process.argv[1], 'utf8');
-    const m = txt.match(/[/]daohua:${RELEASE_TAG}[\\s\\S]*?digest:\\s*(sha256:[a-f0-9]{64})/);
-    if (m) console.log(m[1]);
-  " "$STREAM_A_LOG" 2>/dev/null || true)"
-fi
-
-if [[ -z "$COMPUTE_DIGEST" ]]; then
-  COMPUTE_DIGEST="$(node -e "
-    const fs = require('fs');
-    const txt = fs.readFileSync(process.argv[1], 'utf8');
-    const m = txt.match(/[/]daohua-compute:${RELEASE_TAG}[\\s\\S]*?digest:\\s*(sha256:[a-f0-9]{64})/);
-    if (m) console.log(m[1]);
-  " "$STREAM_A_LOG" 2>/dev/null || true)"
-fi
-if [[ -z "$APP_DIGEST" || -z "$COMPUTE_DIGEST" ]]; then
-  printf '错误: 无法从构建日志中提取完整的 sha256 digest。日志末尾:\n' >&2
-  tail -n 25 "$STREAM_A_LOG" >&2
-  exit 1
-fi
-
-APP_IMAGE_REF="ccr.ccs.tencentyun.com/yuohira/daohua@$APP_DIGEST"
-COMPUTE_IMAGE_REF="ccr.ccs.tencentyun.com/yuohira/daohua-compute@$COMPUTE_DIGEST"
+repo_digest() {
+  local repo="$1" digests digest
+  digests="$(docker image inspect "$repo:$RELEASE_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}')" || return 1
+  while IFS= read -r digest; do
+    if [[ "$digest" == "$repo@sha256:"* && "${digest##*@}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+      printf '%s\n' "$digest"; return 0
+    fi
+  done <<< "$digests"
+  printf '找不到本次镜像仓库对应的已推送 digest: %s\n' "$repo" >&2
+  return 1
+}
+APP_IMAGE_REF="$(repo_digest ccr.ccs.tencentyun.com/yuohira/daohua)"
+COMPUTE_IMAGE_REF="$(repo_digest ccr.ccs.tencentyun.com/yuohira/daohua-compute)"
 
 printf '  - Server Image : %s\n' "$APP_IMAGE_REF"
 printf '  - Compute Image: %s\n' "$COMPUTE_IMAGE_REF"
@@ -373,6 +324,10 @@ if [[ "$SKIP_CADDY" == "1" ]]; then
   DEPLOY_FLAGS+=("--skip-caddy")
 fi
 
+release_sources "$ROOT_DIR"
+[[ "$main_revision" == "$GIT_REV" && "$yuo_revision" == "$RELEASE_YUO_REVISION" && "$private_revision" == "$RELEASE_PRIVATE_REVISION" ]] || {
+  printf '发布输入已变化，拒绝部署。\n' >&2; exit 1;
+}
 printf '  - 触发主服部署 (deploy-prod.sh)...\n'
 export SMOKE_ACCOUNT="$SMOKE_ACC"
 export SMOKE_PASSWORD="$SMOKE_PW"
@@ -401,16 +356,17 @@ fi
 RELEASE_DOWNLOAD_URL=""
 if [[ "$WITH_APK" == "1" ]]; then
   printf '\n==> [阶段 3.5] 独占构建 Android 完全版安装包并发布到 GitHub Releases...\n'
-  APK_ARGS=("--soft-fail" "--require-full" "--tag" "$RELEASE_TAG")
-  if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
-    APK_ARGS+=("--release")
-  fi
+  # 现有 APK 脚本使用本地 Android/签名工具链；不并入 Docker 三 revision 溯源证明。
+  APK_ARGS=("--require-full" "--tag" "$RELEASE_TAG")
+  apk="$ROOT_DIR/artifacts/daohua.apk"
+  apk_marker="$RELEASE_TMP/apk-start"
+  touch "$apk_marker"
   bash "$ROOT_DIR/scripts/build-apk.sh" "${APK_ARGS[@]}"
-  if [[ -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
-    APK_BUILT=1
-    if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
-      RELEASE_DOWNLOAD_URL="https://github.com/fruktoguo/daohua/releases/download/${RELEASE_TAG}/daohua.apk"
-    fi
+  [[ -s "$apk" && "$apk" -nt "$apk_marker" ]] || { printf 'APK 构建未生成本轮新产物。\n' >&2; exit 1; }
+  APK_BUILT=1
+  if [[ "$SKIP_APK_UPLOAD" != "1" ]]; then
+    bash "$ROOT_DIR/scripts/upload-release-apk.sh" --file "$apk" --tag "$RELEASE_TAG"
+    RELEASE_DOWNLOAD_URL="https://github.com/fruktoguo/daohua/releases/download/${RELEASE_TAG}/daohua.apk"
   fi
 else
   printf '\n==> [阶段 3.5] 跳过 APK 构建（Web 化后默认行为；原生壳变更时使用 --with-apk）。\n'
@@ -420,18 +376,11 @@ fi
 # 阶段 3.6: HD 画质资源包上传主服（/hd/* 静态路由，Android 原生热更数据源）
 # ------------------------------------------------------------------------------
 if [[ "$SKIP_HD_PACK" != "1" ]]; then
-  # APK 未构建时独立重新生成画质包，避免复用 artifacts/ 残留的旧包造成降级
-  if [[ "$WITH_APK" != "1" ]]; then
-    if ! node scripts/gen-hd-pack.mjs artifacts/hd-pack >/dev/null; then
-      printf '警告: HD 画质包生成失败，跳过上传（不影响主流程）。\n' >&2
-    fi
-  fi
-  if [[ -f "$ROOT_DIR/artifacts/hd-pack/asset-manifest.json" ]]; then
-    printf '\n==> [阶段 3.6] 上传 HD 画质资源包至主服 (/hd/*)...\n'
-    if ! bash "$ROOT_DIR/scripts/upload-hd-pack.sh"; then
-      printf '警告: HD 画质资源包上传失败，不影响主流程；可稍后手动执行 scripts/upload-hd-pack.sh 重试。\n' >&2
-    fi
-  fi
+  hd_pack="$RELEASE_TMP/hd-pack"
+  node scripts/gen-hd-pack.mjs "$hd_pack" >/dev/null
+  [[ -s "$hd_pack/asset-manifest.json" ]] || { printf '未生成本轮 HD 画质包。\n' >&2; exit 1; }
+  printf '\n==> [阶段 3.6] 上传本轮 HD 画质资源包...\n'
+  SSH_HOST="$REMOTE_HOST" bash "$ROOT_DIR/scripts/upload-hd-pack.sh" "$hd_pack"
 else
   printf '\n==> [阶段 3.6] 用户指定跳过 HD 画质资源包上传。\n'
 fi
@@ -468,18 +417,14 @@ if [[ "$SKIP_ODIN" != "1" ]]; then
   fi
 fi
 
-# 2. 提取运维后台入口与接入日志
-OPS_PATH="$(ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo docker logs daohua-app --since 2m 2>&1 | grep -oE "/ops-[a-f0-9]{16}" | tail -n 1' 2>/dev/null || true)"
-
 printf '\n======================================================\n'
 printf '        正式服全量发布完成 (Commit: %s)\n' "$GIT_REV"
 printf '======================================================\n'
 printf '  • 主服版本标签 : %s\n' "$RELEASE_TAG"
 printf '  • Server 镜像  : %s\n' "$APP_IMAGE_REF"
 printf '  • Compute 镜像 : %s\n' "$COMPUTE_IMAGE_REF"
-if [[ -n "$OPS_PATH" ]]; then
-  printf '  • 运维后台地址 : https://daohua.yuohira.com%s\n' "$OPS_PATH"
-fi
+printf '  • YuoCore revision: %s\n' "$RELEASE_YUO_REVISION"
+printf '  • Private revision: %s（容器镜像输入）\n' "$RELEASE_PRIVATE_REVISION"
 if [[ "$APK_BUILT" == "1" && -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
   APK_SIZE="$(ls -lh "$ROOT_DIR/artifacts/daohua.apk" | awk '{print $5}')"
   printf '  • 安卓安装包   : artifacts/daohua.apk (%s, 完全版)\n' "$APK_SIZE"
@@ -487,5 +432,9 @@ if [[ "$APK_BUILT" == "1" && -f "$ROOT_DIR/artifacts/daohua.apk" ]]; then
     printf '  • Release 直链 : %s\n' "$RELEASE_DOWNLOAD_URL"
   fi
 fi
-printf '  • 双层烟测结果 : 全部通过\n'
+if [[ "$SKIP_SMOKE" == 1 ]]; then
+  printf '  • 双层烟测结果 : 已显式跳过\n'
+else
+  printf '  • 双层烟测结果 : 全部通过\n'
+fi
 printf '======================================================\n\n'

@@ -1,28 +1,17 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# 脚本名称: backup-pull-sync.sh
-# 主要职责: 本地计算节点定时从主服拉取 (Pull) 数据库备份并做 SHA-256 完整性对账
-#
-# 架构与安全特性:
-#   1. 出站主动拉取: 本地节点无需公网 IP 与端口穿透，主动出站经 SSH 连接云端主服；
-#   2. 增量断点续传: 基于 rsync 增量同步 dump 与物理归档，不携带 --delete（本地作为长期全量归档池）；
-#   3. 双层完整性校验: 同步后自动对新拉取的文件执行 sha256sum 校验；
-#   4. 并发排他锁: 文件锁避免重复执行；
-#   5. 可配置本地保留: 默认宽松留存，保护本地大容量存储不被无限写穿。
-# ==============================================================================
-
+# 经 SSH/rsync 拉取本轮源清单；校验完备、确认新鲜度后才发布到本地归档池。
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-checks.sh"
 ENV_FILE="${ENV_FILE:-/etc/daohua-backup-sync.env}"
 if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
   set -a; source "$ENV_FILE"; set +a
 fi
 
 REMOTE_HOST="${REMOTE_HOST:-yuohira}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/daohua/backups/}"
 LOCAL_DIR="${LOCAL_DIR:-/data/daohua-backups}"
-LOCK_FILE="${LOCK_FILE:-/tmp/daohua-backup-pull.lock}"
 LOCAL_HOURLY_KEEP_DAYS="${LOCAL_HOURLY_KEEP_DAYS:-90}"
 SSH_OPTS="${SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=15}"
 
@@ -31,60 +20,90 @@ while (($# > 0)); do
     --local-dir|-l) LOCAL_DIR="${2:?缺少本地目录}"; shift 2 ;;
     --remote-host|-r) REMOTE_HOST="${2:?缺少远程主机}"; shift 2 ;;
     --remote-dir) REMOTE_DIR="${2:?缺少远程目录}"; shift 2 ;;
-    *) shift ;;
+    *) printf '未知选项: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+[[ "$REMOTE_HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ && "$REMOTE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || {
+  printf '远端主机或备份目录不合法。\n' >&2; exit 2;
+}
+[[ "$LOCAL_HOURLY_KEEP_DAYS" =~ ^(0|[1-9][0-9]*)$ ]] || { printf 'LOCAL_HOURLY_KEEP_DAYS 必须为非负整数。\n' >&2; exit 2; }
 
-exec 8>"$LOCK_FILE"
-if ! flock -n 8; then
-  printf '已有备份拉取任务正在运行，本次跳过。\n' >&2
-  exit 0
+umask 077
+mkdir -p -- "$LOCAL_DIR"
+LOCAL_DIR="$(cd "$LOCAL_DIR" && pwd -P)"
+exec 8>"${LOCK_FILE:-$LOCAL_DIR/.backup-sync.lock}"
+flock -n -E 75 8 || { rc=$?; printf '未获得备份拉取锁，本轮未验证。\n' >&2; exit "$rc"; }
+stage="$(mktemp -d "$LOCAL_DIR/.sync.XXXXXX")"
+trap 'rm -rf -- "$stage"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+export LC_ALL=C
+shopt -s nullglob
+
+categories=(hourly daily weekly base)
+filters=()
+pairs=()
+for category in "${categories[@]}"; do
+  ext=dump
+  if [[ "$category" == base ]]; then ext=tar.gz; fi
+  dest="$LOCAL_DIR/$category"
+  [[ ! -L "$dest" ]] || { printf '拒绝写入符号链接归档目录: %s\n' "$category" >&2; exit 1; }
+  filters+=("--include=/$category/" "--include=/$category/daohua-postgres-$category-*Z.$ext" "--include=/$category/daohua-postgres-$category-*Z.$ext.sha256")
+done
+# 不在现有归档上 --inplace 写入。不变的文件可通过 link-dest 复用；--checksum 避免仅凭大小/mtime 复用坏文件。
+rsync -rt --checksum --link-dest="$LOCAL_DIR" "${filters[@]}" --exclude='*' \
+  -e "ssh $SSH_OPTS" -- "${REMOTE_HOST}:${REMOTE_DIR%/}/" "$stage/" || {
+  rc=$?
+  printf 'rsync 拉取失败（退出码 %d），本轮未验证。\n' "$rc" >&2
+  exit "$rc"
+}
+
+verified=0
+for category in "${categories[@]}"; do
+  dir="$stage/$category"
+  [[ -d "$dir" ]] || { printf '本轮缺少源目录: %s\n' "$category" >&2; exit 1; }
+  ext=dump
+  if [[ "$category" == base ]]; then ext=tar.gz; fi
+  data_pattern="^daohua-postgres-$category-[0-9]{8}T[0-9]{6}Z\\.${ext//./\\.}$"
+  newest=""
+  for path in "$dir"/*; do
+    name="${path##*/}"
+    [[ "${name%.sha256}" =~ $data_pattern ]] || continue
+    data="$dir/${name%.sha256}"
+    [[ -f "$data" && ! -L "$data" && -f "$data.sha256" && ! -L "$data.sha256" ]] || {
+      printf '源备份缺少常规文件校验对: %s/%s\n' "$category" "${name%.sha256}" >&2; exit 1;
+    }
+    [[ "$name" != *.sha256 ]] || continue
+    backup_check_sha "$data" || { printf '源备份 SHA-256 不符: %s/%s\n' "$category" "$name" >&2; exit 1; }
+    if [[ "$name" > "$newest" ]]; then newest="$name"; fi
+    pairs+=("$category/$name")
+    verified=$((verified + 1))
+  done
+  case "$category" in
+    hourly) newest_hourly="$newest"; max_age="${VERIFY_DUMP_MAX_AGE_SECONDS:-10800}" ;;
+    base) max_age="${VERIFY_BASE_MAX_AGE_SECONDS:-129600}" ;;
+    *) continue ;; # 尚未到日/周计划时允许空集。
+  esac
+  backup_is_fresh "$newest" "$max_age" || { printf '源目录未提供新鲜校验对: %s\n' "$category" >&2; exit 1; }
+done
+
+# 全部检查通过才发布；未出现在本轮源目录的历史归档不参与成功判定，也不因同步而删除。
+for category in "${categories[@]}"; do mkdir -p -- "$LOCAL_DIR/$category"; done
+for pair in "${pairs[@]}"; do
+  for path in "$pair" "$pair.sha256"; do
+    source_file="$stage/$path"
+    target="$LOCAL_DIR/$path"
+    if [[ ! -L "$target" && "$source_file" -ef "$target" ]]; then continue; fi
+    mv -fT -- "$source_file" "$target"
+  done
+done
+
+if ((LOCAL_HOURLY_KEEP_DAYS > 0)); then
+  old="$(find "$LOCAL_DIR/hourly" -maxdepth 1 -type f -name 'daohua-postgres-hourly-*.dump' -mtime "+$LOCAL_HOURLY_KEEP_DAYS" -print)"
+  while IFS= read -r path; do
+    [[ "${path##*/}" =~ ^daohua-postgres-hourly-[0-9]{8}T[0-9]{6}Z\.dump$ ]] || continue
+    if [[ "${path##*/}" != "$newest_hourly" ]]; then rm -f -- "$path" "$path.sha256"; fi
+  done <<< "$old"
 fi
-
-mkdir -p "$LOCAL_DIR"
-
-printf '==> 开始从主服 %s:%s 增量拉取备份至本地 %s\n' "$REMOTE_HOST" "$REMOTE_DIR" "$LOCAL_DIR"
-
-# 1. 增量拉取（不删本地历史，断点续传）
-rsync -avz --partial --inplace \
-  -e "ssh $SSH_OPTS" \
-  "${REMOTE_HOST}:${REMOTE_DIR}" \
-  "${LOCAL_DIR}/"
-
-printf '==> 备份同步完成，开始执行 SHA-256 完整性对账...\n'
-
-# 2. 遍历校验所有 .sha256 文件
-verified_count=0
-failed_count=0
-
-while IFS= read -r sha_file; do
-  target_file="${sha_file%.sha256}"
-  if [[ ! -f "$target_file" ]]; then
-    continue
-  fi
-  expected_hash="$(awk '{print $1}' "$sha_file" | tr '[:upper:]' '[:lower:]')"
-  actual_hash="$(sha256sum "$target_file" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
-  if [[ -n "$expected_hash" && "$expected_hash" == "$actual_hash" ]]; then
-    verified_count=$((verified_count + 1))
-  else
-    printf '警告: 校验失败 %s (期望 %s，实际 %s)\n' "$target_file" "$expected_hash" "$actual_hash" >&2
-    failed_count=$((failed_count + 1))
-  fi
-done < <(find "$LOCAL_DIR" -type f -name '*.sha256')
-
-printf '==> 对账校验完毕: 成功=%d 失败=%d\n' "$verified_count" "$failed_count"
-
-if (( failed_count > 0 )); then
-  printf '错误: 存在损坏的备份文件，请检查网络或主服源文件。\n' >&2
-  exit 1
-fi
-
-# 3. 本地高频 hourly 备份老化（可选，默认 90 天；0 表示永久留存）
-if [[ "$LOCAL_HOURLY_KEEP_DAYS" =~ ^[1-9][0-9]*$ && -d "$LOCAL_DIR/hourly" ]]; then
-  deleted_hourly=$(find "$LOCAL_DIR/hourly" -type f -mtime +"$LOCAL_HOURLY_KEEP_DAYS" -name '*.dump*' -delete -print | wc -l)
-  if (( deleted_hourly > 0 )); then
-    printf '==> 已老化清理超过 %d 天的本地旧小时备份共 %d 个文件。\n' "$LOCAL_HOURLY_KEEP_DAYS" "$deleted_hourly"
-  fi
-fi
-
-printf '✔ 本地异地灾备同步全部完成。\n'
+printf '异地备份同步完成：本轮源清单校验对=%d，小时与物理基线均新鲜。\n' "$verified"

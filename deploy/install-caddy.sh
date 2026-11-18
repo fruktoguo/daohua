@@ -1,21 +1,5 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# 脚本名称: install-caddy.sh
-# 主要职责: 生产 Caddy Web 服务器反向代理站点安全安装、格式化与无缝热重载
-#
-# 核心操作流程与回滚机制:
-#   1. 权限检查: 必须以 root 身份运行；
-#   2. 自动备份: 在变更前对主配置 /etc/caddy/Caddyfile 及现有站点配置生成带时间戳备份；
-#   3. 站点安装与格式化: 将指定的站点配置文件安装至 /etc/caddy/sites/daohua.caddy 并执行 caddy fmt；
-#   4. 主配置 import 确保: 若主 Caddyfile 尚未包含 `import /etc/caddy/sites/*.caddy`，自动追加引入行；
-#   5. 严格语法校验: 执行 `caddy validate --config /etc/caddy/Caddyfile`；
-#   6. 无缝安全重载: 校验成功后通过 `systemctl reload caddy` 实现平滑热生效；
-#   7. 自动故障恢复: 校验或 reload 任意环节失败立即自动恢复至备份配置并重新校验 reload。
-#
-# 使用方式:
-#   /opt/daohua/install-caddy.sh /path/to/daohua.yuohira.com.caddy
-# ==============================================================================
-
+# 保存并恢复主配置、站点、环境文件与 systemd drop-in；绝不重启共享 Caddy。
 set -Eeuo pipefail
 
 SOURCE_FILE="${1:-}"
@@ -27,11 +11,6 @@ CADDY_SECRETS_FILE="/etc/caddy/daohua-secrets.env"
 CADDY_DROPIN_DIR="/etc/systemd/system/caddy.service.d"
 CADDY_DROPIN_FILE="${CADDY_DROPIN_DIR}/daohua-env.conf"
 IMPORT_LINE='import /etc/caddy/sites/*.caddy'
-TIMESTAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
-MAIN_BACKUP="${CADDY_FILE}.backup-${TIMESTAMP}"
-SITE_BACKUP="${TARGET_FILE}.backup-${TIMESTAMP}"
-SITE_EXISTED=0
-
 if [[ "${EUID}" -ne 0 ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
   exit 1
@@ -57,6 +36,8 @@ read_env_value() {
   printf '%s' "$raw"
 }
 
+exec 9>/run/lock/daohua-install-caddy.lock
+flock 9
 resolved_token="${DAOHUA_BACKUP_TOKEN:-}"
 if [[ -z "$resolved_token" ]]; then
   resolved_token="$(read_env_value "$ENV_FILE" "BACKUP_TOKEN" || true)"
@@ -81,89 +62,110 @@ if [[ "$resolved_token" =~ ^(daohua-backup-token|change-me|replace-me|verify-|se
   exit 1
 fi
 
-install -d -m 0755 /etc/caddy "$SITES_DIR" "$CADDY_DROPIN_DIR"
-SECRETS_CHANGED=0
-TMP_SECRETS="$(mktemp)"
-printf 'DAOHUA_BACKUP_TOKEN=%s\n' "$resolved_token" >"$TMP_SECRETS"
-if [[ ! -f "$CADDY_SECRETS_FILE" ]] || ! cmp -s "$TMP_SECRETS" "$CADDY_SECRETS_FILE"; then
-  install -m 0600 -o root -g root "$TMP_SECRETS" "$CADDY_SECRETS_FILE"
-  SECRETS_CHANGED=1
-fi
-rm -f "$TMP_SECRETS"
+umask 077
+backup_dir="$(mktemp -d /etc/caddy/.daohua-rollback.XXXXXX)"
+assets=("$CADDY_FILE" "$TARGET_FILE" "$CADDY_SECRETS_FILE" "$CADDY_DROPIN_FILE")
+changed=()
+reload_attempted=0
+dropin_changed=0
+manager_reload_attempted=0
+committed=0
 
-DROPIN_CHANGED=0
-TMP_DROPIN="$(mktemp)"
-cat >"$TMP_DROPIN" <<EOF
-[Service]
-EnvironmentFile=${CADDY_SECRETS_FILE}
-ExecStart=
-ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
-EOF
-if [[ ! -f "$CADDY_DROPIN_FILE" ]] || ! cmp -s "$TMP_DROPIN" "$CADDY_DROPIN_FILE"; then
-  install -m 0644 -o root -g root "$TMP_DROPIN" "$CADDY_DROPIN_FILE"
-  systemctl daemon-reload
-  DROPIN_CHANGED=1
-fi
-rm -f "$TMP_DROPIN"
-export DAOHUA_BACKUP_TOKEN="$resolved_token"
-
-TMP_SITE="$(mktemp)"
-cp "$SOURCE_FILE" "$TMP_SITE"
-caddy fmt --overwrite "$TMP_SITE"
-
-SITE_CHANGED=0
-if [[ ! -f "$TARGET_FILE" ]] || ! cmp -s "$TMP_SITE" "$TARGET_FILE"; then
-  SITE_CHANGED=1
-fi
-MAIN_NEEDS_IMPORT=0
-if ! grep -Fqx "$IMPORT_LINE" "$CADDY_FILE"; then
-  MAIN_NEEDS_IMPORT=1
-fi
-
-if [[ "$SITE_CHANGED" == "0" && "$MAIN_NEEDS_IMPORT" == "0" && "$SECRETS_CHANGED" == "0" && "$DROPIN_CHANGED" == "0" ]] && systemctl is-active --quiet caddy; then
-  rm -f "$TMP_SITE"
-  caddy validate --config "$CADDY_FILE" >/dev/null
-  printf 'Caddy 配置无变更且服务运行正常，跳过备份与 reload。\n'
-  exit 0
-fi
-
-cp --preserve=mode,ownership,timestamps "$CADDY_FILE" "$MAIN_BACKUP"
-if [[ -f "$TARGET_FILE" ]]; then
-  SITE_EXISTED=1
-  cp --preserve=mode,ownership,timestamps "$TARGET_FILE" "$SITE_BACKUP"
-fi
-
-rollback() {
-  cp --preserve=mode,ownership,timestamps "$MAIN_BACKUP" "$CADDY_FILE"
-  if [[ "$SITE_EXISTED" == "1" ]]; then
-    cp --preserve=mode,ownership,timestamps "$SITE_BACKUP" "$TARGET_FILE"
-  else
-    rm -f "$TARGET_FILE"
-  fi
+validate_caddy() {
+  # 错误可能包含环境变量展开值，不输出鉴权令牌。
+  caddy validate --config "$CADDY_FILE" >/dev/null 2>&1
 }
 
-install -m 0644 -o root -g root "$TMP_SITE" "$TARGET_FILE"
-rm -f "$TMP_SITE"
-if [[ "$MAIN_NEEDS_IMPORT" == "1" ]]; then
-  printf '\n%s\n' "$IMPORT_LINE" >>"$CADDY_FILE"
-fi
-
-if ! caddy validate --config "$CADDY_FILE"; then
-  printf 'Caddy 配置校验失败，正在恢复原配置。\n' >&2
-  rollback
-  caddy validate --config "$CADDY_FILE"
-  exit 1
-fi
-if ! timeout 25s systemctl reload caddy; then
-  printf '警告: Caddy reload 超时或失败，改用 systemctl restart caddy 使配置生效。\n' >&2
-  if ! systemctl restart caddy; then
-    printf 'Caddy restart 失败，正在恢复原配置。\n' >&2
-    rollback
-    caddy validate --config "$CADDY_FILE"
-    timeout 25s systemctl reload caddy || systemctl restart caddy
-    exit 1
+finish() {
+  local rc=$? failed=0 i path
+  trap - EXIT
+  trap '' HUP INT TERM
+  if ((committed)); then return; fi
+  if ((${#changed[@]} == 0)); then
+    rm -rf -- "$backup_dir"
+    exit "$rc"
   fi
-fi
+  for i in "${changed[@]}"; do
+    path="${assets[i]}"
+    rm -f -- "$path" || { failed=1; continue; }
+    if [[ -e "$backup_dir/old.$i" || -L "$backup_dir/old.$i" ]]; then
+      cp -a -- "$backup_dir/old.$i" "$path" || failed=1
+    fi
+  done
+  if ((manager_reload_attempted)); then systemctl daemon-reload || failed=1; fi
+  unset DAOHUA_BACKUP_TOKEN
+  if [[ -f "$CADDY_SECRETS_FILE" ]]; then
+    DAOHUA_BACKUP_TOKEN="$(read_env_value "$CADDY_SECRETS_FILE" DAOHUA_BACKUP_TOKEN)" || failed=1
+    export DAOHUA_BACKUP_TOKEN
+  fi
+  validate_caddy || failed=1
+  # 校验失败时从未应用新配置；仅在调用过 reload 后重载已恢复的旧配置。
+  if ((reload_attempted && !failed)); then
+    timeout 25s systemctl reload caddy >/dev/null 2>&1 || failed=1
+  fi
+  rm -f -- "$backup_dir"/new.*
+  if ((failed)); then
+    printf 'Caddy 恢复或复验未通过；未重启共享服务。人工恢复快照: %s\n' "$backup_dir" >&2
+  else
+    printf 'Caddy 变更失败，已恢复原配置；未重启共享服务。\n' >&2
+    rm -rf -- "$backup_dir"
+  fi
+  exit 1
+}
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-printf 'Caddy 站点已安装: %s\n' "$TARGET_FILE"
-printf '主配置备份: %s\n' "$MAIN_BACKUP"
+systemctl is-active --quiet caddy || { printf '共享 Caddy 未运行；拒绝擅自启动/重启。\n' >&2; exit 1; }
+for i in "${!assets[@]}"; do
+  path="${assets[i]}"
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ -f "$path" ]] || { printf 'Caddy 配置不是可读取文件: %s\n' "$path" >&2; exit 1; }
+    cp -a -- "$path" "$backup_dir/old.$i"
+  fi
+done
+cp --preserve=mode,ownership,timestamps -- "$CADDY_FILE" "$backup_dir/new.0"
+cp -- "$SOURCE_FILE" "$backup_dir/new.1"
+caddy fmt --overwrite "$backup_dir/new.1"
+printf 'DAOHUA_BACKUP_TOKEN=%s\n' "$resolved_token" >"$backup_dir/new.2"
+# 不覆盖共享服务原有 ExecStart；systemd reload 命令也加载 EnvironmentFile。
+printf '[Service]\nEnvironmentFile=%s\n' "$CADDY_SECRETS_FILE" >"$backup_dir/new.3"
+if ! grep -Fqx "$IMPORT_LINE" "$CADDY_FILE"; then
+  printf '\n%s\n' "$IMPORT_LINE" >>"$backup_dir/new.0"
+fi
+(umask 022; mkdir -p -- "$SITES_DIR" "$CADDY_DROPIN_DIR")
+modes=(0 0644 0600 0644)
+for i in "${!assets[@]}"; do
+  path="${assets[i]}"
+  if [[ -f "$path" ]] && cmp -s "$backup_dir/new.$i" "$path" \
+      && { [[ "$i" != 2 ]] || [[ "$(stat -c '%a:%u:%g' "$path")" == 600:0:0 && ! -L "$path" ]]; }; then
+    continue
+  fi
+  [[ "$i" != 0 || ! -L "$path" ]] || { printf '主 Caddyfile 是符号链接，请人工配置站点 import。\n' >&2; exit 1; }
+  changed+=("$i")
+  if [[ "$i" == 3 ]]; then dropin_changed=1; fi
+  if [[ "$i" == 0 ]]; then
+    mv -fT -- "$backup_dir/new.$i" "$path"
+  else
+    rm -f -- "$path"
+    install -m "${modes[i]}" -o root -g root -- "$backup_dir/new.$i" "$path"
+  fi
+done
+export DAOHUA_BACKUP_TOKEN="$resolved_token"
+validate_caddy || { printf 'Caddy 新配置验证失败。\n' >&2; exit 1; }
+if ((${#changed[@]} == 0)); then
+  rm -rf -- "$backup_dir"
+  committed=1
+  printf 'Caddy 配置无变更且验证通过，跳过 reload。\n'
+  exit 0
+fi
+if ((dropin_changed)); then
+  manager_reload_attempted=1
+  systemctl daemon-reload
+fi
+reload_attempted=1
+timeout 25s systemctl reload caddy >/dev/null 2>&1 || { printf 'Caddy reload 失败或超时。\n' >&2; exit 1; }
+rm -f -- "$backup_dir"/new.*
+committed=1
+printf 'Caddy 站点已验证并 reload: %s；原配置快照（root 专用）: %s\n' "$TARGET_FILE" "$backup_dir"

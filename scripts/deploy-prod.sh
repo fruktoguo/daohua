@@ -38,24 +38,8 @@ if [[ -z "$EXPECTED_SCHEMA_VERSION" || -z "$EXPECTED_SECTION_VERSION" ]]; then
   exit 1
 fi
 EXPECTED_APP_VERSION="v$(cd "$ROOT_DIR" && node -p "try{require('./version.json').version}catch{''}" 2>/dev/null || true)"
-if [[ -z "${SMOKE_MODULE_DECLARATION:-}" && -d "$ROOT_DIR/../DaoHua-Private/server" ]]; then
-  SMOKE_MODULE_DECLARATION="$(cd "$ROOT_DIR" && node -e "
-    const fs = require('fs'), path = require('path');
-    function walk(dir) {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) { const r = walk(p); if (r) return r; }
-        else if (e.name.endsWith('.cs')) {
-          const m = fs.readFileSync(p, 'utf8').match(/ModuleDeclaration\\w*\\s*=\\s*\"([^\"]+)\"/);
-          if (m) return m[1];
-        }
-      }
-      return '';
-    }
-    process.stdout.write(walk('../DaoHua-Private/server'));
-  " 2>/dev/null || true)"
-fi
-SMOKE_EXPECT_PRIVATE="${SMOKE_EXPECT_PRIVATE:-$([[ -n "${SMOKE_MODULE_DECLARATION:-}" ]] && printf '1' || printf '0')}"
+# 正式只接收完整镜像，声明如有需要从受控环境显式提供，不扫描私有仓库。
+SMOKE_EXPECT_PRIVATE="${SMOKE_EXPECT_PRIVATE:-1}"
 
 REMOTE_HOST="${SSH_HOST:-yuohira}"
 IMAGE="${APP_IMAGE:-}"
@@ -66,8 +50,6 @@ INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
 SMOKE_ENV_FILE=""
-MAINTENANCE_FLAG_SET=0
-MAINTENANCE_CLEARED=0
 
 usage() {
   printf '%s\n' \
@@ -141,13 +123,6 @@ fi
 
 
 cleanup() {
-  if [[ "$MAINTENANCE_FLAG_SET" == "1" && "$MAINTENANCE_CLEARED" == "0" ]]; then
-    ssh -o BatchMode=yes "$REMOTE_HOST" '
-      if [[ "$(sudo docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" daohua-app 2>/dev/null || true)" == healthy ]]; then
-        sudo rm -f /opt/daohua/maintenance.flag
-      fi
-    ' >/dev/null 2>&1 || true
-  fi
   if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daohua-deploy.* ]]; then
     ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1 || true
   fi
@@ -156,6 +131,9 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 printf '==> 检查远端运行环境\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" \
@@ -197,6 +175,9 @@ fi
 printf '==> 上传部署资产\n'
 scp -q \
   "$ROOT_DIR/deploy/compose.prod.yaml" \
+  "$ROOT_DIR/deploy/apply-prod-release.sh" \
+  "$ROOT_DIR/deploy/backup-checks.sh" \
+  "$ROOT_DIR/deploy/backup-access.sh" \
   "$ROOT_DIR/deploy/ccr-auto-update.sh" \
   "$ROOT_DIR/deploy/backup.sh" \
   "$ROOT_DIR/deploy/base-backup.sh" \
@@ -258,187 +239,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
   fi
 '
 
-ssh -o BatchMode=yes "$REMOTE_HOST" "
-  set -Eeuo pipefail
-  sudo install -d -m 0755 /opt/daohua
-  sudo install -d -m 0700 -o 70 -g 70 /opt/daohua/wal-archive
-  sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daohua/compose.prod.yaml
-  sudo install -d -m 0755 /opt/daohua/static /opt/daohua/static/status
-  sudo install -m 0644 '$REMOTE_TMP/privacy.html' /opt/daohua/static/privacy.html
-  sudo cp -f '$REMOTE_TMP'/status/* /opt/daohua/static/status/
-  sudo chmod 0644 /opt/daohua/static/status/*
-  sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daohua/ccr-auto-update.sh
-  sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daohua/backup.sh
-  sudo install -m 0755 '$REMOTE_TMP/base-backup.sh' /opt/daohua/base-backup.sh
-  sudo install -m 0755 '$REMOTE_TMP/pitr-restore.sh' /opt/daohua/pitr-restore.sh
-  sudo install -m 0755 '$REMOTE_TMP/verify-backup.sh' /opt/daohua/verify-backup.sh
-  sudo install -m 0755 '$REMOTE_TMP/wal-archive.sh' /opt/daohua/wal-archive.sh
-  sudo install -m 0755 '$REMOTE_TMP/market-ledger-archive.sh' /opt/daohua/market-ledger-archive.sh
-  sudo install -m 0755 '$REMOTE_TMP/postgres-wal-archive.sh' /opt/daohua/postgres-wal-archive.sh
-  sudo install -m 0755 '$REMOTE_TMP/migrate-prod-db.sh' /opt/daohua/migrate-prod-db.sh
-  sudo rm -rf /opt/daohua/migrations
-  sudo install -d -m 0755 /opt/daohua/migrations
-  sudo cp -f '$REMOTE_TMP'/migrations/*.sql /opt/daohua/migrations/
-  sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.service' /etc/systemd/system/daohua-ccr-auto-update.service
-  sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.timer' /etc/systemd/system/daohua-ccr-auto-update.timer
-  sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.service' /etc/systemd/system/daohua-db-backup.service
-  sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.timer' /etc/systemd/system/daohua-db-backup.timer
-  sudo install -m 0644 '$REMOTE_TMP/daohua-base-backup.service' /etc/systemd/system/daohua-base-backup.service
-  sudo install -m 0644 '$REMOTE_TMP/daohua-base-backup.timer' /etc/systemd/system/daohua-base-backup.timer
-  sudo install -m 0644 '$REMOTE_TMP/daohua-ledger-archive.service' /etc/systemd/system/daohua-ledger-archive.service
-  sudo install -m 0644 '$REMOTE_TMP/daohua-ledger-archive.timer' /etc/systemd/system/daohua-ledger-archive.timer
-  sudo install -m 0644 '$REMOTE_TMP/daohua-wal-archive.service' /etc/systemd/system/daohua-wal-archive.service
-  sudo install -m 0644 '$REMOTE_TMP/daohua-wal-archive.timer' /etc/systemd/system/daohua-wal-archive.timer
-  sudo systemctl daemon-reload
-  sudo rm -f /opt/daohua/failed-image.id
-"
-
-if [[ "$INSTALL_CADDY" == "1" ]]; then
-  printf '==> 校验并安装 Caddy 站点（先于停写生效维护页路由）\n'
-  ssh -o BatchMode=yes "$REMOTE_HOST" "
-    set -Eeuo pipefail
-    sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daohua/install-caddy.sh
-    sudo install -m 0644 '$REMOTE_TMP/daohua.yuohira.com.caddy' /opt/daohua/daohua.yuohira.com.caddy
-    sudo /opt/daohua/install-caddy.sh /opt/daohua/daohua.yuohira.com.caddy
-  "
-fi
-
-printf '==> 开启更新维护态并执行停写迁移与容器替换\n'
-MAINTENANCE_FLAG_SET=1
-ssh -o BatchMode=yes "$REMOTE_HOST" "
-  set -Eeuo pipefail
-  sudo touch /opt/daohua/maintenance.flag
-  expected_app_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$IMAGE')\"
-  expected_compute_id=\"\$(sudo docker image inspect --format '{{.Id}}' '$COMPUTE_IMAGE')\"
-  # 迁移必须先于新镜像启动，且必须在旧写者停止与 CCR 自动更新服务完全静止之后执行：
-  # 同时停掉 timer 与在飞 service，防止自动更新并发拉起容器污染迁移窗口。
-  sudo systemctl stop daohua-ccr-auto-update.timer || true
-  sudo systemctl stop daohua-ccr-auto-update.service || true
-  for _ in {1..30}; do
-    if ! sudo systemctl is-active --quiet daohua-ccr-auto-update.service; then break; fi
-    sleep 1
-  done
-  # 若 compose.prod.yaml 调整了 db 参数（例如关闭 archive_mode=off 并移除 WAL 挂载），
-  # 需先单服务收敛 daohua-db 并等待就绪，再停写迁移并替换 app/compute。
-  sudo docker compose --env-file /opt/daohua/daohua.env -f /opt/daohua/compose.prod.yaml up -d --no-deps db
-  db_healthy=0
-  for db_attempt in {1..30}; do
-    db_state=\"\$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' daohua-db 2>/dev/null || true)\"
-    if [[ \"\$db_state\" == healthy ]]; then
-      db_healthy=1
-      break
-    fi
-    sleep 2
-  done
-  if [[ \"\$db_healthy\" != 1 ]]; then
-    printf 'daohua-db 未在 60 秒内恢复 healthy: %s\n' \"\$db_state\" >&2
-    exit 1
-  fi
-  sudo env \\
-    DAOHUA_DIR=/opt/daohua \\
-    EXPECTED_SCHEMA_VERSION='$EXPECTED_SCHEMA_VERSION' \\
-    EXPECTED_SECTION_VERSION='$EXPECTED_SECTION_VERSION' \\
-    /opt/daohua/migrate-prod-db.sh
-  sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' EXPECTED_SCHEMA_VERSION_FILE=/dev/null /opt/daohua/ccr-auto-update.sh
-  # 更新锁被 timer 占用时 ccr-auto-update.sh 会跳过本轮并以 0 退出；
-  # 必须等运行容器真正收敛到目标镜像且健康，否则后续健康检查与烟测会打到旧容器并误报成功。
-  converged=0
-  for attempt in {1..150}; do
-    running_app_id=\"\$(sudo docker inspect --format '{{.Image}}' daohua-app 2>/dev/null || true)\"
-    running_compute_id=\"\$(sudo docker inspect --format '{{.Image}}' daohua-compute 2>/dev/null || true)\"
-    running_app_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-app 2>/dev/null || true)\"
-    running_compute_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-compute 2>/dev/null || true)\"
-    if [[ \"\$running_app_id\" == \"\$expected_app_id\" && \"\$running_compute_id\" == \"\$expected_compute_id\" && \"\$running_app_health\" == healthy && \"\$running_compute_health\" == healthy ]]; then
-      converged=1
-      break
-    fi
-    sleep 2
-  done
-  if [[ \"\$converged\" != 1 ]]; then
-    printf '运行容器未在 300 秒内收敛到目标镜像: app=%s(期望 %s) compute=%s(期望 %s)\n' \"\$running_app_id\" \"\$expected_app_id\" \"\$running_compute_id\" \"\$expected_compute_id\" >&2
-    exit 1
-  fi
-  # 仅在新镜像真正健康收敛后才提交 daohua.env 目标镜像与 schema-version.expected，避免失败时污染自动更新真源。
-  printf '%s\n' '$EXPECTED_SCHEMA_VERSION' | sudo tee /opt/daohua/schema-version.expected >/dev/null
-  if [[ $IMAGE_EXPLICIT == 1 ]]; then
-    if sudo grep -q '^APP_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i \"s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|\" /opt/daohua/daohua.env
-    else
-      printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
-    fi
-  fi
-  if [[ $COMPUTE_IMAGE_EXPLICIT == 1 ]]; then
-    if sudo grep -q '^COMPUTE_IMAGE=' /opt/daohua/daohua.env; then
-      sudo sed -i \"s|^COMPUTE_IMAGE=.*|COMPUTE_IMAGE=$COMPUTE_IMAGE|\" /opt/daohua/daohua.env
-    else
-      printf 'COMPUTE_IMAGE=%s\n' '$COMPUTE_IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
-    fi
-  fi
-  sudo systemctl enable --now daohua-ccr-auto-update.timer
-  sudo systemctl enable --now daohua-db-backup.timer
-  sudo systemctl enable --now daohua-base-backup.timer
-  sudo systemctl enable --now daohua-ledger-archive.timer
-  sudo systemctl disable --now daohua-wal-archive.timer 2>/dev/null || true
-  sudo find /opt/daohua/wal-archive -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
-  sudo install -d -m 0755 /etc/systemd/journald.conf.d
-  printf '[Journal]\nSystemMaxUse=200M\nMaxRetentionSec=7day\n' | sudo tee /etc/systemd/journald.conf.d/daohua-size-cap.conf >/dev/null
-  sudo systemctl restart systemd-journald 2>/dev/null || true
-  sudo docker image prune -f --filter "until=24h" >/dev/null 2>&1 || true
-"
-
-printf '==> 核对远端容器和回环健康端点\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "
-  set -Eeuo pipefail
-  app_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-app)\"
-  compute_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-compute)\"
-  sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
-  sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-compute
-  if [[ \"\$app_health\" != healthy || \"\$compute_health\" != healthy ]]; then
-    printf '容器健康检查未通过: app=%s compute=%s\n' \"\$app_health\" \"\$compute_health\" >&2
-    exit 1
-  fi
-  # /readyz 只校验服务就绪，不依赖旧存储能力字段。
-  local_ready=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/readyz)\"
-  if ! printf '%s' \"\$local_ready\" | grep -oqE '\"status\"[[:space:]]*:[[:space:]]*\"(ok|ready)\"'; then
-    printf '/readyz 未返回 ok/ready: %s\n' \"\$local_ready\" >&2
-    exit 1
-  fi
-  local_health=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/healthz)\"
-  if [[ -n '$EXPECTED_APP_VERSION' ]] && ! printf '%s' \"\$local_health\" | grep -qF '\"version\":\"$EXPECTED_APP_VERSION\"'; then
-    printf '警告: /healthz 版本与预期不一致: expected=%s health=%s\n' '$EXPECTED_APP_VERSION' \"\$local_health\" >&2
-  fi
-  printf '%s\n' \"\$local_ready\"
-  sudo systemctl is-enabled daohua-ccr-auto-update.timer
-  sudo systemctl is-active daohua-ccr-auto-update.timer
-"
-
-if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
-  printf '==> 服务器回环全量烟测（信任边界内，含 /readyz）\n'
-  ssh -o BatchMode=yes "$REMOTE_HOST" "set -Eeuo pipefail; set -a; . '$REMOTE_TMP/smoke.env'; set +a; node '$REMOTE_TMP/smoke-production.mjs' http://127.0.0.1:15128"
-fi
-
-printf '==> 解除更新维护态并开放公网访问\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "sudo rm -f /opt/daohua/maintenance.flag"
-MAINTENANCE_CLEARED=1
-
-if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
-  printf '==> 公网 HTTPS 与 WebSocket 烟测（/readyz 应被拦截）\n'
-  smoke_ok=0
-  for attempt in {1..6}; do
-    if (cd "$ROOT_DIR" && SMOKE_REQUIRE_READYZ=0 \
-       SMOKE_EXPECT_PRIVATE="${SMOKE_EXPECT_PRIVATE:-0}" \
-       SMOKE_MODULE_DECLARATION="${SMOKE_MODULE_DECLARATION:-}" \
-       node scripts/smoke-production.mjs https://daohua.yuohira.com); then
-      smoke_ok=1
-      break
-    fi
-    printf '第 %s 次公网烟测未通过，5 秒后重试。\n' "$attempt" >&2
-    sleep 5
-  done
-  if [[ "$smoke_ok" != "1" ]]; then
-    printf '公网烟测连续失败。\n' >&2
-    exit 1
-  fi
-fi
+# 单个远端事务持有与 CCR timer 共用的锁，直到切换、烟测和定时器提交完成。
+printf '==> 受控停写、迁移、切换和验收\n'
+ssh -o BatchMode=yes "$REMOTE_HOST" "sudo flock -n /run/lock/daohua-ccr-auto-update.lock bash '$REMOTE_TMP/apply-prod-release.sh' '$REMOTE_TMP' '$IMAGE' '$COMPUTE_IMAGE' '$EXPECTED_SCHEMA_VERSION' '$EXPECTED_SECTION_VERSION' '$INSTALL_CADDY' '$RUN_PUBLIC_SMOKE'"
 
 printf '生产部署完成。\n'

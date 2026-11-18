@@ -50,17 +50,31 @@ command -v rsync >/dev/null 2>&1 || { printf '错误: 未找到 rsync，请先�
 command -v ssh >/dev/null 2>&1 || { printf '错误: 未找到 ssh。\n' >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { printf '错误: 未找到 sha256sum。\n' >&2; exit 1; }
 
-mkdir -p /opt/daohua
-cp "${SCRIPT_DIR}/backup-pull-sync.sh" /opt/daohua/backup-pull-sync.sh
-chmod +x /opt/daohua/backup-pull-sync.sh
+ENV_FILE=/etc/daohua-backup-sync.env
+new_config=0
+if [[ ! -e "$ENV_FILE" && ! -L "$ENV_FILE" ]]; then
+  [[ "$REMOTE_HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ && "$LOCAL_DIR" == /* && "$LOCAL_DIR" != *[$'\047\r\n']* ]] || {
+    printf '主机别名或本地备份目录不合法。\n' >&2; exit 2;
+  }
+  new_config=1
+fi
 
-cat >/etc/daohua-backup-sync.env <<EOF
+install -d -m 0755 /opt/daohua
+install -m 0644 "${SCRIPT_DIR}/backup-checks.sh" /opt/daohua/backup-checks.sh
+install -m 0755 "${SCRIPT_DIR}/backup-pull-sync.sh" "${SCRIPT_DIR}/odin-backup-sync.sh" /opt/daohua/
+# 默认仍只启用 rsync 的 timer；已有配置（含可能存在的 HTTPS 凭据）不覆盖。
+if ((new_config)); then
+  (
+    umask 077
+    cat >"$ENV_FILE" <<EOF
 # 道化太初本地计算节点灾备同步环境变量
 REMOTE_HOST=${REMOTE_HOST}
 REMOTE_DIR=/opt/daohua/backups/
-LOCAL_DIR=${LOCAL_DIR}
+LOCAL_DIR='${LOCAL_DIR}'
 LOCAL_HOURLY_KEEP_DAYS=90
 EOF
+  )
+fi
 
 cp "${SCRIPT_DIR}/daohua-backup-sync.service" /etc/systemd/system/daohua-backup-sync.service
 cp "${SCRIPT_DIR}/daohua-backup-sync.timer" /etc/systemd/system/daohua-backup-sync.timer
@@ -70,8 +84,12 @@ systemctl enable --now daohua-backup-sync.timer
 
 printf '✔ 已成功安装并启用 daohua-backup-sync.timer 定时器。\n'
 printf '  - 定时调度: 每小时第 15 分钟自动拉取\n'
-printf '  - 主服源端: %s\n' "$REMOTE_HOST"
-printf '  - 本地存储: %s\n' "$LOCAL_DIR"
+if ((new_config)); then
+  printf '  - 主服源端: %s\n' "$REMOTE_HOST"
+  printf '  - 本地存储: %s\n' "$LOCAL_DIR"
+else
+  printf '  - 保留 %s，主服与本地目录以现有配置为准。\n' "$ENV_FILE"
+fi
 
 if (( RUN_NOW == 1 )); then
   printf '==> 立即触发首次同步...\n'

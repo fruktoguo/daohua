@@ -20,6 +20,9 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-access.sh"
+
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
@@ -52,12 +55,14 @@ compose() {
 exec 9>"$LOCK_FILE"
 flock 9
 
-mkdir -p "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly"
+umask 077
+backup_prepare_access "$BACKUP_DIR"
+stage="$(mktemp -d "$BACKUP_DIR/.publish.XXXXXX")"
+trap 'rm -rf -- "$stage"' EXIT
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 hour_archive="${BACKUP_DIR}/hourly/daohua-postgres-hourly-${timestamp}.dump"
-partial="${hour_archive}.partial"
+partial="$stage/hour.dump"
 sha_file="${hour_archive}.sha256"
-trap 'rm -f "$partial"' EXIT
 
 db_state="$(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$DB_CONTAINER_NAME" 2>/dev/null || true)"
 if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
@@ -83,20 +88,18 @@ if ! compose exec -T db pg_restore --list <"$partial" >/dev/null; then
   exit 1
 fi
 
-mv "$partial" "$hour_archive"
-(cd "$(dirname "$hour_archive")" && sha256sum "$(basename "$hour_archive")" >"$sha_file")
+backup_publish_pair "$partial" "$hour_archive"
 
+snapshot_category() {
+  local category="$1" copy="$stage/$1.dump"
+  ln -- "$hour_archive" "$copy" 2>/dev/null || cp -- "$hour_archive" "$copy"
+  backup_publish_pair "$copy" "$BACKUP_DIR/$category/daohua-postgres-$category-$timestamp.dump"
+}
 utc_hour="$(date -u +'%H')"
 utc_day="$(date -u +'%u')"
 if [[ "$utc_hour" == "00" ]]; then
-  daily_archive="${BACKUP_DIR}/daily/daohua-postgres-daily-${timestamp}.dump"
-  ln -f "$hour_archive" "$daily_archive" 2>/dev/null || cp -p "$hour_archive" "$daily_archive"
-  (cd "$(dirname "$daily_archive")" && sha256sum "$(basename "$daily_archive")" >"$(basename "$daily_archive").sha256")
-  if [[ "$utc_day" == "1" ]]; then
-    weekly_archive="${BACKUP_DIR}/weekly/daohua-postgres-weekly-${timestamp}.dump"
-    ln -f "$hour_archive" "$weekly_archive" 2>/dev/null || cp -p "$hour_archive" "$weekly_archive"
-    (cd "$(dirname "$weekly_archive")" && sha256sum "$(basename "$weekly_archive")" >"$(basename "$weekly_archive").sha256")
-  fi
+  snapshot_category daily
+  if [[ "$utc_day" == "1" ]]; then snapshot_category weekly; fi
 fi
 
 prune_backups() {

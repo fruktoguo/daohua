@@ -8,7 +8,8 @@ BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
 WAL_ARCHIVE_DIR="${WAL_ARCHIVE_DIR:-${DEPLOY_DIR}/wal-archive}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
-DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/backup-checks.sh"
 ISOLATED_NAME="daohua-backup-verify-$$"
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -27,27 +28,32 @@ compose() {
   if [[ -f "$ENV_FILE" ]]; then docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; else docker compose -f "$COMPOSE_FILE" "$@"; fi
 }
 
-latest_dump="$(find "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly" -type f -name '*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1s/^[^ ]* //p' || true)"
-[[ -n "$latest_dump" ]] || { printf '没有找到 custom dump 备份。\n' >&2; exit 1; }
-dump_sha="${latest_dump}.sha256"
-if [[ ! -f "$dump_sha" ]]; then
-  printf '缺少 custom dump 校验和文件，备份门禁失败: %s\n' "$dump_sha" >&2
-  exit 1
-fi
-(cd "$(dirname "$latest_dump")" && sha256sum --check "$(basename "$dump_sha")")
+# 与生成及轮转互斥；复制或 touch 不能刷新源备份的恢复时间。
+exec 9>"${BACKUP_LOCK_FILE:-/run/lock/daohua-db-backup.lock}"
+flock 9
+shopt -s nullglob
+latest_dump=""
+latest_stamp=""
+for candidate in "$BACKUP_DIR"/{hourly,daily,weekly}/daohua-postgres-*.dump; do
+  name="${candidate##*/}"
+  stamp="${name%.dump}"
+  stamp="${stamp##*-}"
+  if [[ "$stamp" > "$latest_stamp" ]]; then latest_dump="$candidate"; latest_stamp="$stamp"; fi
+done
+backup_is_fresh "$latest_dump" "${VERIFY_DUMP_MAX_AGE_SECONDS:-10800}" || {
+  printf '没有新鲜的逻辑 dump（或 VERIFY_DUMP_MAX_AGE_SECONDS 非法）。\n' >&2; exit 1;
+}
+backup_check_sha "$latest_dump" || { printf '逻辑 dump 缺少校验对或 SHA-256 不符。\n' >&2; exit 1; }
 compose exec -T db pg_restore --list <"$latest_dump" >/dev/null
 printf 'custom dump 校验通过: %s\n' "$latest_dump"
 
-latest_base="$(find "$BACKUP_DIR/base" -maxdepth 1 -type f -name '*.tar.gz' -print 2>/dev/null | sort | tail -n 1 || true)"
-if [[ -n "$latest_base" ]]; then
+bases=("$BACKUP_DIR/base"/daohua-postgres-base-*.tar.gz)
+latest_base=""
+if ((${#bases[@]} > 0)); then latest_base="${bases[-1]}"; fi
+if backup_is_fresh "$latest_base" "${VERIFY_BASE_MAX_AGE_SECONDS:-129600}"; then
   tmp_dir="$(mktemp -d /tmp/daohua-verify-base.XXXXXX)"
   trap 'rm -rf -- "$tmp_dir"' EXIT
-  base_sha="${latest_base}.sha256"
-  if [[ ! -f "$base_sha" ]]; then
-    printf '缺少 base backup 校验和文件，备份门禁失败: %s\n' "$base_sha" >&2
-    exit 1
-  fi
-  (cd "$(dirname "$latest_base")" && sha256sum --check "$(basename "$base_sha")")
+  backup_check_sha "$latest_base" || { printf '物理基线缺少校验对或 SHA-256 不符。\n' >&2; exit 1; }
   tar -xzf "$latest_base" -C "$tmp_dir"
   [[ -f "$tmp_dir/backup_manifest" ]] || { printf 'base backup 缺少 backup_manifest。\n' >&2; exit 1; }
   docker run --rm --user 0 -v "$tmp_dir:/var/lib/postgresql/data" postgres:18-alpine \
@@ -81,9 +87,16 @@ if [[ -n "$latest_base" ]]; then
     printf '物理 base 仅完成格式与 manifest 校验；未启动隔离恢复实例。设置 VERIFY_BACKUP_ISOLATED_RESTORE=1 可执行 ready/最小 SQL 验证。\n'
   fi
 else
-  printf '缺少物理 base backup，PITR 尚未具备可验证的恢复基线。\n' >&2
+  printf '缺少新鲜的物理 base（或 VERIFY_BASE_MAX_AGE_SECONDS 非法）。\n' >&2
   exit 1
 fi
 
-"${DEPLOY_DIR}/wal-archive.sh" verify
+archive_mode="$(compose exec -T db sh -ceu '
+  psql -XAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SHOW archive_mode;"
+')"
+case "$archive_mode" in
+  off) printf '连续 WAL 已明确关闭；仅验证自带 WAL 的物理基线，不宣称 PITR 可用。\n' ;;
+  on|always) WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$SCRIPT_DIR/wal-archive.sh" verify ;;
+  *) printf '无法判定 PostgreSQL archive_mode，拒绝备份放行。\n' >&2; exit 1 ;;
+esac
 printf '备份门禁通过。\n'

@@ -27,7 +27,7 @@ usage() {
     '  --release-tag TAG      指定不可变版本标签（默认从 version.json 读取 v<MAJOR>.<MINOR>.<PATCH>）' \
     '  --image-prefix PREFIX  覆盖镜像仓库前缀' \
     '  --moving-tag TAG       覆盖移动标签，默认 prod' \
-    '  --allow-dirty          允许未提交工作区（仅排障）' \
+    '  --allow-dirty          本地排障允许主仓 dirty（仍只构建提交）' \
     '  --no-pull              不主动刷新基础镜像' \
     '  -h, --help             显示帮助'
 }
@@ -50,21 +50,28 @@ if [[ "$PLATFORM" != "linux/amd64" ]]; then
   printf '错误: 生产镜像只允许 linux/amd64（当前 %s）。\n' "$PLATFORM" >&2
   exit 1
 fi
-for command in git docker date; do
+for command in git docker date openssl; do
   command -v "$command" >/dev/null 2>&1 || { printf '缺少命令: %s\n' "$command" >&2; exit 1; }
 done
 docker info >/dev/null 2>&1 || { printf 'Docker 当前不可用。\n' >&2; exit 1; }
 
 cd "$ROOT_DIR"
-VCS_REF="$(git rev-parse HEAD 2>/dev/null || printf 'uncommitted')"
+source "$ROOT_DIR/deploy/release-source.sh"
+if [[ "$PUSH" == 1 && "$ALLOW_DIRTY" == 1 ]]; then
+  printf '正式推送不允许 --allow-dirty。\n' >&2; exit 1
+fi
+release_sources "$ROOT_DIR" "$ALLOW_DIRTY"
+VCS_REF="$main_revision"
+[[ "$VCS_REF" == "${RELEASE_MAIN_REVISION:-$VCS_REF}" && "$yuo_revision" == "${RELEASE_YUO_REVISION:-$yuo_revision}" && "$private_revision" == "${RELEASE_PRIVATE_REVISION:-$private_revision}" ]] || {
+  printf '构建输入在发布预检后已变化。\n' >&2; exit 1;
+}
 if [[ -z "$RELEASE_TAG" ]]; then
-  PKG_VERSION="$(node -p "try{require('./version.json').version}catch(e){try{require('./frontend/package.json').version}catch(e){'0.2.0'}}" 2>/dev/null || printf '0.2.0')"
+  PKG_VERSION="$(git show "${VCS_REF}:version.json" | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version')"
   RELEASE_TAG="v${PKG_VERSION}"
 fi
-if [[ -n "$(git status --porcelain --untracked-files=normal)" && "$ALLOW_DIRTY" != "1" ]]; then
-  printf '工作区存在未提交改动，拒绝正式镜像构建。\n' >&2
-  exit 1
-fi
+DB_SCHEMA="$(git show "${VCS_REF}:src/Server/Clean/PostgresSchema.cs" | sed -nE 's/^ *public const int Version = ([0-9]+);.*/\1/p')"
+SECTION_SCHEMA="$(git show "${VCS_REF}:src/Domain/Persistence/SectionCodec.cs" | sed -nE 's/^ *public const int CurrentSchemaVersion = ([0-9]+);.*/\1/p')"
+[[ "$DB_SCHEMA" =~ ^[0-9]+$ && "$SECTION_SCHEMA" =~ ^[0-9]+$ ]] || { printf '无法判定提交的 schema 目标。\n' >&2; exit 1; }
 if [[ -z "$RELEASE_TAG" ]]; then
   printf '无 Git 提交时必须通过 --release-tag 指定不可变标签。\n' >&2
   exit 1
@@ -82,43 +89,29 @@ RELEASE_COMPUTE_IMAGE="${COMPUTE_REPOSITORY}:${RELEASE_TAG}"
 MOVING_COMPUTE_IMAGE="${COMPUTE_REPOSITORY}:${MOVING_TAG}"
 
 if [[ "$BUILD" == "1" ]]; then
-  # 生产镜像固定完整口径：必须存在兄弟私有仓库（反多开等扩展模块，真源 docs/backend/private-modules.md）。
-  PRIVATE_ROOT="$ROOT_DIR/../DaoHua-Private"
-  if [[ ! -d "$PRIVATE_ROOT/server" ]]; then
-    printf '错误: 生产镜像必须为完整口径，但未发现兄弟私有仓库 %s/server。\n' "$PRIVATE_ROOT" >&2
-    exit 1
-  fi
-
-  # staging 构建上下文 = git archive 干净快照 + 私有模块拼装：
-  #   src/Private/server          -> MSBuild 按 DaoHuaPrivateRoot=/src/src/Private 匹配 $(DaoHuaPrivateRoot)/server/**/*.cs 注入 Server.Clean 程序集
-  #   frontend/src/private-impl   -> Vite 完整版构建挂载点（真实目录优先于链接）
-  # 私有源码只进入构建上下文与镜像层，绝不落入主仓库工作区；--allow-dirty 下镜像内容
-  # 仍固定为 HEAD 快照 + 私有仓库当前内容，保证可追溯。
-  if [[ ! -f "$PRIVATE_ROOT/frontend/antiMulti/index.ts" ]]; then
-    printf '错误: 生产镜像必须为完整口径，但未发现私有前端入口 %s/frontend/antiMulti/index.ts。\n' "$PRIVATE_ROOT" >&2
-    exit 1
-  fi
+  # 三个输入都锁定为提交。仅从私有提交归档两个允许的子树，不复制工作目录。
   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/daohua-prod-build-XXXXXX")"
-  trap 'rm -rf "$STAGING_DIR"' EXIT
-  git archive HEAD | tar -x -C "$STAGING_DIR"
-  if [[ "$ALLOW_DIRTY" == "1" ]]; then
-    dirty_commit="$(git stash create || true)"
-    if [[ -n "$dirty_commit" ]]; then
-      git archive "$dirty_commit" | tar -x -C "$STAGING_DIR"
-    fi
-  fi
-  mkdir -p "$STAGING_DIR/src/Private/server" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
-  cp -R "$ROOT_DIR/vendor/YuoCore/." "$STAGING_DIR/vendor/YuoCore/"
-  cp -R "$PRIVATE_ROOT/server/." "$STAGING_DIR/src/Private/server/"
-  cp -R "$PRIVATE_ROOT/frontend/antiMulti/." "$STAGING_DIR/frontend/src/private-impl/"
+  trap 'rm -rf -- "$STAGING_DIR"' EXIT
+  git archive "$VCS_REF" | tar -x -C "$STAGING_DIR"
+  mkdir -p "$STAGING_DIR/src/Private" "$STAGING_DIR/frontend/src/private-impl" "$STAGING_DIR/vendor/YuoCore"
+  git -C "$ROOT_DIR/vendor/YuoCore" archive "$yuo_revision" | tar -x -C "$STAGING_DIR/vendor/YuoCore"
+  git -C "$private_root" archive "$private_revision" server | tar -x -C "$STAGING_DIR/src/Private"
+  git -C "$private_root" archive "$private_revision" frontend/antiMulti | tar -x --strip-components=2 -C "$STAGING_DIR/frontend/src/private-impl"
   NODE_IMAGE_REF="${NODE_IMAGE:-ccr.ccs.tencentyun.com/yuohira/node:22-alpine}"
+  # 区分同一源码的两次独立构建；顺序推 prod 时不允许混配。
+  BUILD_PAIR="$(openssl rand -hex 16)"
   common_args=(
     --platform "$PLATFORM"
     --load
     --build-arg "BUILD_DATE=${BUILD_DATE}"
     --build-arg "BUILD_VERSION=${RELEASE_TAG}"
     --build-arg "VCS_REF=${VCS_REF}"
+    --label "io.daohua.yuocore-revision=$yuo_revision"
+    --label "io.daohua.private-revision=$private_revision"
+    --label "io.daohua.build-pair=$BUILD_PAIR"
+    --label "io.daohua.db-schema=$DB_SCHEMA"
+    --label "io.daohua.section-schema=$SECTION_SCHEMA"
     --build-arg "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}"
     --build-arg "NODE_IMAGE=${NODE_IMAGE_REF}"
     --build-arg "REQUIRE_PRIVATE_MODULES=1"
@@ -145,8 +138,23 @@ else
   fi
 fi
 
+# 推送既有镜像也必须绑定本次固定输入；不能只凭 tag 相同或本地存在判为可发布。
+build_pair=""
+for image in "$RELEASE_IMAGE" "$RELEASE_COMPUTE_IMAGE"; do
+  provenance="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "io.daohua.yuocore-revision"}} {{index .Config.Labels "io.daohua.private-revision"}} {{index .Config.Labels "io.daohua.db-schema"}} {{index .Config.Labels "io.daohua.section-schema"}} {{index .Config.Labels "io.daohua.build-pair"}}' "$image")"
+  [[ "${provenance% *}" == "$VCS_REF $yuo_revision $private_revision $DB_SCHEMA $SECTION_SCHEMA" && "${provenance##* }" =~ ^[a-f0-9]{32}$ ]] || {
+    printf '镜像来源或 schema 标签不匹配: %s\n' "$image" >&2; exit 1;
+  }
+  image_pair="${provenance##* }"
+  if [[ -n "$build_pair" && "$image_pair" != "$build_pair" ]]; then
+    printf 'Server/ComputeNode 不是同一构建批次，拒绝推送。\n' >&2; exit 1
+  fi
+  build_pair="$image_pair"
+done
+printf '镜像输入: main=%s YuoCore=%s private=%s schema=%s/%s pair=%s\n' "$VCS_REF" "$yuo_revision" "$private_revision" "$DB_SCHEMA" "$SECTION_SCHEMA" "$build_pair"
+
 if [[ "$PUSH" == "1" ]]; then
-  for image in "$RELEASE_IMAGE" "$MOVING_IMAGE" "$RELEASE_COMPUTE_IMAGE" "$MOVING_COMPUTE_IMAGE"; do
+  for image in "$RELEASE_IMAGE" "$RELEASE_COMPUTE_IMAGE" "$MOVING_IMAGE" "$MOVING_COMPUTE_IMAGE"; do
     printf '推送镜像: %s\n' "$image"
     docker push "$image"
   done

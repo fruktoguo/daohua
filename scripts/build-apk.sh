@@ -143,13 +143,10 @@ fi
 # 4. 生成包内基线清单（www 可变资源 sha256 + dist 的 HD 别名），
 #    供原生判定 APK 内置版本是否为服务端当前版；别名内嵌后服务端未发布清单时 HD 图标仍可离线生效
 printf '==> [4/4] 生成包内基线资源清单...\n'
-VITE_MANIFEST="$ROOT_DIR/frontend/dist/.vite/manifest.json"
-MANIFEST_ARGS=()
-if [[ -f "$VITE_MANIFEST" ]]; then
-  MANIFEST_ARGS+=("--vite-manifest" "$VITE_MANIFEST")
-fi
+VITE_ROOT="$ROOT_DIR/frontend"
 node "$ROOT_DIR/scripts/gen-asset-manifest.mjs" "$WWW_DIR" \
-  --out "$SHELL_DIR/app/src/main/assets/www-manifest.json" "${MANIFEST_ARGS[@]}"
+  --out "$SHELL_DIR/app/src/main/assets/www-manifest.json" \
+  --vite-root "$VITE_ROOT" --vite-manifest "$VITE_ROOT/dist/.vite/manifest.json"
 
 # 准备版本指纹并注入 Android 构建工程
 GIT_SHA="$(git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")"

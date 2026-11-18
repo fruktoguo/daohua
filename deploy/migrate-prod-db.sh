@@ -7,7 +7,7 @@
 #   存档分段标签（game.player_state_sections / platform.section_flush_queue 的 schema_version）
 #   是 SectionCodec 的严格相等校验项。若旧版本进程在迁移窗口内继续写入，会把已被迁移推进的
 #   标签写回旧值，导致新版本进程加载该玩家时抛 `section schema 版本不受支持` 并反复重连。
-#   因此迁移必须在 app/compute/persistence-worker 全部写者停止后执行，迁移完成再启动新镜像。
+#   因此迁移必须在 app/compute/persistence-worker 全部写者停止后执行，迁移结束仍保持停写，仅由外层部署启动已核验的目标镜像。
 #
 # 顺序契约（本脚本强制执行）：
 #   1. 校验平台版本、确认全部存档写者已停止（默认拒绝在运行中迁移）；
@@ -29,6 +29,7 @@
 #   DB_CONTAINER   数据库容器名（默认 daohua-db）
 #   DB_USER/DB_BOOTSTRAP_USER/DB_NAME  数据库连接（优先读取环境文件 DB_BOOTSTRAP_USER，默认 daohua_bootstrap）
 #   COMPOSE_FILE   compose 文件（默认 ${DAOHUA_DIR}/compose.prod.yaml）
+#   BACKUP_DIR     常规热备根目录（默认 ${DAOHUA_DIR}/backups）；迁移快照只写其私有 pre-migration 子目录
 # ==============================================================================
 set -Eeuo pipefail
 
@@ -50,14 +51,13 @@ DB_USER="${EXPLICIT_DB_USER:-${DB_BOOTSTRAP_USER:-daohua_bootstrap}}"
 DB_NAME="${EXPLICIT_DB_NAME:-${DB_NAME:-daohua}}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DAOHUA_DIR}/compose.prod.yaml}"
 MIGRATIONS_DIR="${MIGRATIONS_DIR:-${DAOHUA_DIR}/migrations}"
-BACKUP_DIR="${BACKUP_DIR:-${DAOHUA_DIR}/backups/pre-migration}"
+MIGRATION_BACKUP_DIR="${BACKUP_DIR:-${DAOHUA_DIR}/backups}"
+MIGRATION_BACKUP_DIR="${MIGRATION_BACKUP_DIR%/}/pre-migration"
 
 DRY_RUN=0
 ALLOW_RUNNING=0
 SKIP_BACKUP=0
 STOP_WRITERS=1
-# 本脚本是否主动停过写者：决定结束时是否需要恢复，避免把调用方特意停下的服务又拉起来。
-STOPPED_BY_US=0
 
 usage() {
   sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
@@ -80,7 +80,7 @@ warn() { printf '警告: %s\n' "$*" >&2; }
 die()  { printf '错误: %s\n' "$*" >&2; exit 1; }
 
 # ------------------------------------------------------------------------------
-# 写者停止/恢复：app 与 compute 都必须停，避免迁移窗口内的旧标签写回。
+# 停写：app 与 compute 都必须停，避免迁移窗口内的旧标签写回。
 # ------------------------------------------------------------------------------
 compose() {
   if [[ -f "$ENV_FILE" ]]; then
@@ -93,17 +93,13 @@ compose() {
 # 全部存档写者容器：app / compute 之外还有 worker profile 下的持久化工作者，
 # 迁移窗口内它同样会把分段标签写回旧值，必须纳入停写与恢复清单。
 WRITER_CONTAINERS=(daohua-app daohua-compute daohua-persistence-worker)
-# 本次由本脚本停止的写者容器名列表：恢复时只拉起这些，不强行启动原本未运行的 worker。
-STOPPED_WRITER_NAMES=""
 
 writers_running() {
-  local running=()
+  local names name
+  names="$("$DOCKER" ps --format '{{.Names}}')" || return 1
   for name in "${WRITER_CONTAINERS[@]}"; do
-    if "$DOCKER" inspect --format '{{.State.Running}}' "$name" 2>/dev/null | grep -q '^true$'; then
-      running+=("$name")
-    fi
+    if grep -Fx "$name" <<<"$names" >/dev/null; then printf '%s\n' "$name"; fi
   done
-  printf '%s\n' "${running[@]:-}"
 }
 
 service_for_container() {
@@ -121,23 +117,12 @@ stop_writers() {
     [[ -n "$name" ]] && services+=("$(service_for_container "$name")")
   done <<< "$running"
   log '停止 app / compute-node / persistence-worker 写者（迁移窗口内不允许写入存档标签）'
-  ((${#services[@]} > 0)) && compose stop "${services[@]}"
-  STOPPED_WRITER_NAMES="$running"
+  ((${#services[@]} > 0)) && compose --profile worker stop "${services[@]}"
   local remaining
   remaining="$(writers_running)"
   if [[ -n "$remaining" ]]; then
     die "写者未完全停止：${remaining//$'\n'/, }（禁止在运行中迁移）"
   fi
-}
-
-restart_writers() {
-  local services=() name
-  while IFS= read -r name; do
-    [[ -n "$name" ]] && services+=("$(service_for_container "$name")")
-  done <<< "${STOPPED_WRITER_NAMES:-}"
-  ((${#services[@]} > 0)) || return 0
-  log "恢复写者：${services[*]}（使用当前 daohua.env 中的镜像）"
-  compose up -d "${services[@]}"
 }
 
 # ------------------------------------------------------------------------------
@@ -189,7 +174,6 @@ if [[ -n "$running" ]]; then
     warn "（--dry-run：写者仍在运行：${running//$'\n'/, }；实际执行时会先停止写者，本次演练不执行停写。）"
   elif [[ "$STOP_WRITERS" == "1" ]]; then
     stop_writers
-    STOPPED_BY_US=1
   else
     die "写者仍在运行：${running//$'\n'/, }。请先停止 app、compute-node 与 persistence-worker 再迁移（或用 --no-stop-writers 明确表示由调用方负责）。"
   fi
@@ -203,9 +187,12 @@ if [[ "$SKIP_BACKUP" == "1" ]]; then
 elif [[ "$DRY_RUN" == "1" ]]; then
   log '（--dry-run：跳过备份）'
 else
-  mkdir -p "$BACKUP_DIR"
+  umask 077
+  mkdir -p -- "$MIGRATION_BACKUP_DIR"
+  [[ ! -L "$MIGRATION_BACKUP_DIR" && -O "$MIGRATION_BACKUP_DIR" ]] || die '迁移快照目录必须由当前备份用户独占。'
+  chmod 0700 -- "$MIGRATION_BACKUP_DIR"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  dump_path="${BACKUP_DIR}/daohua-pre-migration-v${current}-${stamp}.dump"
+  dump_path="${MIGRATION_BACKUP_DIR}/daohua-pre-migration-v${current}-${stamp}.dump"
   dump_partial="${dump_path}.partial"
   log "全库流式备份 → ${dump_path}"
   if ! "$DOCKER" exec -i "$DB_CONTAINER" sh -ceu "exec pg_dump -U '${DB_USER}' -d '${DB_NAME}' -Fc" > "$dump_partial"; then
@@ -218,10 +205,10 @@ else
   fi
   mv "$dump_partial" "$dump_path"
   [[ -s "$dump_path" ]] || die "备份文件为空：${dump_path}"
-  printf '%s\n' "$dump_path" > "${BACKUP_DIR}/latest"
+  printf '%s\n' "$dump_path" > "${MIGRATION_BACKUP_DIR}/latest"
   log "备份完成（$(du -h "$dump_path" | cut -f1)）"
   # 仅保留最近 5 份迁移前快照，防止长期累积打满磁盘。
-  mapfile -t old_dumps < <(ls -1t "${BACKUP_DIR}"/daohua-pre-migration-*.dump 2>/dev/null | tail -n +6 || true)
+  mapfile -t old_dumps < <(ls -1t "${MIGRATION_BACKUP_DIR}"/daohua-pre-migration-*.dump 2>/dev/null | tail -n +6 || true)
   if (( ${#old_dumps[@]} > 0 )); then
     rm -f -- "${old_dumps[@]}"
     log "已清理 ${#old_dumps[@]} 份过期迁移前备份（保留最近 5 份）。"
@@ -299,9 +286,9 @@ if true; then
   请由部署脚本传入，例如 EXPECTED_SECTION_VERSION=38。'
   fi
   target_label="$EXPECTED_SECTION_VERSION"
-  stale_heads="$(psql_scalar "SELECT count(*) FROM game.player_state_heads WHERE schema_version <> ${target_label};")"
-  stale_sections="$(psql_scalar "SELECT count(*) FROM game.player_state_sections WHERE schema_version <> ${target_label};")"
-  stale_queue="$(psql_scalar "SELECT count(*) FROM platform.section_flush_queue WHERE schema_version <> ${target_label};")"
+  stale_heads="$(psql_scalar "SELECT count(*) FROM game.player_state_heads WHERE schema_version IS DISTINCT FROM ${target_label};")"
+  stale_sections="$(psql_scalar "SELECT count(*) FROM game.player_state_sections WHERE schema_version IS DISTINCT FROM ${target_label};")"
+  stale_queue="$(psql_scalar "SELECT count(*) FROM platform.section_flush_queue WHERE schema_version IS DISTINCT FROM ${target_label};")"
 
   log "存档标签分布（要求 = v${target_label}）：heads=${stale_heads} sections=${stale_sections} queue=${stale_queue} 行不一致"
   if (( stale_heads + stale_sections + stale_queue > 0 )); then
@@ -309,18 +296,14 @@ if true; then
   这些行会被 SectionCodec 严格相等校验拒绝，导致对应玩家无法加载并反复重连。
   请确认迁移脚本是否覆盖了该版本，或人工推进到同一标签后再启动新镜像。
   参考 SQL（先备份、先停写）：
-    UPDATE game.player_state_sections   SET schema_version = ${target_label} WHERE schema_version <> ${target_label};
-    UPDATE game.player_state_heads      SET schema_version = ${target_label} WHERE schema_version <> ${target_label};
-    UPDATE platform.section_flush_queue SET schema_version = ${target_label} WHERE schema_version <> ${target_label};"
+    UPDATE game.player_state_sections   SET schema_version = ${target_label} WHERE schema_version IS DISTINCT FROM ${target_label};
+    UPDATE game.player_state_heads      SET schema_version = ${target_label} WHERE schema_version IS DISTINCT FROM ${target_label};
+    UPDATE platform.section_flush_queue SET schema_version = ${target_label} WHERE schema_version IS DISTINCT FROM ${target_label};"
   fi
   log '存档标签校验通过：全部行与当前解码器版本一致。'
 fi
 
 # ------------------------------------------------------------------------------
-# 恢复写者（--dry-run 从未停止写者，STOPPED_BY_US 恒 0，天然无需特判）
+# 迁移没有镜像恢复权；即使成功也不根据旧 env 拉起写者。
 # ------------------------------------------------------------------------------
-if [[ "${STOPPED_BY_US:-0}" == "1" ]]; then
-  restart_writers
-fi
-
-log '迁移流程结束。'
+log '迁移流程结束；写者保持停写状态，请由外层发布接管。'

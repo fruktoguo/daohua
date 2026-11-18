@@ -13,7 +13,7 @@
 //              frontend/src/assets/items (Web 48px) 兜底，按 itemId 去重
 //   buildings/ 建筑图标：art/buildings (HD) 优先，src/assets/buildings 兜底
 //   avatars/   角色/怪物立绘：art/avatars/*.webp（1024px 母模优化版）
-//   asset-manifest.json  由 gen-asset-manifest.mjs 以 --prefix /hd 生成
+//   asset-manifest.json  由 gen-asset-manifest.mjs 以 --prefix /hd --no-vite-manifest 生成
 //
 // 用法:
 //   node scripts/gen-hd-pack.mjs [outDir]     # 默认 artifacts/hd-pack
@@ -210,7 +210,7 @@ async function main() {
 
   // 复用清单生成器产出 /hd 前缀清单（键形如 "/hd/items/foo.webp"）
   const manifestScript = path.join(__dirname, 'gen-asset-manifest.mjs')
-  execFileSync(process.execPath, [manifestScript, outDir, '--prefix', '/hd'], { stdio: 'inherit' })
+  execFileSync(process.execPath, [manifestScript, outDir, '--prefix', '/hd', '--no-vite-manifest'], { stdio: 'inherit' })
 
   const totalSize = duDir(outDir)
   console.log(`[gen-hd-pack] HD 资源包生成完成 → ${outDir}`)
