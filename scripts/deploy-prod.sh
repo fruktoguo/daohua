@@ -208,6 +208,8 @@ printf '==> 上传兼容性迁移脚本与维护页静态资源\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf '${REMOTE_TMP}/migrations' '${REMOTE_TMP}/status' && mkdir -p '${REMOTE_TMP}/migrations' '${REMOTE_TMP}/status'"
 scp -q "$ROOT_DIR"/migrations/*.sql "${REMOTE_HOST}:${REMOTE_TMP}/migrations/"
 scp -q "$ROOT_DIR"/deploy/static/status/* "${REMOTE_HOST}:${REMOTE_TMP}/status/"
+# 防御 Windows core.autocrlf 检出导致的 CRLF 污染远端可执行脚本与 systemd 单元
+ssh -o BatchMode=yes "$REMOTE_HOST" "sed -i 's/\r$//' '${REMOTE_TMP}'/*.sh '${REMOTE_TMP}'/*.service '${REMOTE_TMP}'/*.timer '${REMOTE_TMP}'/*.yaml '${REMOTE_TMP}'/*.caddy '${REMOTE_TMP}'/migrations/*.sql"
 
 printf '==> 安装生产 Compose 与 systemd timer\n'
 printf '==> 校验生产环境变量\n'
@@ -239,8 +241,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
   fi
 '
 
-# 单个远端事务持有与 CCR timer 共用的锁，直到切换、烟测和定时器提交完成。
+# 单个远端事务持有与 CCR timer 共用的锁（最多等待 45s 避让 7s 周期的自动更新探测），直到切换、烟测和定时器提交完成。
 printf '==> 受控停写、迁移、切换和验收\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "sudo flock -n /run/lock/daohua-ccr-auto-update.lock bash '$REMOTE_TMP/apply-prod-release.sh' '$REMOTE_TMP' '$IMAGE' '$COMPUTE_IMAGE' '$EXPECTED_SCHEMA_VERSION' '$EXPECTED_SECTION_VERSION' '$INSTALL_CADDY' '$RUN_PUBLIC_SMOKE'"
+ssh -o BatchMode=yes "$REMOTE_HOST" "sudo flock -w 45 /run/lock/daohua-ccr-auto-update.lock bash '$REMOTE_TMP/apply-prod-release.sh' '$REMOTE_TMP' '$IMAGE' '$COMPUTE_IMAGE' '$EXPECTED_SCHEMA_VERSION' '$EXPECTED_SECTION_VERSION' '$INSTALL_CADDY' '$RUN_PUBLIC_SMOKE'"
 
 printf '生产部署完成。\n'
