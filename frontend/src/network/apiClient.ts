@@ -12,6 +12,7 @@ import {
   type MailDetailResponseDto,
   type MailListResponseDto,
   type MailReadResponseDto,
+  type RedeemCodeResponseDto,
 } from './protocol'
 import { getApiUrl, getHttpBase } from './apiUrl'
 
@@ -527,5 +528,13 @@ export function fetchCheckinStatus(signal?: AbortSignal): Promise<CheckinStatusD
 export function claimDailyCheckin(): Promise<CheckinClaimResponseDto> {
   return requestJson<CheckinClaimResponseDto>('/api/v1/checkin/claim', {
     method: 'POST',
+  })
+}
+
+/** 提交兑换码核销并直接入账背包 */
+export function redeemGiftCode(code: string): Promise<RedeemCodeResponseDto> {
+  return requestJson<RedeemCodeResponseDto>('/api/v1/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
   })
 }

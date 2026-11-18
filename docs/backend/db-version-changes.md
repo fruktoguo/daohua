@@ -425,3 +425,35 @@
 
 - 停止所有写者、备份全库后，从 v60 应用独立 SQL；脚本在同一事务内将提交头、落盘分段及全部刷盘收件箱的 v43 标签改为 v44，校验没有其他标签残留后，部署刷盘加锁函数及上述权限再登记 v61；仅为已存在的权限组授权。检测到非预期标签即失败，不盲贴标签。
 - 用隔离库验证迁移、重执行和标签零漂移，再由匹配版本的主服/worker/计算节点接管；旧镜像不能直接接管 v61 库。如需回退，须另行批准恢复停写前备份或前向修复，不只回滚镜像。
+
+## v61 -> v62
+
+- **变更日期**：2026-11-18 19:58:00
+- **关联任务**：`TASK-20261118-03`（兑换码系统设计与全栈实装）
+- **数据库版本**：`PostgresSchema.Version` 61 -> 62
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 未变（保持 `44`）；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0062_v61_to_v62.sql`（纯新增旁路表与角色授权，幂等安全）
+- **存量处理结论**：无需处理存量玩家数据，仅建新表、授权 `daohua_api` 并登记 `schema_version = 62`
+
+### 1. 变了什么
+- 【库结构/权限】在 `economy` schema 下新增三张旁路表：`economy.redeem_batches`（批次主表，支持 `universal` 通用口令码与 `single_use` 批次单次码）、`economy.redeem_codes`（全服唯一归一化口令码池）、`economy.player_redeem_claims`（每玩家每批次永久防重记录），配套创建批次时间序、按批查码与核销明细索引；仅向 `daohua_api` 授予三张表的 DML 权限及 `redeem_batches_batch_id_seq` 的 `USAGE, SELECT`（独立 `daohua_worker` 不接触兑换码表，保持最小权限）。
+- 【存档载荷】无变更（玩家八分段载荷与标签保持 `v44`）。
+- 【配表/持久化语义】兑换码入账复用 `economy.transactions`（`transaction_type = 'ops.redeem'`，已被 `PostgresRetentionWorker` 的 `LIKE 'ops.%'` 白名单规则纳入 30 天留存清理），玩家已兑记录 `economy.player_redeem_claims` 永久留存防重复领取。
+
+### 2. 是否需要处理存量数据
+- **不需要**：三张新表初始为空，不涉及任何既有玩家八分段、钱包余额或市场挂单的结构改动，在线/离线存量存档零影响。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0062_v61_to_v62.sql` 要点】：
+  ```sql
+  CREATE TABLE IF NOT EXISTS economy.redeem_batches (...);
+  CREATE TABLE IF NOT EXISTS economy.redeem_codes (...);
+  CREATE TABLE IF NOT EXISTS economy.player_redeem_claims (...);
+  GRANT SELECT, INSERT, UPDATE, DELETE
+      ON economy.redeem_batches, economy.redeem_codes, economy.player_redeem_claims
+      TO daohua_api;
+  GRANT USAGE, SELECT ON SEQUENCE economy.redeem_batches_batch_id_seq TO daohua_api;
+  INSERT INTO platform.schema_version(version, applied_at)
+      VALUES (62, now()) ON CONFLICT (version) DO NOTHING;
+  ```
+- 【离线脚本 / 人工步骤】：无。

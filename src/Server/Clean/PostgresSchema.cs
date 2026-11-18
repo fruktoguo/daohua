@@ -86,8 +86,9 @@ public static class PostgresSchema
     /// reservations/party_session_inbox 清理与反查索引及热表 fillfactor/autovacuum 调优）；玩家载荷标签保持 v43 不变。
     /// v60：传音表情包多端同步系统（新增 social.player_stickers 旁路表情包表及软删除墓碑索引，上限 100 个）；玩家载荷标签保持 v43 不变。
     /// v61：战斗单位快照保存天雷/血煞阵盘触发时刻，载荷标签 v44；建立刷盘身份行锁函数及最小 worker 审计权限。
+    /// v62：兑换码系统（新增 economy.redeem_batches / economy.redeem_codes / economy.player_redeem_claims 旁路表）；玩家载荷标签保持 v44 不变。
     /// </summary>
-    public const int Version = 61;
+    public const int Version = 62;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -424,6 +425,42 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_transient_idempotency_created_at
         ON economy.transient_idempotency(created_at);
+
+    -- 兑换码批次主表（支持 universal 通用口令码与 single_use 批次单次码）。
+    CREATE TABLE IF NOT EXISTS economy.redeem_batches (
+        batch_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        title varchar(120) NOT NULL,
+        mode varchar(16) NOT NULL CHECK (mode IN ('universal', 'single_use')),
+        rewards jsonb NOT NULL,
+        max_claims integer NULL CHECK (max_claims IS NULL OR max_claims > 0),
+        claimed_count integer NOT NULL DEFAULT 0 CHECK (claimed_count >= 0),
+        created_at timestamptz NOT NULL,
+        expires_at timestamptz NULL,
+        disabled_at timestamptz NULL
+    ) WITH (fillfactor = 90);
+    CREATE INDEX IF NOT EXISTS ix_redeem_batches_created_at
+        ON economy.redeem_batches(created_at DESC, batch_id DESC);
+
+    -- 全服唯一兑换码索引表（通用码 1 行、单次码每码 1 行，共享大写主键防撞码）。
+    CREATE TABLE IF NOT EXISTS economy.redeem_codes (
+        code_normalized varchar(32) PRIMARY KEY CHECK (char_length(code_normalized) BETWEEN 4 AND 32),
+        batch_id bigint NOT NULL REFERENCES economy.redeem_batches(batch_id) ON DELETE CASCADE,
+        redeemed_by uuid NULL REFERENCES identity.players(player_id),
+        redeemed_at timestamptz NULL
+    ) WITH (fillfactor = 90);
+    CREATE INDEX IF NOT EXISTS ix_redeem_codes_batch
+        ON economy.redeem_codes(batch_id, redeemed_at NULLS FIRST, code_normalized);
+
+    -- 每角色每批次永久核销防重表（极窄主键，不随 30 天经济流水清理，防长期有效口令二次重领）。
+    CREATE TABLE IF NOT EXISTS economy.player_redeem_claims (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        batch_id bigint NOT NULL REFERENCES economy.redeem_batches(batch_id) ON DELETE CASCADE,
+        code_normalized varchar(32) NOT NULL,
+        claimed_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, batch_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_redeem_claims_batch
+        ON economy.player_redeem_claims(batch_id, claimed_at DESC);
 
     CREATE TABLE IF NOT EXISTS market.partition_leases (
         partition_id integer PRIMARY KEY CHECK (partition_id >= 0),
@@ -898,7 +935,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

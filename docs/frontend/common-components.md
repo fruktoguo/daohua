@@ -102,6 +102,7 @@
 - **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`、行内 `ItemIcon`、文本行/复合胶囊 `ItemReference`），禁止仅用纯文本名称罗列。
 - **适用场景**：
   - 行囊、交易、装备槽位中的单个物品方块（包含品质光晕色调与边框、数量角标、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - **邮件附件与礼包兑换所获奖励紧凑横向卡**：左侧 `46px` 缩略瓦片复用 `ItemTooltipTarget` + `ItemTile`（锚点类 `.mail-attachment-anchor` / `.redeem-reward-anchor` 已登记进 `frontend/src/styles/selection-grid.css` 的共享 `:is()` 组，强制显式透传 `itemId` 与 `enhancementLevel`），右侧展示单行名称与 `×数量`（源码见 `MailModal.tsx` 与 `SettingsPage.tsx`）。
   - **左上品类丝带统一走 `resolveItemSubCategory`**：装备取穿戴槽位（武器/头部/衣服/下装/鞋履/饰品），其余取配表二级 `subCategory`（药材/矿石/丹药/秘籍/残卷/补给耗材等），功法书按 `item.tome./item.fragment.` 前缀兜底区分全本与残卷；所有展示位（背包、装备栏、选择器、坊市、悬浮详情）共享同一解析口径，装备栏不再叠加独立槽位角标。
   - **仅持有 itemId + 数量的行内场景**（账本物品得失、斗法暂存区、日志引用等）：统一渲染复合胶囊（行内小图标 + 名称胶囊 + `×数量` 下划线值 + 悬浮详情卡片） -> `ItemReference`（`amount` 提供时渲染 `item-reference-compound` 复合胶囊；`valueContent` 可覆写值区内容）
   - **消耗/产出条目（持有·需求对照）**：行动详情与强化预览的「物品 ×需求 / 持有/需求」行内条目统一用 `ActionDetailItem`（ItemDisplay 导出）；`current` 提供时显示 `持有 / 需求` 并在不足时以 `is-insufficient` 警示，缺省仅显示 `×需求`。

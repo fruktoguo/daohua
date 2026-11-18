@@ -1516,3 +1516,19 @@ public sealed record CheckinClaimResponseDto(
     int RewardMerit,
     string RewardItemId,
     CheckinStatusDto Status);
+
+/// <summary>兑换码单项奖励载荷（支持普通物品、货币与可选强化等级装备）。</summary>
+public sealed record RedeemRewardDto(
+    string ItemId,
+    double Quantity,
+    int EnhancementLevel = 0);
+
+/// <summary>玩家提交兑换码请求（POST /api/v1/redeem）。</summary>
+public sealed record RedeemCodeRequestDto(string Code);
+
+/// <summary>玩家兑换成功响应载荷。</summary>
+public sealed record RedeemCodeResponseDto(
+    long BatchId,
+    string Title,
+    string Code,
+    IReadOnlyList<RedeemRewardDto> Rewards);

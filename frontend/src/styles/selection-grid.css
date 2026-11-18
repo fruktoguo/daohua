@@ -40,7 +40,8 @@
   .market-browse-tooltip,
   .combat-ability-slot-shell,
   .codex-tile-anchor,
-  .mail-attachment-anchor
+  .mail-attachment-anchor,
+  .redeem-reward-anchor
 ) {
   --item-frame-rgb: 201, 180, 109;
   position: relative;

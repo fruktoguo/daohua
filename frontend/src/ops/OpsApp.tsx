@@ -15,6 +15,7 @@ import { OpsBookView, OpsMarketMetricsView, OpsOrdersView, OpsSystemOrderView, O
 import { OpsConfigView, OpsHealthView, OpsOverviewView } from './views/OverviewViews'
 import { OpsComputeView, OpsLogsView, OpsSchedulerView } from './views/RuntimeViews'
 import { OpsAccountAbuseView } from './views/AccountAbuseView'
+import { OpsRedeemView } from './views/RedeemView'
 import './ops.css'
 
 /** 面板视图标识。 */
@@ -24,7 +25,7 @@ type OpsViewId =
   | 'players' | 'sessions' | 'storage'
   | 'accountAbuse'
   | 'book' | 'orders' | 'trades' | 'market' | 'systemOrders'
-  | 'config' | 'actions'
+  | 'config' | 'actions' | 'redeem'
 
 /** 左侧竖排导航分组。 */
 const NAV_GROUPS: Array<{ group: string; items: Array<{ id: OpsViewId; label: string }> }> = [
@@ -41,7 +42,7 @@ const NAV_GROUPS: Array<{ group: string; items: Array<{ id: OpsViewId; label: st
       { id: 'systemOrders', label: '系统下单' },
     ],
   },
-  { group: '系统', items: [{ id: 'config', label: '配置' }, { id: 'actions', label: '运维操作' }] },
+  { group: '系统', items: [{ id: 'config', label: '配置' }, { id: 'actions', label: '运维操作' }, { id: 'redeem', label: '兑换码' }] },
 ]
 
 /** 自动刷新间隔（毫秒）。 */
@@ -243,6 +244,7 @@ function OpsDashboard({ basePath, onLock }: { basePath: string; onLock: () => vo
           {view === 'systemOrders' && <OpsSystemOrderView intervalMs={intervalMs} />}
           {view === 'config' && <OpsConfigView />}
           {view === 'actions' && <OpsActionsView />}
+          {view === 'redeem' && <OpsRedeemView />}
         </main>
       </div>
     </div>

@@ -592,6 +592,8 @@ public static class OpsPanel
         group.MapOpsMarketActions();
         // 传书邮件运营操作：个人/全服发件与公告撤回（端点实现在 OpsMailActions）。
         group.MapOpsMailActions();
+        // 兑换码运营操作：通用口令/批量单次码创建、码池导出与批次停用恢复（端点实现在 OpsRedeemActions）。
+        group.MapOpsRedeemActions();
         group.MapFallback("/api/{**path}", () => Results.NotFound(new { code = "NOT_FOUND", message = "运维接口不存在。" }));
     }
 

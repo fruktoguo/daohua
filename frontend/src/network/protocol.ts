@@ -1250,3 +1250,18 @@ export interface ZongmenDto {
   members: ZongmenMemberDto[]; requests: ZongmenRequestDto[]
 }
 export interface ZongmenStateDto { zongmen: ZongmenDto | null; directory: ZongmenSummaryDto[]; invitations: ZongmenRequestDto[]; applications: ZongmenRequestDto[] }
+
+/** 兑换码单项奖励载荷（支持货币、绑定功德、普通物品与可选强化等级装备）。 */
+export interface RedeemRewardDto {
+  itemId: string
+  quantity: number
+  enhancementLevel?: number
+}
+
+/** 玩家兑换码核销成功响应（POST /api/v1/redeem）。 */
+export interface RedeemCodeResponseDto {
+  batchId: number
+  title: string
+  code: string
+  rewards: RedeemRewardDto[]
+}

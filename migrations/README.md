@@ -95,5 +95,6 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0059_v58_to_v59.sql` | 队列与 outbox 增加 `status` 死信收口、`compute_jobs` 增加 `dead_count`、补齐留存与订单反查索引并调优高频写表 `fillfactor`/`autovacuum`；存档标签保持 43，schema_version 写入 59 |
 | `0060_v59_to_v60.sql` | 新增传音自定义表情包多端同步旁路表 `social.player_stickers`（含活跃与软删除墓碑索引）及角色权限；存档标签保持 43，schema_version 写入 60 |
 | `0061_v60_to_v61.sql` | 天雷/血煞阵盘触发时刻随战斗快照持久化（可缺省解码）；推进三处 v43 标签到 v44，并加入刷盘身份行锁函数及最小 worker 审计权限，schema_version 写入 61 |
+| `0062_v61_to_v62.sql` | 新增兑换码旁路三张表（`economy.redeem_batches`/`redeem_codes`/`player_redeem_claims`）及 `daohua_api` 表与序列权限；存档标签保持 44，schema_version 写入 62 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

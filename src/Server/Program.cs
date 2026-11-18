@@ -94,6 +94,15 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    rateLimiterOptions.AddPolicy("redeem", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue("player_id") ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
 });
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -179,6 +188,8 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.MailRuntime>();
     builder.Services.AddSingleton<Server.Clean.Checkin.PostgresCheckinRepository>();
     builder.Services.AddSingleton<Server.Clean.Checkin.CheckinRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Redeem.PostgresRedeemRepository>();
+    builder.Services.AddSingleton<Server.Clean.Redeem.RedeemRuntime>();
     builder.Services.AddSingleton<Server.Clean.Leaderboards.LeaderboardRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
     builder.Services.AddSingleton<Server.Clean.Social.PostgresStickerRepository>();
@@ -781,6 +792,7 @@ if (processRole == ServerProcessRole.Api)
     Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     Server.Clean.Social.MailEndpoints.Map(app);
     Server.Clean.Checkin.CheckinEndpoints.Map(app);
+    Server.Clean.Redeem.RedeemEndpoints.Map(app);
     Server.Clean.Social.StickerEndpoints.Map(app);
 
 

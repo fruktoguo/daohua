@@ -1,10 +1,15 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icon'
+import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RenameModal } from './RenameModal'
 import { ChangePasswordModal } from './ChangePasswordModal'
+import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
+import { findEquipmentInCatalog, findItemInCatalog, resolveCatalogItemMetadata } from '../game/ids'
+import { redeemGiftCode } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
+import type { RedeemCodeResponseDto, RedeemRewardDto } from '../network/protocol'
 import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore, type AvatarOption } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
@@ -104,6 +109,55 @@ function formatCooldown(seconds: number, t: (key: string, params?: Record<string
   return t('app.settings.timeSeconds', { s })
 }
 
+/** 兑换码所获奖励紧凑展示卡：强制显式透传 itemId 与强化等级，复用 ItemTooltipTarget + ItemTile。 */
+const RedeemRewardCard = memo(function RedeemRewardCard({
+  reward,
+}: {
+  reward: RedeemRewardDto
+}): React.JSX.Element {
+  const t = useT()
+  const itemsCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
+  const itemDef = findItemInCatalog(itemsCatalog, reward.itemId) ?? null
+  const equipmentDef = findEquipmentInCatalog(equipmentCatalog, reward.itemId) ?? null
+  const meta = resolveCatalogItemMetadata(reward.itemId, {
+    itemDefinition: itemDef,
+    equipmentDefinition: equipmentDef,
+    t,
+  })
+  const enhancementLevel = reward.enhancementLevel ?? 0
+  const formattedQty = formatNumber(reward.quantity, { maxDecimals: 0 })
+  const displayLabel = enhancementLevel > 0 ? `${meta.label} +${enhancementLevel}` : meta.label
+
+  return (
+    <div className="redeem-reward-card">
+      <ItemTooltipTarget
+        amount={reward.quantity}
+        className="redeem-reward-anchor"
+        definition={itemDef ?? undefined}
+        enhancementLevel={enhancementLevel}
+        equipmentDefinition={equipmentDef ?? undefined}
+        itemId={reward.itemId}
+      >
+        <ItemTile
+          amount={reward.quantity}
+          category={meta.category}
+          className="redeem-reward-tile"
+          enhancementLevel={enhancementLevel}
+          itemId={reward.itemId}
+          level={meta.level}
+          name={meta.label}
+          rarity={meta.rarity}
+        />
+      </ItemTooltipTarget>
+      <div className="redeem-reward-info">
+        <span className="redeem-reward-name" title={displayLabel}>{displayLabel}</span>
+        <span className="redeem-reward-qty">×{formattedQty}</span>
+      </div>
+    </div>
+  )
+})
+
 /**
  * 游戏设置中心主页面组件 (SettingsPage)
  *
@@ -126,6 +180,10 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false)
   const [skipConfirmOpen, setSkipConfirmOpen] = useState(false)
+  const [redeemInput, setRedeemInput] = useState('')
+  const [redeeming, setRedeeming] = useState(false)
+  const [redeemError, setRedeemError] = useState<string | null>(null)
+  const [redeemResult, setRedeemResult] = useState<RedeemCodeResponseDto | null>(null)
 
   const tutorialStep = useGameStore(state => state.tutorialStep)
 
@@ -195,6 +253,28 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
     await copyTextToClipboard(OFFICIAL_QQ_GROUP)
     useGameStore.getState().setNotice(t('app.topbar.qqCopied', { group: OFFICIAL_QQ_GROUP }))
   }, [t])
+
+  const handleRedeemSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (redeeming) return
+    const trimmed = redeemInput.trim()
+    if (!trimmed) {
+      setRedeemError(t('app.settings.redeemEmptyError'))
+      return
+    }
+    setRedeeming(true)
+    setRedeemError(null)
+    try {
+      const response = await redeemGiftCode(trimmed)
+      setRedeemInput('')
+      setRedeemResult(response)
+      useGameStore.getState().setNotice(t('app.settings.redeemSuccessNotice', { title: response.title }))
+    } catch (error) {
+      setRedeemError(error instanceof Error && error.message ? error.message : t('app.settings.redeemFailedFallback'))
+    } finally {
+      setRedeeming(false)
+    }
+  }, [redeemInput, redeeming, t])
 
   const isNative = typeof window !== 'undefined' && Boolean(window.DaoHuaNative)
   const nativeVersion = typeof window !== 'undefined' ? (window.DaoHuaNative?.getAppVersion() || '1.0.0') : '1.0.0'
@@ -273,6 +353,53 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                   <span className="setting-label">{t('app.settings.registeredTimeLabel')}</span>
                   <span className="setting-value">{formatDateTime(createdAtUnixSeconds, t('app.settings.unknownTime'))}</span>
                 </div>
+              </section>
+
+              <section className="settings-group" aria-label={t('app.settings.redeemHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.redeemHeading')}</h3>
+                <form className="settings-redeem-form" onSubmit={event => void handleRedeemSubmit(event)}>
+                  <input
+                    type="text"
+                    className="settings-redeem-input"
+                    value={redeemInput}
+                    maxLength={32}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    disabled={redeeming}
+                    aria-label={t('app.settings.redeemInputAria')}
+                    placeholder={t('app.settings.redeemInputPlaceholder')}
+                    onChange={event => {
+                      setRedeemInput(event.target.value)
+                      if (redeemError) setRedeemError(null)
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    className="inline-modify-btn settings-redeem-submit"
+                    disabled={redeeming || redeemInput.trim().length === 0}
+                  >
+                    {redeeming ? t('app.settings.redeemSubmittingBtn') : t('app.settings.redeemSubmitBtn')}
+                  </button>
+                </form>
+                {redeemError && (
+                  <p className="settings-redeem-error" role="alert">{redeemError}</p>
+                )}
+                {redeemResult && redeemResult.rewards.length > 0 && (
+                  <div className="settings-redeem-result" aria-live="polite">
+                    <span className="settings-redeem-result-title">
+                      {t('app.settings.redeemObtainedTitle', { title: redeemResult.title })}
+                    </span>
+                    <div className="redeem-reward-grid">
+                      {redeemResult.rewards.map(reward => (
+                        <RedeemRewardCard
+                          key={`${reward.itemId}:${reward.enhancementLevel ?? 0}`}
+                          reward={reward}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
 
               <section className="settings-group" aria-label={t('app.settings.securityHeading')}>

@@ -919,6 +919,116 @@ const commands = {
       return lines;
     },
   },
+  redeem: {
+    usage: "redeem [batches | codes <批次ID> [all|unused|used] [条数]]",
+    desc: "兑换码批次与码池查询",
+    run: async (a) => {
+      const sub = (a[0] ?? "batches").toLowerCase();
+      if (sub === "batches" || sub === "list") {
+        const d = await apiGet("/redeem/batches");
+        const items = d.items ?? [];
+        if (items.length === 0) return ["暂无兑换码批次。"];
+        return table(
+          ["批次ID", "名称", "类型/口令", "已兑/上限", "过期", "状态"],
+          items.map((b) => [
+            b.batchId,
+            b.title,
+            b.mode === "universal" ? `通用:${b.universalCode}` : "单次码池",
+            `${b.claimedCount}/${b.maxClaims ?? "∞"}`,
+            b.expiresAt ? formatIso(b.expiresAt) : "永不",
+            b.isActive ? "生效中" : b.disabledAt ? "已停用" : "已结束",
+          ]),
+        );
+      }
+      if (sub === "codes") {
+        if (!a[1] || !/^\d+$/.test(a[1])) throw new ApiError(0, null, "用法：redeem codes <批次ID> [all|unused|used] [条数]");
+        const status = a[2] ?? "all";
+        const limit = a[3] ?? 50;
+        const d = await apiGet(`/redeem/batches/${a[1]}/codes`, { status, limit });
+        const items = d.items ?? [];
+        if (items.length === 0) return [`批次 #${a[1]} 当前无匹配兑换码记录。`];
+        return table(
+          ["兑换码", "状态", "道号", "角色ID", "核销时间"],
+          items.map((r) => [
+            r.code,
+            r.redeemedAt ? "已兑" : "可用",
+            r.redeemedByName ?? "-",
+            r.redeemedBy ? shortId(r.redeemedBy) : "-",
+            r.redeemedAt ? formatIso(r.redeemedAt) : "-",
+          ]),
+        );
+      }
+      throw new ApiError(0, null, commands.redeem.usage);
+    },
+  },
+  "redeem-create": {
+    usage: "redeem-create <口令> <标题> <itemId:数量[:+强化],...> [限量|0] [天数|0]",
+    desc: "创建通用口令码（写）",
+    confirm: async (a) => {
+      if (!a[0] || !a[1] || !a[2]) throw new ApiError(0, null, commands["redeem-create"].usage);
+      parseRedeemRewardsSpec(a[2]);
+      return `创建通用口令码「${a[0].toUpperCase()}」（标题：${a[1]}，奖励：${a[2]}）`;
+    },
+    run: async (a) => {
+      const rewards = parseRedeemRewardsSpec(a[2]);
+      const maxClaimsNum = Number(a[3] ?? "0");
+      const expireDaysNum = Number(a[4] ?? "30");
+      const neverExpire = expireDaysNum === 0;
+      const d = await apiPost("/actions/redeem-create-universal", {
+        code: a[0],
+        title: a[1],
+        rewards,
+        maxClaims: maxClaimsNum > 0 ? maxClaimsNum : null,
+        expireDays: neverExpire ? null : expireDaysNum,
+        neverExpire,
+      });
+      return [`已创建通用口令码 #${d.batch.batchId}「${d.batch.universalCode}」（标题：${d.batch.title}）`];
+    },
+  },
+  "redeem-batch": {
+    usage: "redeem-batch <数量> <标题> <itemId:数量[:+强化],...> [前缀|-] [天数|0]",
+    desc: "批量生成单次码（写）",
+    confirm: async (a) => {
+      if (!a[0] || !a[1] || !a[2]) throw new ApiError(0, null, commands["redeem-batch"].usage);
+      parseRedeemRewardsSpec(a[2]);
+      return `批量生成 ${a[0]} 枚单次码（标题：${a[1]}，奖励：${a[2]}）`;
+    },
+    run: async (a) => {
+      const count = Number(a[0]);
+      const rewards = parseRedeemRewardsSpec(a[2]);
+      const prefix = a[3] && a[3] !== "-" ? a[3] : null;
+      const expireDaysNum = Number(a[4] ?? "30");
+      const neverExpire = expireDaysNum === 0;
+      const d = await apiPost("/actions/redeem-create-single-use", {
+        count,
+        prefix,
+        title: a[1],
+        rewards,
+        expireDays: neverExpire ? null : expireDaysNum,
+        neverExpire,
+      });
+      const preview = (d.codes ?? []).slice(0, 20);
+      const lines = [`已创建单次码批次 #${d.batch.batchId}「${d.batch.title}」，共 ${d.codes.length} 枚：`];
+      for (const code of preview) lines.push(`  ${code}`);
+      if (d.codes.length > 20) lines.push(`  …其余 ${d.codes.length - 20} 枚可用 redeem codes ${d.batch.batchId} unused 查看`);
+      return lines;
+    },
+  },
+  "redeem-toggle": {
+    usage: "redeem-toggle <批次ID> <disable|enable>",
+    desc: "停用或恢复兑换码批次（写）",
+    confirm: async (a) => {
+      if (!a[0] || !["disable", "enable"].includes((a[1] ?? "").toLowerCase())) {
+        throw new ApiError(0, null, commands["redeem-toggle"].usage);
+      }
+      return `${a[1].toLowerCase() === "disable" ? "停用" : "恢复"}兑换码批次 #${a[0]}`;
+    },
+    run: async (a) => {
+      const disabled = a[1].toLowerCase() === "disable";
+      const d = await apiPost("/actions/redeem-set-disabled", { batchId: Number(a[0]), disabled });
+      return [`批次 #${d.batchId} 已${d.disabled ? "停用" : "恢复"}`];
+    },
+  },
   token: {
     usage: "token <值>", desc: "设置写操作令牌",
     run: (a) => {
@@ -959,6 +1069,26 @@ function validateOrderScope(a) {
     throw new ApiError(0, null, `用法：sell/buy ${a[0]} <目标> [价] [量]`);
   }
   return a.join(" ");
+}
+
+function parseRedeemRewardsSpec(spec) {
+  if (!spec) throw new ApiError(0, null, "请提供奖励列表，如 item.gongde-bound:100,currency.spirit-stone:500");
+  const rewards = [];
+  for (const part of spec.split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const segs = trimmed.split(":");
+    const itemId = segs[0]?.trim();
+    const quantity = Number(segs[1]);
+    const enhancementRaw = segs[2]?.trim().replace(/^\+/, "") ?? "0";
+    const enhancementLevel = Number(enhancementRaw);
+    if (!itemId || !Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(enhancementLevel) || enhancementLevel < 0 || enhancementLevel > 20) {
+      throw new ApiError(0, null, `无效奖励项「${trimmed}」，格式：itemId:正整数[:+强化0..20]`);
+    }
+    rewards.push({ itemId, quantity, enhancementLevel });
+  }
+  if (rewards.length === 0) throw new ApiError(0, null, "至少包含 1 项奖励");
+  return rewards;
 }
 
 async function resolvePlayerTarget(token) {

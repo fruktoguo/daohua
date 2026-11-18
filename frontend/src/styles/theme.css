@@ -187,6 +187,7 @@
 :root[data-theme="light"] .pill-tone--crimson .underlined-value,
 :root[data-theme="light"] .unit-number--tone-crimson,
 :root[data-theme="light"] .settings-group--danger .settings-group-title,
+:root[data-theme="light"] .settings-redeem-error,
 :root[data-theme="light"] .modal-form-error,
 :root[data-theme="light"] .status-error-icon,
 :root[data-theme="light"] .saved-account-remove:hover,
@@ -248,7 +249,9 @@
 
 :root[data-theme="light"] .qc-next,
 :root[data-theme="light"] .equipment-tools-section,
-:root[data-theme="light"] .abilities-slot-tag-badge {
+:root[data-theme="light"] .abilities-slot-tag-badge,
+:root[data-theme="light"] .settings-redeem-input,
+:root[data-theme="light"] .redeem-reward-card {
   background: rgba(var(--surface-rgb), 0.7);
 }
 

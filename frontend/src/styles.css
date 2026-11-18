@@ -10149,6 +10149,117 @@ input[type="checkbox"] {
   border-color: var(--gold-dim);
 }
 
+/* 设置 → 账号：礼包兑换分组与所获物品图标网格 */
+.settings-redeem-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-redeem-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text);
+  background: rgba(12, 14, 18, 0.72);
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.settings-redeem-input::placeholder {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-dim);
+}
+
+.settings-redeem-input:focus {
+  border-color: var(--gold);
+}
+
+.settings-redeem-submit {
+  height: 32px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.settings-redeem-error {
+  margin: 7px 0 0;
+  font-size: 12px;
+  color: var(--danger, #e87961);
+}
+
+.settings-redeem-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(201, 180, 109, 0.16);
+}
+
+.settings-redeem-result-title {
+  font-size: 12px;
+  color: var(--jade, #6fc9a8);
+}
+
+.redeem-reward-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 7px;
+}
+
+.redeem-reward-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--gold-faint);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+}
+
+.redeem-reward-anchor {
+  --item-slot-size: 46px;
+  --item-tile-size: 46px;
+  flex-shrink: 0;
+}
+
+.redeem-reward-tile {
+  --item-tile-size: 46px;
+}
+
+.redeem-reward-info {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.redeem-reward-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.redeem-reward-qty {
+  font-family: var(--font-number);
+  font-size: 11px;
+  color: var(--gold);
+}
+
 .cooldown-tag {
   display: inline-flex;
   align-items: center;
