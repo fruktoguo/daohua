@@ -804,6 +804,7 @@ export const combatZh = {
       currentMarket: '按当前行情',
       unpriced: '未报价',
       slotDisabled: '停用',
+      genjiPoints: '根基点数',
       linggenTitle: '灵根属性',
       linggenEnable: '启用确认灵根',
       'linggen.metal': '金',

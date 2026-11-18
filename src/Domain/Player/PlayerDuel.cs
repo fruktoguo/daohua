@@ -471,9 +471,9 @@ public sealed partial class PlayerAggregate
     /// <summary>斗法玩法分段状态（遭遇计数、失败冷却、暂存区与战报）。</summary>
     public PlayerDuelState Duel { get; }
 
-    /// <summary>当前斗法实力值：六维等级总和（后续可替换为更复杂口径）；等级经配表派生点成本表结算。</summary>
+    /// <summary>当前斗法实力值：有效六维等级（含根基加成）总和；等级经配表派生点成本表结算。</summary>
     public double DuelPower(GameDataCatalog? gameData)
-        => Loadout.CoreAttributes.Levels(gameData?.RealmProgression).Total;
+        => Loadout.CoreAttributes.Levels(gameData?.RealmProgression).WithGenjiBonus(Progression.Genji.Points).Total;
 
     /// <summary>当前战斗行动的斗法开关（仅队首战斗行动生效）。</summary>
     public bool IsDuelSeeking => _actions.Count > 0 && _actions[0].Intent.PvpEnabled

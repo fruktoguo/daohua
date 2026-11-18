@@ -97,5 +97,6 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0061_v60_to_v61.sql` | 天雷/血煞阵盘触发时刻随战斗快照持久化（可缺省解码）；推进三处 v43 标签到 v44，并加入刷盘身份行锁函数及最小 worker 审计权限，schema_version 写入 61 |
 | `0062_v61_to_v62.sql` | 新增兑换码旁路三张表（`economy.redeem_batches`/`redeem_codes`/`player_redeem_claims`）及 `daohua_api` 表与序列权限；存档标签保持 44，schema_version 写入 62 |
 | `0063_v62_to_v63.sql` | `social.chat_messages` 增引用快照及点赞版本；新增 `social.chat_message_likes`（随消息裁剪级联删除）及 API 权限；存档标签保持 44，schema_version 写入 63 |
+| `0064_v63_to_v64.sql` | `progression` 分段新增筑基期根基字段 `genjiPoints`/`genjiUnlocked`（可缺省解码）；推进三处玩家存档标签 `44 -> 45`，schema_version 写入 64 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

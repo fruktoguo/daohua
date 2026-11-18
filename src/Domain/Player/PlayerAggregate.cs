@@ -141,6 +141,9 @@ public sealed class PlayerProgression
     /// <summary>开天门与五行灵根状态：叩天门满修为后必须先开天门取得灵根才能继续突破。</summary>
     public PlayerHeavenGateState HeavenGate { get; } = new();
 
+    /// <summary>筑基期专属根基状态：半步筑基满修为后解锁常驻凝练，百分比提升全六维。</summary>
+    public PlayerGenjiState Genji { get; } = new();
+
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
 
@@ -182,6 +185,13 @@ public sealed class PlayerProgression
         LifetimeExperience += amplifiedAmount;
         if (!double.IsFinite(Experience) || !double.IsFinite(Foundation) || !double.IsFinite(CombatExperience) || !double.IsFinite(LifetimeExperience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "修为收益入账结果无效。");
+        // 半步筑基及以上首次将修为修满本层瓶颈时，自动激活根基常驻解锁标记，
+        // 使得后续扣除修为凝练根基后无需再次攒满 100% 即可连续凝练。
+        if (!Genji.Unlocked && RealmLevel >= GenjiRules.GenjiRealmLevel
+            && double.IsFinite(cap) && cap > 0 && Experience >= cap - 1e-9)
+        {
+            Genji.Apply(Genji.Points, unlocked: true);
+        }
         return credited;
     }
 
@@ -236,7 +246,7 @@ public sealed class PlayerProgression
     }
 
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
-    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion, long unlockedTraitsVersion, long stagedEnhancementsVersion)
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion, long defeatedMonsterIdsVersion, long unlockedTraitsVersion, long stagedEnhancementsVersion, long genjiVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
@@ -267,6 +277,8 @@ public sealed class PlayerProgression
         CultivationSeconds = state.CultivationSeconds;
         AgeSeconds = state.AgeSeconds;
         HeavenGate.Apply(state.HeavenGateRolled, state.HeavenGateConfirmed, state.HeavenGateEntered, state.HeavenGateRerollCount);
+        Genji.Apply(state.GenjiPoints, state.GenjiUnlocked);
+        Genji.RestoreVersion(genjiVersion);
         StagedEnhancements.Clear();
         if (state.StagedEnhancements is { Count: > 0 } staged)
         {
@@ -789,8 +801,9 @@ public sealed partial class PlayerAggregate
         + Progression.TraitIds.Version
         + Progression.UnlockedTraits.Version
         + Loadout.AbilitySlots.Version
-        // 开天门 / 逆天改命改写生效灵根：五行增伤减伤点数随之变化，必须令面板缓存失效。
-        + Progression.HeavenGate.Version;
+        // 开天门 / 逆天改命改写生效灵根，凝练根基改写全六维百分比增幅：均须令面板缓存失效。
+        + Progression.HeavenGate.Version
+        + Progression.Genji.Version;
 
     /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>
     internal bool TryGetCachedAttributes(GameDataCatalog catalog, out PlayerAttributes attributes)
@@ -1209,6 +1222,17 @@ public sealed partial class PlayerAggregate
             // 保证灵根是进入练气期的必经前置而非可跳过流程。
             if (HeavenGateRules.IsHeavenGateRealm(Progression.RealmLevel) && !Progression.HeavenGate.Entered)
                 throw new DomainException(DomainErrorCode.Conflict, "需先叩开天门取得灵根，方可继续突破。");
+            // 半步筑基突破至筑基一层（Lv.30 → Lv.31）要求任意一项有效六维（含根基加成）达到 99 点；
+            // Lv.31 之后的突破不再强制要求根基，仅保留为常驻养成区间（总纲 §3.2.4）。
+            if (Progression.RealmLevel == GenjiRules.GenjiRealmLevel)
+            {
+                var effectiveRoots = Loadout.CoreAttributes.Levels(realm).WithGenjiBonus(Progression.Genji.Points);
+                if (effectiveRoots.Max < GenjiRules.FoundationRealmRequiredAttributeLevel)
+                    throw new DomainException(DomainErrorCode.Conflict,
+                        $"根基未固：突破筑基期需任意一项六维属性（含根基加成）达到 {GenjiRules.FoundationRealmRequiredAttributeLevel} 点。");
+                if (!Progression.Genji.Unlocked)
+                    Progression.Genji.Apply(Progression.Genji.Points, unlocked: true);
+            }
         }
         var realmBefore = Progression.RealmLevel;
         Progression.RealmLevel = checked(Progression.RealmLevel + 1);
@@ -1222,6 +1246,52 @@ public sealed partial class PlayerAggregate
         {
             TryUpgradeCultivationActions(actions);
         }
+        Touch(PlayerSectionKind.Progression);
+    }
+
+    /// <summary>
+    /// 凝练 1 点根基（总纲 §3.2.4）：
+    /// 要求已达半步筑基且已解锁根基（半步筑基首次满修为或已处于筑基一层及以上），
+    /// 按前 50% 降费挪至后 50% 的对称守恒曲线扣除当前层修为（非底蕴），根基点数 +1 并标记 Progression 脏。
+    /// </summary>
+    /// <param name="realm">境界修为配表（不可空，用于计算含灵根乘区的本层升级修为基数）。</param>
+    public void CondenseGenji(Domain.GameData.RealmProgressionCatalog? realm)
+    {
+        if (!GenjiRules.IsGenjiRealm(Progression.RealmLevel))
+            throw new DomainException(DomainErrorCode.Conflict,
+                $"境界尚未抵达半步筑基（需 {GenjiRules.GenjiRealmLevel} 级）。");
+
+        var expCap = GenjiRules.ResolveEffectiveExpCap(
+            Progression.RealmLevel,
+            Progression.HeavenGate.EffectiveValues,
+            Progression.HeavenGate.Entered,
+            realm);
+        if (expCap <= 0)
+            throw new DomainException(DomainErrorCode.Conflict, "当前境界修为配置无效，无法凝练根基。");
+
+        if (!GenjiRules.IsUnlocked(
+                Progression.RealmLevel,
+                Progression.Genji.Unlocked,
+                Progression.Genji.Points,
+                Progression.Experience,
+                expCap))
+        {
+            throw new DomainException(DomainErrorCode.Conflict, "半步筑基需先将本层修为修至圆满，方可开启根基凝练。");
+        }
+
+        var maxCap = GenjiRules.CalculateCap(Progression.RealmLevel);
+        if (Progression.Genji.Points >= maxCap)
+            throw new DomainException(DomainErrorCode.Conflict, "已达当前境界根基上限，突破更高境界后可继续凝练。");
+
+        var cost = GenjiRules.ResolveCondenseExpCost(expCap, Progression.Genji.Points, maxCap);
+        if (cost <= 0)
+            throw new DomainException(DomainErrorCode.Conflict, "当前根基消耗无效。");
+
+        if (Progression.Experience + 1e-9 < cost)
+            throw new DomainException(DomainErrorCode.Conflict, "当前修为不足，无法凝练根基。");
+
+        Progression.Experience = Math.Max(0d, Progression.Experience - cost);
+        Progression.Genji.Apply(Progression.Genji.Points + 1, unlocked: true);
         Touch(PlayerSectionKind.Progression);
     }
 

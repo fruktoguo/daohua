@@ -69,7 +69,8 @@ public static class SimulatorProfileCapture
                 .Select(ToDto).ToArray(),
             assets.ToArray(),
             (int)state.Settings.RespawnPolicy,
-            state.Settings.RespawnTargetPlayerId?.ToString("D"));
+            state.Settings.RespawnTargetPlayerId?.ToString("D"),
+            progression.GenjiPoints);
     }
 
     public static SimulatorCombatSkillsDto ToDto(PlayerCombatSkillState state)

@@ -61,7 +61,11 @@ public sealed record PlayerProgressionState(
     /// <summary>生涯斗法胜场（只增不减；可缺省解码为 0）。</summary>
     double DuelWins = 0,
     /// <summary>生涯斗法负场（含弃战判负；可缺省解码为 0）。</summary>
-    double DuelLosses = 0);
+    double DuelLosses = 0,
+    /// <summary>已凝练根基点数（每点 +1% 全六维向上取整；可缺省解码为 0）。</summary>
+    int GenjiPoints = 0,
+    /// <summary>是否已解锁根基常驻凝练（可缺省解码为 false）。</summary>
+    bool GenjiUnlocked = false);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -231,7 +235,9 @@ public sealed partial class PlayerAggregate
                 Progression.HeavenGate.RerollCount,
                 Progression.StagedEnhancements.Count > 0 ? Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null,
                 Progression.DuelWins,
-                Progression.DuelLosses),
+                Progression.DuelLosses,
+                Progression.Genji.Points,
+                Progression.Genji.Unlocked),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
@@ -422,6 +428,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.TotalDefeats) || state.Progression.TotalDefeats < 0 ||
             !double.IsFinite(state.Progression.DuelWins) || state.Progression.DuelWins < 0 ||
             !double.IsFinite(state.Progression.DuelLosses) || state.Progression.DuelLosses < 0 ||
+            state.Progression.GenjiPoints < 0 ||
             !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
             !double.IsFinite(state.Progression.AgeSeconds) || state.Progression.AgeSeconds < 0 ||
             !double.IsFinite(state.Progression.Foundation) || state.Progression.Foundation < -1e-9 ||
@@ -488,6 +495,9 @@ public sealed partial class PlayerAggregate
             state.Progression.HeavenGateConfirmed,
             state.Progression.HeavenGateEntered,
             state.Progression.HeavenGateRerollCount);
+        aggregate.Progression.Genji.Apply(
+            state.Progression.GenjiPoints,
+            state.Progression.GenjiUnlocked);
         if (state.Progression.TraitIds is { Count: > 0 } traitIds)
         {
             if (traitIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128))
@@ -695,6 +705,7 @@ public sealed partial class PlayerAggregate
             restored.Progression.HeavenGate.ConfirmedValues,
             restored.Progression.HeavenGate.Entered,
             restored.Progression.HeavenGate.RerollCount);
+        Progression.Genji.Apply(restored.Progression.Genji.Points, restored.Progression.Genji.Unlocked);
         Progression.UnlockedTraits.Clear();
         if (restored.Progression.UnlockedTraits is { Count: > 0 } unlocked)
         {
@@ -868,7 +879,7 @@ public sealed partial class PlayerAggregate
         long SectionVersion,
         Domain.Combat.DuelSettings DuelSettingsTuning);
 
-    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion, long UnlockedTraitsVersion, long StagedEnhancementsVersion);
+    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion, long DefeatedMonsterIdsVersion, long UnlockedTraitsVersion, long StagedEnhancementsVersion, long GenjiVersion);
     private sealed record WorldCheckpoint(PlayerWorldStateDocument State, long AttributeInputVersion);
     private sealed record CombatCheckpoint(PlayerCombatStateDocument State);
     private sealed record BuffsCheckpoint(ActiveBuff[] Items, long Version);
@@ -930,12 +941,15 @@ public sealed partial class PlayerAggregate
                 Progression.HeavenGate.RerollCount,
                 Progression.StagedEnhancements.Count > 0 ? Progression.StagedEnhancements.Values.Select(r => r.Clone()).ToArray() : null,
                 Progression.DuelWins,
-                Progression.DuelLosses),
+                Progression.DuelLosses,
+                Progression.Genji.Points,
+                Progression.Genji.Unlocked),
             Progression.RealmLevelVersion,
             Progression.TraitIds.Version,
             Progression.DefeatedMonsterIds.Version,
             Progression.UnlockedTraits.Version,
-            Progression.StagedEnhancements.Version),
+            Progression.StagedEnhancements.Version,
+            Progression.Genji.Version),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
                 World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
@@ -980,7 +994,7 @@ public sealed partial class PlayerAggregate
             case PlayerSectionKind.Progression:
             {
                 var data = (ProgressionCheckpoint)checkpoint;
-                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion, data.UnlockedTraitsVersion, data.StagedEnhancementsVersion);
+                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion, data.DefeatedMonsterIdsVersion, data.UnlockedTraitsVersion, data.StagedEnhancementsVersion, data.GenjiVersion);
                 break;
             }
             case PlayerSectionKind.World:

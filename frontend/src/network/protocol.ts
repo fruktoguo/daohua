@@ -915,6 +915,7 @@ export interface PlayerCardCoreDto {
   agilityLevel: number
   consciousnessLevel: number
   totalLevel: number
+  genjiPoints?: number
 }
 
 /** PlayerCard 角色信息卡下发载荷（总纲 §21.14：展示白名单投影）；error 非空时其余字段为缺省值 */

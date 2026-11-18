@@ -88,8 +88,9 @@ public static class PostgresSchema
     /// v61：战斗单位快照保存天雷/血煞阵盘触发时刻，载荷标签 v44；建立刷盘身份行锁函数及最小 worker 审计权限。
     /// v62：兑换码系统（新增 economy.redeem_batches / economy.redeem_codes / economy.player_redeem_claims 旁路表）；玩家载荷标签保持 v44 不变。
     /// v63：传音消息增加引用快照与点赞版本，新增随消息删除的点赞状态表；玩家载荷标签保持 v44。
+    /// v64：筑基期根基系统（progression 分段新增 genjiPoints/genjiUnlocked，可缺省解码），推进玩家载荷标签至 v45；无 DDL 变更。
     /// </summary>
-    public const int Version = 63;
+    public const int Version = 64;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -951,7 +952,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

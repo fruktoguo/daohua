@@ -115,7 +115,8 @@ public sealed record SimulatorProfileDto(
     IReadOnlyList<SimulatorAutoUseSlotDto> CombatAutoUseSlots,
     IReadOnlyList<SimulatorAssetDto> Assets,
     int RespawnPolicy,
-    string? RespawnTargetPlayerId);
+    string? RespawnTargetPlayerId,
+    int GenjiPoints = 0);
 
 /// <summary>单座节点建筑快照。</summary>
 public sealed record SimulatorNodeBuildingDto(

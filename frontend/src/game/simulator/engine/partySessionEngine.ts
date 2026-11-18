@@ -1827,6 +1827,7 @@ function createEmptyMemberState(
     confirmedLinggen: null,
     heavenGateEntered: false,
     effectiveLinggen: { metal: 0, wood: 0, water: 0, fire: 0, earth: 0 },
+    genjiPoints: 0,
     coreAttributes: {
       staminaExp: 0,
       meridiansExp: 0,

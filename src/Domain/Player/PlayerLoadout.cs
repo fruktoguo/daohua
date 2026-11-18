@@ -43,6 +43,24 @@ public readonly record struct RootAttributeLevels(
 {
     /// <summary>六维等级总和，斗法实力匹配的当前口径。</summary>
     public double Total => Stamina + Meridians + Attack + Bone + Agility + Consciousness;
+
+    /// <summary>六维单项最高值（筑基突破任意属性 ≥99 校验用）。</summary>
+    public double Max => Math.Max(
+        Math.Max(Stamina, Meridians),
+        Math.Max(Math.Max(Attack, Bone), Math.Max(Agility, Consciousness)));
+
+    /// <summary>叠加根基百分比增幅（每点 +1%，单项向上取整，总纲 §3.2.4）后的有效六维等级视图。</summary>
+    public RootAttributeLevels WithGenjiBonus(int genjiPoints)
+    {
+        if (genjiPoints <= 0) return this;
+        return new RootAttributeLevels(
+            Stamina + GenjiRules.ResolveBonusPoints(Stamina, genjiPoints),
+            Meridians + GenjiRules.ResolveBonusPoints(Meridians, genjiPoints),
+            Attack + GenjiRules.ResolveBonusPoints(Attack, genjiPoints),
+            Bone + GenjiRules.ResolveBonusPoints(Bone, genjiPoints),
+            Agility + GenjiRules.ResolveBonusPoints(Agility, genjiPoints),
+            Consciousness + GenjiRules.ResolveBonusPoints(Consciousness, genjiPoints));
+    }
 }
 
 /// <summary>

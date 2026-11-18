@@ -9530,11 +9530,166 @@ input[type="checkbox"] {
   padding: 2px 0;
 }
 
-/* 六维根基与技艺主卡片统一固定宽度，彻底避免因经验数字长度不同导致卡片锯齿错位 */
+/* 六维根基与技艺主卡片统一固定最小宽度，彻底避免因经验数字长度不同导致卡片锯齿错位，同时兼容根基 (+32) 后缀 */
 .insight-root-row .compound-stat-label {
-  width: 184px;
+  min-width: 196px;
+  width: auto;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.insight-root-genji-bonus {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: var(--jade, #4ade80);
+  margin-left: 1px;
+}
+
+/* 筑基期根基常驻凝练面板（内嵌于六维页签顶部） */
+.insight-genji-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.07) 0%, rgba(18, 22, 30, 0.55) 100%);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.insight-genji-card.is-highlighted {
+  border-color: rgba(250, 204, 21, 0.85);
+  box-shadow: 0 0 14px rgba(250, 204, 21, 0.28);
+}
+
+.insight-genji-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.insight-genji-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.insight-genji-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-bright, #fde68a);
+  letter-spacing: 0.04em;
+}
+
+.insight-genji-progress-num {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.insight-genji-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.32);
+}
+
+.insight-genji-req {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
+.insight-genji-req.is-met {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(52, 211, 153, 0.32);
+}
+
+.insight-genji-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: visible;
+}
+
+.insight-genji-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #34d399 0%, #facc15 100%);
+  transition: width 0.2s ease;
+}
+
+.insight-genji-bar-half {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(250, 204, 21, 0.72);
+  border-radius: 1px;
+  cursor: help;
+}
+
+.insight-genji-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.insight-genji-cost {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--ink-grey);
+}
+
+.insight-genji-cost-lack {
+  color: var(--rose, #f87171);
+}
+
+.insight-genji-cost-ratio {
+  font-size: 11px;
+  color: var(--ink-grey);
+}
+
+.insight-genji-btn-wrap {
+  display: inline-flex;
+}
+
+.insight-genji-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.insight-genji-capped {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.player-card-genji-summary {
+  margin-bottom: 8px;
 }
 
 /* 灵根行主卡：数值区为合并增减伤「+25% / 20%」加点数进度，需比六维主卡更宽 */

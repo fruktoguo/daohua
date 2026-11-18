@@ -88,6 +88,13 @@ export interface CoreAttributeLevels {
   consciousness: number;
 }
 
+export function resolveGenjiBonus(basePoints: number, genjiPoints: number): number {
+  const b = Math.floor(Math.max(0, Number.isFinite(basePoints) ? basePoints : 0));
+  const g = Math.floor(Math.max(0, Number.isFinite(genjiPoints) ? genjiPoints : 0));
+  if (b <= 0 || g <= 0) return 0;
+  return Math.floor((b * g + 99) / 100);
+}
+
 export function resolveCoreLevels(
   core: {
     staminaExp: number;
@@ -98,15 +105,25 @@ export function resolveCoreLevels(
     consciousnessExp: number;
   },
   catalog: GameDataCatalog,
+  genjiPoints = 0,
 ): CoreAttributeLevels {
   const prog = catalog.realmProgression;
+  const stamina = prog.rootLevelFor(core.staminaExp);
+  const meridians = prog.rootLevelFor(core.meridiansExp);
+  const attack = prog.rootLevelFor(core.attackExp);
+  const bone = prog.rootLevelFor(core.boneExp);
+  const agility = prog.rootLevelFor(core.agilityExp);
+  const consciousness = prog.rootLevelFor(core.consciousnessExp);
+  if (genjiPoints <= 0) {
+    return { stamina, meridians, attack, bone, agility, consciousness };
+  }
   return {
-    stamina: prog.rootLevelFor(core.staminaExp),
-    meridians: prog.rootLevelFor(core.meridiansExp),
-    attack: prog.rootLevelFor(core.attackExp),
-    bone: prog.rootLevelFor(core.boneExp),
-    agility: prog.rootLevelFor(core.agilityExp),
-    consciousness: prog.rootLevelFor(core.consciousnessExp),
+    stamina: stamina + resolveGenjiBonus(stamina, genjiPoints),
+    meridians: meridians + resolveGenjiBonus(meridians, genjiPoints),
+    attack: attack + resolveGenjiBonus(attack, genjiPoints),
+    bone: bone + resolveGenjiBonus(bone, genjiPoints),
+    agility: agility + resolveGenjiBonus(agility, genjiPoints),
+    consciousness: consciousness + resolveGenjiBonus(consciousness, genjiPoints),
   };
 }
 
@@ -132,6 +149,7 @@ export function resolvePlayerAttributesFromState(
     traitIds,
     traitLevels,
     state.effectiveLinggen,
+    state.genjiPoints,
   );
 }
 
@@ -155,6 +173,7 @@ export function resolveAttributesCore(
   traitIds: string[] | null,
   traitLevels: Record<string, number> | null,
   linggen: LinggenValues,
+  genjiPoints = 0,
 ): PlayerAttributes {
   const traits = traitIds && traitIds.length > 0 ? [...traitIds] : null;
   const threatOnTaken = resolveThreatOnTakenPoints(traits, traitLevels);
@@ -298,7 +317,7 @@ export function resolveAttributesCore(
     }
   }
 
-  const root = resolveCoreLevels(coreAttributes, catalog);
+  const root = resolveCoreLevels(coreAttributes, catalog, genjiPoints);
 
   const rootFlat = (key: string): number => {
     switch (key) {
@@ -625,6 +644,7 @@ export function createDefaultProfile(catalog: GameDataCatalog): SimulatorProfile
     assets: [],
     respawnPolicy: 0,
     respawnTargetPlayerId: null,
+    genjiPoints: 0,
   };
 }
 
@@ -857,6 +877,7 @@ export function restoreToState(
     confirmedLinggen,
     heavenGateEntered: profile.heavenGateEntered,
     effectiveLinggen,
+    genjiPoints: Math.max(0, Math.floor(profile.genjiPoints ?? 0)),
     coreAttributes: { ...profile.coreAttributes },
     abilitySlots: profile.abilitySlots.map((s) => {
       const exp = s.abilityId ? profile.abilityExperiences?.[s.abilityId] : undefined;

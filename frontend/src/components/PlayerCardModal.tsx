@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { resolveEntityName } from '../game/entityNames'
 import { calculateRealmInfo, getRootCumulativeExpForLevel, resolveEquippedTraitViews } from '../game/combatConstants'
+import { resolveGenjiBonusPoints } from '../game/genjiCalculations'
 import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
@@ -444,9 +445,18 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
       {/* 六维 Tab */}
       {activeTab === 'dimensions' && (
         <section className="player-card-section">
+          {(card.coreAttributes?.genjiPoints ?? 0) > 0 && (
+            <div className="player-card-genji-summary">
+              <span className="insight-genji-badge">
+                {t('insight.genji.cardSummary', { points: Math.floor(card.coreAttributes?.genjiPoints ?? 0) })}
+              </span>
+            </div>
+          )}
           <div className="player-card-dims">
             {DIMENSION_DEFS.map(dim => {
               const level = Math.floor(Math.max(0, card.coreAttributes?.[dim.levelKey] ?? 0))
+              const genjiPoints = Math.max(0, Math.trunc(card.coreAttributes?.genjiPoints ?? 0))
+              const bonus = resolveGenjiBonusPoints(level, genjiPoints)
               return (
                 <PillStatLabel
                   key={dim.id}
@@ -454,7 +464,16 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
                   progress={dimensionProgress(level, card.coreAttributes?.[dim.expKey] ?? 0)}
                   tone={dim.tone}
                   tooltip={t(`insight.root.${dim.id}.desc`)}
-                  value={level}
+                  value={
+                    bonus > 0 ? (
+                      <>
+                        {level}{' '}
+                        <span className="insight-root-genji-bonus">(+{bonus})</span>
+                      </>
+                    ) : (
+                      level
+                    )
+                  }
                 />
               )
             })}

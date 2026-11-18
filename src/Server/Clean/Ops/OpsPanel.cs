@@ -230,6 +230,12 @@ public static class OpsPanel
                         confirmed = state.Progression.HeavenGateConfirmed,
                         entered = state.Progression.HeavenGateEntered,
                         rerollCount = state.Progression.HeavenGateRerollCount
+                    },
+                    genji = new
+                    {
+                        points = state.Progression.GenjiPoints,
+                        unlocked = state.Progression.GenjiUnlocked,
+                        cap = Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel)
                     }
                 },
                 combat = new

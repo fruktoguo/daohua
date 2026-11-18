@@ -78,10 +78,11 @@ public static class SectionCodec
     /// v43：progression 分段新增生涯斗法胜负计数 duelWins/duelLosses，settings 分段新增
     /// publicLoadoutVisible 配装隐私开关（默认 true），均可缺省解码，不改变最低可读版本地板 v41。
     /// v44：combat 分段的战斗单位快照新增天雷、血煞上次触发时刻，缺省时为未触发。
+    /// v45：progression 分段新增筑基期根基点数 genjiPoints 与解锁标记 genjiUnlocked（可缺省解码为 0/false），最低可读版本保持 v41。
     /// 升级约定：每次 bump 时同步递增 PostgresSchema.Version，在 docs/backend/db-version-changes.md
     /// 登记字段变动、缺省语义、最低可读版本及存量处理，并随版本编写 migrations/ 单步脚本。
     /// 本地开发由 reset-outdated-players.sh 优先执行已有迁移；缺失时须交互确认重置。运行时只解码当前版本。</summary>
-    public const int CurrentSchemaVersion = 44;
+    public const int CurrentSchemaVersion = 45;
     /// <summary>
     /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。
     /// 客户端按 <c>minReaderSchemaVersion &lt;= 自身版本</c> 判定可读性，替代旧的全等门禁：

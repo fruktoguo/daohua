@@ -478,3 +478,32 @@
 ### 3. 如果要处理，怎么处理
 
 - 备份后在停写窗口执行独立迁移，确认 `platform.schema_version` 为 63 且三处玩家载荷标签仍为 44，再启动匹配版本。空库由 `PostgresSchema.Sql` 直接初始化为 v63。回退不能只更换旧镜像，须经单独授权恢复备份或前向修复。
+
+## v63 -> v64
+
+- **变更日期**：2026-11-19 02:50:00
+- **关联任务**：`TASK-20261119-01`（筑基期专属事件「根基」设计与全栈实装）
+- **数据库版本**：`PostgresSchema.Version` 63 -> 64
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `44 -> 45`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0064_v63_to_v64.sql`（支持目标版本幂等重试）
+- **存量处理结论**：仅推进三处存档标签 `44 -> 45` 并登记 `schema_version = 64`，不修改载荷字节或校验和
+
+### 1. 变了什么
+- 【库结构/权限】无 DDL、索引或角色权限变更；`PostgresSchema.Sql` 空库初始化登记 `schema_version = 64`。
+- 【存档载荷】玩家八分段 `progression`（`PlayerProgressionState`）新增 `genjiPoints: int = 0`（已凝练根基点数）与 `genjiUnlocked: bool = false`（根基常驻解锁标记），均为 additive 可缺省解码字段。
+- 【配表/持久化语义】无已持久化配表 ID 删改；已处于 `Lv.31+` 的存量角色加载后由 `GenjiRules.IsUnlocked` 自动判定为已解锁根基，处于 `Lv.30` 满修为的存量角色同样立即可见并可凝练根基。
+
+### 2. 是否需要处理存量数据
+- **仅需推进存档标签**：旧 `v44` 载荷缺省反序列化 `genjiPoints = 0, genjiUnlocked = false` 完全符合尚未凝练根基的初始业务语义，无需重写 JSON/Brotli 字节或重算 `head.checksum`（`ComputeHeadChecksum` 不含 `schema_version`）。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0064_v63_to_v64.sql` 要点】：
+  ```sql
+  UPDATE game.player_state_heads SET schema_version = 45 WHERE schema_version = 44;
+  UPDATE game.player_state_sections SET schema_version = 45 WHERE schema_version = 44;
+  UPDATE platform.section_flush_queue SET schema_version = 45 WHERE schema_version = 44;
+  -- 校验无非 45 标签残留后写入版本 64
+  INSERT INTO platform.schema_version(version, applied_at)
+      VALUES (64, now()) ON CONFLICT (version) DO NOTHING;
+  ```
+- 【离线脚本 / 人工步骤】：无。

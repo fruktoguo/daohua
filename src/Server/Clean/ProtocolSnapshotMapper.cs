@@ -294,6 +294,27 @@ public static class ProtocolSnapshotMapper
                 state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
                 state.Progression.HeavenGateEntered,
                 gameData?.RealmProgression),
+            // 筑基期根基常驻养成投影（总纲 §3.2.4）：点数、解锁态、当前境界上限与下一点权威修为消耗。
+            genjiPoints = state.Progression.GenjiPoints,
+            genjiUnlocked = Domain.Player.GenjiRules.IsUnlocked(
+                state.Progression.RealmLevel,
+                state.Progression.GenjiUnlocked,
+                state.Progression.GenjiPoints,
+                state.Progression.Experience,
+                Domain.Player.GenjiRules.ResolveEffectiveExpCap(
+                    state.Progression.RealmLevel,
+                    state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                    state.Progression.HeavenGateEntered,
+                    gameData?.RealmProgression)),
+            genjiCap = Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel),
+            genjiNextCost = Domain.Player.GenjiRules.ResolveCondenseExpCost(
+                Domain.Player.GenjiRules.ResolveEffectiveExpCap(
+                    state.Progression.RealmLevel,
+                    state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                    state.Progression.HeavenGateEntered,
+                    gameData?.RealmProgression),
+                state.Progression.GenjiPoints,
+                Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel)),
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
                 : 0,

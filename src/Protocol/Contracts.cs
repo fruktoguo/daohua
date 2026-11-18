@@ -1281,13 +1281,14 @@ public sealed record UnitInspectDto(string? Side, int? Index);
 /// <param name="PlayerId">目标玩家 ID（GUID 文本）；仅可查询本人或同队成员</param>
 public sealed record PlayerCardRequestDto(string RequestId, string? PlayerId = null);
 
-/// <summary>角色信息卡六维投影：与 loadout 分段 coreAttributes 协议形状一致（经验 + 服务端派生等级）。</summary>
+/// <summary>角色信息卡六维投影：与 loadout 分段 coreAttributes 协议形状一致（经验 + 服务端派生等级 + 根基点数）。</summary>
 public sealed record PlayerCardCoreDto(
     double StaminaExp, double MeridiansExp, double AttackExp,
     double BoneExp, double AgilityExp, double ConsciousnessExp,
     double StaminaLevel, double MeridiansLevel, double AttackLevel,
     double BoneLevel, double AgilityLevel, double ConsciousnessLevel,
-    double TotalLevel);
+    double TotalLevel,
+    int GenjiPoints = 0);
 
 /// <summary>角色信息卡功法槽位（与 loadout 分段 abilitySlots 协议形状一致）。</summary>
 /// <param name="AbilityId">功法 ID；null 为空槽</param>

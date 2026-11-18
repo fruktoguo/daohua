@@ -483,6 +483,19 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
               <div className="wasm-sim-advanced-body">
                 <div className="sim-stats-grid">
                   <label className="sim-stat-field">
+                    <span className="sim-stat-name">{t('combat.simulator.genjiPoints')}</span>
+                    <input
+                      type="number"
+                      step={1}
+                      min={0}
+                      max={999}
+                      className="sim-input"
+                      disabled={disabled}
+                      value={member.genjiPoints ?? 0}
+                      onChange={e => patch({ genjiPoints: Math.max(0, Math.floor(num(e.target.value, member.genjiPoints ?? 0))) })}
+                    />
+                  </label>
+                  <label className="sim-stat-field">
                     <span className="sim-stat-name">{t('combat.simulator.linggenTitle')}</span>
                     <label className="sim-consumable-toggle">
                       <input type="checkbox" disabled={disabled} checked={member.confirmedLinggen !== null}

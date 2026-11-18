@@ -397,6 +397,29 @@
 :root[data-theme="light"] .tone-gold {
   color: var(--gold-bright);
 }
+
+:root[data-theme="light"] .insight-genji-card {
+  background: linear-gradient(135deg, rgba(180, 130, 36, 0.09) 0%, rgba(var(--surface-rgb), 0.65) 100%);
+  border-color: rgba(180, 130, 36, 0.32);
+}
+
+:root[data-theme="light"] .insight-genji-title {
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .insight-genji-badge,
+:root[data-theme="light"] .insight-genji-req.is-met,
+:root[data-theme="light"] .insight-root-genji-bonus {
+  color: #047857;
+}
+
+:root[data-theme="light"] .insight-genji-req {
+  color: #b45309;
+}
+
+:root[data-theme="light"] .insight-genji-bar {
+  background: rgba(0, 0, 0, 0.08);
+}
 :root[data-theme="light"] .item-reference-compound,
 :root[data-theme="light"] .contribute-list input[type="number"],
 :root[data-theme="light"] .daohua-floating-card-stats {

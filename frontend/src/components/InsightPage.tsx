@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, memo } from 'react'
 import { RealmBadge } from './RealmBadge'
 import { PillStatLabel, PillBonusLabel, type PillTone } from './PillLabel'
 import { formatChineseSplitNumber, formatNumber } from '../game/format'
@@ -17,6 +17,15 @@ import {
   serverExpToNextCap,
   TRAIT_DEFINITIONS,
 } from '../game/combatConstants'
+import {
+  GENJI_REALM_LEVEL,
+  GENJI_REQUIRED_ATTR_LEVEL,
+  calculateGenjiCap,
+  isGenjiUnlocked,
+  resolveGenjiBonusPoints,
+  resolveGenjiCondenseCost,
+  shouldShowCondenseGenjiForBreakthrough,
+} from '../game/genjiCalculations'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
@@ -57,6 +66,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
   const [isBreakthroughModalOpen, setIsBreakthroughModalOpen] = useState(false)
   const [isHeavenGateModalOpen, setIsHeavenGateModalOpen] = useState(false)
+  const [isGenjiHighlighted, setIsGenjiHighlighted] = useState(false)
+  const genjiHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (genjiHighlightTimerRef.current) clearTimeout(genjiHighlightTimerRef.current)
+    }
+  }, [])
 
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
@@ -81,15 +98,34 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   )
   const authoritativeExpToNext = realmProgress.expToNext ?? 0
   // 叩天门满修但尚未入天门：突破按钮语义改为「开天门」，且服务端会阻断直接突破。
+  const realmLevel = stats.realmLevel ?? 1
   const expFull = isPendingBreakthrough || realmProgress.progressPercentage >= 99.99
-  const showOpenGateBtn = shouldShowOpenHeavenGate(stats.realmLevel ?? 1, stats.heavenGateEntered === true, expFull)
+  const showOpenGateBtn = shouldShowOpenHeavenGate(realmLevel, stats.heavenGateEntered === true, expFull)
   const realmInfo = useMemo(
     () => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel, expToNextCap),
     [stats.realmLevel, stats.experience, expToNextCap],
   )
 
+  // 筑基期根基常驻养成状态（Lv.30 半步筑基满修为开启，Lv.31+ 天然常驻）
+  const genjiPoints = Math.max(0, Math.trunc(stats.genjiPoints ?? 0))
+  const genjiCap = useMemo(
+    () => (stats.genjiCap && stats.genjiCap > 0 ? stats.genjiCap : calculateGenjiCap(realmLevel)),
+    [stats.genjiCap, realmLevel],
+  )
+  const genjiUnlocked = isGenjiUnlocked(realmLevel, stats.genjiUnlocked, genjiPoints, expFull)
+  const genjiNextCost = useMemo(() => {
+    if (genjiPoints >= genjiCap) return 0
+    if (stats.genjiNextCost && stats.genjiNextCost > 0) return stats.genjiNextCost
+    return resolveGenjiCondenseCost(authoritativeExpToNext, genjiPoints, genjiCap)
+  }, [stats.genjiNextCost, authoritativeExpToNext, genjiPoints, genjiCap])
+  const currentExp = stats.experience ?? 0
+  const canCondenseGenji = genjiUnlocked && genjiPoints < genjiCap && genjiNextCost > 0 && currentExp + 1e-9 >= genjiNextCost
+  const genjiCostPercent = authoritativeExpToNext > 0 && genjiNextCost > 0
+    ? Number(((genjiNextCost / authoritativeExpToNext) * 100).toFixed(1))
+    : 0
+
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
-  // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
+  // 文本统一从 insight.root.* 词典取，经验进度按原始等级结算，右侧衍生加成按「原始点数 + 根基向上取整加成」有效值结算
   const dimensions = useMemo(() => {
     const staminaLevel = Math.floor(Math.max(0, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 体魄
     const meridiansLevel = Math.floor(Math.max(0, loadout?.meridiansLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉
@@ -97,6 +133,20 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     const strengthLevel = Math.floor(Math.max(0, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 力道
     const consciousnessLevel = Math.floor(Math.max(0, loadout?.consciousnessLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识
     const agilityLevel = Math.floor(Math.max(0, loadout?.agilityLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法
+
+    const staminaBonus = resolveGenjiBonusPoints(staminaLevel, genjiPoints)
+    const meridiansBonus = resolveGenjiBonusPoints(meridiansLevel, genjiPoints)
+    const boneBonus = resolveGenjiBonusPoints(boneLevel, genjiPoints)
+    const strengthBonus = resolveGenjiBonusPoints(strengthLevel, genjiPoints)
+    const consciousnessBonus = resolveGenjiBonusPoints(consciousnessLevel, genjiPoints)
+    const agilityBonus = resolveGenjiBonusPoints(agilityLevel, genjiPoints)
+
+    const effStamina = staminaLevel + staminaBonus
+    const effMeridians = meridiansLevel + meridiansBonus
+    const effBone = boneLevel + boneBonus
+    const effStrength = strengthLevel + strengthBonus
+    const effConsciousness = consciousnessLevel + consciousnessBonus
+    const effAgility = agilityLevel + agilityBonus
 
     // 格式化经验进度：升级所需经验 = 下一级累计经验 - 当前级累计经验；
     // 当前经验 = loadout 下发的真实六维经验 - 当前级累计经验（缺省按 0 处理）。
@@ -117,65 +167,77 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'stamina',
         tone: 'emerald' as PillTone,
         level: staminaLevel,
+        genjiBonus: staminaBonus,
+        effectiveLevel: effStamina,
         progress: getProgress(staminaLevel, loadout?.staminaExp),
         bonuses: [
-          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel * 12)}`, tone: 'emerald' as PillTone },
-          { value: `${Math.floor(staminaLevel)}% +${Math.floor(staminaLevel)}`, tone: 'bronze' as PillTone },
-          { value: `${Math.floor(staminaLevel)}% +${Number((staminaLevel * 0.5).toFixed(1))}`, tone: 'emerald' as PillTone },
+          { value: `${Math.floor(effStamina)}% +${Math.floor(effStamina * 12)}`, tone: 'emerald' as PillTone },
+          { value: `${Math.floor(effStamina)}% +${Math.floor(effStamina)}`, tone: 'bronze' as PillTone },
+          { value: `${Math.floor(effStamina)}% +${Number((effStamina * 0.5).toFixed(1))}`, tone: 'emerald' as PillTone },
         ],
       },
       {
         id: 'meridians',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
+        genjiBonus: meridiansBonus,
+        effectiveLevel: effMeridians,
         progress: getProgress(meridiansLevel, loadout?.meridiansExp),
         bonuses: [
-          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel * 7)}`, tone: 'cyan' as PillTone },
-          { value: `${Math.floor(meridiansLevel)}% +${Math.floor(meridiansLevel)}`, tone: 'violet' as PillTone },
-          { value: `${Math.floor(meridiansLevel * 2)}%`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(effMeridians)}% +${Math.floor(effMeridians * 7)}`, tone: 'cyan' as PillTone },
+          { value: `${Math.floor(effMeridians)}% +${Math.floor(effMeridians)}`, tone: 'violet' as PillTone },
+          { value: `${Math.floor(effMeridians * 2)}%`, tone: 'cyan' as PillTone },
         ],
       },
       {
         id: 'bone',
         tone: 'amber' as PillTone,
         level: boneLevel,
+        genjiBonus: boneBonus,
+        effectiveLevel: effBone,
         progress: getProgress(boneLevel, loadout?.boneExp),
         bonuses: [
-          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel * 12)}`, tone: 'amber' as PillTone },
-          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel * 7)}`, tone: 'silver' as PillTone },
-          { value: `${Math.floor(boneLevel)}% +${Math.floor(boneLevel)}`, tone: 'amber' as PillTone },
+          { value: `${Math.floor(effBone)}% +${Math.floor(effBone * 12)}`, tone: 'amber' as PillTone },
+          { value: `${Math.floor(effBone)}% +${Math.floor(effBone * 7)}`, tone: 'silver' as PillTone },
+          { value: `${Math.floor(effBone)}% +${Math.floor(effBone)}`, tone: 'amber' as PillTone },
         ],
       },
       {
         id: 'strength',
         tone: 'crimson' as PillTone,
         level: strengthLevel,
+        genjiBonus: strengthBonus,
+        effectiveLevel: effStrength,
         progress: getProgress(strengthLevel, loadout?.attackExp),
         bonuses: [
-          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'crimson' as PillTone },
-          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'slate' as PillTone },
-          { value: `${Math.floor(strengthLevel)}% +${Math.floor(strengthLevel)}`, tone: 'crimson' as PillTone },
+          { value: `${Math.floor(effStrength)}% +${Math.floor(effStrength)}`, tone: 'crimson' as PillTone },
+          { value: `${Math.floor(effStrength)}% +${Math.floor(effStrength)}`, tone: 'slate' as PillTone },
+          { value: `${Math.floor(effStrength)}% +${Math.floor(effStrength)}`, tone: 'crimson' as PillTone },
         ],
       },
       {
         id: 'consciousness',
         tone: 'purple' as PillTone,
         level: consciousnessLevel,
+        genjiBonus: consciousnessBonus,
+        effectiveLevel: effConsciousness,
         progress: getProgress(consciousnessLevel, loadout?.consciousnessExp),
         bonuses: [
-          { value: `${Math.floor(consciousnessLevel * 2)}% +${Math.floor(consciousnessLevel * 2)}`, tone: 'purple' as PillTone },
-          { value: `${Math.floor(consciousnessLevel)}% +${Math.floor(consciousnessLevel)}`, tone: 'sky' as PillTone },
+          { value: `${Math.floor(effConsciousness * 2)}% +${Math.floor(effConsciousness * 2)}`, tone: 'purple' as PillTone },
+          { value: `${Math.floor(effConsciousness)}% +${Math.floor(effConsciousness)}`, tone: 'sky' as PillTone },
         ],
       },
       {
         id: 'agility',
         tone: 'teal' as PillTone,
         level: agilityLevel,
+        genjiBonus: agilityBonus,
+        effectiveLevel: effAgility,
         progress: getProgress(agilityLevel, loadout?.agilityExp),
         bonuses: [
-          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'teal' as PillTone },
-          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'muted' as PillTone },
-          { value: `${Math.floor(agilityLevel)}% +${Math.floor(agilityLevel)}`, tone: 'teal' as PillTone },
+          { value: `${Math.floor(effAgility)}% +${Math.floor(effAgility)}`, tone: 'teal' as PillTone },
+          { value: `${Math.floor(effAgility)}% +${Math.floor(effAgility)}`, tone: 'muted' as PillTone },
+          { value: `${Math.floor(effAgility)}% +${Math.floor(effAgility)}`, tone: 'teal' as PillTone },
         ],
       },
     ]
@@ -192,7 +254,33 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     loadout?.staminaExp,
     loadout?.agilityExp,
     loadout?.consciousnessExp,
+    genjiPoints,
   ])
+
+  const maxEffectiveRootLevel = useMemo(
+    () => dimensions.reduce((max, dim) => (dim.effectiveLevel > max ? dim.effectiveLevel : max), 0),
+    [dimensions],
+  )
+  const showCondenseGenjiBtn = !showOpenGateBtn
+    && shouldShowCondenseGenjiForBreakthrough(realmLevel, maxEffectiveRootLevel, expFull)
+
+  const handleGuideOrCondenseGenji = () => {
+    if (activeTab !== 'roots' || rootsSubTab !== 'sixDimensions') {
+      setActiveTab('roots')
+      setRootsSubTab('sixDimensions')
+      setIsGenjiHighlighted(true)
+      if (genjiHighlightTimerRef.current) clearTimeout(genjiHighlightTimerRef.current)
+      genjiHighlightTimerRef.current = setTimeout(() => setIsGenjiHighlighted(false), 1800)
+      return
+    }
+    if (canCondenseGenji) {
+      gameClient.sendCommand('progression.genji', {})
+    } else {
+      setIsGenjiHighlighted(true)
+      if (genjiHighlightTimerRef.current) clearTimeout(genjiHighlightTimerRef.current)
+      genjiHighlightTimerRef.current = setTimeout(() => setIsGenjiHighlighted(false), 1800)
+    }
+  }
 
   // 特质容量与当前装配特质列表
   const traitCapacity = useMemo(() => calculateTraitCapacity(stats.realmLevel ?? 1), [stats.realmLevel])
@@ -353,7 +441,25 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   {t('insight.heavenGate.openBtn')}
                 </button>
               )}
-              {!showOpenGateBtn && (isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
+              {showCondenseGenjiBtn && (
+                <FloatingTooltip
+                  placement="top"
+                  title={t('insight.genji.openBtnTooltip', {
+                    current: maxEffectiveRootLevel,
+                    req: GENJI_REQUIRED_ATTR_LEVEL,
+                  })}
+                  tone="gold"
+                >
+                  <button
+                    className="insight-breakthrough-btn"
+                    onClick={handleGuideOrCondenseGenji}
+                    type="button"
+                  >
+                    {t('insight.genji.openBtn')}
+                  </button>
+                </FloatingTooltip>
+              )}
+              {!showOpenGateBtn && !showCondenseGenjiBtn && (isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
                   onClick={() => setIsBreakthroughModalOpen(true)}
@@ -448,12 +554,115 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
             {rootsSubTab === 'sixDimensions' ? (
               <div className="insight-roots-list">
+                {genjiUnlocked && genjiCap > 0 && (
+                  <div className={`insight-genji-card ${isGenjiHighlighted ? 'is-highlighted' : ''}`}>
+                    <div className="insight-genji-main">
+                      <div className="insight-genji-header">
+                        <FloatingTooltip
+                          placement="top"
+                          title={<div style={{ whiteSpace: 'pre-line' }}>{t('insight.genji.tooltip')}</div>}
+                          tone="gold"
+                        >
+                          <span className="insight-genji-title enhancement-term">{t('insight.genji.title')}</span>
+                        </FloatingTooltip>
+                        <strong className="insight-genji-progress-num">
+                          {t('insight.genji.progressText', { current: genjiPoints, cap: genjiCap })}
+                        </strong>
+                        <span className="insight-genji-badge">
+                          {t('insight.genji.allSixBonus', { percent: genjiPoints })}
+                        </span>
+                        {realmLevel === GENJI_REALM_LEVEL && (
+                          <span className={`insight-genji-req ${maxEffectiveRootLevel >= GENJI_REQUIRED_ATTR_LEVEL ? 'is-met' : ''}`}>
+                            {maxEffectiveRootLevel >= GENJI_REQUIRED_ATTR_LEVEL
+                              ? t('insight.genji.breakthroughReqMet', {
+                                  current: maxEffectiveRootLevel,
+                                  req: GENJI_REQUIRED_ATTR_LEVEL,
+                                })
+                              : t('insight.genji.breakthroughReqPending', {
+                                  current: maxEffectiveRootLevel,
+                                  req: GENJI_REQUIRED_ATTR_LEVEL,
+                                })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="insight-genji-bar">
+                        <div
+                          className="insight-genji-bar-fill"
+                          style={{ width: `${Math.min(100, (genjiPoints / Math.max(1, genjiCap)) * 100)}%` }}
+                        />
+                        <FloatingTooltip
+                          placement="top"
+                          title={t('insight.genji.halfMarkTooltip', { half: Math.floor(genjiCap / 2) })}
+                          tone="jade"
+                        >
+                          <span className="insight-genji-bar-half" />
+                        </FloatingTooltip>
+                      </div>
+                    </div>
+                    <div className="insight-genji-actions">
+                      {genjiPoints < genjiCap ? (
+                        <>
+                          <div className="insight-genji-cost">
+                            <span className="insight-genji-cost-label">{t('insight.genji.costLabel')}：</span>
+                            <strong className={canCondenseGenji ? 'tone-gold' : 'insight-genji-cost-lack'}>
+                              <UnitNumber tooltipLabel={t('insight.genji.costLabel')} value={Math.floor(genjiNextCost)} />
+                              {' '}{t('insight.genji.costUnit')}
+                            </strong>
+                            {genjiCostPercent > 0 && (
+                              <span className="insight-genji-cost-ratio">
+                                {t('insight.genji.costRatioHint', { percent: genjiCostPercent })}
+                              </span>
+                            )}
+                          </div>
+                          {canCondenseGenji ? (
+                            <button
+                              className="insight-breakthrough-btn insight-genji-btn"
+                              onClick={() => gameClient.sendCommand('progression.genji', {})}
+                              type="button"
+                            >
+                              {t('insight.genji.condenseBtn')}
+                            </button>
+                          ) : (
+                            <FloatingTooltip
+                              placement="top"
+                              title={t('insight.genji.condenseInsufficientTip', {
+                                lack: formatNumber(Math.max(1, Math.ceil(genjiNextCost - currentExp))),
+                              })}
+                              tone="danger"
+                            >
+                              <span className="insight-genji-btn-wrap">
+                                <button
+                                  className="insight-breakthrough-btn insight-genji-btn"
+                                  disabled
+                                  type="button"
+                                >
+                                  {t('insight.genji.condenseBtn')}
+                                </button>
+                              </span>
+                            </FloatingTooltip>
+                          )}
+                        </>
+                      ) : (
+                        <span className="insight-genji-capped">{t('insight.genji.capReached')}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {dimensions.map(dim => (
                   <div className="insight-root-row" key={dim.id}>
                     <PillStatLabel
                       icon={<StatGlyph glyph={dim.id === 'strength' ? 'attack' : dim.id} />}
                       label={t(`insight.root.${dim.id}.name`)}
-                      value={dim.level}
+                      value={
+                        dim.genjiBonus > 0 ? (
+                          <>
+                            {dim.level}{' '}
+                            <span className="insight-root-genji-bonus">(+{dim.genjiBonus})</span>
+                          </>
+                        ) : (
+                          dim.level
+                        )
+                      }
                       tone={dim.tone}
                       progress={dim.progress}
                       tooltip={t(`insight.root.${dim.id}.desc`)}

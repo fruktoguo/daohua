@@ -461,7 +461,8 @@ public sealed class SocialRuntime
                 core.BoneExp, core.AgilityExp, core.ConsciousnessExp,
                 levels.Stamina, levels.Meridians, levels.Attack,
                 levels.Bone, levels.Agility, levels.Consciousness,
-                levels.Total),
+                levels.Total,
+                state.Progression.GenjiPoints),
             AbilitySlots: canViewLoadout
                 ? [.. state.Loadout.AbilitySlots.Select(slot => new PlayerCardAbilitySlotDto(slot.AbilityId, slot.Level))]
                 : null,

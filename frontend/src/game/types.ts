@@ -1288,6 +1288,14 @@ export interface Stats {
   linggenMultiplier?: number
   /** 乘区后权威修为瓶颈（progression.expToNextLinggen 透传：配表瓶颈 × 灵根乘区，未入天门等于配表值） */
   expToNextLinggen?: number
+  /** 已凝练根基点数（progression.genjiPoints 透传：每点 +1% 全六维向上取整） */
+  genjiPoints?: number
+  /** 是否已解锁根基常驻凝练（progression.genjiUnlocked 透传） */
+  genjiUnlocked?: boolean
+  /** 当前境界可达根基点数上限（progression.genjiCap 透传） */
+  genjiCap?: number
+  /** 凝练下一点根基所需的权威修为消耗（progression.genjiNextCost 透传） */
+  genjiNextCost?: number
   /** 服务端暂存的装备分级强化履历记录（供本地持久化与回执清理） */
   stagedEnhancements?: StagedEnhancementRecord[]
   /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */

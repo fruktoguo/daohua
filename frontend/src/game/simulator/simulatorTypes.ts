@@ -32,6 +32,7 @@ export interface SimulatorProfileDto {
   combatAutoUseSlots: SimulatorAutoUseSlotDto[]
   assets: SimulatorAssetDto[]
   respawnPolicy: number; respawnTargetPlayerId: string | null
+  genjiPoints?: number
 }
 export interface SimulatorNodeBuildingDto { buildingId: string; level: number; targetLevel: number; startedAtUnixSeconds: number; contributedMaterials?: Record<string, number> }
 export interface SimulatorNodeBuildingUsageDto { buildingId: string; activeUsers: number; capacity: number; efficiency: number }

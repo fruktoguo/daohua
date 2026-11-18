@@ -1098,6 +1098,24 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         }
                         break;
                     }
+                    case "progression.genji":
+                    {
+                        var count = 1;
+                        if (payload.ValueKind == JsonValueKind.Object
+                            && payload.TryGetProperty("count", out var countElem)
+                            && countElem.ValueKind == JsonValueKind.Number)
+                        {
+                            if (!countElem.TryGetInt32(out count) || count < 1 || count > 1000)
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "根基凝练次数无效。", before);
+                        }
+
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            for (var i = 0; i < count; i++)
+                                aggregate.CondenseGenji(gameData.RealmProgression);
+                        });
+                        break;
+                    }
                     case var zongmenCommand when zongmenCommand.StartsWith("zongmen.", StringComparison.Ordinal):
                     {
                         if (zongmen is null) return new PlayerCommandResult(false, "ZONGMEN_UNAVAILABLE", "宗门暂不可用。", before);
@@ -2904,6 +2922,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         "progression.breakthrough" => "突破成功，境界晋升。",
         // 天门阵盘四步共用一条回执文案：具体结果（灵根点数、改命次数）由快照透出，气泡不再复述。
         "progression.heaven_gate" => "天门已应，灵根既定。",
+        "progression.genji" => "根基已凝练，道基愈固。",
         "world.travel" => "已启程赶路。",
         "building.build" => "建造已发起。",
         "building.upgrade" => "升级已发起。",
@@ -3289,7 +3308,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private static bool ShouldPersistReceipt(string command) => command.StartsWith("zongmen.", StringComparison.Ordinal) || command is
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
-        "loadout.replace" or "ability.learn" or "progression.breakthrough" or "progression.heaven_gate" or "world.travel" or
+        "loadout.replace" or "ability.learn" or "progression.breakthrough" or "progression.heaven_gate" or "progression.genji" or "world.travel" or
         "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "player.set_avatar" or "player.set_privacy" or "player.unlock_avatar" or "market.claim" or
         "item.discard" or "item.sell" or "trait.set" or "item.use" or "tutorial.skip" or "tutorial.restart" or "simulation.advance";
 

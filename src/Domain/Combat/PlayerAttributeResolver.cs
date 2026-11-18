@@ -156,7 +156,8 @@ public static class PlayerAttributeResolver
                 : null, state.Progression.TraitIds,
             state.Progression.UnlockedTraits?.ToDictionary(t => t.Id, t => t.Level, StringComparer.Ordinal),
             // 未入天门（或快照缺省）时按空灵根结算：五系点数全 0，行为等同未取得灵根。
-            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty);
+            state.Progression.HeavenGateEntered ? state.Progression.HeavenGateConfirmed ?? LinggenValues.Empty : LinggenValues.Empty,
+            state.Progression.GenjiPoints);
 
     /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。
     /// 带「属性输入修订号」缓存：同配表实例且全部输入源版本号未变时直接复用上轮结果；
@@ -174,7 +175,8 @@ public static class PlayerAttributeResolver
                 player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
             player.World.EffectiveNodeBuildingEffects, player.Progression.TraitIds,
             player.Progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal),
-            player.Progression.HeavenGate.EffectiveValues);
+            player.Progression.HeavenGate.EffectiveValues,
+            player.Progression.Genji.Points);
         if (catalog.BaseAttributes is not null)
             player.StoreCachedAttributes(catalog, resolved);
         return resolved;
@@ -187,7 +189,8 @@ public static class PlayerAttributeResolver
             new(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints,
                 combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects, progression.TraitIds,
             progression.UnlockedTraits.ToDictionary(k => k.Key, v => v.Value.Level, StringComparer.Ordinal),
-            progression.HeavenGate.EffectiveValues);
+            progression.HeavenGate.EffectiveValues,
+            progression.Genji.Points);
 
     /// <summary>战斗跨步刷新或恢复时沿用本场定格特质，其余属性输入仍读取当前分段。</summary>
     public static PlayerAttributes ResolveForCombat(Domain.Simulation.IPlayerResourceContext player,
@@ -195,7 +198,8 @@ public static class PlayerAttributeResolver
         => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
                 player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
-            player.World.EffectiveNodeBuildingEffects, traits.Ids, traits.Levels, player.Progression.HeavenGate.EffectiveValues);
+            player.World.EffectiveNodeBuildingEffects, traits.Ids, traits.Levels, player.Progression.HeavenGate.EffectiveValues,
+            player.Progression.Genji.Points);
 
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
     public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
@@ -203,12 +207,12 @@ public static class PlayerAttributeResolver
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
             + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
             + progression.TraitIds.Version + progression.UnlockedTraits.Version + loadout.AbilitySlots.Version
-            + progression.HeavenGate.Version;
+            + progression.HeavenGate.Version + progression.Genji.Version;
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null,
         IReadOnlyList<string>? traitIds = null, IReadOnlyDictionary<string, int>? traitLevels = null,
-        LinggenValues linggen = default)
+        LinggenValues linggen = default, int genjiPoints = 0)
     {
         var traits = traitIds is { Count: > 0 } ? traitIds.ToArray() : null;
         var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits, traitLevels);
@@ -341,7 +345,8 @@ public static class PlayerAttributeResolver
             }
         }
         var core = loadout.CoreAttributes;
-        var root = core.Levels(catalog.RealmProgression);
+        // 叠加根基百分比增幅（每点 +1%，单项向上取整，总纲 §3.2.4）后的有效六维点数。
+        var root = core.Levels(catalog.RealmProgression).WithGenjiBonus(genjiPoints);
         // 六维每点同时提供固定值与百分比（总纲 §3.2.2/§7.5）：固定值并入基础池，百分比为独立乘区；
         // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力、神识术攻 +2、体魄回血每点 +0.5，其余映射属性每点 +1；
         // 经脉灵力回复仅走百分比通道（每点 +2%，无固定值）。

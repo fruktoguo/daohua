@@ -45,7 +45,7 @@
 ## 2. 复合修仙标签与胶囊 (Pill Stat & Bonus Labels)
 
 - **适用场景**：
-  - **复合数值展示**（暗墨卡片底、图标、胶囊包裹名称、专属下划线高亮数值、可选内联经验进度文本与底边进度条、可选集成 Hover Tooltip） -> `PillStatLabel`
+  - **复合数值展示**（暗墨卡片底、图标、胶囊包裹名称、专属下划线高亮数值、可选内联经验进度文本与底边进度条、可选集成 Hover Tooltip；内视六维与角色名片六维叠加根基增幅时统一以 `{原始点数} (+{根基加成})` 呈现，根基常驻凝练面板 `.insight-genji-card` 内嵌于内视「六维」页签顶部） -> `PillStatLabel`
   - **属性加成/词缀标签**（无外边框轻量流式、胶囊名、专属色调下划线值、可选集成 Tooltip） -> `PillBonusLabel`
   - **建筑效果加成公式行**：图鉴「建造」悬浮卡内的建筑加成一律走 `PillBonusLabel`（`icon` 传 `StatGlyph` 属性小图标），并在其后追加「每级 +X%」成长小字；数据来源为 `frontend/src/game/buildingCalculations.ts` 的 `getBuildingBonusFormulas`（全量描述表 `BUILDING_BONUS_DESCRIPTORS` 驱动，新增修饰项字段只需在该表登记），样式类 `.codex-building-bonus-row` / `.codex-building-bonus-growth`（[`codex.css`](../../frontend/src/styles/codex.css)）。禁止在组件内手写字段 if 链拼加成文本。
   - 支持修仙色调 (`PillTone`)：`gold`, `jade`, `qi`, `purple`, `amber`, `crimson`, `emerald`, `cyan`, `violet`, `indigo`, `teal`, `bronze`, `silver`, `slate`, `sky`, `muted`, `default`

@@ -124,6 +124,7 @@ export interface SimulatorProfileDto {
   assets: SimulatorAssetDto[];
   respawnPolicy: number;
   respawnTargetPlayerId: string | null;
+  genjiPoints?: number;
 }
 
 export interface SimulatorNodeBuildingDto {
@@ -517,6 +518,7 @@ export interface PlayerState {
   confirmedLinggen: LinggenValues | null;
   heavenGateEntered: boolean;
   effectiveLinggen: LinggenValues;
+  genjiPoints: number;
   coreAttributes: SimulatorCoreAttributesDto;
   abilitySlots: SimulatorAbilitySlotDto[];
   abilityExperiences: Record<string, number>;
