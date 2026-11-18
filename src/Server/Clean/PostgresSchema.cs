@@ -87,8 +87,9 @@ public static class PostgresSchema
     /// v60：传音表情包多端同步系统（新增 social.player_stickers 旁路表情包表及软删除墓碑索引，上限 100 个）；玩家载荷标签保持 v43 不变。
     /// v61：战斗单位快照保存天雷/血煞阵盘触发时刻，载荷标签 v44；建立刷盘身份行锁函数及最小 worker 审计权限。
     /// v62：兑换码系统（新增 economy.redeem_batches / economy.redeem_codes / economy.player_redeem_claims 旁路表）；玩家载荷标签保持 v44 不变。
+    /// v63：传音消息增加引用快照与点赞版本，新增随消息删除的点赞状态表；玩家载荷标签保持 v44。
     /// </summary>
-    public const int Version = 62;
+    public const int Version = 63;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -821,10 +822,25 @@ public static class PostgresSchema
         body varchar(200) NOT NULL CHECK (char_length(body) > 0),
         party_ref uuid REFERENCES social.parties(party_id) ON DELETE SET NULL,
         sent_at timestamptz NOT NULL,
-        sender_realm integer NOT NULL DEFAULT 1
+        sender_realm integer NOT NULL DEFAULT 1,
+        quote_message_id uuid,
+        quote_sender_name varchar(64),
+        quote_body varchar(200),
+        like_version bigint NOT NULL DEFAULT 0 CONSTRAINT chat_messages_like_version_check CHECK (like_version >= 0),
+        CONSTRAINT chat_messages_quote_snapshot_check CHECK (
+            (quote_message_id IS NULL) = (quote_sender_name IS NULL) AND
+            (quote_message_id IS NULL) = (quote_body IS NULL)
+        )
     );
     CREATE INDEX IF NOT EXISTS ix_chat_messages_scope
         ON social.chat_messages(channel, scope_key, sent_at DESC, message_id DESC);
+
+    -- 只保存当前点赞状态；父消息裁剪时按主键前缀级联清理，不保留事件历史。
+    CREATE TABLE IF NOT EXISTS social.chat_message_likes (
+        message_id uuid NOT NULL REFERENCES social.chat_messages(message_id) ON DELETE CASCADE,
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        PRIMARY KEY (message_id, player_id)
+    );
 
     -- 全服群发邮件：全服只落 1 行不可变公告，由服务端共享不可变缓存零副本分发（expires_at IS NULL 表示永不过期）
     CREATE TABLE IF NOT EXISTS social.broadcast_mails (
@@ -935,7 +951,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

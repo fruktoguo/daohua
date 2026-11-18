@@ -22,7 +22,7 @@
 - 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue`、`duel` 八个 section。每个玩家对应共享表中的八行最新值，不建立“每个玩家一张表”。`action_queue` 中的讨伐行动保存搜寻/战斗阶段和确定性战斗标量，`durationSeconds=0` 仅表示由战斗状态机推进，不会被普通计时器丢弃。
 - 单人高频模拟在内存推进；按 10 分钟检查点或关键生命周期边界，将余额、脏分段及推进时刻原子提交。`platform.section_flush_queue` 是追加式待写队列，不是逐 Tick 历史；未被更新有效状态覆盖的死信保留为恢复证据。
 - 资产余额、唯一物品、订单冻结、成交、退款和幂等事务由 PostgreSQL 关系模型负责，并在一个事务内提交。
-- WebSocket 帧、心跳和单人战斗 Tick 不持久化；聊天仅保存受限的作用域历史（`social.chat_messages`），不归档传输帧。
+- WebSocket 帧、心跳和单人战斗 Tick 不持久化；聊天仅保存受限的作用域历史（`social.chat_messages`，含引用快照）和随消息裁剪的点赞状态（`social.chat_message_likes`），不归档传输帧。普通 `ChatSend` 成功后给发送会话可靠回显同一 `requestId` 的 `ChatMessage`，其余收件人仍走实时广播。
 - Redis 不在基线中。选型依据和未来准入门槛见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
 
 目标主机按 `2c4g/40g` 预算设计：5000+ 注册账号、100+ 持续网络收发、500+ 峰值收发和 2000+ 冷挂机补算。容量目标是门禁，不是未经实测的性能承诺。

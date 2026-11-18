@@ -4,6 +4,7 @@ import { useMailStore } from '../game/mailStore'
 import { useCheckinStore } from '../game/checkinStore'
 import { useSocialStore } from '../game/socialStore'
 import { getT } from '../i18n'
+import { useChatDraftStore } from '../logging/chatDraftStore'
 import { chatService } from '../logging/chatService'
 import { gameLogService } from '../logging/gameLogService'
 import { notifyIncomingChatMessage, notifyIncomingLogEvents, useLogUnreadStore } from '../logging/logUnreadStore'
@@ -16,6 +17,8 @@ import {
   type ChatChannel,
   type ChatHistoryDto,
   type ChatHistoryRequestDto,
+  type ChatLikeChangedDto,
+  type ChatLikeSetDto,
   type ChatMessageDto,
   type ChatSendDto,
   type CheckinSummaryDto,
@@ -114,6 +117,7 @@ export class GameClient {
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   /** 待处理请求计时器；连接关闭后保留元数据，避免把可能已执行的命令静默判定为失败。 */
   private readonly pendingRequests = new Map<string, number>()
+  private readonly pendingChatSends = new Map<string, { finish: (ok: boolean) => void; timer: number }>()
   /** 手动测速与周期探活共用一份在途探测。 */
   private pendingPing: { requestId: string; sentAt: number; timer: number } | undefined
   private lastPingAt = -Infinity
@@ -368,6 +372,7 @@ export class GameClient {
     this.account = accountInfo.account
     this.sequenceId = accountInfo.sequenceId ?? 0
     chatService.activate(this.playerId)
+    useChatDraftStore.getState().activate(this.playerId)
     useLogUnreadStore.getState().resetAll()
     this.disposed = false
     this.catalogRefreshPending = false
@@ -398,6 +403,7 @@ export class GameClient {
     this.clearPendingRequests()
     this.awaitingReconnectRequests.clear()
     chatService.reset()
+    useChatDraftStore.getState().activate(null)
     useLogUnreadStore.getState().resetAll()
     useSocialStore.getState().reset()
     const socket = this.socket
@@ -464,12 +470,26 @@ export class GameClient {
    * 发送传音发言（ChatSend 信封）。
    * 消息权威落库在服务端，本方法只负责上行；回显由服务端广播的 ChatMessage 帧驱动。
    */
-  sendChat(channel: ChatChannel, body: string, targetPlayerId?: string | null): boolean {
+  sendChat(channel: ChatChannel, body: string, targetPlayerId?: string | null, quoteMessageId?: string, onResult?: (ok: boolean) => void): boolean {
     const socket = this.ensureOpenSocket()
     if (!socket || !this.isCurrentSession(socket, this.sessionGeneration, this.playerId)) return false
     const requestId = createRequestId()
-    const payload: ChatSendDto = { requestId, channel, body, ...(targetPlayerId ? { targetPlayerId } : {}) }
-    return this.trySend(socket, WireMessageType.ChatSend, requestId, payload)
+    const payload: ChatSendDto = { requestId, channel, body, targetPlayerId, quoteMessageId }
+    if (!this.trySend(socket, WireMessageType.ChatSend, requestId, payload)) return false
+    if (onResult) {
+      const timer = window.setTimeout(() => {
+        this.finishChatSend(requestId, false)
+        useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
+      }, 15_000)
+      this.pendingChatSends.set(requestId, { finish: onResult, timer })
+    }
+    return true
+  }
+
+  setChatLike(payload: ChatLikeSetDto): boolean {
+    const socket = this.ensureOpenSocket()
+    if (!socket || !this.isCurrentSession(socket, this.sessionGeneration, this.playerId)) return false
+    return this.trySend(socket, WireMessageType.ChatLikeSet, createRequestId(), payload)
   }
 
   /** 请求某频道历史回放（ChatHistoryRequest 信封）；服务端以 ChatHistory 应答。 */
@@ -765,7 +785,16 @@ export class GameClient {
     })
   }
 
+  private finishChatSend(requestId: string, ok: boolean): void {
+    const request = this.pendingChatSends.get(requestId)
+    if (!request) return
+    window.clearTimeout(request.timer)
+    this.pendingChatSends.delete(requestId)
+    request.finish(ok)
+  }
+
   private clearPendingRequests(): void {
+    for (const id of this.pendingChatSends.keys()) this.finishChatSend(id, false)
     for (const timer of this.pendingRequests.values()) window.clearTimeout(timer)
     this.pendingRequests.clear()
     if (this.zongmenRequests.size > 0) {
@@ -775,6 +804,7 @@ export class GameClient {
   }
 
   private markPendingRequestsAwaitingReconnect(): void {
+    for (const id of this.pendingChatSends.keys()) this.finishChatSend(id, false)
     for (const [requestId, timer] of this.pendingRequests) {
       window.clearTimeout(timer)
       this.pendingRequests.delete(requestId)
@@ -954,6 +984,7 @@ export class GameClient {
           if (!error || typeof error.code !== 'string' || typeof error.message !== 'string') throw new Error('协议错误载荷无效。')
           if (error.requestId && error.requestId !== envelope.requestId) return
           useSocialStore.getState().failCardRequest(error.requestId ?? envelope.requestId, error.code)
+          this.finishChatSend(envelope.requestId, false)
           if (error.requestId) {
             const timer = this.pendingRequests.get(error.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
@@ -987,8 +1018,16 @@ export class GameClient {
         case WireMessageType.ChatMessage: {
           const message = decodeJsonPayload<ChatMessageDto>(envelope)
           if (!message || typeof message.messageId !== 'string' || !message.messageId) throw new Error('传音消息载荷无效。')
+          if (message.senderId === this.playerId) this.finishChatSend(envelope.requestId, true)
           chatService.appendMessage(message)
           notifyIncomingChatMessage(message, this.playerId)
+          appliedBusinessPayload = true
+          break
+        }
+        case WireMessageType.ChatLikeChanged: {
+          const change = decodeJsonPayload<ChatLikeChangedDto>(envelope)
+          if (!change?.messageId || !Number.isSafeInteger(change.likeVersion)) throw new Error('传音点赞载荷无效。')
+          chatService.applyLike(change)
           appliedBusinessPayload = true
           break
         }
@@ -1070,6 +1109,7 @@ export class GameClient {
         case WireMessageType.ComputeAdvanceRequest:
         case WireMessageType.ComputeAdvanceResponse:
         case WireMessageType.ChatSend:
+        case WireMessageType.ChatLikeSet:
         case WireMessageType.ChatHistoryRequest:
         case WireMessageType.SocialAction:
         case WireMessageType.PartyLobbyRequest:

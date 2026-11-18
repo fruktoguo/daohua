@@ -78,6 +78,8 @@ export const WireMessageType = {
   MailSummary: 29,
   /** 服务端下发每日签到摘要（Hello 握手下行） */
   CheckinSummary: 30,
+  ChatLikeSet: 31,
+  ChatLikeChanged: 32,
 } as const
 /** WireMessageType 常量表对应的值联合类型（帧类型编号） */
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
@@ -427,6 +429,30 @@ export interface ChatSendDto {
   body: string
   /** 好友频道私聊对象玩家 ID */
   targetPlayerId?: string | null
+  quoteMessageId?: string | null
+}
+
+export interface ChatQuoteDto {
+  messageId: string
+  senderName: string
+  body: string
+}
+
+export interface ChatLikeSetDto {
+  channel: ChatChannel
+  targetPlayerId?: string | null
+  messageId: string
+  liked: boolean
+}
+
+export interface ChatLikeChangedDto {
+  channel: ChatChannel
+  scopeKey: string
+  messageId: string
+  actorId: string
+  liked: boolean
+  likeCount: number
+  likeVersion: number
 }
 
 /** 传音消息内嵌的队伍卡片快照；队伍解散后缺席（party_ref 置空） */
@@ -459,6 +485,10 @@ export interface ChatMessageDto {
   partyLink?: PartyLinkDto | null
   /** 发送者境界等级（1~127，默认为 1：凡俗） */
   senderRealmLevel?: number
+  quote?: ChatQuoteDto | null
+  likeCount: number
+  likedByMe: boolean
+  likeVersion: number
 }
 
 /** ChatHistory 频道历史回放载荷 */
@@ -1143,7 +1173,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.CheckinSummary
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.ChatLikeChanged
 }
 
 function isWireCodec(value: number): value is WireCodec {

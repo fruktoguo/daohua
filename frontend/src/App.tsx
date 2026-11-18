@@ -17,6 +17,7 @@ import { EnhancementPage } from './components/EnhancementPage'
 import { createProgressAsideCard, FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './components/FloatingPopover'
 import { resolveAbilityAsideCards } from './components/EffectTooltip'
 import { ValueText } from './components/ValueText'
+import { MOBILE_LAYOUT_QUERY } from './game/chatShare'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ActionDetailItem, ItemIcon, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
@@ -229,9 +230,9 @@ const CurrentActionRepeatsLabel = memo(function CurrentActionRepeatsLabel({
  * 响应式监听移动端断点 (< 960px) 的自定义 Hook
  */
 function useMobileLayout(): boolean {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches)
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_LAYOUT_QUERY).matches)
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 960px)')
+    const media = window.matchMedia(MOBILE_LAYOUT_QUERY)
     const update = () => setMobile(media.matches)
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)

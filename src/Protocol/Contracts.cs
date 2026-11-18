@@ -78,7 +78,11 @@ public enum WireMessageType : byte
     /// <summary>服务端下发传书邮件红点摘要（仅 WebSocket 下行，含 ForceRedDot 零扇出标记）</summary>
     MailSummary = 29,
     /// <summary>服务端下发每日签到摘要（仅 WebSocket Hello 握手下行）</summary>
-    CheckinSummary = 30
+    CheckinSummary = 30,
+    /// <summary>客户端设置一条传音的本人点赞状态（仅 WebSocket 上行）</summary>
+    ChatLikeSet = 31,
+    /// <summary>服务端下发传音的点赞状态与版本（仅 WebSocket 下行）</summary>
+    ChatLikeChanged = 32
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -825,7 +829,17 @@ public static class ChatChannels
 /// <param name="Channel">目标频道标识（见 <see cref="ChatChannels"/>）</param>
 /// <param name="Body">消息正文（去除首尾空白后 1~200 字符）</param>
 /// <param name="TargetPlayerId">好友频道必填的私聊对象玩家 ID；其余频道忽略</param>
-public sealed record ChatSendDto(string RequestId, string Channel, string Body, string? TargetPlayerId = null);
+/// <param name="QuoteMessageId">同一会话中被引用的消息 ID；普通发言为空</param>
+public sealed record ChatSendDto(string RequestId, string Channel, string Body, string? TargetPlayerId = null, string? QuoteMessageId = null);
+
+/// <summary>原始消息的不可变引用快照，不嵌套引用或卡片。</summary>
+public sealed record ChatQuoteDto(string MessageId, string SenderName, string Body);
+
+/// <summary>设置本人是否点赞；只有好友频道使用 TargetPlayerId。</summary>
+public sealed record ChatLikeSetDto(string Channel, string MessageId, [property: JsonRequired] bool Liked, string? TargetPlayerId = null);
+
+/// <summary>单条消息点赞状态更新；LikeVersion 按消息递增。</summary>
+public sealed record ChatLikeChangedDto(string Channel, string ScopeKey, string MessageId, string ActorId, bool Liked, double LikeCount, long LikeVersion);
 
 /// <summary>传音消息内嵌的队伍卡片快照；队伍解散后缺席（party_ref 置空）。</summary>
 /// <param name="PartyId">队伍唯一标识（点击加入的凭据）</param>
@@ -852,6 +866,10 @@ public sealed record PartyLinkDto(
 /// <param name="SentAtUnixMilliseconds">发送时刻（Unix 毫秒）</param>
 /// <param name="PartyLink">内嵌队伍卡片；无链接时为 null</param>
 /// <param name="SenderRealmLevel">发送者境界等级（默认 1：凡俗）</param>
+/// <param name="Quote">被引用消息的原始快照；未引用时为空</param>
+/// <param name="LikeCount">当前点赞总数</param>
+/// <param name="LikedByMe">接收者本人是否点赞</param>
+/// <param name="LikeVersion">消息点赞状态版本</param>
 public sealed record ChatMessageDto(
     string MessageId,
     string Channel,
@@ -861,7 +879,11 @@ public sealed record ChatMessageDto(
     string Body,
     long SentAtUnixMilliseconds,
     PartyLinkDto? PartyLink = null,
-    int SenderRealmLevel = 1);
+    int SenderRealmLevel = 1,
+    ChatQuoteDto? Quote = null,
+    double LikeCount = 0,
+    bool LikedByMe = false,
+    long LikeVersion = 0);
 
 /// <summary>频道历史回放载荷：某作用域最近 100 条传音，按时间正序。</summary>
 /// <param name="Channel">频道标识</param>

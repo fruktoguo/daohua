@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Protocol;
 using Server.Clean;
+using Server.Clean.Social;
 using Xunit;
 
 namespace Server.Tests;
@@ -140,6 +141,54 @@ public sealed class WebSocketRuntimeTests
         var envelopes = new[] { firstPacket, requiredPacket, lastPacket }.Select(packet => WireEnvelopeCodec.Decode(packet)).ToArray();
         Assert.Equal(new[] { first, required, last }, envelopes.Select(e => e.RequestId));
         Assert.Equal(new long[] { 1, 2, 3 }, envelopes.Select(e => e.Sequence));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChatSendSuccess_EchoesOriginalRequestOnceAndDoesNotBlockPeerBroadcast(bool senderQueueFull)
+    {
+        var sender = new WebSocketSession(Guid.NewGuid(), 1);
+        var peer = new WebSocketSession(Guid.NewGuid(), 1);
+        var sessions = new SessionRegistry();
+        Assert.True(sessions.TryAdd(sender));
+        Assert.True(sessions.TryAdd(peer));
+        var requestId = Guid.NewGuid();
+        var message = new ChatMessageDto(Guid.NewGuid().ToString("D"), ChatChannels.World, "", sender.PlayerId.ToString("D"),
+            "发言者", "回复", 100, Quote: new(Guid.NewGuid().ToString("D"), "原作者", "原文"));
+        if (senderQueueFull)
+            Assert.True(sender.TrySendJsonDroppable(WireMessageType.LogBatch, Guid.NewGuid(), new { }));
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var completion = WebSocketEndpoint.CompleteChatSendAsync(sender, sessions, requestId,
+            new(ChatSendStatus.Ok, message, [sender.PlayerId, peer.PlayerId]), timeout.Token);
+        Assert.True(peer.Outbound.TryRead(out var broadcastPacket));
+        var broadcast = WireEnvelopeCodec.Decode(broadcastPacket);
+        Assert.Equal(WireMessageType.ChatMessage, broadcast.MessageType);
+        Assert.NotEqual(requestId, broadcast.RequestId);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<ChatMessageDto>(broadcast, out var broadcastMessage));
+        Assert.Equal(message, broadcastMessage);
+
+        if (senderQueueFull)
+        {
+            Assert.False(completion.IsCompleted);
+            Assert.True(sender.Outbound.TryRead(out var queuedPacket));
+            Assert.Equal(WireMessageType.LogBatch, WireEnvelopeCodec.Decode(queuedPacket).MessageType);
+        }
+        else
+        {
+            // 空队列若先收到一份给自己的广播，可靠回显会等待，且编号错误。
+            Assert.True(completion.IsCompletedSuccessfully);
+        }
+        await completion;
+        Assert.True(sender.Outbound.TryRead(out var echoPacket));
+        var echo = WireEnvelopeCodec.Decode(echoPacket);
+        Assert.Equal(WireMessageType.ChatMessage, echo.MessageType);
+        Assert.Equal(requestId, echo.RequestId);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<ChatMessageDto>(echo, out var echoMessage));
+        Assert.Equal(message, echoMessage);
+        Assert.False(sender.Outbound.TryRead(out _));
+        Assert.False(peer.Outbound.TryRead(out _));
     }
 
     private sealed class MustNotSerialize

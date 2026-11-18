@@ -1,11 +1,13 @@
 import { useChatImageGeneration } from './useChatImageLease'
 import { useZongmenStore } from '../game/zongmenStore'
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
 import {
   chatService,
+  conversationKey,
+  friendScopeKey,
   selectAggregateMessages,
   selectChannelMessages,
   selectFriendMessages,
@@ -14,68 +16,63 @@ import { filterLogEntries, gameLogService } from '../logging/gameLogService'
 import type { ChatChannel } from '../network/protocol'
 import { gameClient } from '../network/gameClient'
 import { FeedList, mergeFeedItems, toChatFeedItems, toLogFeedItems, useStickyScroll } from './LogFeed'
+import { EMPTY_CHAT_DRAFT, MAX_CHAT_BODY_LENGTH, useChatDraftStore } from '../logging/chatDraftStore'
+import { ChatQuote } from './ChatQuote'
 import { FloatingPopover } from './FloatingPopover'
 import { ChatEmojiPicker } from './ChatEmojiPicker'
 import { Icon } from './Icon'
 import { computeBlobSha256, uploadChatImage } from '../game/chatImageUploadService'
 import { chatStickerService, MAX_CUSTOM_STICKERS } from '../game/chatStickerService'
 import { useMountedTimeout } from '../hooks/useMountedTimeout'
-/** 单条消息正文长度上限（与服务端 ChatRuntime.MaxBodyLength 一致） */
-const MAX_CHAT_BODY_LENGTH = 200
-
 /**
  * 传音输入框组件 (ChatComposer)
  *
- * 独立持有草稿状态：聊天列表的高频刷新不会重建输入框，输入焦点与选区保持稳定。
+ * 按会话订阅草稿：切页不丢失，消息高频刷新不会重建输入框。
  */
 interface ChatComposerProps {
   channel: ChatChannel
+  scope: string
   targetPlayerId?: string | null
   hint?: string
 }
 
 const ChatComposer = memo(function ChatComposer(props: ChatComposerProps): React.JSX.Element {
   const generation = useChatImageGeneration()
-  return <SessionChatComposer key={generation} {...props} generation={generation} />
+  return <SessionChatComposer key={JSON.stringify([generation, props.channel, props.scope])} {...props} generation={generation} />
 })
 
-function SessionChatComposer({ channel, targetPlayerId, hint, generation }: ChatComposerProps & { generation: number }): React.JSX.Element {
+function SessionChatComposer({ channel, scope, targetPlayerId, hint, generation }: ChatComposerProps & { generation: number }): React.JSX.Element {
   const isCurrentSession = () => generation === chatStickerService.getGeneration()
   const t = useT()
   const mountedTimeout = useMountedTimeout()
-  const [draft, setDraft] = useState('')
+  const key = conversationKey(channel, scope)
+  const draft = useChatDraftStore(state => state.drafts.get(key) ?? EMPTY_CHAT_DRAFT)
+  const shouldFocus = useChatDraftStore(state => state.focusKey === key)
+  const setDraft = (body: string): void => useChatDraftStore.getState().edit(key, previous => ({ ...previous, body }))
   const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [sending, setSending] = useState(false)
   const disabled = hint !== undefined
-  useEffect(() => {
-    return chatService.subscribeDraftInsert((text: string) => {
-      setDraft(prev => {
-        const trimmed = prev.trim()
-        return trimmed ? `${trimmed} ${text}` : text
-      })
-      mountedTimeout(() => {
-        const input = inputRef.current
-        if (input) {
-          input.focus()
-          const len = input.value.length
-          input.setSelectionRange(len, len)
-        }
-      }, 50)
-    })
-  }, [mountedTimeout])
+  useLayoutEffect(() => {
+    if (!shouldFocus || !inputRef.current || uploading || sending) return
+    const input = inputRef.current
+    useChatDraftStore.getState().consumeFocus(key)
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(input.value.length, input.value.length)
+  }, [key, shouldFocus, disabled, uploading, sending])
   const handleInsertText = (text: string): void => {
     if (!isCurrentSession()) return
     const input = inputRef.current
+    const body = useChatDraftStore.getState().drafts.get(key)?.body ?? ''
     if (!input) {
-      setDraft(prev => (prev ? `${prev} ${text}` : text))
+      if (!useChatDraftStore.getState().append(key, text)) useGameStore.getState().setNotice(t('combat.chat.tooLong'))
       return
     }
     const start = input.selectionStart ?? input.value.length
     const end = input.selectionEnd ?? input.value.length
-    const before = draft.slice(0, start)
-    const after = draft.slice(end)
+    const before = body.slice(0, start)
+    const after = body.slice(end)
     const next = before + text + after
     if (next.length > MAX_CHAT_BODY_LENGTH) {
       useGameStore.getState().setNotice(t('combat.chat.tooLong'))
@@ -153,7 +150,7 @@ function SessionChatComposer({ channel, targetPlayerId, hint, generation }: Chat
 
 
   const submit = async (): Promise<void> => {
-    const body = draft.trim()
+    const body = draft.body.trim()
     if (!isCurrentSession() || body.length === 0 || sending || uploading) return
     setSending(true)
     try {
@@ -170,8 +167,12 @@ function SessionChatComposer({ channel, targetPlayerId, hint, generation }: Chat
         useGameStore.getState().setNotice(t('combat.chat.tooLong'))
         return
       }
-      if (gameClient.sendChat(channel, prepared.body, targetPlayerId ?? undefined)) {
-        setDraft('')
+      const sent = await new Promise<boolean>(resolve => {
+        if (!gameClient.sendChat(channel, prepared.body, targetPlayerId, draft.quote?.messageId, resolve)) resolve(false)
+      })
+      if (sent && isCurrentSession()) {
+        // 服务端受理后才清草稿，保留发送等待期间可能新增的内容。
+        useChatDraftStore.getState().edit(key, current => current === draft ? EMPTY_CHAT_DRAFT : current)
         setPickerOpen(false)
       }
     } finally {
@@ -188,6 +189,9 @@ function SessionChatComposer({ channel, targetPlayerId, hint, generation }: Chat
         void submit()
       }}
     >
+      {draft.quote && (
+        <ChatQuote quote={draft.quote} onRemove={() => useChatDraftStore.getState().edit(key, current => ({ ...current, quote: null }))} />
+      )}
       <FloatingPopover
         className="chat-emoji-popover"
         content={
@@ -224,9 +228,9 @@ function SessionChatComposer({ channel, targetPlayerId, hint, generation }: Chat
         onPaste={handlePaste}
         placeholder={uploading ? t('combat.chat.uploadingImage') : t('combat.chat.placeholder')}
         ref={inputRef}
-        value={draft}
+        value={draft.body}
       />
-      <button disabled={draft.trim().length === 0 || uploading || sending} type="submit">{t('combat.chat.send')}</button>
+      <button disabled={draft.body.trim().length === 0 || uploading || sending} type="submit">{t('combat.chat.send')}</button>
     </form>
   )
 }
@@ -236,15 +240,16 @@ function SessionChatComposer({ channel, targetPlayerId, hint, generation }: Chat
  *
  * 世界 / 附近 / 队伍三个「单会话」频道共用同一模板：历史回放 + 实时消息 + 输入框。
  */
-export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.JSX.Element {
+export function ChatChannelPanel({ channel }: { channel: Exclude<ChatChannel, 'friend'> }): React.JSX.Element {
   const t = useT()
   const nodeId = useGameStore(state => state.world.nodeId)
   const partyId = useSocialStore(state => state.party?.partyId ?? null)
   const zongmenId = useZongmenStore(state => state.zongmen?.zongmenId ?? null)
   const chatState = useSyncExternalStore(chatService.subscribe, chatService.getSnapshot)
-  const messages = useMemo(() => selectChannelMessages(chatState, channel), [chatState, channel])
+  const scope = (channel === 'nearby' ? nodeId : channel === 'party' ? partyId : channel === 'sect' ? zongmenId : '') ?? ''
+  const messages = selectChannelMessages(chatState, channel, scope)
   const items = useMemo(() => toChatFeedItems(messages), [messages])
-  const { listRef, onScroll } = useStickyScroll(chatState.revision)
+  const { listRef, onScroll } = useStickyScroll(chatState.revision, scope)
 
   // 历史回放按频道作用域拉取：世界频道仅挂载时一次，附近随节点、队伍随队伍变化；
   // 三频道共用 [nodeId, partyId] 依赖会让赶路换节点连带重拉世界/队伍整段历史。
@@ -264,7 +269,7 @@ export function ChatChannelPanel({ channel }: { channel: ChatChannel }): React.J
       <ol className="event-log" onScroll={onScroll} ref={listRef}>
         {items.length === 0 ? <li className="log-state-row">{t('combat.chat.empty')}</li> : <FeedList items={items} />}
       </ol>
-      <ChatComposer channel={channel} hint={hint} />
+      <ChatComposer channel={channel} scope={scope} hint={hint} />
     </>
   )
 }
@@ -285,6 +290,7 @@ export function FriendChannelPanel(): React.JSX.Element {
   const [searchName, setSearchName] = useState('')
 
   const activeFriend = friends.find(friend => friend.playerId === activeFriendId) ?? null
+  const scope = activeFriend && chatState.playerId ? friendScopeKey(chatState.playerId, activeFriend.playerId) : ''
   const messages = useMemo(
     () => (activeFriendId === null ? [] : selectFriendMessages(chatState, activeFriendId)),
     [chatState, activeFriendId],
@@ -397,7 +403,8 @@ export function FriendChannelPanel(): React.JSX.Element {
         <ChatComposer
           channel="friend"
           hint={activeFriend === null ? t('combat.chat.selectFriend') : undefined}
-          targetPlayerId={activeFriendId}
+          scope={scope}
+          targetPlayerId={activeFriend?.playerId}
         />
       </section>
     </div>
@@ -415,13 +422,13 @@ export function PartyChannelPanel(): React.JSX.Element {
   const invitation = useSocialStore(state => state.partyInvitation)
   const friends = useSocialStore(state => state.friends)
   const chatState = useSyncExternalStore(chatService.subscribe, chatService.getSnapshot)
-  const messages = useMemo(() => selectChannelMessages(chatState, 'party'), [chatState])
+  const partyId = party?.partyId ?? null
+  const messages = selectChannelMessages(chatState, 'party', partyId ?? '')
   const items = useMemo(() => toChatFeedItems(messages), [messages])
   const { listRef, onScroll } = useStickyScroll(chatState.revision)
 
   // 依赖取队伍 ID 标量而非 party 对象身份：任何影响本人的社交推送都会换 party 对象，
   // 对象身份依赖会在聊天内容未变时整段重拉队伍历史。
-  const partyId = party?.partyId ?? null
   useEffect(() => {
     if (partyId !== null) gameClient.requestChatHistory('party')
   }, [partyId])
@@ -497,7 +504,7 @@ export function PartyChannelPanel(): React.JSX.Element {
               ? <li className="log-state-row">{t('combat.chat.empty')}</li>
               : <FeedList items={items} />}
         </ol>
-        <ChatComposer channel="party" hint={party === null ? t('combat.chat.partyUnavailable') : undefined} />
+        <ChatComposer channel="party" scope={partyId ?? ''} hint={party === null ? t('combat.chat.partyUnavailable') : undefined} />
       </section>
     </div>
   )

@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatHistoryDto, ChatMessageDto, PartyLinkDto } from '../network/protocol'
+import type { ChatChannel, ChatHistoryDto, ChatLikeChangedDto, ChatMessageDto, ChatQuoteDto, PartyLinkDto } from '../network/protocol'
 
 /** 单条传音消息的本地内存形态 */
 export interface ChatMessage {
@@ -20,6 +20,11 @@ export interface ChatMessage {
   partyLink?: PartyLinkDto | null
   /** 发送者境界等级（默认 1：凡俗） */
   senderRealmLevel?: number
+  quote?: ChatQuoteDto | null
+  likeCount: number
+  likeVersion: number
+  likedByMe: boolean
+  myLikeVersion: number
 }
 
 /** 传音服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
@@ -48,6 +53,10 @@ export function conversationKey(channel: string, scopeKey: string): string {
   return `${channel}\u0000${scopeKey}`
 }
 
+export function friendScopeKey(left: string, right: string): string {
+  return [left.toLowerCase(), right.toLowerCase()].sort().join(':')
+}
+
 function toMessage(dto: ChatMessageDto): ChatMessage {
   return {
     id: dto.messageId,
@@ -59,6 +68,11 @@ function toMessage(dto: ChatMessageDto): ChatMessage {
     sentAtMs: dto.sentAtUnixMilliseconds,
     partyLink: dto.partyLink ?? null,
     senderRealmLevel: dto.senderRealmLevel ?? 1,
+    quote: dto.quote,
+    likeCount: dto.likeCount ?? 0,
+    likeVersion: dto.likeVersion ?? 0,
+    myLikeVersion: dto.likeVersion ?? 0,
+    likedByMe: dto.likedByMe ?? false,
   }
 }
 
@@ -81,22 +95,6 @@ class ChatService {
   private channelScopes = new Map<string, string>()
   private friendScopes = new Map<string, string>()
   private seen = new Set<string>()
-  private readonly draftListeners = new Set<(text: string) => void>()
-
-  /** 订阅传音输入框草稿插入事件 */
-  readonly subscribeDraftInsert = (listener: (text: string) => void): (() => void) => {
-    this.draftListeners.add(listener)
-    return () => {
-      this.draftListeners.delete(listener)
-    }
-  }
-
-  /** 向传音输入框插入超链接或富文本文本 */
-  insertDraft(text: string): void {
-    for (const listener of this.draftListeners) {
-      listener(text)
-    }
-  }
 
   /** 订阅快照变更；返回取消订阅函数 */
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -127,11 +125,44 @@ class ChatService {
     this.append(message, 1)
   }
 
+  /** 只更新原消息；点赞不插入新消息，也不影响收信计数。 */
+  applyLike(change: ChatLikeChangedDto): void {
+    const key = conversationKey(change.channel, change.scopeKey)
+    const list = this.conversations.get(key)
+    const index = list?.findIndex(message => message.id === change.messageId) ?? -1
+    if (!list || index < 0) return
+    const previous = list[index]
+    const newerCount = change.likeVersion > previous.likeVersion
+    const newerMine = change.actorId === this.snapshot.playerId && change.likeVersion > previous.myLikeVersion
+    if (!newerCount && !newerMine) return
+    const updated = list.slice()
+    updated[index] = {
+      ...previous,
+      ...(newerCount ? { likeCount: change.likeCount, likeVersion: change.likeVersion } : {}),
+      ...(newerMine ? { likedByMe: change.liked, myLikeVersion: change.likeVersion } : {}),
+    }
+    this.conversations.set(key, updated)
+    this.publish(0)
+  }
+
   /** 应用服务端历史回放：整段替换该会话缓存（服务端是权威口径），并登记作用域键。 */
   applyHistory(dto: ChatHistoryDto): void {
     if (!Array.isArray(dto?.messages)) return
     const key = conversationKey(dto.channel, dto.scopeKey)
-    const messages = dto.messages.map(toMessage).sort(compareMessage).slice(-MESSAGES_PER_CONVERSATION)
+    const existing = new Map(this.conversations.get(key)?.map(message => [message.id, message]))
+    const messages = dto.messages.map(source => {
+      const message = toMessage(source)
+      const previous = existing.get(message.id)
+      if (previous && previous.likeVersion > message.likeVersion) {
+        message.likeCount = previous.likeCount
+        message.likeVersion = previous.likeVersion
+      }
+      if (previous && previous.myLikeVersion > message.myLikeVersion) {
+        message.likedByMe = previous.likedByMe
+        message.myLikeVersion = previous.myLikeVersion
+      }
+      return message
+    }).sort(compareMessage).slice(-MESSAGES_PER_CONVERSATION)
     for (const message of messages) this.seen.add(message.id)
     this.conversations.set(key, messages)
     if (dto.channel === 'friend' && dto.targetPlayerId) this.friendScopes.set(dto.targetPlayerId, dto.scopeKey)
@@ -168,10 +199,11 @@ class ChatService {
 
   private append(message: ChatMessage, received: number): void {
     const key = conversationKey(message.channel, message.scopeKey)
-    const list = this.conversations.get(key)
-    if (list === undefined) {
+    const previous = this.conversations.get(key)
+    if (previous === undefined) {
       this.conversations.set(key, [message])
     } else {
+      const list = previous.slice()
       const last = list[list.length - 1]
       if (last && compareMessage(last, message) > 0) {
         // 实时帧偶尔乱序：按时间插回正确位置，保持组内正序。
@@ -181,6 +213,7 @@ class ChatService {
         list.push(message)
       }
       if (list.length > MESSAGES_PER_CONVERSATION) list.splice(0, list.length - MESSAGES_PER_CONVERSATION)
+      this.conversations.set(key, list)
     }
     this.trimConversations()
     this.publish(received)
@@ -237,18 +270,19 @@ function collectChannel(snapshot: ChatSnapshot, channel: string): ChatMessage[] 
  * 读取单会话频道（世界/附近/队伍）的消息。
  * 作用域键由最近一次历史回放确定：换节点或换队伍后旧作用域的消息不会再混入当前视图。
  */
-export function selectChannelMessages(snapshot: ChatSnapshot, channel: string): readonly ChatMessage[] {
+export function selectChannelMessages(snapshot: ChatSnapshot, channel: string, scope?: string): readonly ChatMessage[] {
+  if (scope !== undefined) return snapshot.conversations.get(conversationKey(channel, scope)) ?? []
   const messages = collectChannel(snapshot, channel)
   if (!snapshot.channelScopes.has(channel)) return messages
   const scopeKey = snapshot.channelScopes.get(channel)
   return messages.filter(message => message.scopeKey === scopeKey)
 }
 
-/** 读取与指定好友的私聊消息；尚未拿到作用域键时退化为该频道全部消息。 */
+/** 读取与指定好友的私聊消息；历史回放前也只使用双方会话。 */
 export function selectFriendMessages(snapshot: ChatSnapshot, friendId: string): readonly ChatMessage[] {
-  const messages = collectChannel(snapshot, 'friend')
-  const scopeKey = snapshot.friendScopes.get(friendId)
-  return scopeKey === undefined ? messages : messages.filter(message => message.scopeKey === scopeKey)
+  if (!snapshot.playerId) return []
+  const scopeKey = snapshot.friendScopes.get(friendId) ?? friendScopeKey(snapshot.playerId, friendId)
+  return selectChannelMessages(snapshot, 'friend', scopeKey)
 }
 
 /** 读取「综合」分组的传音部分：好友私聊 + 队伍群聊，按时间正序合并。 */

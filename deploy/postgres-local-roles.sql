@@ -36,6 +36,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_sta
     social.party_sessions, social.party_invitations, social.party_seekers,
     social.player_invitations, social.chat_messages,
     social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers TO daohua_worker;
+GRANT SELECT, INSERT, DELETE ON social.chat_message_likes TO daohua_api;
 -- 独立 worker 需要身份行锁而不是身份 DML；审计只供 outbox 首次插入与 event_id 幂等。
 ALTER FUNCTION game.lock_player_for_section_flush(uuid) OWNER TO daohua_bootstrap;
 REVOKE ALL ON FUNCTION game.lock_player_for_section_flush(uuid) FROM PUBLIC;

@@ -54,7 +54,9 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成数据库 schema v40 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建，玩家分段载荷标签为 v37。本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行可自动应用的独立 SQL；v36→v37 被明确拦截，须停服、全库备份、等待有效租约过期后人工应用。迁移失败直接中止，不进入清零；迁移成功后仍有不可迁移的玩家载荷时，必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成数据库 schema v63 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。空库由 `PostgresSchema.Sql` 直建，玩家分段载荷标签为 v44。本地版本漂移由 `scripts/reset-outdated-players.sh` 先调用 `scripts/migrate-local-db.sh`，按 `platform.schema_version` 链式执行可自动应用的独立 SQL；v36→v37 被明确拦截，须停服、全库备份、等待有效租约过期后人工应用。迁移失败直接中止，不进入清零；迁移成功后仍有不可迁移的玩家载荷时，必须在控制台输入 `RESET` 才允许重置，无 TTY 则中止。迁移目录可整体删除，运行时与空库启动无任何依赖。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+
+从 v62 升到 v63 须先应用 [`0063_v62_to_v63.sql`](../../migrations/0063_v62_to_v63.sql)，再启用传音引用和点赞。玩家载荷标签仍为 v44。全库备份和恢复应将 `social.chat_messages` 与 `social.chat_message_likes` 一并处理；新表只供 API 直接访问，裁剪消息时自动删除对应点赞。
 
 启动正式前端：
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { copyTextToClipboard } from '../../components/TopbarCommunityLinks'
+import { copyTextToClipboard } from '../../utils/clipboard'
 import { opsGet, opsPost } from '../opsClient'
 import { OpsCard, OpsPill, formatNumber } from '../opsUi'
 

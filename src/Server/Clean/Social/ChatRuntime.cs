@@ -13,7 +13,9 @@ public enum ChatSendStatus : byte
     /// <summary>频道不可用（宗门未开放、附近无节点、非好友、未组队）。</summary>
     ChannelUnavailable,
     /// <summary>触发频道级发送节流。</summary>
-    RateLimited
+    RateLimited,
+    /// <summary>原消息不存在或不在当前有权访问的会话。</summary>
+    QuoteUnavailable
 }
 
 /// <summary>传音发言处理结局。</summary>
@@ -21,6 +23,12 @@ public enum ChatSendStatus : byte
 /// <param name="Message">已落库的消息（成功时非空）。</param>
 /// <param name="Recipients">需要接收该消息的玩家 ID 集合（成功时非空）。</param>
 public sealed record ChatSendOutcome(ChatSendStatus Status, ChatMessageDto? Message = null, IReadOnlyList<Guid>? Recipients = null);
+
+/// <summary>点赞设置结果：不可用、限频或携带权威状态成功。</summary>
+public enum ChatLikeStatus : byte { Ok, Unavailable, RateLimited }
+
+/// <summary>点赞广播及其收件人；幂等重放只校正发起者状态。</summary>
+public sealed record ChatLikeOutcome(ChatLikeStatus Status, ChatLikeChangedDto? Update = null, IReadOnlyList<Guid>? Recipients = null);
 
 /// <summary>
 /// 传音频道运行时（单例）。
@@ -37,7 +45,7 @@ public sealed class ChatRuntime
     /// <summary>单条消息正文长度上限（字符）。</summary>
     public const int MaxBodyLength = 200;
 
-    private const int MaxSendsPerWindow = 3;
+    private const int MaxActionsPerWindow = 3;
     private const long WindowMilliseconds = 1000;
     private const int RateWindowPruneThreshold = 2048;
 
@@ -45,7 +53,7 @@ public sealed class ChatRuntime
     private readonly ISocialRepository _social;
     private readonly OnlinePresenceRegistry _presence;
     private readonly PostgresZongmenRepository? _zongmen;
-    private readonly ConcurrentDictionary<(Guid PlayerId, string Channel), (long WindowStart, int Count)> _rateWindows = new();
+    private readonly ConcurrentDictionary<(Guid PlayerId, string Channel, bool ForLike), (long WindowStart, int Count)> _rateWindows = new();
 
     /// <summary>构造传音运行时。</summary>
     /// <param name="repository">传音消息持久化边界。</param>
@@ -69,19 +77,23 @@ public sealed class ChatRuntime
     {
         var body = request.Body?.Trim() ?? string.Empty;
         if (body.Length == 0 || body.Length > MaxBodyLength) return new ChatSendOutcome(ChatSendStatus.InvalidBody);
-        if (!ChatChannels.IsSupported(request.Channel)) return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
+        var quoteId = ParseId(request.QuoteMessageId);
+        if (request.QuoteMessageId is not null && quoteId is null) return new ChatSendOutcome(ChatSendStatus.QuoteUnavailable);
+        var unavailable = quoteId.HasValue ? ChatSendStatus.QuoteUnavailable : ChatSendStatus.ChannelUnavailable;
+        if (!ChatChannels.IsSupported(request.Channel)) return new ChatSendOutcome(unavailable);
         PruneRateWindowsIfNeeded();
         if (!TryConsumeRateLimit(senderId, request.Channel)) return new ChatSendOutcome(ChatSendStatus.RateLimited);
 
-        var targetId = ParsePlayerId(request.TargetPlayerId);
+        var targetId = ParseId(request.TargetPlayerId);
         var scopeKey = await ResolveScopeAsync(request.Channel, senderId, targetId, cancellationToken);
-        if (scopeKey is null) return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
+        if (scopeKey is null) return new ChatSendOutcome(unavailable);
 
         senderName = ZongmenRules.DisplayName(senderName, _zongmen is null ? null : await _zongmen.PrefixAsync(senderId, cancellationToken));
         var record = new ChatMessageRecord(Guid.NewGuid(), request.Channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, null, senderRealmLevel);
-        await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
+        var stored = await _repository.AppendAsync(record, RetentionPerScope, quoteId, cancellationToken);
+        if (stored is null) return new ChatSendOutcome(ChatSendStatus.QuoteUnavailable);
         var recipients = await ResolveRecipientsAsync(request.Channel, scopeKey, senderId, targetId, cancellationToken);
-        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
+        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(stored), recipients);
     }
 
     /// <summary>
@@ -113,7 +125,7 @@ public sealed class ChatRuntime
         var body = $"「{party.Profile.Name}」正在招募同道，点击卡片加入。";
         var record = new ChatMessageRecord(
             Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link, senderRealmLevel);
-        await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
+        await _repository.AppendAsync(record, RetentionPerScope, cancellationToken: cancellationToken);
         var recipients = await ResolveRecipientsAsync(channel, scopeKey, senderId, targetId, cancellationToken);
         return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
     }
@@ -126,11 +138,34 @@ public sealed class ChatRuntime
     public async ValueTask<ChatHistoryDto?> LoadHistoryAsync(Guid playerId, ChatHistoryRequestDto request, CancellationToken cancellationToken = default)
     {
         if (!ChatChannels.IsSupported(request.Channel)) return null;
-        var targetId = ParsePlayerId(request.TargetPlayerId);
+        var targetId = request.Channel == ChatChannels.Friend ? ParseId(request.TargetPlayerId) : null;
         var scopeKey = await ResolveScopeAsync(request.Channel, playerId, targetId, cancellationToken);
         if (scopeKey is null) return null;
-        var messages = await _repository.LoadRecentAsync(request.Channel, scopeKey, RetentionPerScope, cancellationToken);
+        var messages = await _repository.LoadRecentAsync(request.Channel, scopeKey, playerId, RetentionPerScope, cancellationToken);
         return new ChatHistoryDto(request.Channel, scopeKey, targetId?.ToString("D"), [.. messages.Select(ToDto)]);
+    }
+
+    /// <summary>按历史回放相同的权限解析会话，再设置本人对该消息的点赞状态。</summary>
+    public async ValueTask<ChatLikeOutcome> SetLikeAsync(Guid playerId, ChatLikeSetDto request, CancellationToken cancellationToken = default)
+    {
+        if (!ChatChannels.IsSupported(request.Channel) || ParseId(request.MessageId) is not { } messageId)
+            return new(ChatLikeStatus.Unavailable);
+        PruneRateWindowsIfNeeded();
+        if (!TryConsumeRateLimit(playerId, request.Channel, forLike: true)) return new(ChatLikeStatus.RateLimited);
+
+        var targetId = request.Channel == ChatChannels.Friend ? ParseId(request.TargetPlayerId) : null;
+        var scopeKey = await ResolveScopeAsync(request.Channel, playerId, targetId, cancellationToken);
+        if (scopeKey is null) return new(ChatLikeStatus.Unavailable);
+
+        var state = await _repository.SetLikeAsync(request.Channel, scopeKey, messageId, playerId, request.Liked, cancellationToken);
+        if (state is null) return new(ChatLikeStatus.Unavailable);
+
+        var update = new ChatLikeChangedDto(request.Channel, scopeKey, messageId.ToString("D"), playerId.ToString("D"),
+            request.Liked, state.Count, state.Version);
+        var recipients = state.Changed
+            ? await ResolveRecipientsAsync(request.Channel, scopeKey, playerId, targetId, cancellationToken)
+            : [playerId];
+        return new(ChatLikeStatus.Ok, update, recipients);
     }
 
     /// <summary>解析频道作用域键；频道当前不可用时返回 null。</summary>
@@ -194,11 +229,11 @@ public sealed class ChatRuntime
     public static string BuildFriendScopeKey(Guid left, Guid right) =>
         left.CompareTo(right) <= 0 ? $"{left:D}:{right:D}" : $"{right:D}:{left:D}";
 
-    /// <summary>频道级固定窗口节流：同一玩家同一频道每秒最多 3 条。</summary>
-    private bool TryConsumeRateLimit(Guid playerId, string channel)
+    /// <summary>频道级固定窗口节流：同一玩家同一频道每秒最多 3 次，发言与点赞各自计数。</summary>
+    private bool TryConsumeRateLimit(Guid playerId, string channel, bool forLike = false)
     {
         var now = Environment.TickCount64;
-        var key = (playerId, channel);
+        var key = (playerId, channel, forLike);
         while (true)
         {
             var current = _rateWindows.GetOrAdd(key, _ => (now, 0));
@@ -207,7 +242,7 @@ public sealed class ChatRuntime
                 if (_rateWindows.TryUpdate(key, (now, 1), current)) return true;
                 continue;
             }
-            if (current.Count >= MaxSendsPerWindow) return false;
+            if (current.Count >= MaxActionsPerWindow) return false;
             if (_rateWindows.TryUpdate(key, (current.WindowStart, current.Count + 1), current)) return true;
         }
     }
@@ -223,7 +258,7 @@ public sealed class ChatRuntime
         }
     }
 
-    private static Guid? ParsePlayerId(string? value) =>
+    private static Guid? ParseId(string? value) =>
         Guid.TryParse(value, out var parsed) && parsed != Guid.Empty ? parsed : null;
 
     private static ChatMessageDto ToDto(ChatMessageRecord record) => new(
@@ -243,5 +278,9 @@ public sealed class ChatRuntime
                 record.PartyLink.NodeId,
                 record.PartyLink.MinValuation,
                 record.PartyLink.MemberCount),
-        record.SenderRealmLevel);
+        record.SenderRealmLevel,
+        record.Quote is { } quote ? new ChatQuoteDto(quote.MessageId.ToString("D"), quote.SenderName, quote.Body) : null,
+        record.LikeCount,
+        record.LikedByMe,
+        record.LikeVersion);
 }

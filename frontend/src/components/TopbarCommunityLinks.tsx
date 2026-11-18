@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '../utils/clipboard'
 import { memo, useCallback } from 'react'
 import { useT } from '../i18n'
 import { useGameStore } from '../game/gameStore'
@@ -22,32 +23,6 @@ export function resolveQqGroupLink(): string {
   const ua = navigator.userAgent.toLowerCase()
   const isMobile = /android|iphone|ipad|ipod|mobile/.test(ua)
   return isMobile ? QQ_GROUP_MOBILE_DEEP_LINK : QQ_GROUP_DESKTOP_DEEP_LINK
-}
-
-/** 异步复制群号至剪贴板（支持非安全上下文平滑降级） */
-export async function copyTextToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator?.clipboard) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // 降级使用 textarea
-  }
-  try {
-    const input = document.createElement('textarea')
-    input.value = text
-    input.style.position = 'fixed'
-    input.style.opacity = '0'
-    input.style.left = '-9999px'
-    document.body.appendChild(input)
-    input.select()
-    const success = document.execCommand('copy')
-    document.body.removeChild(input)
-    return success
-  } catch {
-    return false
-  }
 }
 
 /** 原地尝试唤起本地客户端协议链接，杜绝空白标签页弹出 */

@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '../utils/clipboard'
 import { memo, useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icon'
@@ -21,7 +22,6 @@ import {
   GITHUB_REPO_URL,
   GITHUB_LATEST_APK_DOWNLOAD_URL,
   resolveQqGroupLink,
-  copyTextToClipboard,
   openProtocolUrl,
 } from './TopbarCommunityLinks'
 import { useMountedTimeout } from '../hooks/useMountedTimeout'

@@ -146,7 +146,20 @@ public sealed record PartyLinkRecord(Guid PartyId, string Name, string ActivityK
 /// <param name="SentAt">发送时刻。</param>
 /// <param name="PartyLink">内嵌队伍卡片；无链接或队伍已解散时为 null。</param>
 /// <param name="SenderRealmLevel">发送者境界等级（默认 1：凡俗）。</param>
-public sealed record ChatMessageRecord(Guid MessageId, string Channel, string ScopeKey, Guid SenderId, string SenderName, string Body, DateTimeOffset SentAt, PartyLinkRecord? PartyLink = null, int SenderRealmLevel = 1);
+/// <param name="Quote">原消息快照，不依赖原消息仍然存在。</param>
+/// <param name="LikeCount">当前点赞总数。</param>
+/// <param name="LikedByMe">历史回放查看者当前是否点赞。</param>
+/// <param name="LikeVersion">点赞状态在该消息上的版本。</param>
+public sealed record ChatMessageRecord(
+    Guid MessageId, string Channel, string ScopeKey, Guid SenderId, string SenderName, string Body,
+    DateTimeOffset SentAt, PartyLinkRecord? PartyLink = null, int SenderRealmLevel = 1,
+    ChatQuoteRecord? Quote = null, double LikeCount = 0, bool LikedByMe = false, long LikeVersion = 0);
+
+/// <summary>原发送者及原始正文快照，不含更早的引用。</summary>
+public sealed record ChatQuoteRecord(Guid MessageId, string SenderName, string Body);
+
+/// <summary>设置点赞后权威的计数与版本；幂等重放返回当前状态。</summary>
+public sealed record ChatLikeState(double Count, long Version, bool Changed);
 
 /// <summary>社交指令失败原因码；成功时为 <see cref="None"/>。</summary>
 public enum SocialFailure : byte
@@ -385,12 +398,12 @@ public interface ISocialRepository
 /// <summary>传音消息持久化边界。</summary>
 public interface IChatRepository
 {
-    /// <summary>写入一条消息，并在同一事务内裁剪该作用域超出保留条数的旧行。</summary>
-    /// <param name="message">待写入消息。</param>
-    /// <param name="retention">该作用域保留的最新消息条数。</param>
-    /// <param name="cancellationToken">取消标记。</param>
-    ValueTask AppendAsync(ChatMessageRecord message, int retention, CancellationToken cancellationToken = default);
+    /// <summary>写入消息；引用从同作用域读取其快照。引用已不存在时返回 null，不写入。</summary>
+    ValueTask<ChatMessageRecord?> AppendAsync(ChatMessageRecord message, int retention, Guid? quoteMessageId = null, CancellationToken cancellationToken = default);
 
-    /// <summary>读取某作用域最近 <paramref name="limit"/> 条消息，按时间正序。</summary>
-    ValueTask<IReadOnlyList<ChatMessageRecord>> LoadRecentAsync(string channel, string scopeKey, int limit, CancellationToken cancellationToken = default);
+    /// <summary>读取某作用域最近 <paramref name="limit"/> 条消息及查看者的点赞状态，按时间正序。</summary>
+    ValueTask<IReadOnlyList<ChatMessageRecord>> LoadRecentAsync(string channel, string scopeKey, Guid viewerId, int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>在消息作用域内幂等设置点赞；同作用域的目标不存在时返回 null。</summary>
+    ValueTask<ChatLikeState?> SetLikeAsync(string channel, string scopeKey, Guid messageId, Guid playerId, bool liked, CancellationToken cancellationToken = default);
 }

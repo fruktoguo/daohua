@@ -88,6 +88,49 @@ public sealed class WireEnvelopeTests
     /// <summary>篡改帧解码返回 false；超 MaxFrameBytes 的载荷在构造信封时即抛 ProtocolException。</summary>
 
     [Fact]
+    public void ChatInteractions_RoundTripQuoteAndVersionedLikeState()
+    {
+        var requestId = Guid.NewGuid();
+        var id = Guid.NewGuid().ToString("D");
+        var sourceId = Guid.NewGuid().ToString("D");
+        var actor = Guid.NewGuid().ToString("D");
+        var target = Guid.NewGuid().ToString("D");
+        var send = new ChatSendDto(requestId.ToString("D"), ChatChannels.Friend, "回复", target, sourceId);
+        Assert.Equal(send, RoundTrip(WireMessageType.ChatSend, send));
+
+        var message = new ChatMessageDto(id, ChatChannels.Friend, "pair", actor, "回帖者", "回复", 123L,
+            Quote: new(sourceId, "原发言者", "{{item:item.qi-gathering-pill|聚气丹}}"), LikeCount: 2, LikedByMe: true, LikeVersion: 4);
+        var history = RoundTrip(WireMessageType.ChatHistory, new ChatHistoryDto(ChatChannels.Friend, "pair", target, [message]));
+        Assert.Equal(message, Assert.Single(history.Messages));
+        Assert.Equal(message, RoundTrip(WireMessageType.ChatMessage, message));
+
+        Assert.Equal(31, (byte)WireMessageType.ChatLikeSet);
+        var set = new ChatLikeSetDto(ChatChannels.Friend, id, false, target);
+        Assert.Equal(set, RoundTrip(WireMessageType.ChatLikeSet, set));
+        var missingLiked = WireEnvelope.Json(WireMessageType.ChatLikeSet, requestId, 1, new { channel = ChatChannels.World, messageId = id });
+        Assert.False(WireEnvelopeCodec.TryDeserializeJson<ChatLikeSetDto>(missingLiked, out _));
+
+        Assert.Equal(32, (byte)WireMessageType.ChatLikeChanged);
+        var update = new ChatLikeChangedDto(ChatChannels.Friend, "pair", id, actor, false, 1, 5);
+        Assert.Equal(update, RoundTrip(WireMessageType.ChatLikeChanged, update));
+        var wire = WireEnvelope.Json(WireMessageType.ChatLikeChanged, requestId, 1, update);
+        using var json = JsonDocument.Parse(wire.Payload);
+        Assert.Equal(actor, json.RootElement.GetProperty("actorId").GetString());
+        Assert.Equal(5, json.RootElement.GetProperty("likeVersion").GetInt64());
+        Assert.Equal(1, json.RootElement.GetProperty("likeCount").GetDouble());
+
+        T RoundTrip<T>(WireMessageType type, T payload)
+        {
+            var bytes = WireEnvelopeCodec.EncodeJson(type, requestId, 1, payload);
+            var restored = WireEnvelopeCodec.Decode(bytes);
+            Assert.Equal(type, restored.MessageType);
+            Assert.Equal(requestId, restored.RequestId);
+            Assert.True(WireEnvelopeCodec.TryDeserializeJson<T>(restored, out var result));
+            return result!;
+        }
+    }
+
+    [Fact]
     public void BinaryEnvelope_RejectsTamperingAndOversizeFrames()
     {
         var envelope = WireEnvelope.Json(WireMessageType.Ping, Guid.NewGuid(), 1, new { ok = true });

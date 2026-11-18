@@ -90,3 +90,31 @@ test('chatService：每个会话只保留最近 100 条', () => {
   assert.equal(world[0].body, '第 30 条')
   assert.equal(world[99].body, '第 129 条')
 })
+
+test('历史与实时点赞乱序时，分别保留最新总数和本人状态，不新增消息或未读', () => {
+  chatService.reset()
+  chatService.activate('me')
+  const messages = [message('m', 'world', '', '你好', 123)]
+  chatService.appendMessage(messages[0])
+  const apply = (actorId, likeVersion, likeCount, liked) => chatService.applyLike({ channel: 'world', scopeKey: '', messageId: 'm', actorId, likeVersion, likeCount, liked })
+  apply('other', 3, 2, true)
+  apply('me', 2, 1, true)
+  assert.equal(chatService.getSnapshot().receivedCount, 1)
+  chatService.applyHistory({ channel: 'world', scopeKey: '', messages })
+  apply('other', 1, 1, true)
+  let [current] = selectChannelMessages(chatService.getSnapshot(), 'world')
+  assert.equal(current.likeCount, 2)
+  assert.equal(current.likedByMe, true)
+  apply('me', 4, 1, false)
+  ;[current] = selectChannelMessages(chatService.getSnapshot(), 'world')
+  assert.equal(current.likeCount, 1)
+  assert.equal(current.likedByMe, false)
+})
+
+test('私聊历史尚未返回时也只读选中好友的作用域', () => {
+  chatService.reset()
+  chatService.activate('me')
+  chatService.appendMessage(message('a', 'friend', 'friend-a:me', '只给甲', 1000))
+  chatService.appendMessage(message('b', 'friend', 'friend-b:me', '只给乙', 1001))
+  assert.deepEqual(selectFriendMessages(chatService.getSnapshot(), 'friend-b').map(entry => entry.body), ['只给乙'])
+})

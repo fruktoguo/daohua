@@ -981,12 +981,35 @@ public static class WebSocketEndpoint
                             {
                                 Social.ChatSendStatus.RateLimited => ("CHAT_RATE_LIMITED", "发言过于频繁，请稍后再试。"),
                                 Social.ChatSendStatus.InvalidBody => ("CHAT_INVALID_BODY", "消息内容为空或超过长度上限。"),
+                                Social.ChatSendStatus.QuoteUnavailable => ("CHAT_QUOTE_UNAVAILABLE", "引用的消息已不可用。"),
                                 _ => ("CHAT_CHANNEL_UNAVAILABLE", "该传音频道当前不可用。")
                             };
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto(chatErrorCode, chatErrorMessage, envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        BroadcastChat(sessions, chatOutcome);
+                        await CompleteChatSendAsync(session, sessions, envelope.RequestId, chatOutcome, cancellationToken);
+                        break;
+                    case WireMessageType.ChatLikeSet:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<ChatLikeSetDto>(envelope, out var chatLike) || chatLike is null)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("CHAT_LIKE_UNAVAILABLE", "无法为该消息设置点赞。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        var likeOutcome = await chat.SetLikeAsync(session.PlayerId, chatLike, cancellationToken);
+                        if (likeOutcome.Update is not { } likeUpdate || likeOutcome.Recipients is not { } likeRecipients)
+                        {
+                            var (likeErrorCode, likeErrorMessage) = likeOutcome.Status == Social.ChatLikeStatus.RateLimited
+                                ? ("CHAT_RATE_LIMITED", "点赞过于频繁，请稍后再试。")
+                                : ("CHAT_LIKE_UNAVAILABLE", "无法为该消息设置点赞。");
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto(likeErrorCode, likeErrorMessage, envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        BroadcastChatPayload(sessions, WireMessageType.ChatLikeChanged, likeUpdate, likeRecipients, session.PlayerId, envelope.RequestId);
                         break;
                     case WireMessageType.ChatHistoryRequest:
                         if (!handshaken)
@@ -1124,21 +1147,35 @@ public static class WebSocketEndpoint
         }
     }
 
+    /// <summary>普通发言成功：其他会话照常广播；发言者仅收到与原请求关联的可靠回显。</summary>
+    internal static ValueTask CompleteChatSendAsync(WebSocketSession sender, SessionRegistry sessions, Guid requestId,
+        Social.ChatSendOutcome outcome, CancellationToken cancellationToken)
+    {
+        BroadcastChat(sessions, outcome, skipPlayerId: sender.PlayerId);
+        return QueueJsonAsync(sender, WireMessageType.ChatMessage, requestId, outcome.Message!, cancellationToken);
+    }
+
     /// <summary>
-    /// 把一条已落库的传音消息投递给作用域内全部在线会话。
+    /// 把一条已落库的传音消息投递给作用域内未排除的在线会话。
     /// 同一消息载荷只序列化一次，全部收件人共享同一段载荷字节；requestId/sequence 属会话私有信封头。
     /// 投递走非阻塞 <see cref="WebSocketSession.TrySendDroppable"/>：慢客户端不能反向阻塞发言者的接收循环，
     /// 掉帧可由频道历史回放（最近 100 条）在重连或切频道时补齐。
     /// </summary>
-    public static void BroadcastChat(SessionRegistry sessions, Social.ChatSendOutcome outcome)
+    public static void BroadcastChat(SessionRegistry sessions, Social.ChatSendOutcome outcome, Guid? skipPlayerId = null)
     {
         if (outcome.Message is not { } message || outcome.Recipients is not { Count: > 0 } recipients) return;
+        BroadcastChatPayload(sessions, WireMessageType.ChatMessage, message, recipients, skipPlayerId: skipPlayerId);
+    }
+
+    private static void BroadcastChatPayload<T>(SessionRegistry sessions, WireMessageType type, T payload, IReadOnlyList<Guid> recipients,
+        Guid? actorId = null, Guid requestId = default, Guid? skipPlayerId = null)
+    {
         // 载荷 JSON 与接收方无关：一次编码全体共享，避免按收件人重复序列化。
-        var payloadBytes = (ReadOnlyMemory<byte>)JsonSerializer.SerializeToUtf8Bytes(message, ProtocolJson.Options);
+        var payloadBytes = (ReadOnlyMemory<byte>)JsonSerializer.SerializeToUtf8Bytes(payload, ProtocolJson.Options);
         foreach (var recipientId in recipients)
         {
-            if (!sessions.TryGet(recipientId, out var target)) continue;
-            try { target.TrySendDroppableEnvelope(WireMessageType.ChatMessage, Guid.NewGuid(), payloadBytes); }
+            if (recipientId == skipPlayerId || !sessions.TryGet(recipientId, out var target)) continue;
+            try { target.TrySendDroppableEnvelope(type, recipientId == actorId ? requestId : Guid.NewGuid(), payloadBytes); }
             catch { /* 单会话通道异常或已拆除，忽略以避免阻断剩余收件人 */ }
         }
     }
@@ -1244,10 +1281,9 @@ public static class WebSocketEndpoint
     {
         // Snapshot 增量、战报日志与传音/社交推送属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
         // 队列已满时丢弃该帧并累计慢消费者证据，客户端可通过下一次命令响应、频道历史回放或重连
-        // 重新获取完整快照、最近日志与社交状态；命令结果、错误、握手响应与历史回放仍保留等待语义。
+        // 重新获取完整快照、最近日志与社交状态。传音广播不经过此处；ChatMessage 在此仅用于发言者的可靠回显。
         // 取号-编码-入队由会话方法在 OutboundSync 内整体完成：通道物理序恒等于序号递增序。
-        if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch
-            or WireMessageType.ChatMessage or WireMessageType.SocialState)
+        if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch or WireMessageType.SocialState)
         {
             session.TrySendJsonDroppable(messageType, requestId, payload);
             return ValueTask.CompletedTask;

@@ -1,10 +1,8 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
+import { createContext, memo, useCallback, useContext, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { chatStickerService } from '../game/chatStickerService'
-import { isQqEmoji } from '../game/qqEmojis'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
 import { gameClient } from '../network/gameClient'
@@ -12,6 +10,8 @@ import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry } from '../logging/gameLogService'
 import { splitLogSegmentsByLines } from '../logging/gameLogService'
 import { FloatingTooltip } from './FloatingPopover'
+import { ChatMessageActions, repeatChatMessage } from './ChatMessageActions'
+import { ChatQuote } from './ChatQuote'
 import { ChatMessageBody } from './ChatMessageContent'
 import { RichContentSegmentView, RichTemplateText } from './EntityReference'
 import { RealmBadge } from './RealmBadge'
@@ -143,28 +143,6 @@ const ChatRow = memo(function ChatRow({
 }): React.JSX.Element {
   const t = useT()
 
-  const handleRepeat = (e: React.MouseEvent): void => {
-    e.stopPropagation()
-    let targetPlayerId: string | undefined = undefined
-    if (message.channel === 'friend') {
-      const myId = useGameStore.getState().playerId
-      targetPlayerId = message.senderId !== myId
-        ? message.senderId
-        : (useSocialStore.getState().activeFriendId ?? undefined)
-    }
-
-    if (gameClient.sendChat(message.channel, message.body, targetPlayerId)) {
-      const trimmed = message.body.trim()
-      const emojiMatch = /^\[([^\[\]\s]+)\]$/.exec(trimmed)
-      if (emojiMatch && isQqEmoji(emojiMatch[1])) {
-        chatStickerService.recordEmojiUsage(emojiMatch[1])
-      } else if (chatStickerService.isStickerSaved(trimmed)) {
-        chatStickerService.recordStickerUsage(trimmed)
-      }
-      useGameStore.getState().setNotice(t('combat.chat.repeatSuccessNotice'))
-    }
-  }
-
   const { sectPrefix, displayName } = useMemo(() => {
     const trimmed = message.senderName.trim()
     const match = /^\[([^\[\]\s]{1,6})\]\s*(.*)$/.exec(trimmed)
@@ -236,14 +214,17 @@ const ChatRow = memo(function ChatRow({
       </div>
 
       <div className="chat-row-body">
-        <ChatMessageBody body={message.body} />
-        {message.partyLink && <PartyLinkCard link={message.partyLink} />}
+        <ChatMessageActions message={message}>
+          {message.quote && <ChatQuote quote={message.quote} />}
+          <ChatMessageBody body={message.body} />
+          {message.partyLink && <PartyLinkCard link={message.partyLink} />}
+        </ChatMessageActions>
         {repeatCount && repeatCount >= 2 && (
           <div className="chat-repeat-row">
             <button
               aria-label={t('combat.chat.repeatPlusOne')}
               className="chat-repeat-btn"
-              onClick={handleRepeat}
+              onClick={() => repeatChatMessage(message, t)}
               title={t('combat.chat.repeatTooltip', { count: repeatCount })}
               type="button"
             >
@@ -291,7 +272,7 @@ export function FeedList({ items }: { items: readonly FeedItem[] }): React.JSX.E
     const lastIndexToCountMap = new Map<string, number>()
     let runStart = -1
     let runBody = ''
-    let runChannel = ''
+    let runScope = ''
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
@@ -301,18 +282,19 @@ export function FeedList({ items }: { items: readonly FeedItem[] }): React.JSX.E
         }
         runStart = -1
         runBody = ''
-        runChannel = ''
+        runScope = ''
         continue
       }
 
-      const currentBody = item.message.body.trim()
-      const currentChannel = item.message.channel
+      // 引用或招募卡不是普通正文的复读。
+      const currentBody = item.message.quote || item.message.partyLink ? item.id : item.message.body.trim()
+      const currentScope = `${item.message.channel}:${item.message.scopeKey}`
 
       if (runStart === -1) {
         runStart = i
         runBody = currentBody
-        runChannel = currentChannel
-      } else if (currentBody === runBody && currentChannel === runChannel) {
+        runScope = currentScope
+      } else if (currentBody === runBody && currentScope === runScope) {
         // 连续相同，继续推进
       } else {
         if (i - runStart >= 2) {
@@ -320,7 +302,7 @@ export function FeedList({ items }: { items: readonly FeedItem[] }): React.JSX.E
         }
         runStart = i
         runBody = currentBody
-        runChannel = currentChannel
+        runScope = currentScope
       }
     }
 
@@ -350,20 +332,39 @@ export function FeedList({ items }: { items: readonly FeedItem[] }): React.JSX.E
  * 贴底标记只由用户滚动行为决定：effect 一旦自行清零，当列表尚无滚动条（会话初期内容不足一屏）
  * 时程序化滚动不会触发 scroll 事件，标记永久停在 false，此后新内容再也不会自动贴底。
  */
-export function useStickyScroll(revision: number): {
+export const LogPanelExpandedContext = createContext(false)
+
+export function useStickyScroll(revision: number, scope?: string | null): {
   listRef: RefObject<HTMLOListElement | null>
   onScroll: (event: React.UIEvent<HTMLOListElement>) => void
 } {
+  const expanded = useContext(LogPanelExpandedContext)
   const listRef = useRef<HTMLOListElement>(null)
-  const stickToBottom = useRef(true)
+  const position = useRef({ expanded, scope, sticky: true, top: 0, dockedTop: 0 })
   useLayoutEffect(() => {
     const list = listRef.current
-    if (!list || !stickToBottom.current) return
-    list.scrollTop = list.scrollHeight
-  }, [revision])
+    if (!list) return
+    const saved = position.current
+    if (saved.scope !== scope) {
+      saved.scope = scope
+      saved.sticky = true
+    }
+    if (saved.sticky) {
+      list.scrollTop = list.scrollHeight
+    } else if (expanded !== saved.expanded) {
+      // 展开时浏览器可能将 scrollTop 钳制，保留原停靠视口直到收起。
+      if (expanded) saved.dockedTop = saved.top
+      list.scrollTop = saved.dockedTop
+    }
+    saved.expanded = expanded
+    saved.top = list.scrollTop
+  }, [expanded, revision, scope])
   const onScroll = (event: React.UIEvent<HTMLOListElement>): void => {
     const list = event.currentTarget
-    stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 32
+    const saved = position.current
+    if (list.scrollTop === saved.top) return
+    saved.top = list.scrollTop
+    saved.sticky = list.scrollHeight - list.scrollTop - list.clientHeight < 32
   }
   return { listRef, onScroll }
 }

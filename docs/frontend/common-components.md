@@ -419,12 +419,13 @@
   - **日志与传音的通用「时间 + 内容」渲染行**：服务端日志事件（含 `{{kind:id|label}}` 富文本引用胶囊与 `× N` 重复折叠胶囊）与传音消息共用同一网格排版 -> `LogFeed.tsx`（`FeedList` / `toLogFeedItems` / `toChatFeedItems` / `mergeFeedItems` / `useStickyScroll`）。
   - **8 个分组 Tab 的日志面板**（综合/世界/附近/系统/战斗/好友/宗门/队伍）-> `GameLogPanel`：综合 = 系统日志 + 好友私聊 + 队伍群聊按时间合并（只读）；系统/战斗 = 服务端日志事件按 `channel` 分流；世界/附近/好友/队伍 = 传音频道；宗门为占位。
   - **传音频道面板**（世界/附近/队伍共用单会话模板）-> `ChatChannelPanel`；**好友私聊面板**（好友列表 + 申请处理 + 道号检索 + 私聊会话）-> `FriendChannelPanel`；**队伍面板**（成员列表 + 邀请 + 队伍群聊）-> `PartyChannelPanel`；**综合只读合并面板** -> `AggregatePanel`。
-  - **传音输入框**：独立持有草稿状态，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定；左侧增设表情入口按钮呼出表情与表情包浮层 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **传音输入框**：按角色和会话持有草稿，路由/布局切换不清除，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定；左侧增设表情入口按钮呼出表情与表情包浮层 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **可选中的聊天气泡与点按菜单**：`ChatMessageActions.tsx` 复用 `FloatingPopover`（复制、复读 +1、引用、可撤销的共享点赞）；保留长按选择与内部链接操作。`ChatQuote.tsx` 同时用于输入框可移除的引用条与已发送引用。`chatShare.ts` 先写入对应会话草稿，竖屏再打开传音页。
   - **表情与表情包选择器浮层面板 (`ChatEmojiPicker`)**：包含「表情」与「表情包」双 Tab；原生 Emoji 与自定义表情包图片均按使用频次自适应实时排序（高频在先）；自定义表情包上限 `100` 个（顶部显示 `X/100`），支持多图批量上传、批量勾选删除（「管理」模式）、右键删除、底部添加链接与多端云端同步；点击表情包时自动探测云端有效性并在过期时从本地 IndexedDB 静默重传换链后插入输入框。
   - **表情包与离线缓存图像组件 (`ChatSticker`)**：智能识别消息内图片链接；未加载前渲染精致玄墨微光 `[图片]` 占位符；加载后通过浏览器 **IndexedDB**（`daohua_chat_stickers` v2，`blobs` 按 SHA-256 去重、`images` 按 URL 映射）离线持久化二进制 Blob，相同链接 0 网络请求瞬时秒开；鼠标右键（或触屏长按）支持一键「添加到表情包」（自动强制缓存二进制至本地，跨域受限时走服务端无状态中继）；若云端过期且本地存有原图，支持点击或发送时自动静默重传并同步刷新直链。
   - **聊天图片租约**：`ChatSticker`（含灯箱）与 `QqEmoji` 统一通过 `frontend/src/components/useChatImageLease.ts` 持有图像地址；换图、卸载与切会话时归还租约，避免缓存回收撤销仍在显示的图像。
   - **连续消息复读机 (+1 机制)**：在 `LogFeed.tsx` 的 `FeedList` / `ChatRow` 中线性扫描连续相同消息；当同一会话中连续出现 $\ge 2$ 句完全相同内容时，在最后一句消息底部渲染 `+1` 复读图标胶囊，点击自动替当前玩家在当前频道跟发相同消息（仅对已收藏表情包累加本地频次）。
-  - **贴底滚动 Hook**：`useStickyScroll(revision)`，玩家未向上翻查时新内容自动滚到最新行；贴底标记只由用户滚动行为决定。
+  - **贴底滚动 Hook**：`useStickyScroll(revision, scope)`，玩家未向上翻查时新内容自动滚到最新行；贴底标记只由用户滚动行为决定；桌面从固定底边展开，收起恢复翻阅位置。
 - **组件源码**：
   - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
   - [`frontend/src/components/LogFeed.tsx`](../../frontend/src/components/LogFeed.tsx)

@@ -266,10 +266,13 @@ const ChatLocationReference = memo(function ChatLocationReference({
  */
 export const ChatMessageBody = memo(function ChatMessageBody({
   body,
+  compact = false,
 }: {
   body: string
+  compact?: boolean
 }): React.JSX.Element {
   const segments = useMemo(() => parseChatMarkup(body), [body])
+  const t = useT()
 
   if (segments.length === 0) return <>{body}</>
   if (segments.length === 1 && segments[0].type === 'text') {
@@ -301,7 +304,7 @@ export const ChatMessageBody = memo(function ChatMessageBody({
           return <ChatLocationReference key={idx} location={seg} />
         }
         if (seg.type === 'sticker') {
-          return <ChatSticker key={idx} url={seg.url} zoomable />
+          return compact ? <span key={idx}>{t('combat.chat.quoteImage')}</span> : <ChatSticker key={idx} url={seg.url} zoomable />
         }
         if (seg.type === 'qqEmoji') {
           return <QqEmoji key={idx} name={seg.name} />
