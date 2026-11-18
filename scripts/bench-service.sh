@@ -45,7 +45,7 @@ done
 if [[ -z "$VARIANT" ]]; then echo "必须提供 --variant" >&2; usage >&2; exit 2; fi
 case "$VARIANT" in
   ecs)
-    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="7b36f8002850dbf06e482682ba27d32cf4a0abe6"; ;;
+    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="7ea09399d80d43456fce52b476c684d71205742d"; ;;
   *) echo "不支持的 variant：$VARIANT（仅保留 ecs 生产宿主基准）" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi
