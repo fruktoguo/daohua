@@ -127,8 +127,10 @@ test('更新日志：损坏的 localStorage 内容静默回退为空集不崩溃
   }
 })
 
-test('更新日志：全部五天条目的富文本实体 ID 与真实配表、特质全量对齐', () => {
-  assert.equal(mod.CHANGELOG_ENTRIES.length, 5, '应包含 2026-11-10 ~ 2026-11-14 五期更新日志')
+const FORBIDDEN_DEV_JARGON = /\b(?:ECS|Schema|Canvas|VFX|WebSocket|WS|Caddy|Docker|DTO|POCO|WASM|TypeScript|React|Vite|PostgreSQL|PG|WAL|MOSS|RMBG|cf-uploader|is_bot|localStorage|IndexedDB|OAuth|HMAC|PBKDF2|ETag|JSON|SVG|DOM|DPI|API|CI|GitHub|Google Drive|rclone|PID|TTL|XSS|Origin)\b/i
+
+test('更新日志：全部历史条目的富文本实体 ID 与真实配表、特质全量对齐且无开发术语泄露', () => {
+  assert.ok(mod.CHANGELOG_ENTRIES.length >= 9, '应包含 2026-11-10 起至少 9 期更新日志')
 
   const items = new Map([
     ...loadJsonDir('config/game-data/items').map(entry => [entry.id, entry]),
@@ -150,9 +152,16 @@ test('更新日志：全部五天条目的富文本实体 ID 与真实配表、�
     if (trait.buff?.buffId) knownBuffIds.add(trait.buff.buffId)
   }
   for (const ability of abilities.values()) {
-    if (ability.buff?.buffId) knownBuffIds.add(ability.buff.buffId)
-    for (const spec of ability.buffs ?? []) {
-      if (spec.buffId) knownBuffIds.add(spec.buffId)
+    const buffCandidates = [
+      ability.buff,
+      ...(ability.buffs ?? []),
+      ability.onHitBuff,
+      ...(ability.onHitBuffs ?? []),
+      ability.selfBuff,
+      ...(ability.selfBuffs ?? []),
+    ]
+    for (const spec of buffCandidates) {
+      if (spec?.buffId) knownBuffIds.add(spec.buffId)
     }
   }
   for (const item of items.values()) {
@@ -162,13 +171,21 @@ test('更新日志：全部五天条目的富文本实体 ID 与真实配表、�
   }
 
   let checkedRefs = 0
+  let prevDate = '9999-99-99'
   for (const entry of mod.CHANGELOG_ENTRIES) {
     assert.match(entry.date, /^\d{4}-\d{2}-\d{2}$/)
+    assert.ok(entry.date < prevDate, `更新日志必须按日期严格倒序排列: ${entry.date} 不早于 ${prevDate}`)
+    prevDate = entry.date
     assert.ok(entry.versionLabel.length > 0)
     assert.ok(entry.sections.length > 0)
+    assert.doesNotMatch(entry.title, FORBIDDEN_DEV_JARGON, `标题不应包含面向开发者的技术术语: ${entry.title}`)
+    assert.doesNotMatch(entry.summary, FORBIDDEN_DEV_JARGON, `导语不应包含面向开发者的技术术语: ${entry.summary}`)
     for (const section of entry.sections) {
       for (const line of section.items) {
         assert.doesNotMatch(line, /v\d+\.\d+\.\d+/, `正文不应内嵌版本号文本（会被 ValueText 切分）: ${line}`)
+        // 剥离 {{kind:id|label}} 的内部英文 ID，仅对玩家可见文本做工程术语门禁检测
+        const visibleText = line.replace(/\{\{[a-z]+:[^|}]+\|([^}]+)\}\}/g, '$1')
+        assert.doesNotMatch(visibleText, FORBIDDEN_DEV_JARGON, `正文不应包含面向开发者的技术术语: ${visibleText}`)
         const segments = mod.parseLogTemplate(line)
         for (const seg of segments) {
           if (seg.type !== 'reference') continue

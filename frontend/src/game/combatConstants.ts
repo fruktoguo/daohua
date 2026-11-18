@@ -715,8 +715,23 @@ export const LIQUEFY_ACTION_ID = 'secret_art.liquefy'
 export const DISASSEMBLE_ACTION_ID = 'secret_art.disassemble'
 /** 残卷转化行动 ID */
 export const CONVERT_ACTION_ID = 'secret_art.convert'
-/** 物品化灵基础单次耗时 (秒) */
+/** 物品化灵基础单次耗时基数 (秒)：实际 = 基数 + 每级耗时 × (物品等级−1) */
 export const LIQUEFY_BASE_DURATION = 5
+/** 化灵目标物品等级每提升 1 级的额外耗时 (秒) */
+export const LIQUEFY_DURATION_PER_LEVEL = 0.3
+/** 秘法技艺等级每低于物品等级 1 级的化灵成功率衰减点数 */
+export const LIQUEFY_SUCCESS_PENALTY_PER_LEVEL = 0.05
+/** 化灵成功率下限 */
+export const LIQUEFY_MIN_SUCCESS_RATE = 0.2
+/** 化灵单轮基础耗时（与服务端 SecretArtRules.LiquefyDurationSeconds 镜像）：物品等级取配表显式 level（不含强化 +N） */
+export function liquefyDurationSeconds(itemLevel: number): number {
+  return LIQUEFY_BASE_DURATION + LIQUEFY_DURATION_PER_LEVEL * Math.max(0, Math.floor(itemLevel) - 1)
+}
+/** 化灵成功率（与服务端 SecretArtRules.LiquefySuccessChance 镜像）：秘法等级 ≥ 物品等级恒 100%，每低 1 级 −5%，下限 20% */
+export function liquefySuccessRate(itemLevel: number, techniqueLevel: number): number {
+  const deficit = Math.max(0, Math.floor(itemLevel) - Math.floor(Math.max(0, techniqueLevel)))
+  return Math.max(LIQUEFY_MIN_SUCCESS_RATE, Math.min(1, 1 - LIQUEFY_SUCCESS_PENALTY_PER_LEVEL * deficit))
+}
 /** 装备分解基础单次耗时 (秒) */
 export const DISASSEMBLE_BASE_DURATION = 6
 /** 残卷转化基础单次耗时 (秒) */

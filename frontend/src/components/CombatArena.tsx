@@ -1,4 +1,5 @@
 import type { BuffEffectChannel } from '../game/buffChannels'
+import { resolveAssetName, resolveEntityName } from '../game/entityNames'
 import { hasActionParticipation } from '../game/types'
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -7,7 +8,7 @@ import { UnitNumber } from './UnitNumber'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore, useGameStoreWhenVisible } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
+import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveAssetLabel, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
@@ -1477,7 +1478,9 @@ function ArenaLifeGoalCard({
     const currentTracked = queueEntry?.enhancementCurrentLevel ?? null
     const targetEq = targetItemId ? findEquipmentInCatalog(equipmentCatalog, targetItemId) : null
     const targetItem = targetItemId ? findItemInCatalog(itemCatalog, targetItemId) : null
-    const baseName = targetEq?.name || targetItem?.name || targetItemId || t('app.crafting.enhancement')
+    const baseName = targetItemId
+      ? resolveAssetName(t, targetItemId, targetEq?.name, targetItem?.name)
+      : t('app.crafting.enhancement')
     const displayName = currentTracked !== null && currentTracked > 0
       ? `${baseName} +${currentTracked} → +${targetLevel}`
       : `${baseName} +${targetLevel}`
@@ -1528,11 +1531,10 @@ function ArenaLifeGoalCard({
   } else if (yieldPreview) {
     for (const output of yieldPreview.itemOutputs) {
       const meta = resolveItemMetadata(output.itemId)
-      const definition = findItemInCatalog(itemCatalog, output.itemId)
       outputs.push({
         key: `item:${output.itemId}`,
         itemId: output.itemId,
-        name: definition?.name || meta?.label || output.itemId,
+        name: resolveAssetLabel(output.itemId, itemCatalog, equipmentCatalog),
         icon: itemYieldIcon(output.itemId),
         tone: meta?.tone ?? 'gold',
         perRound: output.finalAmount,
@@ -1679,7 +1681,7 @@ function ArenaLifeGoalCard({
                 const inDef = findItemInCatalog(itemCatalog, inId)
                 const inEq = findEquipmentInCatalog(equipmentCatalog, inId)
                 const inMeta = resolveItemMetadata(inId)
-                const inName = inDef?.name || inEq?.name || inMeta?.label || inId
+                const inName = resolveAssetName(t, inId, inDef?.name, inEq?.name)
                 return (
                   <ItemTooltipTarget
                     className="arena-life-input-chip"
@@ -2042,7 +2044,7 @@ function enemyActionState(
     const ability = findAbilityInCatalog(abilities, entry.pendingAbilityId)
     return {
       kind: 'cast',
-      name: ability?.name ?? entry.pendingAbilityId,
+      name: resolveEntityName(getT(), 'ability', entry.pendingAbilityId, ability?.name),
       durationMilliseconds: duration,
       elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
       completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
@@ -2104,7 +2106,7 @@ function allyActionState(
     const ability = findAbilityInCatalog(abilities, ally.pendingAbilityId)
     return {
       kind: 'cast',
-      name: ability?.name ?? ally.pendingAbilityId,
+      name: resolveEntityName(getT(), 'ability', ally.pendingAbilityId, ability?.name),
       durationMilliseconds: duration,
       elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
       completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
@@ -2625,7 +2627,7 @@ export const CombatArena = memo(function CombatArena({
         const remaining = Math.max(0, combatResources?.castRemainingMilliseconds ?? 0)
         return {
           kind: 'cast',
-          name: ability?.name ?? castingId,
+          name: resolveEntityName(t, 'ability', castingId, ability?.name),
           durationMilliseconds: duration,
           elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
           completesAtUnixMilliseconds: serverNow + remaining,

@@ -71,7 +71,7 @@ export interface GameLogCursor {
 /** 内存环形缓冲上限：仅保留最近 200 条折叠后日志 */
 const VISIBLE_LOG_LIMIT = 200
 /** 模板引用标记语法：{{kind:id|label}} 或 {{kind:id|label|extra}}（extra 常为数量） */
-const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy|trait|building|buff):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
+const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy|trait|building|buff):([^|{}]+)\|([^{}|]*)(?:\|([^{}]+))?}}/g
 /** 引用标记后紧随的「×N」数量后缀（服务端旧模板未内嵌数量时的兼容形态） */
 const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 

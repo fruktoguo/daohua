@@ -2,6 +2,7 @@ import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
+import { readableEntityName, resolveAssetName, resolveEntityName } from '../game/entityNames'
 import { calculateEquipmentSellPrice, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, resolveProtectionUnitPrice, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
@@ -79,7 +80,7 @@ function fallbackMetadata(itemId: string): ItemMetadata {
   const tier = def?.tier ?? 1
   const grade = resolveItemGrade(tier)
   return {
-    label: def?.name || itemId,
+    label: resolveAssetName(t, itemId, def?.name),
     glyph: isTome ? '谱' : isFragment ? '卷' : '·',
     tone: rarityToTone(grade.rarity),
     category: resolveItemCategoryLabel(def?.subCategory ?? (isTome ? 'manualTome' : isFragment ? 'manualFragment' : undefined), t),
@@ -145,14 +146,13 @@ function ItemTooltipCardContent({
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
-  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
+  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId, t) ?? fallbackMetadata(itemId)
   // 品类展示统一走细分解析：装备=槽位、功法书=秘籍/残卷、其余=配表细分 category
   const subCategoryLabel = resolveItemCategoryLabel(
     resolveItemSubCategory(itemId, itemDef, eqDef, baseMetadata.category), t)
   const rawMetadata = itemDef
     ? {
         ...baseMetadata,
-        label: itemDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: itemDef.tier ?? baseMetadata.tier,
         level: itemDef.level ?? baseMetadata.level ?? 1,
@@ -161,7 +161,6 @@ function ItemTooltipCardContent({
     : eqDef
     ? {
         ...baseMetadata,
-        label: eqDef.name || baseMetadata.label,
         category: subCategoryLabel,
         tier: eqDef.tier ?? baseMetadata.tier,
         level: eqDef.level ?? baseMetadata.level ?? 1,
@@ -174,6 +173,7 @@ function ItemTooltipCardContent({
   const levelNumber = eqDef?.level ?? itemDef?.level ?? rawMetadata.level ?? 1
   const metadata: ItemMetadata = {
     ...rawMetadata,
+    label: resolveAssetName(t, itemId, itemDef?.name, eqDef?.name, metadataOverride?.label),
     rarity: grade.rarity,
     rarityLabel: grade.label,
     tier: normalizedTier,
@@ -250,26 +250,25 @@ export function resolveItemTooltipAsideCards(
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
-  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
+  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId, t) ?? fallbackMetadata(itemId)
   const rawMetadata = itemDef
     ? {
         ...baseMetadata,
-        label: itemDef.name || baseMetadata.label,
         category: itemDef.category ?? baseMetadata.category,
       }
     : eqDef
     ? {
         ...baseMetadata,
-        label: eqDef.name || baseMetadata.label,
         category: eqDef.slot ?? baseMetadata.category,
       }
     : baseMetadata
 
+  const label = resolveAssetName(t, itemId, itemDef?.name, eqDef?.name, metadataOverride?.label)
   const list: FloatingAsideCard[] = []
 
   // 1. 装备专属属性加成独立副气泡：将主卡片下方的攻防与百分比加成抽离为独立 Aside Card 并排呈现
   if (eqDef) {
-    const eqAside = createEquipmentBonusAsideCard(eqDef, enhancementLevel, rawMetadata.label)
+    const eqAside = createEquipmentBonusAsideCard(eqDef, enhancementLevel, label)
     if (eqAside) {
       list.push(eqAside)
     }
@@ -303,7 +302,7 @@ export function resolveItemTooltipAsideCards(
   }
 
   // 2. 丹药/持续消耗品效果独立副气泡
-  const itemAsides = resolveItemAsideCards(itemDef, rawMetadata.label)
+  const itemAsides = resolveItemAsideCards(itemDef, label)
   list.push(...itemAsides)
 
   // 3. 秘籍参悟与内功增益/倾向说明
@@ -1992,7 +1991,11 @@ export function ItemTile({
   name,
   rarity,
 }: ItemTileProps): React.JSX.Element {
-  const categoryLabel = resolveItemCategoryLabel(category)
+  const t = useT()
+  const categoryLabel = resolveItemCategoryLabel(category, t)
+  const displayName = readableEntityName(itemId ?? '', name) ?? (
+    itemId ? resolveAssetName(t, itemId) : resolveEntityName(t, 'item', '')
+  )
   const iconUrl = resolveItemIconUrl(itemId)
   const bottomRight =
     bottomRightLabel ??
@@ -2006,8 +2009,8 @@ export function ItemTile({
         </span>
       )}
       {iconUrl
-        ? <img alt={name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
-        : <strong className="item-tile-name">{name}</strong>}
+        ? <img alt={displayName} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+        : <strong className="item-tile-name">{displayName}</strong>}
       {enhancementLevel > 0 && (
         <span className="item-corner item-corner--bottom-left">+{Math.floor(enhancementLevel)}</span>
       )}
@@ -2147,14 +2150,14 @@ export function ItemReference({
   /** 额外样式类名 */
   className?: string
 }): React.JSX.Element {
-  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
-  useT()
-  const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
+  const t = useT()
+  const metadata = resolveItemMetadata(itemId, t) ?? fallbackMetadata(itemId)
   const definition = useGameStore((state) => findItemInCatalog(state.items, itemId))
   const equipmentDef = useGameStore((state) => findEquipmentInCatalog(state.equipment, itemId))
-  const baseLabel = label ?? definition?.name ?? equipmentDef?.name ?? metadata.label
+  const overrideLabel = readableEntityName(itemId, label)
+  const baseLabel = resolveAssetName(t, itemId, overrideLabel, definition?.name, equipmentDef?.name)
   const lvl = Math.max(0, Math.floor(enhancementLevel ?? 0))
-  const displayLabel = !label && lvl > 0 ? `${baseLabel} +${lvl}` : baseLabel
+  const displayLabel = !overrideLabel && lvl > 0 ? `${baseLabel} +${lvl}` : baseLabel
   const tone = rarityToTone(metadata.rarity)
 
   if (amount !== undefined || valueContent !== undefined) {
@@ -2212,11 +2215,10 @@ export const ActionDetailItem = memo(function ActionDetailItem({
   /** 当前持有数量（提供时显示 持有/需求 并做不足标红） */
   current?: number
 }): React.JSX.Element {
-  const metadata = resolveItemMetadata(itemId)
   const insufficient = current !== undefined && current < amount
   return (
     <span className="action-detail-item">
-      <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
+      <ItemReference amount={current} itemId={itemId} />
       <strong className={insufficient ? 'is-insufficient' : ''}>
         {current === undefined ? <UnitNumber prefix="×" value={amount} /> : <><UnitNumber value={current} /> / <UnitNumber value={amount} /></>}
       </strong>

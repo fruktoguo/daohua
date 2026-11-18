@@ -34,17 +34,133 @@ export const CHANGELOG_DISMISSED_STORAGE_KEY = 'daohua.changelog.dismissedNotice
  */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    date: '2026-11-18',
+    versionLabel: 'v0.3.15',
+    title: '秘法化灵等级挂钩与战斗重连稳定性优化',
+    summary: '调整秘法化灵的单轮耗时与成功率规则以匹配物品等级，修复断线重连时阵盘与技能冷却恢复偏差及切换账号状态隔离问题。',
+    noticeId: 'notice-20261118-v0.3.15',
+    sections: [
+      {
+        category: 'balance',
+        items: [
+          '秘法「化灵」单轮耗时与成功率改为按物品基础等级（不含装备强化加值）计算：基础耗时调整为 5 + 0.3 ×（物品等级 - 1）秒（1 级物品仍为 5 秒）；基础成功率 100%，当秘法技艺等级低于物品等级时，每低 1 级成功率降低 5%（最低 20%）。化灵失败时物品焚毁且不产出 {{item:currency.spirit-stone|灵石}}，当轮秘法技艺经验与神识经验照常获得，秘法界面同步展示实时耗时与成功率。',
+        ],
+      },
+      {
+        category: 'fix',
+        items: [
+          '修复断线重连或离线恢复战斗时 {{item:item.juling-formation-disk|聚灵阵盘}} 等阵盘触发时机与技能冷却偶发偏差的问题，并修正多步自动赶路恢复与功法残卷优先入队的边界校验。',
+          '优化切换账号时的传书、签到与传音状态隔离，修复连续查看多名同道角色名片时偶发信息串显的问题。',
+        ],
+      },
+    ],
+  },
+  {
+    date: '2026-11-17',
+    versionLabel: 'v0.3.11 ~ v0.3.14',
+    title: '字符挂机终端、斗法消耗品实装与体验优化',
+    summary: '新增纯字符命令行挂机视图与战斗特效开关，斗法全面支持战斗消耗品与完整受击表现，升级表情包跨设备同步并修正强化装备回收折算。',
+    sections: [
+      {
+        category: 'feature',
+        items: [
+          '「设置 → 显示」新增纯字符命令行挂机视图：以无图像的简洁文字面板实时展示境界修为、气血灵力、行动进度、字符血条、掉落记录与补给余量，右上角支持一键切换中英文指标显示。',
+          '同道斗法全面接入战斗自动消耗品（丹药、符箓及 {{item:item.tianlei-formation-disk|天雷阵盘}}、{{item:item.xuesha-formation-disk|血煞阵盘}} 等阵盘），按实际触发消耗库存，并禁止在初入搜寻与重伤复活期间发起或应战斗法。',
+          '传音表情包上限提升至 100 个，支持跨设备同步与批量勾选管理；新增服务器更新维护提示页，发版期间可自动检测恢复并刷新进入游戏。',
+        ],
+      },
+      {
+        category: 'optimize',
+        items: [
+          '战斗详情面板左上角新增「特效」开关（关闭后仅保留伤害数字）；切出浏览器标签页或后台返回时自动清理积压动画，避免画面瞬时卡顿。',
+          '优化每日签到气运抽取曲线，降低连续抽到低档签文的概率，连签收益更平稳。',
+        ],
+      },
+      {
+        category: 'balance',
+        items: [
+          '修正高阶强化装备的系统回收价折算规则：强化折旧改为按该装备可用保护材料的最低单价计算，修复 {{item:equipment.duanchen-blade|断尘残刃剑}} 等高基础价值装备强化后回收价异常虚高的问题。',
+        ],
+      },
+      {
+        category: 'fix',
+        items: [
+          '补全斗法结算回放中的伤害、暴击、破招、招架、治疗及尾帧受击表现；修复多项极端情况下的战斗状态清理与坊市挂单结算稳定性问题。',
+        ],
+      },
+    ],
+  },
+  {
+    date: '2026-11-16',
+    versionLabel: 'v0.3.8 ~ v0.3.10',
+    title: '雾梦泽秘境开放、五门新功法与每日签到上线',
+    summary: '开放第四张历练地图「雾梦泽」与五门二阶功法，上线每日签到领功德系统，补齐全部缺失图标与心法护体特效并放开讨伐行动境界限制。',
+    sections: [
+      {
+        category: 'feature',
+        items: [
+          '开放新地图「雾梦泽」（24~30 级，由 {{location:node.scorched-pines|畸木焦林}} 向北前往 {{location:node.mist-edge|泽畔荒径}}、{{location:node.venom-fen|毒瘴浅沼}}、{{location:node.mist-heart|迷雾泽心}}、{{location:node.sword-abyss|剑冢沉潭}}），开启 {{action:combat.sweep-wumeng-marsh|讨伐 雾梦泽}}，迎战精英 {{enemy:enemy.abyss-black-croc|寒潭玄鳄}}、{{enemy:enemy.nine-head-guiche|九首鬼车}} 与镇渊妖王 {{enemy:enemy.mist-sword-wraith|雾隐剑魄}}，可掉落 {{item:item.black-croc-scale|玄鳄逆鳞}}、{{item:item.guiche-crimson-plume|鬼车赤翎}}、{{item:item.dragon-pearl|龙珠}} 等奇珍材料。',
+          '新增五门二阶主动功法及对应秘籍残卷：{{ability:ability.tianlei-po|天雷破}}（命中附加 {{buff:buff.mabi|麻痹}}，降低闪避、招架与行动速度）、{{ability:ability.zhuoxin|灼心}}（叠加大额 {{buff:buff.ranhun|燃烧}}）、{{ability:ability.shunshan|瞬闪}}（联动 {{buff:buff.yixing|移形}} 并在消耗移形击杀时重置冷却）、{{ability:ability.shangui-yao|山鬼谣}}（群体施加 {{buff:buff.ganlu|甘露}} 持续回血）、{{ability:ability.pojun|破军}}（横扫群敌并获得移形与减伤状态 {{buff:buff.shibukedang|势不可挡}}）。',
+          '新增「每日签到」系统（位于「其他 / 更多 → 签到」，每日首次上线或跨零点自动弹出）：每日可抽取 10~999 {{item:item.gongde-bound|功德·绑定}}，连续签到可稳步提升期望收益并查看签运。',
+        ],
+      },
+      {
+        category: 'optimize',
+        items: [
+          '补齐新地图妖兽立绘、奇珍、功法秘籍与宗门大殿等 35 项美术图标；补全十门内功心法的周天护体光效及 {{trait:trait.xuyi|蓄意}} 特效，并重做五门新功法的战斗演出。',
+          '放开各地图讨伐行动的境界解锁门槛（原等级改为推荐参考等级，道友可自由越级挑战），并将全部秘籍与残卷的物品等级、品阶与最低掉落妖兽对齐。',
+        ],
+      },
+      {
+        category: 'balance',
+        items: [
+          '上调 {{item:item.storage-bag.broken|破损的储物袋}} 的功德产出（20% 概率获得 10~20 {{item:item.gongde|功德}}，1% 概率获得 100~300 功德），并简化物品卡片上的掉落概率展示。',
+          '18 级以上的妖兽按超出等级获得全属性成长加成（普通与精英每级 +2%，妖王每级 +3%），使中高阶历练强度与道友特质、灵根成长相匹配。',
+        ],
+      },
+    ],
+  },
+  {
+    date: '2026-11-15',
+    versionLabel: 'v0.3.7',
+    title: '仙门传书、修行帮助指南与百艺减负调优',
+    summary: '上线顶栏仙门传书邮件与五章修行帮助手册，百艺生活技艺经验全面翻倍并同步产出底蕴，补齐剑系武器物理增伤与多项界面体验细节。',
+    sections: [
+      {
+        category: 'feature',
+        items: [
+          '新增「仙门传书」邮件系统（顶栏右上角常驻传书入口与未读红点），支持阅读传书、一键领取灵石功德等附件奖励，重要传书支持长期保留。',
+          '「其他 / 更多」分组新增「帮助」修行指南弹窗，收录五章十四节图文教程，新手引导完成或跳过后可随时查阅。',
+        ],
+      },
+      {
+        category: 'optimize',
+        items: [
+          '优化「开天门」竖屏双页签布局（天门 / 加成切换）并新增首次规则说明弹窗；大地图跨区域关口节点新增醒目的青玉色「交界」角标，竖屏战斗详情支持一键全屏专注浏览。',
+          '顶部行动栏新增剩余总耗时与当前材料可支撑次数估算；更新日志与战报中的功法、特质、建筑、状态词条全面支持悬浮查看图鉴详情。',
+        ],
+      },
+      {
+        category: 'balance',
+        items: [
+          '生活百艺减负提速：采集、炼丹、锻造、制符、阵法等技艺经验获取全面翻倍，消耗下级装备的进阶锻造再享双倍经验，且每次获得技艺经验均等额增加底蕴。',
+          '为 {{item:equipment.qingfeng-sword|青锋剑}}、{{item:equipment.xuantie-sword|玄铁长剑}}、{{item:equipment.pogang-sword|破罡剑}}、{{item:equipment.duanchen-blade|断尘残刃剑}} 补齐物理伤害加成词条，与同阶法器强度对齐；精英与妖王击杀经验倍率分别提升至 10 倍与 40 倍。',
+        ],
+      },
+    ],
+  },
+  {
     date: '2026-11-14',
     versionLabel: 'v0.3.3 ~ v0.3.6',
-    title: '天榜排行、演武 V2 特效与大地图重塑',
-    summary: '新增天榜竞争与配装隐私保护，全面升级战斗演武画廊与大地图节点视效，并实装移形/灼烧新流派体系。',
+    title: '天榜排行、演武特效升级与大地图重塑',
+    summary: '新增天榜竞争与配装隐私保护，全面升级战斗技能演出与大地图节点视效，并实装移形/灼烧新流派体系。',
     noticeId: 'notice-20261114-v0.3.6',
     sections: [
       {
         category: 'feature',
         items: [
           '新增「天榜」系统，整点刷新修为、战力与百艺榜名录；设置中新增配装隐私开关，可隐藏自身装备与功法配置。',
-          '战斗演武实装全彩 Canvas V2 特效引擎，新增 Q5 特质 {{trait:trait.jianyuxin|剑与心}}（12 点消耗）、{{trait:trait.huoshen|火神}}（12 点消耗）及功法 {{ability:ability.yueqian|跃迁}}、{{ability:ability.zhanyu|斩玉}}、{{ability:ability.huoyan-fengbao|火焰风暴}}，支持 {{buff:buff.yixing|移形}} 变招（踏云）与 {{buff:buff.ranhun|燃烧}} 叠加灼烧。',
+          '战斗技能与普攻连段特效全面重制，新增天品特质 {{trait:trait.jianyuxin|剑与心}}（12 点消耗）、{{trait:trait.huoshen|火神}}（12 点消耗）及功法 {{ability:ability.yueqian|跃迁}}、{{ability:ability.zhanyu|斩玉}}、{{ability:ability.huoyan-fengbao|火焰风暴}}，支持 {{buff:buff.yixing|移形}} 变招（踏云）与 {{buff:buff.ranhun|燃烧}} 叠加灼烧。',
           '大地图节点全面翻新：节点尺寸翻倍并升级古匾样式，地图上直接标出妖王与精英角标；点击文中的 {{location:node.rock-beach|清石水滩}} 等地名即可直达节点。',
         ],
       },
@@ -58,7 +174,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       {
         category: 'fix',
         items: [
-          '修复战斗触发器条件评估、组队收益结算与离线冷挂机掉率边界异常；彻底清理界面残留 Emoji 并同步万象图鉴条目。',
+          '修复战斗触发条件判定、组队收益结算与离线挂机掉率边界异常；统一全界面国风矢量与手绘图标，并同步万象图鉴条目。',
         ],
       },
     ],
@@ -66,14 +182,14 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     date: '2026-11-13',
     versionLabel: 'v0.3.2',
-    title: '模拟器纯前端化与三阶修炼开放',
-    summary: '战斗模拟器切为 1:1 前端本地引擎推演，补全高阶吐纳行动并修正敌方施法频率与小游戏结算细节。',
+    title: '战斗模拟器提速与三阶修炼开放',
+    summary: '大幅提升战斗模拟器推演响应速度，补全高阶吐纳行动并修正敌方施法频率与小游戏结算细节。',
     sections: [
       {
         category: 'feature',
         items: [
-          '战斗模拟器重写为纯前端 1:1 确定性引擎，演武测算与收益对比响应更快、无需额外后端开销。',
-          '新增 Lv.9 三级修炼行动 {{action:cultivation.ningqi-guiyuan|凝气归元}}（10 秒/轮，基础修为收益并额外恢复 +40 灵力，附带经脉/根骨各 50% 根基经验）。',
+          '重构内置战斗模拟器：无需等待加载即可秒级完成多地点演武测算与收益对比，结果与实战完全一致。',
+          '新增 9 级三阶修炼行动 {{action:cultivation.ningqi-guiyuan|凝气归元}}（10 秒/轮，获得基础修为并额外恢复 +40 灵力，附带经脉/根骨各 50% 根基经验）。',
         ],
       },
       {
@@ -94,13 +210,13 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     date: '2026-11-12',
     versionLabel: 'v0.2.10 ~ v0.3.1',
     title: '特质定格系统、前期法术加强与热更免退',
-    summary: '重整特质生效与同道界面结构，加强前期法术伤害并优化协议热更兼容性。',
+    summary: '重整特质生效与同道界面结构，加强前期法术伤害并优化日常更新在线体验。',
     sections: [
       {
         category: 'feature',
         items: [
-          '战斗特质支持按条件入战定格（{{trait:trait.chujian|初见}}、{{trait:trait.bukandaowo|看不到我}}、{{trait:trait.woyaodashige|我要打十个}}、{{trait:trait.dantiaowang|单挑王}}、{{trait:trait.xuyi|蓄意}}），并在装配视图增加特质栏与装备槽位排序。',
-          '同道页签收编进统一导航栏，斗地主新增全屏模式与服务端时钟同步；Android 端启用独立 HD 画质资源热更。',
+          '战斗特质支持按条件入战生效（{{trait:trait.chujian|初见}}、{{trait:trait.bukandaowo|看不到我}}、{{trait:trait.woyaodashige|我要打十个}}、{{trait:trait.dantiaowang|单挑王}}、{{trait:trait.xuyi|蓄意}}），并在装配视图增加特质栏与装备槽位排序。',
+          '同道页签收拢进统一导航栏，斗地主新增全屏模式与倒计时校准；移动端支持高清美术资源按需更新。',
         ],
       },
       {
@@ -112,8 +228,8 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       {
         category: 'fix',
         items: [
-          '修复秘法感悟经验等级取值偏差、{{item:item.cuiling-powder|淬灵粉}} / {{item:item.guling-sand|固灵砂}} 对非强化行动误扣次数及组队复活读条跨波次残留的问题。',
-          '重构协议兼容判定门槛，一般更新不再强制踢出已登录玩家。',
+          '修复秘法感悟经验等级计算偏差、{{item:item.cuiling-powder|淬灵粉}} / {{item:item.guling-sand|固灵砂}} 对非强化行动误扣次数及组队复活读条跨波次残留的问题。',
+          '优化日常版本更新兼容机制，常规更新不再强制中断在线道友的登录状态。',
         ],
       },
     ],

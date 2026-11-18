@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
+import { resolveAssetName, resolveEntityName } from '../game/entityNames'
 import { parseChatMarkup, type ChatMarkupSegment } from '../game/chatMarkup'
-import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata } from '../game/ids'
+import { findEquipmentInCatalog, findItemInCatalog } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useMarketStore } from '../game/marketStore'
 import { useUiStore } from '../uiStore'
@@ -22,8 +23,7 @@ const ChatOrderReference = memo(function ChatOrderReference({
   const t = useT()
   const definition = useGameStore((state) => findItemInCatalog(state.items, order.itemId))
   const equipmentDef = useGameStore((state) => findEquipmentInCatalog(state.equipment, order.itemId))
-  const metadata = resolveItemMetadata(order.itemId)
-  const baseLabel = definition?.name ?? equipmentDef?.name ?? metadata?.label ?? order.itemId
+  const baseLabel = resolveAssetName(t, order.itemId, definition?.name, equipmentDef?.name)
   const displayLabel = order.enhancementLevel > 0 ? `${baseLabel} +${order.enhancementLevel}` : baseLabel
   const sideLabel = order.side === 'buy' ? t('market.side.buy') : t('market.side.sell')
   const handleClick = (e: React.MouseEvent | React.KeyboardEvent): void => {
@@ -205,7 +205,7 @@ const ChatLocationReference = memo(function ChatLocationReference({
     return null
   }, [maps, location.nodeId])
 
-  const displayName = location.name || nodeInfo?.node.name || location.nodeId
+  const displayName = resolveEntityName(t, 'location', location.nodeId, location.name, nodeInfo?.node.name)
 
   const handleClick = (e: React.MouseEvent | React.KeyboardEvent): void => {
     e.stopPropagation()

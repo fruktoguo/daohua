@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react'
 import { formatNumber } from '../../game/format'
-import { findEquipmentInCatalog } from '../../game/ids'
+import { resolveAssetLabel } from '../../game/ids'
 import { buildOrderChatMarkup } from '../../game/chatMarkup'
 import { shareToChat } from '../../game/chatShare'
 import { ItemIcon } from '../ItemDisplay'
@@ -68,9 +68,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
           ? <div className="market-own-empty">{t('market.noActiveOrders')}</div>
           : orders.map(order => {
               // 强化变体订单展示 "名称 +N"；装备名走装备目录（物品目录查不到 equipment.*）。
-              const baseName = catalog.find(item => item.itemId === order.itemId)?.name
-                ?? findEquipmentInCatalog(equipmentCatalog ?? [], order.itemId)?.name
-                ?? order.itemId
+              const baseName = resolveAssetLabel(order.itemId, catalog, equipmentCatalog)
               const displayName = order.enhancementLevel > 0 ? `${baseName} +${order.enhancementLevel}` : baseName
               const isPartial = order.status === 'partially-filled'
               const progressDetail = isPartial

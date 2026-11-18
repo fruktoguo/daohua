@@ -5,12 +5,12 @@ import { formatRealmUnlockCondition } from '../game/codexCalculations'
 import { TRAIT_DEFINITIONS } from '../game/combatConstants'
 import { describeAbility, formatNumber, resolveTriggerBuffName } from '../game/format'
 import { useGameStore } from '../game/gameStore'
+import { resolveEntityName } from '../game/entityNames'
 import {
   findAbilityInCatalog,
   findActionInCatalog,
   findCombatantInCatalog,
   findEncounterInCatalog,
-  findItemInCatalog,
   resolveActionDefinition,
   resolveActionLevel,
   resolveAssetLabel,
@@ -97,7 +97,7 @@ function formatActionYieldSummary(
       return t('app.changelog.ref.yieldHp', { amount: formatNumber(yieldEntry.amount) })
     case 'item': {
       if (!yieldEntry.id) return null
-      const itemName = findItemInCatalog(items, yieldEntry.id)?.name ?? resolveAssetLabel(yieldEntry.id)
+      const itemName = resolveAssetLabel(yieldEntry.id, items)
       return yieldEntry.amount > 1 ? `${itemName} ×${formatNumber(yieldEntry.amount)}` : itemName
     }
     case 'buff':
@@ -263,7 +263,7 @@ export const BuildingInfoCard = memo(function BuildingInfoCard({
               <span className="codex-hover-title">{t('app.codex.buildingMaterials')}：</span>
               <div className="codex-chips-wrap">
                 {building.materials.map(mat => {
-                  const matName = findItemInCatalog(items, mat.itemId)?.name ?? resolveAssetLabel(mat.itemId)
+                  const matName = resolveAssetLabel(mat.itemId, items)
                   return (
                     <span className="codex-chip" key={mat.itemId}>
                       <ItemIcon itemId={mat.itemId} />
@@ -303,7 +303,7 @@ export const AbilityReference = memo(function AbilityReference({
 }): React.JSX.Element {
   const t = useT()
   const ability = useGameStore(state => findAbilityInCatalog(state.abilities, abilityId))
-  const displayLabel = label || ability?.name || abilityId
+  const displayLabel = resolveEntityName(t, 'ability', abilityId, label, ability?.name)
 
   const renderAsideCards = useCallback(
     () => (ability ? resolveAbilityAsideCards(ability, undefined, 'qi', level) : []),
@@ -355,7 +355,7 @@ export const EnemyReference = memo(function EnemyReference({
   const encounter = kind === 'encounter' ? findEncounterInCatalog(encounters, enemyId) : undefined
   const combatant = findCombatantInCatalog(encounters, maps, enemyId)
   const monster = encounter?.enemy ?? combatant
-  const displayLabel = label || monster?.name || encounter?.name || enemyId
+  const displayLabel = resolveEntityName(t, 'enemy', enemyId, label, monster?.name, encounter?.name)
   const classes = joinClasses(`log-reference log-reference--${kind}`, className)
 
   if (monster) {
@@ -391,7 +391,7 @@ export const TraitReference = memo(function TraitReference({
 }): React.JSX.Element {
   const t = useT()
   const def = TRAIT_DEFINITIONS[traitId]
-  const displayLabel = label || def?.name || traitId
+  const displayLabel = resolveEntityName(t, 'trait', traitId, label, def?.name)
 
   const renderAsideCards = useCallback(
     () => (def ? resolveTraitAsideCards(def, level) : []),
@@ -442,7 +442,7 @@ export const BuildingReference = memo(function BuildingReference({
     () => buildings.find(entry => entry.buildingId === buildingId),
     [buildings, buildingId],
   )
-  const displayLabel = label || building?.name || buildingId
+  const displayLabel = resolveEntityName(t, 'building', buildingId, label, building?.name)
 
   if (!building) {
     return (
@@ -505,11 +505,24 @@ function resolveBuffCard(
     }
   }
 
-  // 2. 检索功法所挂接的战内 Buff，复用 createAbilityBuffAsideCards
+  // 2. 检索功法所挂接的战内 Buff（含常规 buff/buffs、命中附加 onHitBuff/onHitBuffs、自身附加 selfBuff/selfBuffs），复用 createAbilityBuffAsideCards
   for (const ability of abilities) {
-    const specs = ability.buffs && ability.buffs.length > 0
+    const primarySpecs = ability.buffs && ability.buffs.length > 0
       ? ability.buffs
       : ability.buff ? [ability.buff] : []
+    const onHitSpecs = ability.onHitBuffs && ability.onHitBuffs.length > 0
+      ? ability.onHitBuffs
+      : ability.onHitBuff ? [ability.onHitBuff] : []
+    const selfSpecs = ability.selfBuffs && ability.selfBuffs.length > 0
+      ? ability.selfBuffs
+      : ability.selfBuff ? [ability.selfBuff] : []
+    const seenBuffIds = new Set<string>()
+    const specs = [...primarySpecs, ...onHitSpecs, ...selfSpecs].filter((spec, index) => {
+      const key = spec.buffId || `__idx_${index}`
+      if (seenBuffIds.has(key)) return false
+      seenBuffIds.add(key)
+      return true
+    })
     const matchedIndex = specs.findIndex(spec => spec.buffId === buffId)
     if (matchedIndex < 0) continue
     const spec = specs[matchedIndex]
@@ -587,7 +600,7 @@ export const BuffReference = memo(function BuffReference({
     [abilities, items, actions, buffId, t],
   )
   const fallbackName = resolveTriggerBuffName(buffId)
-  const displayLabel = label || resolved?.title || (fallbackName !== buffId ? fallbackName : buffId)
+  const displayLabel = resolveEntityName(t, 'buff', buffId, label, resolved?.title, fallbackName)
 
   if (!resolved) {
     return (
@@ -658,7 +671,7 @@ export const ActionReference = memo(function ActionReference({
     () => findActionInCatalog(actions, actionId) ?? resolveActionDefinition(actionId),
     [actions, actionId],
   )
-  const displayLabel = label || action?.name || actionId
+  const displayLabel = resolveEntityName(t, 'action', actionId, label, action?.name, t(`game.action.${actionId}.name`))
 
   if (!action) {
     return (
@@ -701,7 +714,7 @@ export const ActionReference = memo(function ActionReference({
                     {inputEntries.map(([inId, count]) => (
                       <span className="codex-stat-line" key={inId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <ItemIcon itemId={inId} />
-                        <span>{findItemInCatalog(items, inId)?.name ?? resolveAssetLabel(inId)} ×{formatNumber(count)}</span>
+                        <span>{resolveAssetLabel(inId, items, equipment)} ×{formatNumber(count)}</span>
                       </span>
                     ))}
                   </div>
@@ -766,7 +779,7 @@ export const LocationReference = memo(function LocationReference({
   const t = useT()
   const maps = useGameStore(state => state.maps)
   const found = useMemo(() => findMapNode(maps, locationId), [maps, locationId])
-  const displayLabel = label || found?.node.name || locationId
+  const displayLabel = resolveEntityName(t, 'location', locationId, label, found?.node.name)
 
   const handleLocate = useCallback(() => {
     if (!found) return
@@ -853,6 +866,7 @@ export const RichContentSegmentView = memo(function RichContentSegmentView({
   segment: RichContentSegment
   onNavigate?: () => void
 }): React.JSX.Element {
+  const t = useT()
   if (segment.type === 'text') {
     return <ValueText className="log-value-capsule" text={segment.value} />
   }
@@ -887,13 +901,13 @@ export const RichContentSegmentView = memo(function RichContentSegmentView({
           className={`log-reference log-reference--mechanic log-reference--mechanic-${segment.id}`}
           data-mechanic={segment.id}
         >
-          {segment.label}
+          {resolveEntityName(t, 'mechanic', segment.id, segment.label)}
         </span>
       )
-    default:
+    case 'character':
       return (
-        <span className={`log-reference log-reference--${segment.kind}`} title={`${segment.kind}: ${segment.id}`}>
-          {segment.label}
+        <span className="log-reference log-reference--character">
+          {resolveEntityName(t, 'character', segment.id, segment.label)}
         </span>
       )
   }

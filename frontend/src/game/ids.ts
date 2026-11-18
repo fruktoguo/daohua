@@ -1,5 +1,6 @@
 import { getT, hasTranslation, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
+import { readableEntityName, resolveAssetName, resolveEntityName } from './entityNames'
 import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
@@ -181,14 +182,14 @@ export function resolveActionDefinition(id: string): ActionDefinition | undefine
   const descKey = `game.action.${id}.description`
   const translatedName = t(nameKey)
   const translatedDesc = t(descKey)
-  const hasI18nName = translatedName !== nameKey
+  const localizedName = readableEntityName(id, translatedName)
   const hasI18nDesc = translatedDesc !== descKey
 
   const dynamic = dynamicActionsMap.get(id)
   if (dynamic) {
     return {
       ...dynamic,
-      name: hasI18nName ? translatedName : (dynamic.name || id),
+      name: resolveEntityName(t, 'action', id, localizedName, dynamic.name),
       description: hasI18nDesc ? translatedDesc : (dynamic.description || ''),
     }
   }
@@ -197,15 +198,15 @@ export function resolveActionDefinition(id: string): ActionDefinition | undefine
   if (core) {
     return {
       ...core,
-      name: hasI18nName ? translatedName : core.id,
+      name: resolveEntityName(t, 'action', id, localizedName),
       description: hasI18nDesc ? translatedDesc : '',
     }
   }
 
-  if (hasI18nName) {
+  if (localizedName) {
     return {
       id,
-      name: translatedName,
+      name: localizedName,
       description: hasI18nDesc ? translatedDesc : '',
       type: 'cultivation',
       durationSeconds: 0,
@@ -346,20 +347,14 @@ export function findAbilityInCatalog<T extends { abilityId: string }>(abilities:
  * 行动消耗与产出、图鉴配方、掉落明细等场合的标识既可能是 `item.*` 也可能是
  * `equipment.*`（如锻造升级链把成品装备作为输入）。只查物品目录会让装备条目
  * 直接落到原始标识上，界面因此显示 `equipment.xxx`。统一走本函数后：
- * 物品目录命中 → 装备目录命中 → 静态元数据词条 → 原标识兜底。
+ * 物品目录命中 → 装备目录命中 → 内置词条 → 分类兜底。
  */
 export function resolveAssetLabel(
   id: string,
   items: readonly { itemId: string; name?: string | null }[] = [],
   equipment: readonly { equipmentId: string; name?: string | null }[] = [],
 ): string {
-  const item = findItemInCatalog(items, id)
-  if (item?.name) return item.name
-  const eq = findEquipmentInCatalog(equipment, id)
-  if (eq?.name) return eq.name
-  const meta = resolveItemMetadata(id)
-  if (meta?.label && !meta.label.startsWith('game.') && meta.label !== id) return meta.label
-  return id
+  return resolveAssetName(getT(), id, findItemInCatalog(items, id)?.name, findEquipmentInCatalog(equipment, id)?.name)
 }
 
 /**
@@ -800,7 +795,7 @@ export function resolveCatalogItemMetadata(
 ): ItemMetadata {
   const t = options.t ?? getT()
   const { itemDefinition, equipmentDefinition } = options
-  const registered = resolveItemMetadata(itemId)
+  const registered = resolveItemMetadata(itemId, t)
 
   const explicitTier = options.tier != null && options.tier > 0 ? options.tier : undefined
   const rawTier = equipmentDefinition?.tier
@@ -825,7 +820,7 @@ export function resolveCatalogItemMetadata(
     : (typeof registered?.level === 'number' && registered.level > 0 ? registered.level : 1)
 
   return {
-    label: equipmentDefinition?.name || itemDefinition?.name || registered?.label || options.name || itemId,
+    label: resolveAssetName(t, itemId, equipmentDefinition?.name, itemDefinition?.name, options.name),
     glyph: options.glyph ?? registered?.glyph ?? (equipmentDefinition || itemId.startsWith('equipment.') ? '武' : '·'),
     tone: options.tone ?? registered?.tone ?? 'gold',
     category: categoryLabel,
@@ -1480,12 +1475,11 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
  * 根据物品 ID 解析带多语言文案的完整物品元数据
  * @param itemId 物品唯一标识
  */
-export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
-  const t = getT()
+export function resolveItemMetadata(itemId: string, t = getT()): ItemMetadata | undefined {
   const core = ITEM_META_CORES[itemId]
   // 名称与描述的唯一真源是 i18n 词典；静态元数据表只承载图标/品质/品类等非文本信息。
   // 新配表条目即使尚未登记静态元数据，也必须拿到可读文本，禁止回退原始 ID。
-  const label = hasTranslation(`game.item.${itemId}.label`) ? t(`game.item.${itemId}.label`) : undefined
+  const label = readableEntityName(itemId, t(`game.item.${itemId}.label`))
   const description = hasTranslation(`game.item.${itemId}.description`)
     ? t(`game.item.${itemId}.description`)
     : undefined
@@ -1499,7 +1493,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     const level = core.level ?? 1
 
     return {
-      label: label ?? itemId,
+      label: label ?? t('common.unknownName.item'),
       glyph: core.glyph,
       tone: core.tone,
       category: resolveItemCategoryLabel(core.subCategory, t),
@@ -1517,7 +1511,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     const tier = Math.max(1, fallback?.tier ?? 1)
     const grade = resolveItemGrade(tier)
     return {
-      label: label ?? fallback?.name ?? itemId,
+      label: resolveEntityName(t, 'equipment', itemId, label, fallback?.name),
       glyph: '武',
       tone: 'gray',
       category: resolveItemCategoryLabel(fallback?.slot ?? 'equipment', t),
@@ -1531,9 +1525,8 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
 
   if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) {
     const isTome = itemId.startsWith('item.tome.')
-    const slug = itemId.slice(isTome ? 'item.tome.'.length : 'item.fragment.'.length)
     return {
-      label: label ?? (isTome ? `《${slug}秘籍》` : `《${slug}·残卷》`),
+      label: label ?? t('common.unknownName.item'),
       glyph: isTome ? '谱' : '卷',
       tone: 'gray',
       category: resolveItemCategoryLabel(isTome ? 'manualTome' : 'manualFragment', t),
@@ -1548,7 +1541,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   // 普通物品（材料/丹药/消耗品）：词典有词条即可展示，图标与品类取中性兜底。
   if (label !== undefined || description !== undefined) {
     return {
-      label: label ?? itemId,
+      label: label ?? t('common.unknownName.item'),
       glyph: '·',
       tone: 'gold',
       category: resolveItemCategoryLabel(undefined, t),

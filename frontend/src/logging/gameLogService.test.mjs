@@ -169,6 +169,14 @@ test('gameLogService: 自动使用与持续时间耗尽等高频消耗品日志�
   assert.equal(snapshot.latest[0].template, '完成行动 {{action:cultivation.draw-qi|引气入体}}')
 })
 
+test('parseLogTemplate：引用缺少名称时仍保留实体 ID，供展示层恢复名称', () => {
+  assert.deepEqual(parseLogTemplate('强化成功：{{item:equipment.juling-pendant|}} 提升至 +1。'), [
+    { type: 'text', value: '强化成功：' },
+    { type: 'reference', kind: 'item', id: 'equipment.juling-pendant', label: '' },
+    { type: 'text', value: ' 提升至 +1。' },
+  ])
+})
+
 test('parseLogTemplate：正确解析特质、建筑、状态、行动、地点与数量引用', () => {
   const segments = parseLogTemplate(
     '激活 {{trait:trait.jianyuxin|剑与心}} 付与 {{buff:buff.yixing|移形}}，建造 {{building:building.mana-regen-array|回元阵}} 于 {{location:node.rock-beach|清石水滩}} 并执行 {{action:cultivation.ningqi-guiyuan|凝气归元}} 获得 {{item:item.zhixue-powder|止血散|3}}',

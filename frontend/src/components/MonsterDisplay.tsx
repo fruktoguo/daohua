@@ -1,4 +1,5 @@
 import { getDifficultyExperienceMultiplier, scaleMonsterAttributes, scaleMonsterDrops } from '../game/combatDifficulty'
+import { resolveEntityName } from '../game/entityNames'
 import { memo, useMemo, type ReactNode } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatInteger } from '../game/format'
@@ -83,6 +84,7 @@ const MonsterAbilityTile = memo(function MonsterAbilityTile({
   const t = useT()
   const abilities = useGameStore(state => state.abilities)
   const ability = findAbilityInCatalog(abilities, abilityId)
+  const abilityName = resolveEntityName(t, 'ability', abilityId, ability?.name)
   const iconUrl = resolveItemIconUrl(abilityId)
   const lv = Math.max(1, Math.floor(level ?? 1))
   const ribbonLabel = ability?.element && ability.element !== 'none'
@@ -104,8 +106,8 @@ const MonsterAbilityTile = memo(function MonsterAbilityTile({
         <span aria-hidden="true" className="item-type-ribbon"><span>{ribbonLabel}</span></span>
         <span className="item-corner item-corner--top-right">Lv. {lv}</span>
         {iconUrl
-          ? <img alt={ability?.name ?? abilityId} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
-          : <strong className="item-tile-name">{ability?.name ?? abilityId}</strong>}
+          ? <img alt={abilityName} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+          : <strong className="item-tile-name">{abilityName}</strong>}
         <span aria-hidden="true" className="item-tile-glow" />
       </span>
     </ConditionedTile>

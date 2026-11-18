@@ -11,8 +11,9 @@ import { create } from 'zustand'
 import { zhCN, type Messages } from './locales/zh-CN.ts'
 
 // 构建时只注册实际存在的语言包；模板本身不是可选语言。
-const localeFiles = typeof (import.meta as any).glob === 'function'
-  ? (import.meta as any).glob(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
+// Vite 只转换直接调用；原生 Node 和非 Vite 测试没有 Vite 的 MODE。
+const localeFiles = typeof import.meta.env?.MODE === 'string'
+  ? import.meta.glob<string>(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
   : {}
 /** 全部可选语言标识（zh-CN 内置 + 构建期扫描到的 CSV 语言包文件名） */
 export const LOCALES: readonly string[] = ['zh-CN', ...Object.keys(localeFiles)

@@ -1,4 +1,5 @@
 import { memo, useState } from 'react'
+import { resolveAssetName, resolveEntityName } from '../game/entityNames'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { resolveEquippedTraitViews } from '../game/combatConstants'
 import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
@@ -409,6 +410,7 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
               const iconUrl = resolveItemIconUrl(slot.abilityId)
               const level = Math.max(1, Math.floor(slot.level))
               // 丝带文案与已学功法目录同口径：非无属性优先元素名，否则按功法大类。
+              const abilityName = resolveEntityName(t, 'ability', slot.abilityId, ability?.name)
               const ribbonLabel = ability?.element && ability.element !== 'none'
                 ? t(`combat.encounter.element.${ability.element}`)
                 : formatAbilityCategory(ability?.category)
@@ -434,8 +436,8 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
                     <span aria-hidden="true" className="item-type-ribbon"><span>{ribbonLabel}</span></span>
                     <span className="item-corner item-corner--top-right">Lv. {level}</span>
                     {iconUrl
-                      ? <img alt={ability?.name ?? slot.abilityId} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
-                      : <strong className="item-tile-name">{ability?.name ?? slot.abilityId}</strong>}
+                      ? <img alt={abilityName} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+                      : <strong className="item-tile-name">{abilityName}</strong>}
                     <span aria-hidden="true" className="item-tile-glow" />
                   </span>
                 </ConditionedTile>
@@ -460,7 +462,7 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
                 t,
               })
               const enhancementLevel = Math.max(0, Math.floor(item.enhancementLevel))
-              const baseName = equipmentDef?.name ?? itemDef?.name ?? item.itemId
+              const baseName = resolveAssetName(t, item.itemId, equipmentDef?.name, itemDef?.name)
               const displayName = enhancementLevel > 0 ? `${baseName} +${enhancementLevel}` : baseName
               return (
                 <ItemTooltipTarget
