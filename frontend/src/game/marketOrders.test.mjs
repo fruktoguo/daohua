@@ -21,7 +21,7 @@ test('marketOrders: 订单已成交量推导与明细文案格式化自洽', () 
     .replace('{total}', String(orderPartial.originalQuantity))
     .replace('{remaining}', String(orderPartial.remainingQuantity))
   assert.equal(detailPartial, '已成交 2 / 总数量 10（剩余 8）')
-  assert.equal(dict.partiallyFilledPrefix, '已成 ')
+  assert.equal(dict.partiallyFilledPrefix, '已成')
 
   // 2. 全新挂单：原始 100 件，未成交 100 件，已成交 0 件
   const orderActive = {

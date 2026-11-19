@@ -1,9 +1,12 @@
+import { catalogZh } from './catalog.zh.ts'
+
 /**
  * 游戏数据域词典（zh-CN）：行动、物品、品质、境界体系、触发条件、导航等客户端静态文本。
  * 物品 category 与 rarityLabel 已去重为独立映射，条目内只保留专属文本（label/description/source/usage）。
  */
 export const gameZh = {
   game: {
+    ...catalogZh,
     tab: {
       cultivation: '修炼',
       exploration: '历练',

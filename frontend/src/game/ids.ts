@@ -1,6 +1,6 @@
 import { getT, hasTranslation, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
-import { readableEntityName, resolveAssetName, resolveEntityName } from './entityNames'
+import { isExternalLocaleActive, readableEntityName, resolveAssetName, resolveEntityName } from './entityNames'
 import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
@@ -830,7 +830,9 @@ export function resolveCatalogItemMetadata(
       : grade.label,
     tier: normalizedTier,
     level: effectiveLevel,
-    description: options.description ?? equipmentDefinition?.description ?? itemDefinition?.description ?? registered?.description ?? '',
+    description: isExternalLocaleActive()
+      ? (registered?.description || options.description || equipmentDefinition?.description || itemDefinition?.description || '')
+      : (options.description ?? equipmentDefinition?.description ?? itemDefinition?.description ?? registered?.description ?? ''),
     source: registered?.source ?? '',
     usage: registered?.usage ?? '',
   }

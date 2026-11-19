@@ -8,9 +8,16 @@ import { build } from 'vite'
 const entry = fileURLToPath(new URL('./index.ts', import.meta.url)).replaceAll('\\', '/')
 
 test('原生 Node 可直接导入内置中文词典，不依赖 Vite 转换', async () => {
-  const { LOCALES, getT } = await import('./index.ts')
+  const { LOCALES, getT, parseCsvToMap, resolveLocaleDisplayName } = await import('./index.ts')
   assert.deepEqual(LOCALES, ['zh-CN'])
   assert.equal(getT()('common.confirm'), '确认')
+  assert.equal(resolveLocaleDisplayName('zh-CN'), '简体中文')
+  assert.equal(resolveLocaleDisplayName('en-US'), 'English')
+  assert.equal(resolveLocaleDisplayName('ja-JP'), '日本語')
+  assert.equal(resolveLocaleDisplayName('ko-KR'), '한국어')
+  // 带 UTF-8 BOM 与额外备注列的外部译表：必须准确命中 translation 列而非备注列
+  const parsed = parseCsvToMap('\uFEFFkey,zh_source,translation,notes\ncommon.confirm,确认,Confirm,按钮备注\ncommon.cancel,取消,"",待译\n')
+  assert.deepEqual(parsed, { 'common.confirm': 'Confirm' })
 })
 
 test('Vite 生产编译仅注册实际语言包，首次选择才加载并缓存翻译', async t => {

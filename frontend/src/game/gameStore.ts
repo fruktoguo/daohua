@@ -1,12 +1,33 @@
 import { useRef } from 'react'
 import { create } from 'zustand'
 import { gameClient } from '../network/gameClient'
+import { getT, hasTranslation, useI18nStore } from '../i18n'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
+import { localizeAbilities, localizeActions, localizeBuildings, localizeEncounters, localizeEquipment, localizeItems, localizeMaps } from './catalogLocalization'
 import { mergeBattleReportHistory } from './battleReportStore'
 import { ingestStagedEnhancements } from './enhancementRecordStore'
 import { useUiStore } from '../uiStore'
 import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from './types'
 import { DEFAULT_TRIGGER_SPEC } from './types'
+
+/** 服务端原始目录缓存：语言切换时基于权威原值即时重算本地化视图 */
+const rawCatalogCache: {
+  actions: readonly ActionDefinition[] | null
+  items: readonly ItemDefinition[] | null
+  abilities: readonly CombatAbilityDefinition[] | null
+  encounters: readonly CombatEncounterDefinition[] | null
+  equipment: readonly CombatEquipmentDefinition[] | null
+  maps: readonly WorldMapDefinition[] | null
+  buildings: readonly BuildingDefinition[] | null
+} = {
+  actions: null,
+  items: null,
+  abilities: null,
+  encounters: null,
+  equipment: null,
+  maps: null,
+  buildings: null,
+}
 
 /**
  * 前端与服务端的网络连接生命周期状态：
@@ -370,38 +391,56 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setDisconnectReason: (key) => set({ disconnectReason: key }),
   setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
   setActions: (actions) => {
-    registerCatalogActions(actions)
+    rawCatalogCache.actions = actions
+    const localized = localizeActions(actions, getT())
+    registerCatalogActions(localized)
     set((state) => {
       // 快照可能先于目录到达：此时队列条目的 actionName 只回填了 actionId。
       // 目录就绪后按 actionId 反查定义，补齐显示名与类型；未命中条目原样保留。
       let entriesChanged = false
       const updatedEntries = state.queue.entries.map(entry => {
-        if (!entry.actionName || entry.actionName === entry.actionId) {
-          const def = findActionInCatalog(actions, entry.actionId) ?? resolveActionDefinition(entry.actionId)
-          if (def && (def.name !== entry.actionName || def.type !== entry.type)) {
-            entriesChanged = true
-            return {
-              ...entry,
-              actionName: def.name || entry.actionName,
-              type: def.type || entry.type,
-            }
+        const def = findActionInCatalog(localized, entry.actionId) ?? resolveActionDefinition(entry.actionId)
+        if (def && (!entry.actionName || entry.actionName === entry.actionId || def.name !== entry.actionName || def.type !== entry.type)) {
+          entriesChanged = true
+          return {
+            ...entry,
+            actionName: def.name || entry.actionName,
+            type: def.type || entry.type,
           }
         }
         return entry
       })
 
       return {
-        actions,
+        actions: localized,
         queue: entriesChanged ? { ...state.queue, entries: updatedEntries } : state.queue,
       }
     })
   },
-  setItems: (items) => set({ items }),
-  setAbilities: (abilities) => set({ abilities }),
-  setEncounters: (encounters) => set({ encounters }),
-  setEquipment: (equipment) => set({ equipment }),
-  setMaps: (maps) => set({ maps }),
-  setBuildings: (buildings) => set({ buildings }),
+  setItems: (items) => {
+    rawCatalogCache.items = items
+    set({ items: localizeItems(items, getT()) })
+  },
+  setAbilities: (abilities) => {
+    rawCatalogCache.abilities = abilities
+    set({ abilities: localizeAbilities(abilities, getT()) })
+  },
+  setEncounters: (encounters) => {
+    rawCatalogCache.encounters = encounters
+    set({ encounters: localizeEncounters(encounters, getT()) })
+  },
+  setEquipment: (equipment) => {
+    rawCatalogCache.equipment = equipment
+    set({ equipment: localizeEquipment(equipment, getT()) })
+  },
+  setMaps: (maps) => {
+    rawCatalogCache.maps = maps
+    set({ maps: localizeMaps(maps, getT()) })
+  },
+  setBuildings: (buildings) => {
+    rawCatalogCache.buildings = buildings
+    set({ buildings: localizeBuildings(buildings, getT()) })
+  },
   setTriggerBuffs: (triggerBuffs) => set({ triggerBuffs }),
   setTriggerSpec: (triggerSpec) => set({ triggerSpec }),
   setMarketStats: (marketStats) => set({ marketStats }),
@@ -583,6 +622,46 @@ export const useGameStore = create<GameStore>((set, get) => ({
     marketStats: {},
   }),
 }))
+
+// 语言包切换就绪后自动重算全部已缓存目录与当前队列/地点名，无需刷新页面即可整站切换语言。
+let lastLocalizedLocale = useI18nStore?.getState?.()?.loadedLocale ?? 'zh-CN'
+if (typeof useI18nStore?.subscribe === 'function') {
+  useI18nStore.subscribe(i18nState => {
+    if (i18nState.loadedLocale === lastLocalizedLocale) return
+    lastLocalizedLocale = i18nState.loadedLocale
+    const t = getT()
+    const storeState = useGameStore.getState()
+    const nextActions = rawCatalogCache.actions ? localizeActions(rawCatalogCache.actions, t) : resolveActionDefinitions()
+    if (rawCatalogCache.actions) registerCatalogActions(nextActions)
+
+    const patch: Partial<GameStore> = {
+      actions: nextActions,
+    }
+    if (rawCatalogCache.items) patch.items = localizeItems(rawCatalogCache.items, t)
+    if (rawCatalogCache.abilities) patch.abilities = localizeAbilities(rawCatalogCache.abilities, t)
+    if (rawCatalogCache.encounters) patch.encounters = localizeEncounters(rawCatalogCache.encounters, t)
+    if (rawCatalogCache.equipment) patch.equipment = localizeEquipment(rawCatalogCache.equipment, t)
+    if (rawCatalogCache.maps) patch.maps = localizeMaps(rawCatalogCache.maps, t)
+    if (rawCatalogCache.buildings) patch.buildings = localizeBuildings(rawCatalogCache.buildings, t)
+
+    if (storeState.queue.entries.length > 0) {
+      patch.queue = {
+        ...storeState.queue,
+        entries: storeState.queue.entries.map(entry => {
+          const def = findActionInCatalog(nextActions, entry.actionId) ?? resolveActionDefinition(entry.actionId)
+          return def && def.name ? { ...entry, actionName: def.name } : entry
+        }),
+      }
+    }
+    if (storeState.world.nodeId) {
+      const nodeKey = `game.node.${storeState.world.nodeId}.name`
+      if (hasTranslation(nodeKey)) {
+        patch.world = { ...storeState.world, locationName: t(nodeKey) }
+      }
+    }
+    useGameStore.setState(patch)
+  })
+}
 
 /**
  * 角色形象缺省回退（使用角色首字作为文本头像）

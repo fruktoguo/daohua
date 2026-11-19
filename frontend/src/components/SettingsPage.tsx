@@ -11,7 +11,7 @@ import { findEquipmentInCatalog, findItemInCatalog, resolveCatalogItemMetadata }
 import { redeemGiftCode } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
 import type { RedeemCodeResponseDto, RedeemRewardDto } from '../network/protocol'
-import { LOCALES, useI18nStore, useT } from '../i18n'
+import { LOCALES, resolveLocaleDisplayName, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, normalizePlayerAvatarId, useAvatarStore, type AvatarOption } from '../game/avatarStore'
 import { useThemeStore } from '../game/themeStore'
 import { useUiStore } from '../uiStore'
@@ -454,7 +454,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 <h3 className="settings-group-title">{t('app.settings.languageHeading')}</h3>
                 {localeError && <p role="alert">{localeError}</p>}
                 <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
-                  {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
+                  {LOCALES.map(code => ({ code, label: resolveLocaleDisplayName(code) })).map(loc => (
                     <button
                       key={loc.code}
                       aria-pressed={locale === loc.code}

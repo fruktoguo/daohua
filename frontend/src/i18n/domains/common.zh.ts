@@ -3,6 +3,7 @@
  */
 export const commonZh = {
   common: {
+    localeName: '简体中文',
     confirm: '确认',
     cancel: '取消',
     close: '关闭',

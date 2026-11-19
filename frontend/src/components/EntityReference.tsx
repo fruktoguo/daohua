@@ -5,7 +5,7 @@ import { formatRealmUnlockCondition } from '../game/codexCalculations'
 import { TRAIT_DEFINITIONS } from '../game/combatConstants'
 import { describeAbility, formatNumber, resolveTriggerBuffName } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { resolveEntityName } from '../game/entityNames'
+import { resolveEntityName, resolveLocalizedEntityName } from '../game/entityNames'
 import {
   findAbilityInCatalog,
   findActionInCatalog,
@@ -303,7 +303,7 @@ export const AbilityReference = memo(function AbilityReference({
 }): React.JSX.Element {
   const t = useT()
   const ability = useGameStore(state => findAbilityInCatalog(state.abilities, abilityId))
-  const displayLabel = resolveEntityName(t, 'ability', abilityId, label, ability?.name)
+  const displayLabel = resolveLocalizedEntityName(t, 'ability', abilityId, label, ability?.name)
 
   const renderAsideCards = useCallback(
     () => (ability ? resolveAbilityAsideCards(ability, undefined, 'qi', level) : []),
@@ -355,7 +355,7 @@ export const EnemyReference = memo(function EnemyReference({
   const encounter = kind === 'encounter' ? findEncounterInCatalog(encounters, enemyId) : undefined
   const combatant = findCombatantInCatalog(encounters, maps, enemyId)
   const monster = encounter?.enemy ?? combatant
-  const displayLabel = resolveEntityName(t, 'enemy', enemyId, label, monster?.name, encounter?.name)
+  const displayLabel = resolveLocalizedEntityName(t, 'enemy', enemyId, label, monster?.name, encounter?.name)
   const classes = joinClasses(`log-reference log-reference--${kind}`, className)
 
   if (monster) {
@@ -442,7 +442,7 @@ export const BuildingReference = memo(function BuildingReference({
     () => buildings.find(entry => entry.buildingId === buildingId),
     [buildings, buildingId],
   )
-  const displayLabel = resolveEntityName(t, 'building', buildingId, label, building?.name)
+  const displayLabel = resolveLocalizedEntityName(t, 'building', buildingId, label, building?.name)
 
   if (!building) {
     return (
@@ -600,7 +600,7 @@ export const BuffReference = memo(function BuffReference({
     [abilities, items, actions, buffId, t],
   )
   const fallbackName = resolveTriggerBuffName(buffId)
-  const displayLabel = resolveEntityName(t, 'buff', buffId, label, resolved?.title, fallbackName)
+  const displayLabel = resolveLocalizedEntityName(t, 'buff', buffId, label, resolved?.title, fallbackName)
 
   if (!resolved) {
     return (
@@ -671,7 +671,7 @@ export const ActionReference = memo(function ActionReference({
     () => findActionInCatalog(actions, actionId) ?? resolveActionDefinition(actionId),
     [actions, actionId],
   )
-  const displayLabel = resolveEntityName(t, 'action', actionId, label, action?.name, t(`game.action.${actionId}.name`))
+  const displayLabel = resolveLocalizedEntityName(t, 'action', actionId, label, action?.name, t(`game.action.${actionId}.name`))
 
   if (!action) {
     return (
@@ -779,7 +779,7 @@ export const LocationReference = memo(function LocationReference({
   const t = useT()
   const maps = useGameStore(state => state.maps)
   const found = useMemo(() => findMapNode(maps, locationId), [maps, locationId])
-  const displayLabel = resolveEntityName(t, 'location', locationId, label, found?.node.name)
+  const displayLabel = resolveLocalizedEntityName(t, 'location', locationId, label, found?.node.name)
 
   const handleLocate = useCallback(() => {
     if (!found) return

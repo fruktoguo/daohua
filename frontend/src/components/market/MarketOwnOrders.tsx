@@ -86,7 +86,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                   <span className="market-own-price-main"><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
                   {isPartial && (
                     <span className="market-own-mobile-fill" title={progressDetail}>
-                      {t('market.status.partiallyFilledPrefix')}
+                      {t('market.status.partiallyFilledPrefix')}{' '}
                       <UnitNumber disableTooltip value={order.filledQuantity} />/<UnitNumber disableTooltip value={order.originalQuantity} />
                     </span>
                   )}
@@ -97,7 +97,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                 >
                   {isPartial ? (
                     <>
-                      <span className="market-own-fill-label">{t('market.status.partiallyFilledPrefix')}</span>
+                      <span className="market-own-fill-label">{t('market.status.partiallyFilledPrefix')}</span>{' '}
                       <UnitNumber disableTooltip value={order.filledQuantity} /> / <UnitNumber disableTooltip value={order.originalQuantity} />
                     </>
                   ) : (

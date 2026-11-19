@@ -402,7 +402,7 @@ function renderEntryMetric(
             {stageName} · {minorName}
           </strong>
           <span className="leaderboard-metric-sub">
-            <span>{t('app.leaderboard.realmExpPrefix')}</span>
+            <span>{t('app.leaderboard.realmExpPrefix')}</span>{' '}
             <UnitNumber tone="jade" value={entry.experience ?? 0} />
           </span>
         </>
@@ -415,7 +415,7 @@ function renderEntryMetric(
         <>
           <strong className="leaderboard-metric-primary">Lv.{level}</strong>
           <span className="leaderboard-metric-sub">
-            <UnitNumber suffix={t('app.leaderboard.expSuffix')} value={exp} />
+            <UnitNumber suffix={` ${t('app.leaderboard.expSuffix')}`} value={exp} />
           </span>
         </>
       )
@@ -443,7 +443,7 @@ function renderEntryMetric(
       return (
         <>
           <strong className="leaderboard-metric-primary">
-            <UnitNumber suffix={t('app.leaderboard.spiritStoneUnit')} tone="gold" value={entry.score} />
+            <UnitNumber suffix={` ${t('app.leaderboard.spiritStoneUnit')}`} tone="gold" value={entry.score} />
           </strong>
           <span className="leaderboard-metric-sub">{t('app.leaderboard.spiritStoneSub')}</span>
         </>
@@ -496,7 +496,7 @@ function renderMyRankMetric(
       return (
         <span className="leaderboard-my-score">
           Lv.{myRank.techniqueLevel ?? 0}（
-          <UnitNumber suffix={t('app.leaderboard.expSuffix')} value={myRank.score} />
+          <UnitNumber suffix={` ${t('app.leaderboard.expSuffix')}`} value={myRank.score} />
           ）
         </span>
       )
@@ -504,7 +504,7 @@ function renderMyRankMetric(
     case 'valuation':
       return (
         <span className="leaderboard-my-score">
-          {t('app.leaderboard.myValuationPrefix')}
+          {t('app.leaderboard.myValuationPrefix')}{' '}
           <UnitNumber tone="gold" value={myRank.score} />
         </span>
       )
@@ -512,7 +512,7 @@ function renderMyRankMetric(
     case 'spirit-stone':
       return (
         <span className="leaderboard-my-score">
-          <UnitNumber suffix={t('app.leaderboard.spiritStoneUnit')} tone="gold" value={myRank.score} />
+          <UnitNumber suffix={` ${t('app.leaderboard.spiritStoneUnit')}`} tone="gold" value={myRank.score} />
         </span>
       )
 

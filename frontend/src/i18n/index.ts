@@ -44,25 +44,75 @@ const PARAM_PATTERN = /\{(\w+)\}/g
 const CSV_CACHE: Partial<Record<Locale, Record<string, string>>> = {}
 const LOADING_PROMISES: Partial<Record<Locale, Promise<void>>> = {}
 
+/** 常见语言代码的母语友好显示名（用于设置页在语言包尚未加载时直接展示可读名称） */
+const NATIVE_LOCALE_NAMES: Readonly<Record<string, string>> = {
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  'zh-HK': '繁體中文（香港）',
+  'en-US': 'English',
+  'en-GB': 'English (UK)',
+  en: 'English',
+  'ja-JP': '日本語',
+  ja: '日本語',
+  'ko-KR': '한국어',
+  ko: '한국어',
+  'fr-FR': 'Français',
+  fr: 'Français',
+  'de-DE': 'Deutsch',
+  de: 'Deutsch',
+  'es-ES': 'Español',
+  es: 'Español',
+  'ru-RU': 'Русский',
+  ru: 'Русский',
+  'pt-BR': 'Português (Brasil)',
+  'vi-VN': 'Tiếng Việt',
+  'th-TH': 'ไทย',
+}
+
+/**
+ * 解析语言标识的母语友好显示名：
+ * 1. 若对应语言包已加载且声明了 `common.localeName`，优先使用其自声明名称；
+ * 2. 命中常见语言母语表直接返回（如 `en-US` → `English`、`ja-JP` → `日本語`）；
+ * 3. 未收录代码回退 `Intl.DisplayNames` 自动推导母语名，最终兜底原始代码。
+ */
+export function resolveLocaleDisplayName(locale: Locale): string {
+  if (locale === 'zh-CN') return zhCN.common.localeName
+  const declared = CSV_CACHE[locale]?.['common.localeName']?.trim()
+  if (declared) return declared
+  const mapped = NATIVE_LOCALE_NAMES[locale] ?? NATIVE_LOCALE_NAMES[locale.split('-')[0] ?? '']
+  if (mapped) return mapped
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+      const name = new Intl.DisplayNames([locale], { type: 'language' }).of(locale)
+      if (name && name !== locale) return name
+    }
+  } catch {
+    // 非标准 BCP-47 标识静默回退原始代码
+  }
+  return locale
+}
+
 /**
  * 零依赖轻量 RFC 4180 标准 CSV 解析器
- * 支持引号转义 ("")、跨行换行、逗号与多余空白容错。
+ * 支持 UTF-8 BOM 自动剥离、引号转义 ("")、跨行换行、逗号与多余空白容错；
+ * 当表头包含 `translation` 或 `value` 列时按列名定位译文列，兼容 2 列/3 列及附带备注列的外部译表。
  */
 export function parseCsvToMap(csvText: string): Record<string, string> {
   const result: Record<string, string> = {}
-  const length = csvText.length
+  const normalized = csvText.charCodeAt(0) === 0xfeff ? csvText.slice(1) : csvText
+  const length = normalized.length
   let cursor = 0
 
   function readField(): { value: string; isLastInRecord: boolean; isEof: boolean } {
     if (cursor >= length) return { value: '', isLastInRecord: true, isEof: true }
 
     let field = ''
-    if (csvText[cursor] === '"') {
+    if (normalized[cursor] === '"') {
       let closed = false
       cursor++ // 跳过起始双引号
       while (cursor < length) {
-        if (csvText[cursor] === '"') {
-          if (cursor + 1 < length && csvText[cursor + 1] === '"') {
+        if (normalized[cursor] === '"') {
+          if (cursor + 1 < length && normalized[cursor + 1] === '"') {
             field += '"'
             cursor += 2
           } else {
@@ -71,17 +121,17 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
             break
           }
         } else {
-          field += csvText[cursor]
+          field += normalized[cursor]
           cursor++
         }
       }
       if (!closed) throw new Error('语言包 CSV 引号未闭合。')
-      while (cursor < length && (csvText[cursor] === ' ' || csvText[cursor] === '\t')) {
+      while (cursor < length && (normalized[cursor] === ' ' || normalized[cursor] === '\t')) {
         cursor++
       }
     } else {
-      while (cursor < length && csvText[cursor] !== ',' && csvText[cursor] !== '\r' && csvText[cursor] !== '\n') {
-        field += csvText[cursor]
+      while (cursor < length && normalized[cursor] !== ',' && normalized[cursor] !== '\r' && normalized[cursor] !== '\n') {
+        field += normalized[cursor]
         cursor++
       }
     }
@@ -89,11 +139,11 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
     let isLastInRecord = false
     if (cursor >= length) {
       isLastInRecord = true
-    } else if (csvText[cursor] === ',') {
+    } else if (normalized[cursor] === ',') {
       cursor++
-    } else if (csvText[cursor] === '\r' || csvText[cursor] === '\n') {
+    } else if (normalized[cursor] === '\r' || normalized[cursor] === '\n') {
       isLastInRecord = true
-      if (csvText[cursor] === '\r' && cursor + 1 < length && csvText[cursor + 1] === '\n') {
+      if (normalized[cursor] === '\r' && cursor + 1 < length && normalized[cursor + 1] === '\n') {
         cursor += 2
       } else {
         cursor++
@@ -106,28 +156,34 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
   }
 
   let isHeader = true
+  let valueColumnIndex = -1
   while (cursor < length) {
-    const keyField = readField()
-    if (keyField.isEof && keyField.value.trim() === '') break
+    const first = readField()
+    if (first.isEof && first.value.trim() === '') break
 
-    let valField = { value: '', isLastInRecord: true, isEof: true }
-    if (!keyField.isLastInRecord) {
-      valField = readField()
-    }
-    while (!valField.isLastInRecord && !valField.isEof) {
-      valField = readField()
+    const fields = [first.value]
+    let current = first
+    while (!current.isLastInRecord && !current.isEof) {
+      current = readField()
+      fields.push(current.value)
     }
 
     if (isHeader) {
       isHeader = false
-      if (keyField.value.trim().toLowerCase() === 'key') {
+      const lowerHeaders = fields.map(col => col.trim().toLowerCase())
+      if (lowerHeaders[0] === 'key') {
+        const translationIdx = lowerHeaders.findIndex(h => h === 'translation' || h === 'value')
+        if (translationIdx >= 1) valueColumnIndex = translationIdx
         continue
       }
     }
 
-    const k = keyField.value.trim()
-    if (k && valField.value.trim()) {
-      result[k] = valField.value
+    const k = fields[0].trim()
+    const rawValue = valueColumnIndex >= 0
+      ? (fields[valueColumnIndex] ?? '')
+      : (fields.length > 1 ? fields[fields.length - 1] : '')
+    if (k && rawValue.trim()) {
+      result[k] = rawValue
     }
   }
 

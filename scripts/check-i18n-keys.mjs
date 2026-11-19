@@ -12,7 +12,6 @@ import { join, extname } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
-import { readableEntityName } from '../frontend/src/game/entityNames.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '')
 const FE = join(ROOT, 'frontend')
@@ -38,10 +37,11 @@ function walk(dir, exts, out = []) {
   return out
 }
 
-// 1) 用 esbuild 把中文词典打成一个可直接 require 的模块，避免另写一套 TS 解析。
+// 1) 用 esbuild 把中文词典与实体名校验模块打成可直接 require 的 CJS，兼容 Node 22 全小版本无须额外标志。
 const requireFromFrontend = createRequire(join(FE, 'package.json'))
 const esbuild = requireFromFrontend('esbuild')
 const dictOut = join(tmpdir(), `daohua-i18n-dict-${process.pid}.cjs`)
+const entityNamesOut = join(tmpdir(), `daohua-entity-names-${process.pid}.cjs`)
 esbuild.buildSync({
   entryPoints: [join(FE, 'src/i18n/locales/zh-CN.ts')],
   bundle: true,
@@ -50,7 +50,17 @@ esbuild.buildSync({
   outfile: dictOut,
   logLevel: 'error',
 })
-const zhCN = createRequire(import.meta.url)(dictOut).zhCN
+esbuild.buildSync({
+  entryPoints: [join(FE, 'src/game/entityNames.ts')],
+  bundle: true,
+  format: 'cjs',
+  platform: 'node',
+  outfile: entityNamesOut,
+  logLevel: 'error',
+})
+const localRequire = createRequire(import.meta.url)
+const zhCN = localRequire(dictOut).zhCN
+const { readableEntityName } = localRequire(entityNamesOut)
 
 // 实体 ID 本身可含点号（如 equipment.juling-pendant）；遍历真实树键再扁平化，
 // 不可用 split('.') 反查，否则名称检查会漏过这类词条。
@@ -86,6 +96,13 @@ function requireCatalogName(row, file) {
     failures.push(`${file}：${row.id} 缺少可用于界面和富文本日志的名称`)
   }
 }
+const catalogAbilities = []
+const catalogBuildings = []
+const catalogEncounters = []
+const catalogMonsters = []
+const catalogMaps = []
+const catalogNodes = []
+const catalogNpcs = []
 for (const file of dataFiles) {
   const parsed = JSON.parse(readFileSync(file, 'utf8'))
   if (!Array.isArray(parsed)) continue
@@ -95,10 +112,20 @@ for (const file of dataFiles) {
   if (!namedGroups.has(group)) continue
   for (const row of parsed) {
     requireCatalogName(row, relative)
-    if (group !== 'maps') continue
-    for (const node of row.nodes ?? []) {
-      requireCatalogName(node, relative)
-      for (const npc of node.npcs ?? []) requireCatalogName(npc, relative)
+    if (group === 'abilities') catalogAbilities.push(row)
+    else if (group === 'buildings') catalogBuildings.push(row)
+    else if (group === 'encounters') catalogEncounters.push(row)
+    else if (group === 'monsters') catalogMonsters.push(row)
+    else if (group === 'maps') {
+      catalogMaps.push(row)
+      for (const node of row.nodes ?? []) {
+        requireCatalogName(node, relative)
+        catalogNodes.push(node)
+        for (const npc of node.npcs ?? []) {
+          requireCatalogName(npc, relative)
+          catalogNpcs.push(npc)
+        }
+      }
     }
   }
 }
@@ -242,6 +269,29 @@ for (const id of [...items, ...equipments]) {
   requireKey(`game.item.${id}.description`)
 }
 for (const id of actions) requireName(`game.action.${id}.name`, id)
+for (const row of catalogAbilities) {
+  requireName(`game.ability.${row.id}.name`, row.id)
+  if (typeof row.description === 'string' && row.description.trim()) requireKey(`game.ability.${row.id}.description`)
+}
+for (const row of catalogBuildings) {
+  requireName(`game.building.${row.id}.name`, row.id)
+  if (typeof row.description === 'string' && row.description.trim()) requireKey(`game.building.${row.id}.description`)
+}
+for (const row of catalogEncounters) requireName(`game.encounter.${row.id}.name`, row.id)
+for (const row of catalogMonsters) requireName(`game.monster.${row.id}.name`, row.id)
+for (const row of catalogMaps) {
+  requireName(`game.map.${row.id}.name`, row.id)
+  if (typeof row.description === 'string' && row.description.trim()) requireKey(`game.map.${row.id}.description`)
+}
+for (const row of catalogNodes) {
+  requireName(`game.node.${row.id}.name`, row.id)
+  if (typeof row.description === 'string' && row.description.trim()) requireKey(`game.node.${row.id}.description`)
+}
+for (const row of catalogNpcs) {
+  requireName(`game.npc.${row.id}.name`, row.id)
+  if (typeof row.description === 'string' && row.description.trim()) requireKey(`game.npc.${row.id}.description`)
+  if (typeof row.effect === 'string' && row.effect.trim()) requireKey(`game.npc.${row.id}.effect`)
+}
 for (const [key, label] of dict) {
   if (key.startsWith('common.unknownName.') && !readableEntityName(key, label)) {
     failures.push(`分类兜底 ${key} 缺少有效名称`)
