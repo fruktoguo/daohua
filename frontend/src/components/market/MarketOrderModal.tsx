@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { calculateEquipmentSellPrice, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice, resolveProtectionUnitPrice } from '../../game/ids'
+import { calculateEquipmentSellPrice, getItemReferencePrice, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveEquipmentBaseSellPrice, resolveProtectionUnitPrice } from '../../game/ids'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook, MarketOrder } from '../../game/types'
@@ -133,6 +133,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   const itemsCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const marketStats = useGameStore(state => state.marketStats)
   const vendorPrice = useMemo(() => {
     if (!instrument) return 2
     if (isEquipment) {
@@ -146,13 +147,20 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     return Math.max(2, instrument.sellPrice ?? 2)
   }, [instrument, isEquipment, level, itemsCatalog, equipmentCatalog])
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
+  // 盘口对应侧无档时的默认价基准：市场参考价向下落到 tick 网格（如参考价 9777 落到 9600）；
+  // 无成交记录时 getItemReferencePrice 回退回收价口径，最终仍被 minimumPrice 下限钳位。
+  const referenceDefault = useMemo(() => {
+    if (!instrument) return minimumPrice
+    const ref = getItemReferencePrice(instrument.itemId, level, itemsCatalog, marketStats)
+    return Math.max(minimumPrice, normalizeMarketPrice(ref, vendorPrice, false))
+  }, [instrument, itemsCatalog, level, marketStats, minimumPrice, vendorPrice])
   // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
   // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
   // 快捷入口锁定价（initialPrice）按方向归一化：买入向上取整、卖出向下取整，保证落价能立即撮合对手档。
   const [price, setPrice] = useState<number>(() => {
     const bookDefault = side === 'sell'
-      ? (book?.asks[0]?.price ?? minimumPrice)
-      : (book?.bids[0]?.price ?? minimumPrice)
+      ? (book?.asks[0]?.price ?? referenceDefault)
+      : (book?.bids[0]?.price ?? referenceDefault)
     return Math.max(minimumPrice, normalizeMarketPrice(initialPrice ?? bookDefault, vendorPrice, side === 'buy'))
   })
   const [quantity, setQuantity] = useState(1)
@@ -172,13 +180,13 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       setActiveBook(b)
       if (level !== initialLevelRef.current) {
         const bookDefault = side === 'sell'
-          ? (b.asks[0]?.price ?? minimumPrice)
-          : (b.bids[0]?.price ?? minimumPrice)
+          ? (b.asks[0]?.price ?? referenceDefault)
+          : (b.bids[0]?.price ?? referenceDefault)
         setPrice(Math.max(minimumPrice, normalizeMarketPrice(bookDefault, vendorPrice, side === 'buy')))
       }
     }).catch(() => {})
     return () => { cancelled = true }
-  }, [book, instrument, level, minimumPrice, open, side, vendorPrice])
+  }, [book, instrument, level, minimumPrice, open, referenceDefault, side, vendorPrice])
 
   // 挂单数量会在下方随买卖方向、可售库存与可承受灵石上限统一钳位
   // 强化等级切换导致回收底价变动时，确保当前挂单价格不低于新底价
