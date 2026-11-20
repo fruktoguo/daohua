@@ -1089,7 +1089,7 @@ export class GameClient {
           if (pending?.requestId === envelope.requestId) {
             window.clearTimeout(pending.timer)
             this.pendingPing = undefined
-            useGameStore.getState().setLatencyMs(Math.max(0, performance.now() - pending.sentAt))
+            useGameStore.getState().setLatencyMs(Math.max(0, Math.round(performance.now() - pending.sentAt)))
           }
           const pong = decodeJsonPayload<PongResponse>(envelope)
           if (pong && typeof pong.onlineCount === 'number') {
