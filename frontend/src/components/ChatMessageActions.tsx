@@ -32,7 +32,6 @@ export const ChatMessageActions = memo(function ChatMessageActions({ message, ch
   const t = useT()
   const [open, setOpen] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
   const setLike = (): void => {
     const destination = resolveMessageDestination(message)
     if (!destination) {
@@ -50,6 +49,8 @@ export const ChatMessageActions = memo(function ChatMessageActions({ message, ch
   return (
     <>
       <div
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className={`chat-message-bubble${open ? ' is-open' : ''}`}
         onClick={event => {
           if (!(event.target instanceof Element) || event.target.closest(INTERACTIVE_CONTENT)) return
@@ -57,19 +58,16 @@ export const ChatMessageActions = memo(function ChatMessageActions({ message, ch
           if (selection && !selection.isCollapsed && selection.containsNode(event.currentTarget, true)) return
           setOpen(previous => !previous)
         }}
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget) return
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          setOpen(previous => !previous)
+        }}
         ref={bubbleRef}
+        tabIndex={0}
       >
         <div className="chat-message-text">{children}</div>
-        <button
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          aria-label={t('combat.chat.messageActions')}
-          className="chat-message-actions-trigger"
-          onClick={() => setOpen(previous => !previous)}
-          ref={buttonRef}
-          title={t('combat.chat.messageActions')}
-          type="button"
-        >⋯</button>
       </div>
       {open && (
         <FloatingPopover
@@ -78,7 +76,7 @@ export const ChatMessageActions = memo(function ChatMessageActions({ message, ch
           content={
             <div aria-label={t('combat.chat.messageActions')} className="chat-message-action-list" role="group">
               <button autoFocus onClick={() => run(() => {
-                buttonRef.current?.focus({ preventScroll: true })
+                bubbleRef.current?.focus({ preventScroll: true })
                 void copyTextToClipboard(message.body).then(copied => useGameStore.getState().setNotice(t(copied ? 'combat.chat.messageCopied' : 'combat.chat.messageCopyFailed')))
               })} type="button">{t('combat.chat.messageCopy')}</button>
               <button onClick={() => run(() => repeatChatMessage(message, t))} type="button">{t('combat.chat.messageRepeat')}</button>
@@ -95,6 +93,7 @@ export const ChatMessageActions = memo(function ChatMessageActions({ message, ch
           width={244}
         >{null}</FloatingPopover>
       )}
+      {' '}
       {message.likeCount > 0 && (
         <button
           aria-label={`${t(message.likedByMe ? 'combat.chat.messageUnlike' : 'combat.chat.messageLike')} · ${t('combat.chat.messageLikes', { count: message.likeCount })}`}

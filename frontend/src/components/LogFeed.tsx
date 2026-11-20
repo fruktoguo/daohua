@@ -220,7 +220,8 @@ const ChatRow = memo(function ChatRow({
           {message.partyLink && <PartyLinkCard link={message.partyLink} />}
         </ChatMessageActions>
         {repeatCount && repeatCount >= 2 && (
-          <div className="chat-repeat-row">
+          <>
+            {' '}
             <button
               aria-label={t('combat.chat.repeatPlusOne')}
               className="chat-repeat-btn"
@@ -230,7 +231,7 @@ const ChatRow = memo(function ChatRow({
             >
               <span className="chat-repeat-badge">+1</span>
             </button>
-          </div>
+          </>
         )}
       </div>
     </li>

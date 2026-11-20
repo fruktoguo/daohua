@@ -2452,21 +2452,13 @@ input[type="checkbox"] {
   user-select: text;
 }
 
-.chat-message-actions-trigger, .chat-message-like, .chat-message-action-list button {
+.chat-message-like, .chat-message-action-list button {
   color: var(--text-dim);
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
 }
 
-.chat-message-actions-trigger {
-  flex: 0 0 auto;
-  margin-inline-start: 3px;
-  padding: 0 5px;
-  align-self: center;
-}
-
-.chat-message-actions-trigger:is(:hover, :focus-visible),
 .chat-message-action-list button:is(:hover, :focus-visible, [aria-pressed="true"]),
 .chat-message-like:is(:hover, :focus-visible, [aria-pressed="true"]) {
   color: var(--gold-bright);
@@ -2492,11 +2484,12 @@ input[type="checkbox"] {
 }
 
 .chat-message-like {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   padding: 0 6px;
-  margin: 3px 0;
   border-color: var(--gold-faint);
   font-variant-numeric: tabular-nums;
+  vertical-align: middle;
 }
 
 .chat-quote {
@@ -3002,17 +2995,12 @@ input[type="checkbox"] {
 }
 
 /* 传音连续消息复读机 +1 胶囊 */
-.chat-repeat-row {
-  display: flex;
-  align-items: center;
-  margin-top: 4px;
-}
-
 .chat-repeat-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 1px 8px;
+  vertical-align: middle;
   border: 1px solid var(--gold-faint);
   border-radius: 10px;
   background: rgba(201, 180, 109, 0.08);
@@ -8389,11 +8377,6 @@ input[type="checkbox"] {
 
   .main-content > .panel {
     min-height: 100%;
-  }
-
-  .chat-message-actions-trigger {
-    min-width: 28px;
-    min-height: 28px;
   }
 
   .chat-message-action-list button {
