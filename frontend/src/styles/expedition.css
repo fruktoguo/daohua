@@ -50,6 +50,7 @@
 }
 
 .expedition-content--duel {
+  flex-direction: column;
   margin-right: -12px;
   margin-left: -12px;
   overflow: hidden;
@@ -1719,6 +1720,7 @@
 .expedition-duel {
   display: grid;
   width: 100%;
+  flex: 1 1 0;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -5396,15 +5398,63 @@
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(255, 249, 249, 0.95));
 }
 
+/* 手机端效率条容器：桌面端隐藏，仅在窄屏下紧贴战场上方单行展示 */
+.combat-mobile-rate-strip {
+  display: none;
+}
+
 @media (max-width: 640px) {
-  .combat-detail-header-actions {
-    width: 100%;
-    justify-content: space-between;
-    margin-left: 0;
+  .combat-detail-panel-header {
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-top: 2px;
+    padding-bottom: 8px;
   }
 
-  .combat-header-rate-pill {
+  .combat-detail-panel-header h2 {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .combat-detail-header-actions {
+    flex: 0 0 auto;
+    width: auto;
+    flex-wrap: nowrap;
+    margin-left: auto;
+  }
+
+  .combat-detail-header-actions .combat-header-rate-bar {
+    display: none;
+  }
+
+  .combat-mobile-rate-strip {
+    display: block;
+    flex: 0 0 auto;
+    padding: 0 12px 6px;
+  }
+
+  .combat-mobile-rate-strip:empty {
+    display: none;
+  }
+
+  .combat-mobile-rate-strip .combat-header-rate-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .combat-mobile-rate-strip .combat-header-rate-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .combat-mobile-rate-strip .combat-header-rate-pill {
+    flex: 0 0 auto;
     padding: 2px 7px;
+    font-size: 11px;
   }
 }
 
@@ -5501,17 +5551,5 @@
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-  }
-}
-
-/* 窄竖屏效率条折行时，保持全屏按钮留在「详情」标题第一行最右侧 */
-@media (max-width: 640px) and (orientation: portrait) {
-  .combat-detail-expand-btn {
-    order: 1;
-    margin-left: auto;
-  }
-
-  .combat-detail-header-actions {
-    order: 2;
   }
 }

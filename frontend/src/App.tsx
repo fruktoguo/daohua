@@ -2817,6 +2817,9 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
         </button>
       </header>
       <div className="expedition-content expedition-content--duel">
+        <div className="combat-mobile-rate-strip">
+          <CombatHeaderRateBar hidden={hidden} />
+        </div>
         <div className="expedition-duel">
           {hasBeenVisible && (
             <Suspense fallback={<PanelLoading label={t('app.nav.combat')} />}>
