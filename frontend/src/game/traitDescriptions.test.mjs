@@ -43,14 +43,14 @@ test('特质描述：Lv.1 返回原始出厂描述', () => {
 })
 
 test('特质描述：纯正向特质升级按 5%/级线性成长', () => {
-  // 天生蛮力 (Q1)：物理攻击提升 10% -> Lv.2 10.5% -> Lv.3 11%
+  // 天生蛮力 (Q1)：物理攻击提升 5% -> Lv.2 5.3% -> Lv.3 5.5%
   assert.equal(
     formatTraitDescription('trait.tianshengmanli', 2),
-    '骨壮筋强撼岳峦。物理攻击提升 10.5%'
+    '骨壮筋强撼岳峦。物理攻击提升 5.3%'
   )
   assert.equal(
     formatTraitDescription('trait.tianshengmanli', 3),
-    '骨壮筋强撼岳峦。物理攻击提升 11%'
+    '骨壮筋强撼岳峦。物理攻击提升 5.5%'
   )
 })
 
@@ -68,45 +68,45 @@ test('特质描述：机制特质升级时长与嘲讽转化提升', () => {
 })
 
 test('特质描述：双刃剑特质升级时正向增益提升，负面惩罚锁定不变', () => {
-  // 1. 万剑归一：物攻/暴击/破招提升，最大生命降低 30% 锁定，受到全伤害增加 25% 锁定
+  // 1. 万剑归一：物攻/暴击/破招提升，最大生命降低 25% 锁定，受到全伤害增加 15% 锁定
   const wj1 = formatTraitDescription('trait.wanjianguiyi', 1)
   const wj2 = formatTraitDescription('trait.wanjianguiyi', 2)
   const wj10 = formatTraitDescription('trait.wanjianguiyi', 10)
-  assert.equal(wj1, '绝意一剑无死生。物理攻击提升 65%、暴击提升 30%、破招提升 25%、最大生命降低 30%、受到全伤害增加 25%')
-  assert.equal(wj2, '绝意一剑无死生。物理攻击提升 68.3%、暴击提升 31.5%、破招提升 26.3%、最大生命降低 30%、受到全伤害增加 25%')
-  assert.equal(wj10, '绝意一剑无死生。物理攻击提升 94.3%、暴击提升 43.5%、破招提升 36.3%、最大生命降低 30%、受到全伤害增加 25%')
+  assert.equal(wj1, '绝意一剑无死生。物理攻击提升 60%、暴击提升 50%、破招提升 45%、最大生命降低 25%、受到全伤害增加 15%')
+  assert.equal(wj2, '绝意一剑无死生。物理攻击提升 63%、暴击提升 52.5%、破招提升 47.3%、最大生命降低 25%、受到全伤害增加 15%')
+  assert.equal(wj10, '绝意一剑无死生。物理攻击提升 87%、暴击提升 72.5%、破招提升 65.3%、最大生命降低 25%、受到全伤害增加 15%')
 
-  // 2. 不动明王：双抗/生命提升，全伤害降低 45% 锁定
+  // 2. 不动明王：双抗/生命提升，全伤害降低 30% 锁定
   const bd2 = formatTraitDescription('trait.budongmingwang', 2)
-  assert.equal(bd2, '明王镇世不动尊。双抗各提升 84%、最大生命提升 52.5%、全伤害降低 45%')
+  assert.equal(bd2, '明王镇世不动尊。双抗各提升 115.5%、最大生命提升 89.3%、全伤害降低 30%')
 
-  // 3. 药毒同源：回复/生命提升，全伤害降低 35% 锁定
+  // 3. 药毒同源：回复/生命提升，全伤害降低 25% 锁定
   const yd2 = formatTraitDescription('trait.yaodutongyuan', 2)
-  assert.equal(yd2, '药毒归一逆生死。生命与灵力自动回复各提升 105%、最大生命提升 42%、全伤害降低 35%')
+  assert.equal(yd2, '药毒归一逆生死。生命与灵力自动回复各提升 168%、最大生命提升 78.8%、全伤害降低 25%')
 
-  // 4. 九幽噬灵：术攻/灵力/暴击提升，护甲降低 35%、闪避降低 30% 锁定
+  // 4. 九幽噬灵：术攻/灵力/暴击提升，护甲降低 30%、闪避降低 25% 锁定
   const jy2 = formatTraitDescription('trait.jiuyoushiling', 2)
-  assert.equal(jy2, '九幽吞噬逆天穹。术法攻击提升 68.3%、最大灵力提升 52.5%、暴击提升 21%、护甲降低 35%、闪避降低 30%')
+  assert.equal(jy2, '九幽吞噬逆天穹。术法攻击提升 63%、最大灵力提升 78.8%、暴击提升 42%、护甲降低 30%、闪避降低 25%')
 
-  // 5. 天煞狂骨：双攻/暴击提升，回复降低 60%、免爆降低 35% 锁定
+  // 5. 天煞狂骨：双攻/暴击提升，回复降低 50%、免爆降低 25% 锁定
   const ts2 = formatTraitDescription('trait.tianshekuanggu', 2)
-  assert.equal(ts2, '天煞孤星命入骨。双攻各提升 52.5%、暴击提升 42%、生命自动回复降低 60%、免爆降低 35%')
+  assert.equal(ts2, '天煞孤星命入骨。双攻各提升 47.3%、暴击提升 63%、生命自动回复降低 50%、免爆降低 25%')
 
   // 6. 厚土坤舆身：双抗/生命提升，全伤害降低 15% 锁定
   const ht2 = formatTraitDescription('trait.houtukunyushen', 2)
-  assert.equal(ht2, '坤舆厚德载千钧。双抗各提升 47.3%、最大生命提升 36.8%、全伤害降低 15%')
+  assert.equal(ht2, '坤舆厚德载千钧。双抗各提升 73.5%、最大生命提升 57.8%、全伤害降低 15%')
 
   // 7. 烈阳狂战骨：物攻/暴击破招提升，最大生命降低 15% 锁定
   const ly2 = formatTraitDescription('trait.lieyangkuangzhangu', 2)
-  assert.equal(ly2, '烈阳燃尽生与死。物理攻击提升 47.3%、暴击与破招各提升 21%、最大生命降低 15%')
+  assert.equal(ly2, '烈阳燃尽生与死。物理攻击提升 44.6%、暴击与破招各提升 36.8%、最大生命降低 15%')
 
   // 8. 冥海噬魂体：术攻/灵力/暴击提升，护甲降低 20% 锁定
   const mh2 = formatTraitDescription('trait.minghaishihunti', 2)
-  assert.equal(mh2, '冥海无涯纳万川。术法攻击提升 47.3%、最大灵力提升 36.8%、暴击提升 15.8%、护甲降低 20%')
+  assert.equal(mh2, '冥海无涯纳万川。术法攻击提升 44.6%、最大灵力提升 52.5%、暴击提升 31.5%、护甲降低 20%')
 
-  // 9. 枯荣长青诀：回复/生命提升，全伤害降低 20% 锁定
+  // 9. 枯荣长青诀：回复/生命提升，全伤害降低 15% 锁定
   const kr2 = formatTraitDescription('trait.kurongchangqingjue', 2)
-  assert.equal(kr2, '一枯一荣皆生机。生命与灵力自动回复各提升 63%、最大生命提升 26.3%、全伤害降低 20%')
+  assert.equal(kr2, '一枯一荣皆生机。生命与灵力自动回复各提升 115.5%、最大生命提升 52.5%、全伤害降低 15%')
 })
 
 
@@ -122,8 +122,8 @@ test('机制特质：等级成长只提升收益，固定惩罚与持续时间�
   assert.equal(TRAIT_DEFINITIONS['trait.ranhun'].cost, 16)
   assert.equal(TRAIT_DEFINITIONS['trait.jianyuxin'].quality, 5)
   assert.equal(TRAIT_DEFINITIONS['trait.jianyuxin'].cost, 12)
-  assert.match(formatTraitDescription('trait.jianyuxin', 1), /物理与术法攻击各提升 10%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取/)
-  assert.match(formatTraitDescription('trait.jianyuxin', 3), /物理与术法攻击各提升 11%；拥有「移形」时/)
+  assert.match(formatTraitDescription('trait.jianyuxin', 1), /物理与术法攻击各提升 5%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取/)
+  assert.match(formatTraitDescription('trait.jianyuxin', 3), /物理与术法攻击各提升 5.5%；拥有「移形」时/)
   assert.equal(TRAIT_DEFINITIONS['trait.huoshen'].quality, 5)
   assert.equal(TRAIT_DEFINITIONS['trait.huoshen'].cost, 12)
   assert.match(formatTraitDescription('trait.huoshen', 1), /火属性增伤提升 10%/)

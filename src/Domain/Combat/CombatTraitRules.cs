@@ -243,13 +243,14 @@ public static class CombatTraitRules
         var dict = new Dictionary<string, TraitDefinition>(StringComparer.Ordinal);
         void Add(TraitDefinition trait) => dict[trait.Id] = trait;
 
+        // 表内物攻与术攻为品阶配平后减半的实际值，其余属性保留配平值。
         // ==================== Q1 凡品 (白) · 消耗 2 点 ====================
         Add(new("trait.tianshengmanli", "天生蛮力", 1, 2,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.10 },
-            Description: "骨壮筋强撼岳峦。物理攻击提升 10%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.05 },
+            Description: "骨壮筋强撼岳峦。物理攻击提升 5%。"));
         Add(new("trait.qiganchongying", "气感充盈", 1, 2,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.10 },
-            Description: "灵机微动感清微。术法攻击提升 10%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.05 },
+            Description: "灵机微动感清微。术法攻击提升 5%。"));
         Add(new("trait.jinqiangguijan", "筋强骨健", 1, 2,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.12 },
             Description: "气血充盈根基厚。最大生命提升 12%。"));
@@ -268,79 +269,79 @@ public static class CombatTraitRules
 
         // ==================== Q2 黄品 (绿) · 消耗 5 点 ====================
         Add(new("trait.tianshengjiangu", "天生剑骨", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.20, ["criticalChance"] = 0.10 },
-            Description: "骨若青锋藏绝壁。物理攻击提升 20%、暴击提升 10%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.125, ["criticalChance"] = 0.15 },
+            Description: "骨若青锋藏绝壁。物理攻击提升 12.5%、暴击提升 15%。"));
         Add(new("trait.xuanyinlingqiao", "玄阴灵窍", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.20, ["maxManapoints"] = 0.15 },
-            Description: "窍引玄阴涵浩渺。术法攻击提升 20%、最大灵力提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.125, ["maxManapoints"] = 0.20 },
+            Description: "窍引玄阴涵浩渺。术法攻击提升 12.5%、最大灵力提升 20%。"));
         Add(new("trait.tongjiaotiezhu", "铜浇铁铸", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.20, ["physicalArmor"] = 0.20 },
-            Description: "身铸精铜百劫牢。最大生命与物理护甲各提升 20%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.22, ["physicalArmor"] = 0.22 },
+            Description: "身铸精铜百劫牢。最大生命与物理护甲各提升 22%。"));
         Add(new("trait.daoxinanhe", "道心安和", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellResistance"] = 0.20, ["criticalAvoidance"] = 0.15 },
-            Description: "心沉似水不惊澜。法术抗性提升 20%、免爆提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellResistance"] = 0.22, ["criticalAvoidance"] = 0.20 },
+            Description: "心沉似水不惊澜。法术抗性提升 22%、免爆提升 20%。"));
         Add(new("trait.fengxingbu", "风行步", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.18, ["parry"] = 0.15 },
-            Description: "身化游风捕不捉。闪避提升 18%、拆招提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.25, ["parry"] = 0.20 },
+            Description: "身化游风捕不捉。闪避提升 25%、拆招提升 20%。"));
         Add(new("trait.ningshenfayan", "凝神法眼", 2, 5,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["accuracy"] = 0.18, ["break"] = 0.15 },
-            Description: "慧眼如炬破微芒。命中提升 18%、破招提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["accuracy"] = 0.25, ["break"] = 0.20 },
+            Description: "慧眼如炬破微芒。命中提升 25%、破招提升 20%。"));
         Add(new("trait.tunamianchang", "吐纳绵长", 2, 5,
             StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["hitpointRegen"] = 0.30, ["manapointRegen"] = 0.30 },
             Description: "呼吸绵绵归造化。生命与灵力自动回复各提升 30%。"));
 
         // ==================== Q3 玄品 (蓝) · 消耗 10 点 ====================
         Add(new("trait.chunyangzhenmai", "纯阳真脉", 3, 10,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.35, ["break"] = 0.20 },
-            Description: "纯阳炽烈焚百邪。物理攻击提升 35%、破招提升 20%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.275, ["break"] = 0.30 },
+            Description: "纯阳炽烈焚百邪。物理攻击提升 27.5%、破招提升 30%。"));
         Add(new("trait.taiyinfahun", "太阴法魂", 3, 10,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.35, ["criticalChance"] = 0.15 },
-            Description: "寒月凝魂照太虚。术法攻击提升 35%、暴击提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.275, ["criticalChance"] = 0.30 },
+            Description: "寒月凝魂照太虚。术法攻击提升 27.5%、暴击提升 30%。"));
         Add(new("trait.panshijingang", "磐石金刚", 3, 10,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.30, ["physicalArmor"] = 0.30, ["spellResistance"] = 0.25 },
-            Description: "擎天巨岳立玄黄。最大生命提升 30%、物理护甲提升 30%、法抗提升 25%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.40, ["physicalArmor"] = 0.40, ["spellResistance"] = 0.35 },
+            Description: "擎天巨岳立玄黄。最大生命提升 40%、物理护甲提升 40%、法抗提升 35%。"));
         Add(new("trait.taxuewuying", "踏雪无影", 3, 10,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.30, ["parry"] = 0.20, ["accuracy"] = 0.15 },
-            Description: "踏雪无痕踏月行。闪避提升 30%、拆招提升 20%、命中提升 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["evasion"] = 0.45, ["parry"] = 0.35, ["accuracy"] = 0.25 },
+            Description: "踏雪无痕踏月行。闪避提升 45%、拆招提升 35%、命中提升 25%。"));
         Add(new("trait.shengjiyongdong", "生机涌动", 3, 10,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.25, ["hitpointRegen"] = 0.50, ["manapointRegen"] = 0.50 },
-            Description: "春风化雨润灵根。最大生命提升 25%、生命与灵力自动回复各提升 50%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["maxHitpoints"] = 0.35, ["hitpointRegen"] = 0.65, ["manapointRegen"] = 0.65 },
+            Description: "春风化雨润灵根。最大生命提升 35%、生命与灵力自动回复各提升 65%。"));
 
         // ==================== Q4 地品 (紫) · 消耗 15 点 ====================
         Add(new("trait.houtukunyushen", "厚土坤舆身", 4, 15,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalArmor"] = 0.45, ["spellResistance"] = 0.45, ["maxHitpoints"] = 0.35 },
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalArmor"] = 0.70, ["spellResistance"] = 0.70, ["maxHitpoints"] = 0.55 },
             Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -15 },
-            Description: "坤舆厚德载千钧。双抗各提升 45%、最大生命提升 35%、全伤害降低 15%。"));
+            Description: "坤舆厚德载千钧。双抗各提升 70%、最大生命提升 55%、全伤害降低 15%。"));
         Add(new("trait.lieyangkuangzhangu", "烈阳狂战骨", 4, 15,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.45, ["criticalChance"] = 0.20, ["break"] = 0.20, ["maxHitpoints"] = -0.15 },
-            Description: "烈阳燃尽生与死。物理攻击提升 45%、暴击与破招各提升 20%、最大生命降低 15%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.425, ["criticalChance"] = 0.35, ["break"] = 0.35, ["maxHitpoints"] = -0.15 },
+            Description: "烈阳燃尽生与死。物理攻击提升 42.5%、暴击与破招各提升 35%、最大生命降低 15%。"));
         Add(new("trait.minghaishihunti", "冥海噬魂体", 4, 15,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.45, ["maxManapoints"] = 0.35, ["criticalChance"] = 0.15, ["physicalArmor"] = -0.20 },
-            Description: "冥海无涯纳万川。术法攻击提升 45%、最大灵力提升 35%、暴击提升 15%、护甲降低 20%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.425, ["maxManapoints"] = 0.50, ["criticalChance"] = 0.30, ["physicalArmor"] = -0.20 },
+            Description: "冥海无涯纳万川。术法攻击提升 42.5%、最大灵力提升 50%、暴击提升 30%、护甲降低 20%。"));
         Add(new("trait.kurongchangqingjue", "枯荣长青诀", 4, 15,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["hitpointRegen"] = 0.60, ["manapointRegen"] = 0.60, ["maxHitpoints"] = 0.25 },
-            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -20 },
-            Description: "一枯一荣皆生机。生命与灵力自动回复各提升 60%、最大生命提升 25%、全伤害降低 20%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["hitpointRegen"] = 1.10, ["manapointRegen"] = 1.10, ["maxHitpoints"] = 0.50 },
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -15 },
+            Description: "一枯一荣皆生机。生命与灵力自动回复各提升 110%、最大生命提升 50%、全伤害降低 15%。"));
 
         // ==================== Q5 天品 (金) · 消耗 20 点 ====================
         Add(new("trait.yaodutongyuan", "药毒同源", 5, 20,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["hitpointRegen"] = 1.00, ["manapointRegen"] = 1.00, ["maxHitpoints"] = 0.40 },
-            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -35 },
-            Description: "药毒归一逆生死。生命与灵力自动回复各提升 100%、最大生命提升 40%、全伤害降低 35%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["hitpointRegen"] = 1.60, ["manapointRegen"] = 1.60, ["maxHitpoints"] = 0.75 },
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -25 },
+            Description: "药毒归一逆生死。生命与灵力自动回复各提升 160%、最大生命提升 75%、全伤害降低 25%。"));
         Add(new("trait.wanjianguiyi", "万剑归一", 5, 20,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.65, ["criticalChance"] = 0.30, ["break"] = 0.25, ["maxHitpoints"] = -0.30 },
-            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalDamageReductionPoints"] = -25, ["spellDamageReductionPoints"] = -25 },
-            Description: "绝意一剑无死生。物理攻击提升 65%、暴击提升 30%、破招提升 25%、最大生命降低 30%、受到全伤害增加 25%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.6, ["criticalChance"] = 0.50, ["break"] = 0.45, ["maxHitpoints"] = -0.25 },
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalDamageReductionPoints"] = -15, ["spellDamageReductionPoints"] = -15 },
+            Description: "绝意一剑无死生。物理攻击提升 60%、暴击提升 50%、破招提升 45%、最大生命降低 25%、受到全伤害增加 15%。"));
         Add(new("trait.jiuyoushiling", "九幽噬灵", 5, 20,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.65, ["maxManapoints"] = 0.50, ["criticalChance"] = 0.20, ["physicalArmor"] = -0.35, ["evasion"] = -0.30 },
-            Description: "九幽吞噬逆天穹。术法攻击提升 65%、最大灵力提升 50%、暴击提升 20%、护甲降低 35%、闪避降低 30%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["spellAttack"] = 0.6, ["maxManapoints"] = 0.75, ["criticalChance"] = 0.40, ["physicalArmor"] = -0.30, ["evasion"] = -0.25 },
+            Description: "九幽吞噬逆天穹。术法攻击提升 60%、最大灵力提升 75%、暴击提升 40%、护甲降低 30%、闪避降低 25%。"));
         Add(new("trait.budongmingwang", "不动明王", 5, 20,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalArmor"] = 0.80, ["spellResistance"] = 0.80, ["maxHitpoints"] = 0.50 },
-            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -45 },
-            Description: "明王镇世不动尊。双抗各提升 80%、最大生命提升 50%、全伤害降低 45%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalArmor"] = 1.10, ["spellResistance"] = 1.10, ["maxHitpoints"] = 0.85 },
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["totalDamageBonusPoints"] = -30 },
+            Description: "明王镇世不动尊。双抗各提升 110%、最大生命提升 85%、全伤害降低 30%。"));
         Add(new("trait.tianshekuanggu", "天煞狂骨", 5, 20,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.50, ["spellAttack"] = 0.50, ["criticalChance"] = 0.40, ["hitpointRegen"] = -0.60, ["criticalAvoidance"] = -0.35 },
-            Description: "天煞孤星命入骨。双攻各提升 50%、暴击提升 40%、生命自动回复降低 60%、免爆降低 35%。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.45, ["spellAttack"] = 0.45, ["criticalChance"] = 0.60, ["hitpointRegen"] = -0.50, ["criticalAvoidance"] = -0.25 },
+            Description: "天煞孤星命入骨。双攻各提升 45%、暴击提升 60%、生命自动回复降低 50%、免爆降低 25%。"));
 
         // ==================== 机制特质 · 单项消耗 ====================
         Add(new(UnseenTraitId, "看不到我", 3, 8,
@@ -355,8 +356,8 @@ public static class CombatTraitRules
         Add(new(XuyiTraitId, "蓄意", 6, 25, Description: "受到的实际伤害积为蓄意层数；命中攻击时，若层数超过最大生命值，消耗全部层数对所有敌人造成等量威力伤害，主目标为真实伤害，其余为物理伤害。"));
         Add(new(RanhunTraitId, "燃魂", 5, 16, Description: "直接火伤按实际伤害的 2% 施加燃烧，向下取整且至少 1 层；每层每秒造成 1 点火属性术法威力伤害，持续 5 秒，叠层并刷新持续时间。"));
         Add(new(JianyuxinTraitId, "剑与心", 5, 12,
-            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.10, ["spellAttack"] = 0.10 },
-            Description: "剑随意动，心御其锋。物理与术法攻击各提升 10%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取。"));
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["physicalAttack"] = 0.05, ["spellAttack"] = 0.05 },
+            Description: "剑随意动，心御其锋。物理与术法攻击各提升 5%；拥有「移形」时，伤害型技能的主要目标无视仇恨随机选取。"));
         Add(new(HuoshenTraitId, "火神", 5, 12,
             Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["fireDamageBonusPoints"] = 10 },
             Description: "火焰尊主，万法归炎。自身所有伤害转为火属性（保留物理、术法与真实伤害类别），火属性增伤提升 10%。"));

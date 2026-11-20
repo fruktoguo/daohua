@@ -37,8 +37,8 @@ public sealed class CombatMechanicTraitTests
         var ratiosLv1 = new Dictionary<string, double>();
         var pointsLv1 = new Dictionary<string, double>();
         CombatTraitRules.AccumulateModifiers([CombatTraitRules.JianyuxinTraitId], ratiosLv1, pointsLv1);
-        Assert.Equal(0.10, ratiosLv1["physicalAttack"], 12);
-        Assert.Equal(0.10, ratiosLv1["spellAttack"], 12);
+        Assert.Equal(0.05, ratiosLv1["physicalAttack"], 12);
+        Assert.Equal(0.05, ratiosLv1["spellAttack"], 12);
 
         var ratiosLv3 = new Dictionary<string, double>();
         var pointsLv3 = new Dictionary<string, double>();
@@ -47,8 +47,8 @@ public sealed class CombatMechanicTraitTests
             new Dictionary<string, int> { [CombatTraitRules.JianyuxinTraitId] = 3 },
             ratiosLv3,
             pointsLv3);
-        Assert.Equal(0.11, ratiosLv3["physicalAttack"], 12);
-        Assert.Equal(0.11, ratiosLv3["spellAttack"], 12);
+        Assert.Equal(0.055, ratiosLv3["physicalAttack"], 12);
+        Assert.Equal(0.055, ratiosLv3["spellAttack"], 12);
     }
 
     [Fact]
