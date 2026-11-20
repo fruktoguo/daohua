@@ -544,7 +544,9 @@ public sealed class EnhancementContractTests
     public async Task SecretArtLiquefy_ViaActionEnqueue_UsesTripleSystemRecyclePrice()
     {
         var playerId = Guid.NewGuid();
-        var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
+        // 必须带上 expected-attributes.json：realmProgression 缺失时技艺等级恒为 0，
+        // 化灵成功率退化为 95% 而非本用例假设的 100%，判定种子又取随机 requestId，会造成 ~5%/轮 flaky。
+        var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json", "expected-attributes.json");
         var clock = new ManualClock(DateTimeOffset.UnixEpoch);
         var assets = new MutableAssets(playerId,
             ("item.beast-hide", string.Empty, 2),

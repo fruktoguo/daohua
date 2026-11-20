@@ -87,46 +87,65 @@ public sealed class HeavenGateCommandTests
     [Fact]
     public async Task AllocateMustStayWithinPointPoolAndDoesNotTakeEffectBeforeEntering()
     {
-        var playerId = Guid.NewGuid();
-        await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
-        await runtime.LoadAsync(playerId);
-        var rolled = await Execute(runtime, playerId, new { action = "roll" });
-        var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-
-        // 合法分配：散功轴选点数最大的系，散功后保留 1 点——roll 点数全部集中在单一系时
-        // 把该系散到 0 会触发「未保留有效灵根」拒绝，那是分配额度的正确行为而非本测试场景。
-        var drainedAxis = new[] { LinggenElement.Metal, LinggenElement.Wood, LinggenElement.Water, LinggenElement.Fire, LinggenElement.Earth }
-            .OrderByDescending(rolledValues.Of)
-            .First();
-        var redistribution = rolledValues.With(drainedAxis, Math.Min(1, rolledValues.Of(drainedAxis)));
-
-        // 透支：把全部五系都拉到 100，远超可分配点数，必须在写入前整体拒绝。
+        // 透支候选五系全满 100：仅当抽取恰好五系全 100（总值 500 极端 roll）时该候选反而合法，
+        // 辅助方法循环换随机种子直至抽取分布保证透支必拒（边界概率极低，通常首次即命中）。
         var overdrawn = new LinggenValues(
             LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
             LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
             LinggenValues.MaxPointsPerElement);
-        var illegal = await Execute(runtime, playerId, new
+        var (playerId, runtime, rolledValues) = await RollUntilOverdrawRejectedAsync(overdrawn);
+        await using (runtime)
         {
-            action = "allocate",
-            metal = overdrawn.Metal, wood = overdrawn.Wood, water = overdrawn.Water,
-            fire = overdrawn.Fire, earth = overdrawn.Earth
-        });
-        Assert.False(illegal.Success);
-        Assert.Equal("INVALID_ALLOCATION", illegal.Code);
+            // 合法分配：散功轴选点数最大的系，散功后保留 1 点——roll 点数全部集中在单一系时
+            // 把该系散到 0 会触发「未保留有效灵根」拒绝，那是分配额度的正确行为而非本测试场景。
+            var drainedAxis = new[] { LinggenElement.Metal, LinggenElement.Wood, LinggenElement.Water, LinggenElement.Fire, LinggenElement.Earth }
+                .OrderByDescending(rolledValues.Of)
+                .First();
+            var redistribution = rolledValues.With(drainedAxis, Math.Min(1, rolledValues.Of(drainedAxis)));
 
-        var legal = await Execute(runtime, playerId, new
+            var illegal = await Execute(runtime, playerId, new
+            {
+                action = "allocate",
+                metal = overdrawn.Metal, wood = overdrawn.Wood, water = overdrawn.Water,
+                fire = overdrawn.Fire, earth = overdrawn.Earth
+            });
+            Assert.False(illegal.Success);
+            Assert.Equal("INVALID_ALLOCATION", illegal.Code);
+
+            var legal = await Execute(runtime, playerId, new
+            {
+                action = "allocate",
+                metal = redistribution.Metal, wood = redistribution.Wood, water = redistribution.Water,
+                fire = redistribution.Fire, earth = redistribution.Earth
+            });
+            Assert.True(legal.Success, $"{legal.Code}: {legal.Message}");
+            var gate = legal.Snapshot.State.Progression;
+            Assert.Equal(redistribution, gate.HeavenGateConfirmed);
+            Assert.Equal(rolledValues, gate.HeavenGateRolled);
+            Assert.False(gate.HeavenGateEntered);
+            // 未入天门时生效灵根为空：分配只是待生效值，属性乘区不得提前读到它。
+            Assert.Equal(1d, HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered));
+        }
+    }
+
+    /// <summary>
+    /// 建运行时并完成开天门抽取，直到抽取分布能保证给定透支候选必被拒：
+    /// 抽取种子取自随机 playerId，仅当 roll 恰好五系全 100（总值 500）时全 100 候选反而合法，
+    /// 命中该边界即换种子重试（概率极低，通常首次即返回）。
+    /// </summary>
+    private static async Task<(Guid PlayerId, EcsPlayerRuntimeAdapter Runtime, LinggenValues RolledValues)> RollUntilOverdrawRejectedAsync(LinggenValues overdrawn)
+    {
+        for (var attempt = 0; ; attempt++)
         {
-            action = "allocate",
-            metal = redistribution.Metal, wood = redistribution.Wood, water = redistribution.Water,
-            fire = redistribution.Fire, earth = redistribution.Earth
-        });
-        Assert.True(legal.Success, $"{legal.Code}: {legal.Message}");
-        var gate = legal.Snapshot.State.Progression;
-        Assert.Equal(redistribution, gate.HeavenGateConfirmed);
-        Assert.Equal(rolledValues, gate.HeavenGateRolled);
-        Assert.False(gate.HeavenGateEntered);
-        // 未入天门时生效灵根为空：分配只是待生效值，属性乘区不得提前读到它。
-        Assert.Equal(1d, HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered));
+            var playerId = Guid.NewGuid();
+            var runtime = CreateRuntime(playerId, GateAtFullExperience);
+            await runtime.LoadAsync(playerId);
+            var rolled = await Execute(runtime, playerId, new { action = "roll" });
+            var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
+            if (!HeavenGateRules.IsValidAllocation(rolledValues, overdrawn) || attempt >= 15)
+                return (playerId, runtime, rolledValues);
+            await runtime.DisposeAsync();
+        }
     }
 
     /// <summary>
