@@ -3,9 +3,9 @@
  *
  * 物理隔离与双源梯级分发设计：
  * 1. 纯 TypeScript 数据契约，不包含 JSX 语法，确保 Node.js ESM 单测与构建工具链零障碍原生加载；
- * 2. 一级优先源：自建 Cloudflare Worker + R2 边缘图床 (https://img.yuohira.com/emotes/s{qsid}.gif)；
- * 3. 二级保底源：游戏服务器前端本地静态资源 (/emotes/s{qsid}.gif)；
- * 4. 离线缓存层：结合客户端 IndexedDB (daohua_image_cache)，启动时在空闲阶段全量预加载，秒开脱机可用。
+ * 2. 一级优先源：随前端发布的同源静态资源 (/emotes/s{qsid}.gif)，由实际展示按需加载；
+ * 3. 二级保底源：同源缺图时使用外部图床 (https://img.yuohira.com/emotes/s{qsid}.gif)；
+ * 4. 离线缓存层：结合客户端 IndexedDB (daohua_chat_stickers)，缓存已使用图片，不在启动时全量预取。
  */
 
 export interface QqEmojiMeta {

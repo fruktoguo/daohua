@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useGameStoreWhenVisible } from '../game/gameStore'
-import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata } from '../game/ids'
+import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata, resolveWorldLocationName } from '../game/ids'
 import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { fetchNodeBuildingIndex } from '../network/apiClient'
@@ -1290,7 +1290,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   return (
     <div className="world-map-layout">
       <section
-        aria-label={t('combat.map.stageAria', { name: visibleRegions.map(r => r.map.name).join(' · ') || world.locationName })}
+        aria-label={t('combat.map.stageAria', { name: visibleRegions.map(r => r.map.name).join(' · ') || resolveWorldLocationName(world) })}
         className={`world-map-stage${isDragging ? ' is-dragging' : ''}`}
         data-tour="world-map"
         onPointerCancel={handlePointerUp}
@@ -1447,14 +1447,14 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
           {/* 玩家当前位置向下箭头指示器 */}
           <div
-            aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
+            aria-label={t('combat.map.playerMarkerAria', { name: resolveWorldLocationName(world) })}
             className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}${onImageNode ? ' is-on-image-node' : ''}${onBadgedNode ? ' is-on-badged-node' : ''}`}
             ref={markerRef}
             style={{
               left: `${initialPlayerPx.x}px`,
               top: `${initialPlayerPx.y}px`,
             }}
-            title={world.locationName}
+            title={resolveWorldLocationName(world)}
           >
             <div className="world-player-marker-anchor">
               <div className="world-player-marker-arrow">
@@ -1710,7 +1710,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             <div className="travel-confirm-body">
               <div className="travel-confirm-row">
                 <span>{t('combat.map.travelOrigin')}</span>
-                <strong>{world.locationName}</strong>
+                <strong>{resolveWorldLocationName(world)}</strong>
               </div>
               <div className="travel-confirm-row">
                 <span>{t('combat.map.travelDestination')}</span>

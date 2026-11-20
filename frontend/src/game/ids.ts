@@ -1,6 +1,6 @@
 import { getT, hasTranslation, type TFunction } from '../i18n'
 import { calculateAbilityLevelAndProgress } from './combatConstants'
-import { isExternalLocaleActive, readableEntityName, resolveAssetName, resolveEntityName } from './entityNames'
+import { isExternalLocaleActive, readableEntityName, resolveAssetName, resolveEntityName, resolveLocalizedEntityName } from './entityNames'
 import type { ActionDefinition, ActionType, AutoUseBarType, CombatAbilitySlot, CombatantDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, MarketItemStats, QueueEntry, WorldMapDefinition, WorldState } from './types'
 
 /**
@@ -481,13 +481,27 @@ export function findCombatantInCatalog(
   return undefined
 }
 
-/**
- * 行动显示文本按当前驻留地点本地化：
- * 行动名/描述中内嵌的当前地图名替换为当前节点名
- * （「讨伐 青云仙山」在漱玉溪显示为「讨伐 漱玉溪」），与「讨伐行动在当前节点
- * 生态展开」的实战语义一致——服务端 ResolveCombatEncounter 按玩家当前节点
- * encounterIds 抽取遭遇。行进在道路上（nodeId=null）或文本不含地图名时原样返回。
- */
+/** 驻留地点按实体 ID 取当前语言名称；旅途中保留服务端状态文案。 */
+export function resolveWorldLocationName(world: Pick<WorldState, 'nodeId' | 'locationName'>): string {
+  return world.nodeId === null
+    ? world.locationName
+    : resolveLocalizedEntityName(getT(), 'location', world.nodeId, world.locationName)
+}
+
+/** 队列名称在渲染期复用实体译名，避免后续快照把已翻译的目录名称覆盖为服务端原文。 */
+export function resolveQueueActionName(
+  entry: Pick<QueueEntry, 'actionId' | 'actionName'>,
+  actions?: readonly ActionDefinition[],
+  world?: Pick<WorldState, 'mapId' | 'nodeId' | 'locationName'>,
+  maps?: readonly Pick<WorldMapDefinition, 'mapId' | 'name'>[],
+): string {
+  const definition = (actions ? findActionInCatalog(actions, entry.actionId) : undefined)
+    ?? resolveActionDefinition(entry.actionId)
+  const name = resolveLocalizedEntityName(getT(), 'action', entry.actionId, entry.actionName, definition?.name)
+  return world && maps ? localizeActionDisplayText(name, world, maps) : name
+}
+
+/** 行动名中的地图名称按当前语言的驻留节点名替换；旅行状态保留服务端原意。 */
 export function localizeActionDisplayText(
   text: string,
   world: Pick<WorldState, 'mapId' | 'nodeId' | 'locationName'>,
@@ -495,7 +509,7 @@ export function localizeActionDisplayText(
 ): string {
   if (world.nodeId === null) return text
   const mapName = maps.find(map => map.mapId === world.mapId)?.name
-  const { locationName } = world
+  const locationName = resolveWorldLocationName(world)
   if (!mapName || !locationName || mapName === locationName || !text.includes(mapName)) return text
   return text.split(mapName).join(locationName)
 }

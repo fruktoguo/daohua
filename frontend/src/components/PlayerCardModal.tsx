@@ -216,7 +216,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
   const realmInfo = useMemo(
     () => calculateRealmInfo(card.experience, card.realmLevel,
       card.experienceToNext > 0 ? card.experienceToNext : undefined),
-    [card.experience, card.realmLevel, card.experienceToNext],
+    [card.experience, card.realmLevel, card.experienceToNext, t],
   )
 
   const { combatEquipment, toolEquipment, traits } = useMemo(() => {

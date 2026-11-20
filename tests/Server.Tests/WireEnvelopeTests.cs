@@ -139,4 +139,19 @@ public sealed class WireEnvelopeTests
         Assert.False(WireEnvelopeCodec.TryDecode(bytes, out _));
         Assert.Throws<ProtocolException>(() => WireEnvelope.Create(WireMessageType.Ping, Guid.NewGuid(), 0, new byte[ProtocolConstants.MaxFrameBytes + 1], WireCodec.Json));
     }
+
+    [Fact]
+    public void LogBatchEnvelope_RoundTripsStreamIdentityAndFoldedRange()
+    {
+        var streamId = Guid.NewGuid().ToString("D");
+        var log = new LogEventDto(2, 1234, "完成行动", 2, LogChannels.System, streamId);
+        var packet = WireEnvelopeCodec.EncodeJson(WireMessageType.LogBatch, Guid.NewGuid(), 1, new LogBatchDto([log]));
+        var envelope = WireEnvelopeCodec.Decode(packet);
+
+        Assert.Equal(WireMessageType.LogBatch, envelope.MessageType);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<LogBatchDto>(envelope, out var batch));
+        Assert.Equal(log, Assert.Single(batch!.Events));
+        using var payload = JsonDocument.Parse(envelope.Payload);
+        Assert.Equal(streamId, payload.RootElement.GetProperty("events")[0].GetProperty("streamId").GetString());
+    }
 }

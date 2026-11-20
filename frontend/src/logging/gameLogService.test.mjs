@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { collapseLogEntries, filterLogEntries, gameLogService, parseLogTemplate } from './gameLogService.ts'
+import { notifyIncomingLogEvents, useLogUnreadStore } from './logUnreadStore.ts'
 
 test('collapseLogEntries 纯函数：连续完全相同模板的日志正确合并折叠', () => {
   const entries = [
@@ -167,6 +168,130 @@ test('gameLogService: 自动使用与持续时间耗尽等高频消耗品日志�
   const snapshot = gameLogService.getSnapshot()
   assert.equal(snapshot.latest.length, 1)
   assert.equal(snapshot.latest[0].template, '完成行动 {{action:cultivation.draw-qi|引气入体}}')
+})
+
+test('gameLogService：重连累计回放只补离线新增次数，不重复累加已实时收到的前半段', () => {
+  const playerId = 'test-log-reconnect-overlap'
+  gameLogService.activate(playerId)
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 25, timestampUnixMilliseconds: 25000, template: '完成采集', count: 25, channel: 'system' },
+  ])
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 26, timestampUnixMilliseconds: 26000, template: '完成采集', count: 26, channel: 'system' },
+  ])
+  const replay = [{ sequence: 28, timestampUnixMilliseconds: 28000, template: '完成采集', count: 28, channel: 'system' }]
+  gameLogService.ingestSnapshot(playerId, replay)
+  gameLogService.ingestBatch(playerId, replay)
+
+  assert.equal(gameLogService.getSnapshot().latest[0].count, 28)
+  assert.equal(gameLogService.getSnapshot().latest[0].latestTimestampMs, 28000)
+})
+
+test('gameLogService：真实批量日志与序号缺口在重放时各累计一次', () => {
+  const playerId = 'test-log-batch-overlap'
+  gameLogService.activate(playerId)
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 4, timestampUnixMilliseconds: 4000, template: '采集', count: 4, channel: 'system' },
+    { sequence: 9, timestampUnixMilliseconds: 9000, template: '采集', count: 3, channel: 'system' },
+  ])
+  assert.equal(gameLogService.getSnapshot().latest[0].count, 7)
+
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 10, timestampUnixMilliseconds: 10000, template: '采集', count: 10, channel: 'system' },
+  ])
+  assert.equal(gameLogService.getSnapshot().latest[0].count, 10)
+  gameLogService.ingestBatch(playerId, [
+    { sequence: 12, timestampUnixMilliseconds: 12000, template: '采集', count: 2, channel: 'system' },
+  ])
+  assert.equal(gameLogService.getSnapshot().latest[0].count, 12)
+})
+
+test('gameLogService：跨模板频道的旧回放不新增条目，切换玩家后独立重新计数', () => {
+  const firstPlayer = 'test-log-scope-first'
+  gameLogService.activate(firstPlayer)
+  const events = [
+    { sequence: 3, timestampUnixMilliseconds: 3000, template: '采集', count: 3, channel: 'system' },
+    { sequence: 5, timestampUnixMilliseconds: 5000, template: '施放', count: 2, channel: 'combat' },
+  ]
+  gameLogService.ingestBatch(firstPlayer, events)
+  gameLogService.ingestBatch(firstPlayer, [
+    { sequence: 2, timestampUnixMilliseconds: 2000, template: '采集', count: 2, channel: 'system' },
+    ...events,
+  ])
+  assert.deepEqual(gameLogService.getSnapshot().latest.map(entry => entry.count), [3, 2])
+
+  const secondPlayer = 'test-log-scope-second'
+  gameLogService.ingestBatch(secondPlayer, events)
+  assert.deepEqual(gameLogService.getSnapshot().latest.map(entry => entry.count), [3, 2])
+})
+
+test('gameLogService：原始表现订阅与未读计数共同消费去重后的真实新增次数', () => {
+  const playerId = 'test-log-replay-consumers'
+  gameLogService.activate(playerId)
+  useLogUnreadStore.getState().resetAll()
+  useLogUnreadStore.getState().setActiveGroup('world')
+  const delivered = []
+  const unsubscribe = gameLogService.subscribeRawBatch((id, events) => delivered.push({ id, events }))
+  const receive = events => notifyIncomingLogEvents(gameLogService.ingestBatch(playerId, events))
+  try {
+    receive([{ sequence: 25, timestampUnixMilliseconds: 25000, template: '采集', count: 25, channel: 'system' }])
+    const replay = [{ sequence: 26, timestampUnixMilliseconds: 26000, template: '采集', count: 26, channel: 'system' }]
+    receive(replay)
+    receive(replay)
+    receive([{ sequence: 29, timestampUnixMilliseconds: 29000, template: '施放', count: 3, channel: 'combat' }])
+
+    assert.deepEqual(delivered.map(batch => batch.events.map(event => event.count)), [[25], [1], [3]])
+    assert.equal(useLogUnreadStore.getState().unreadCounts.system, 26)
+    assert.equal(useLogUnreadStore.getState().unreadCounts.all, 26)
+    assert.equal(useLogUnreadStore.getState().unreadCounts.combat, 0)
+    assert.deepEqual(gameLogService.getSnapshot().latest.map(entry => entry.count), [26, 3])
+  } finally {
+    unsubscribe()
+  }
+})
+
+test('gameLogService：同玩家日志缓冲重建后接收新流低序号，并保留旧显示历史', () => {
+  const playerId = 'test-log-stream-recreated'
+  gameLogService.activate(playerId)
+  const oldStream = '49f35f6d-4fa8-4591-81f2-2376be7f5256'
+  const newStream = '827c9ce8-1835-4b95-bf6e-730eebcf0c17'
+  const oldEvents = [{ streamId: oldStream, sequence: 9, timestampUnixMilliseconds: 9000, template: '采集', count: 9, channel: 'system' }]
+  const newEvents = [{ streamId: newStream, sequence: 2, timestampUnixMilliseconds: 20000, template: '采集', count: 2, channel: 'system' }]
+  gameLogService.ingestBatch(playerId, oldEvents)
+  gameLogService.ingestBatch(playerId, newEvents)
+  assert.deepEqual(gameLogService.ingestBatch(playerId, newEvents), [])
+  gameLogService.ingestBatch(playerId, [
+    { streamId: newStream, sequence: 4, timestampUnixMilliseconds: 22000, template: '采集', count: 4, channel: 'system' },
+  ])
+
+  const entries = gameLogService.getSnapshot().latest
+  assert.deepEqual(entries.map(entry => [entry.streamId, entry.count]), [[oldStream, 9], [newStream, 4]])
+  assert.notEqual(entries[0].id, entries[1].id)
+  assert.ok(entries[0].id.includes(oldStream))
+  assert.ok(entries[1].id.includes(newStream))
+})
+
+test('gameLogService：同版本重启的新流序号和旧流一致时仍推进未读与表现一次', () => {
+  const playerId = 'test-log-stream-restarted'
+  gameLogService.activate(playerId)
+  useLogUnreadStore.getState().resetAll()
+  useLogUnreadStore.getState().setActiveGroup('world')
+  const counts = []
+  const unsubscribe = gameLogService.subscribeRawBatch((_, events) => counts.push(...events.map(event => event.count)))
+  const receive = (streamId, sequence, count) => notifyIncomingLogEvents(gameLogService.ingestBatch(playerId, [
+    { streamId, sequence, count, timestampUnixMilliseconds: 1000, template: '采集', channel: 'system' },
+  ]))
+  try {
+    receive('stream-before-restart', 1, 1)
+    receive('stream-after-restart', 1, 1)
+    receive('stream-after-restart', 1, 1)
+    receive('stream-after-restart', 3, 3)
+    assert.deepEqual(counts, [1, 1, 2])
+    assert.equal(useLogUnreadStore.getState().unreadCounts.system, 4)
+    assert.deepEqual(gameLogService.getSnapshot().latest.map(entry => entry.count), [1, 3])
+  } finally {
+    unsubscribe()
+  }
 })
 
 test('parseLogTemplate：引用缺少名称时仍保留实体 ID，供展示层恢复名称', () => {

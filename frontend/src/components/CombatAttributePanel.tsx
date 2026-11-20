@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { resolveAssetName, resolveEntityName } from '../game/entityNames'
+import { resolveAssetName, resolveEntityName, resolveLocalizedEntityName } from '../game/entityNames'
 import { PillStatLabel, type PillTone } from './PillLabel'
 import { resolveEquippedTraitViews } from '../game/combatConstants'
 import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
@@ -328,6 +328,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
           <h4 className="insight-pill-group-title">{t('insight.combat.groupBuffs')}</h4>
           <div className="insight-pill-group-items">
             {buffs.map(buff => {
+              const displayName = resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name)
               const bonusItems = extractBuffBonusItems(buff)
               const permanent = buff.expiresAtUnixSeconds >= 1e15
               const remaining = permanent ? 0 : Math.max(0, buff.expiresAtUnixSeconds - serverTime)
@@ -343,7 +344,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
                           ? t('combat.arena.buffPermanent')
                           : t('combat.arena.buffRemaining', { n: formatNumber(remaining) })
                       }
-                      title={buff.name}
+                      title={displayName}
                     />
                   }
                   interactive={false}
@@ -353,7 +354,7 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
                   size="small"
                 >
                   <PillStatLabel
-                    label={buff.name}
+                    label={displayName}
                     tone="gold"
                     value={`×${formatNumber(buff.stacks)}`}
                   />

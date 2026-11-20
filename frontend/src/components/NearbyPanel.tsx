@@ -4,7 +4,7 @@ import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
 import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
-import { resolveItemMetadata } from '../game/ids'
+import { resolveItemMetadata, resolveWorldLocationName } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
 import { Modal } from './Modal'
 import { formatInteger, formatNumber, formatRemainingSeconds } from '../game/format'
@@ -110,7 +110,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const selfRealmInfo = useMemo(
     () => calculateRealmInfo(experience ?? 0, stats.realmLevel ?? 1,
       serverExpToNextCap(stats.expToNextLinggen, stats.realmLevel ?? 1)),
-    [experience, stats.realmLevel, stats.expToNextLinggen],
+    [experience, stats.realmLevel, stats.expToNextLinggen, t],
   )
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
@@ -205,7 +205,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
       <header className="nearby-heading">
         <span>{t('combat.nearby.currentLocation')}</span>
         <div className="nearby-heading-row">
-          <h3>{world.locationName}</h3>
+          <h3>{resolveWorldLocationName(world)}</h3>
           {hasBudget && (
             <span className="nearby-budget-pill">
               {t('combat.nearby.dangerBudget')} {formatInteger(world.minBudget ?? 0)} ~ {formatInteger(world.maxBudget ?? 0)}

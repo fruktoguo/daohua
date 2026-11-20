@@ -1,5 +1,5 @@
 import type { BuffEffectChannel } from '../game/buffChannels'
-import { resolveAssetName, resolveEntityName } from '../game/entityNames'
+import { resolveAssetName, resolveEntityName, resolveLocalizedEntityName } from '../game/entityNames'
 import { hasActionParticipation } from '../game/types'
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -8,13 +8,13 @@ import { UnitNumber } from './UnitNumber'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore, useGameStoreWhenVisible } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
-import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveAssetLabel, resolveCatalogItemLevel, resolveItemMetadata } from '../game/ids'
+import { findAbilityInCatalog, findCombatantInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, localizeActionDisplayText, resolveAssetLabel, resolveCatalogItemLevel, resolveItemMetadata, resolveQueueActionName } from '../game/ids'
 import { calculateEnhancementYields, ENHANCE_ACTION_ID, SPIRIT_STONE_ITEM_ID } from '../game/combatConstants'
 import { calculateActionYieldPreview } from '../game/actionCalculations'
 import type { ResourceYieldKind } from '../game/actionCalculations'
 import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatAbilitySlot, CombatActionState, CombatAttributes, CombatBuffEntry, CombatRecentEvent, EquippedItem, ExpeditionAlly, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
-import { getT, useT } from '../i18n'
+import { getT, hasTranslation, useT } from '../i18n'
 import { Modal } from './Modal'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
@@ -33,17 +33,15 @@ import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDe
 import { computeArenaFormationScale, resolveOccupiedRows } from '../game/combatScale'
 
 import { scaleMonsterAttributes, scaleMonsterDrops } from '../game/combatDifficulty'
-/** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
+/** 战斗详情与顶栏共用当前语言的队列名称解析，空闲时沿用调用方文案。 */
 function resolveQueueEntryDisplayName(
   entry: QueueEntry | null | undefined,
   fallback?: string,
   world?: WorldState,
   maps?: readonly WorldMapDefinition[],
 ): string {
-  const name = !entry ? (fallback || '')
-    : (entry.actionName && entry.actionName !== entry.actionId)
-      ? entry.actionName
-      : resolveActionDefinition(entry.actionId)?.name || entry.actionName || fallback || ''
+  if (entry) return resolveQueueActionName(entry, undefined, world, maps)
+  const name = fallback || ''
   return world && maps ? localizeActionDisplayText(name, world, maps) : name
 }
 
@@ -740,6 +738,7 @@ function ArenaActionBar({ action, role }: { action?: CombatActionState | null; r
  */
 function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   const t = useT()
+  const displayName = resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   // durable 阵盘类永驻 Buff：到期时间投影为有限哨兵（≥1e15），按常驻展示而非倒计时。
   const permanent = buff.expiresAtUnixSeconds >= 1e15
@@ -764,7 +763,7 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
       : (hasChannel('hpRegen') || hasChannel('mpRegen')) ? 'qi' : 'gold'
   const glyph = hasChannel('attackSpeedPoints')
     ? t('combat.arena.glyphSpeed')
-    : buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')
+    : displayName.slice(0, 1) || t('combat.arena.glyphGeneric')
 
   const radius = 9
   const circumference = 2 * Math.PI * radius
@@ -811,7 +810,7 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
           subtitle={permanent
             ? t('combat.arena.buffPermanent')
             : t('combat.arena.buffRemaining', { n: formatNumber(remaining) })}
-          title={buff.name}
+          title={displayName}
         />
       }
       interactive={false}
@@ -1011,8 +1010,8 @@ function resolveActorMotionKind(action?: CombatActionState | null): ActorMotionK
 function ArenaActor({
   actorKey,
   actorId,
-  name,
-  seal,
+  name: originalName,
+  seal: originalSeal,
   role,
   hp,
   maxHp,
@@ -1058,6 +1057,11 @@ function ArenaActor({
   vfxEnabled?: boolean
 }): React.JSX.Element {
   const t = useT()
+  // 仅已知妖兽按配表 ID 取译名；斗法镜像、队友与玩家道号保留原文。
+  const name = role === 'enemy' && actorId && hasTranslation(`game.monster.${actorId}.name`)
+    ? resolveLocalizedEntityName(t, 'enemy', actorId, originalName)
+    : originalName
+  const seal = name === originalName ? originalSeal : name.slice(0, 1)
   const articleRef = useRef<HTMLElement | null>(null)
   const nextMotionId = useRef(1)
   const nextImpactSequence = useRef(0)
@@ -1555,10 +1559,11 @@ function ArenaLifeGoalCard({
       })
     }
     for (const buff of yieldPreview.buffYields) {
+      const displayName = resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name)
       outputs.push({
         key: `buff:${buff.buffId}`,
-        name: buff.name,
-        icon: <span className="arena-life-glyph-text">{buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')}</span>,
+        name: displayName,
+        icon: <span className="arena-life-glyph-text">{displayName.slice(0, 1) || t('combat.arena.glyphGeneric')}</span>,
         tone: 'gold',
         perRound: buff.stacks,
         total: null,
@@ -1884,6 +1889,9 @@ function CharacterAttributeModal({
 }): React.JSX.Element | null {
   const t = useT()
   const titleId = useId()
+  const displayName = role === 'enemy' && actorId && hasTranslation(`game.monster.${actorId}.name`)
+    ? resolveLocalizedEntityName(t, 'enemy', actorId, name, title)
+    : null
   return (
     <Modal className="character-attribute-modal" labelledBy={titleId} onClose={onClose} open={open} size="medium">
       <header className="character-attribute-header">
@@ -1892,13 +1900,13 @@ function CharacterAttributeModal({
             actorId={actorId}
             className="character-attribute-avatar"
             isFlipped={role === 'enemy'}
-            name={name || title}
+            name={displayName ?? (name || title)}
             role={role}
             visual={visual}
           />
         </div>
         <div className="character-attribute-title-block">
-          <h2 id={titleId}>{title}</h2>
+          <h2 id={titleId}>{displayName ?? title}</h2>
           <span className={`character-attribute-role-badge character-attribute-role-badge--${role}`}>
             {role === 'enemy' ? t('combat.attrs.enemyRole') : t('combat.attrs.playerRole')}
           </span>

@@ -230,7 +230,7 @@ export const TerminalIdleOverlay = memo(function TerminalIdleOverlay(): React.JS
   )
   const realmInfo = useMemo(
     () => calculateRealmInfo(stats?.experience ?? 0, stats?.realmLevel, expToNextCap),
-    [expToNextCap, stats?.experience, stats?.realmLevel],
+    [expToNextCap, stats?.experience, stats?.realmLevel, t],
   )
   const realmRatio = clamp01((realmProgress.progressPercentage ?? 0) / 100)
   const realmDisplayText = isEn

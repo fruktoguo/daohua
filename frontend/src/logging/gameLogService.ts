@@ -24,10 +24,12 @@ export type LogSegment =
 
 /** 服务端日志事件落入内存缓冲的归一化存储形态 */
 export interface StoredGameLog {
-  /** 去重 ID（playerId + sequence 组合） */
+  /** 唯一 ID（playerId + streamId + sequence 组合） */
   id: string
   /** 所属玩家 ID */
   playerId: string
+  /** 当前日志流代际；保留历史时避免新旧缓冲的低序号条目键碰撞 */
+  streamId?: string | null
   /** 发生时刻（Unix 毫秒） */
   timestampMs: number
   /** 服务端日志序号 */
@@ -155,7 +157,7 @@ export function collapseLogEntries(entries: readonly StoredGameLog[]): GameLogEn
   for (const entry of entries) {
     const entryCount = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
     const last = collapsed[collapsed.length - 1]
-    if (last && last.template === entry.template && last.channel === entry.channel) {
+    if (last && last.template === entry.template && last.channel === entry.channel && last.streamId === entry.streamId) {
       last.count += entryCount
       last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
     } else {
@@ -186,8 +188,9 @@ function compare(left: StoredGameLog, right: StoredGameLog): number {
 
 function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
   return {
-    id: `${playerId}:memory:${event.sequence}`,
+    id: `${playerId}:memory:${event.streamId ?? ''}:${event.sequence}`,
     playerId,
+    streamId: event.streamId,
     timestampMs: event.timestampUnixMilliseconds,
     sequence: event.sequence,
     template: event.template,
@@ -214,7 +217,10 @@ class GameLogService {
   private readonly rawBatchListeners = new Set<(playerId: string, events: readonly LogEvent[]) => void>()
   private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0 }
   private collapsedEntries: GameLogEntry[] = []
-  private seenIds = new Set<string>()
+  /** 已摄入的实际日志序号闭区间；相邻区间合并，避免逐条展开服务端累计折叠项。 */
+  private seenSequenceRanges: { start: number; end: number }[] = []
+  private seenSequenceFloor = 0
+  private currentStreamId: string | null | undefined
 
   /** 订阅快照变更；返回取消订阅函数 */
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -224,7 +230,7 @@ class GameLogService {
 
   /**
    * 订阅服务端增量日志原始批次（LogBatch 信封入口）：
-   * 在过滤/折叠前触发，供战场 VFX 等实时反应消费者识别被展示层屏蔽的高频事件（如「自动使用 雷击符/丹药」）。
+   * 在去重后、展示过滤/折叠前触发，避免重连累计回放再次触发已经播放的表现。
    */
   readonly subscribeRawBatch = (listener: (playerId: string, events: readonly LogEvent[]) => void): (() => void) => {
     this.rawBatchListeners.add(listener)
@@ -238,22 +244,26 @@ class GameLogService {
   activate(playerId: string): void {
     if (this.snapshot.playerId === playerId) return
     this.collapsedEntries = []
-    this.seenIds.clear()
+    this.seenSequenceRanges = []
+    this.seenSequenceFloor = 0
+    this.currentStreamId = undefined
     this.snapshot = { playerId, latest: [], revision: this.snapshot.revision + 1, receivedCount: 0 }
     this.notify()
   }
 
   /** 摄入快照携带的全量日志（events 缺省视为空） */
   ingestSnapshot(playerId: string, events: readonly LogEvent[] | undefined): void {
-    this.ingest(playerId, (events ?? []).map(event => eventToStored(playerId, event)))
+    this.ingest(playerId, this.selectNewEvents(playerId, events ?? []).map(event => eventToStored(playerId, event)))
   }
 
-  /** 摄入增量日志批次（LogBatch 信封路径） */
-  ingestBatch(playerId: string, events: readonly LogEvent[]): void {
-    if (events.length > 0 && this.rawBatchListeners.size > 0) {
-      for (const listener of this.rawBatchListeners) listener(playerId, events)
+  /** 摄入增量日志批次，返回真正新增的次数，供未读角标与表现消费同一去重结果。 */
+  ingestBatch(playerId: string, events: readonly LogEvent[]): readonly LogEvent[] {
+    const additions = this.selectNewEvents(playerId, events)
+    if (additions.length > 0 && this.rawBatchListeners.size > 0) {
+      for (const listener of this.rawBatchListeners) listener(playerId, additions)
     }
-    this.ingest(playerId, events.map(event => eventToStored(playerId, event)))
+    this.ingest(playerId, additions.map(event => eventToStored(playerId, event)))
+    return additions
   }
 
   /** 历史消息不落盘；该接口固定返回空集，保持日志面板无网络历史依赖。 */
@@ -263,6 +273,45 @@ class GameLogService {
 
   flush(): Promise<void> {
     return Promise.resolve()
+  }
+
+  /** Count 覆盖末序号之前的连续实际事件；累计回放只领取尚未摄入的区间。 */
+  private selectNewEvents(playerId: string, events: readonly LogEvent[]): LogEvent[] {
+    if (events.length === 0) return []
+    if (this.snapshot.playerId !== playerId) this.activate(playerId)
+    const additions: LogEvent[] = []
+    for (const event of events) {
+      if (event.streamId !== this.currentStreamId) {
+        this.currentStreamId = event.streamId
+        this.seenSequenceRanges = []
+        this.seenSequenceFloor = 0
+      }
+      const count = typeof event.count === 'number' && event.count > 0 ? event.count : 1
+      const start = Math.max(this.seenSequenceFloor + 1, event.sequence - count + 1)
+      const end = event.sequence
+      if (start > end) continue
+      let unseenCount = end - start + 1
+      let mergedStart = start
+      let mergedEnd = end
+      let first = 0
+      while (first < this.seenSequenceRanges.length && this.seenSequenceRanges[first].end < start - 1) first += 1
+      let after = first
+      while (after < this.seenSequenceRanges.length && this.seenSequenceRanges[after].start <= mergedEnd + 1) {
+        const seen = this.seenSequenceRanges[after]
+        unseenCount -= Math.max(0, Math.min(end, seen.end) - Math.max(start, seen.start) + 1)
+        mergedStart = Math.min(mergedStart, seen.start)
+        mergedEnd = Math.max(mergedEnd, seen.end)
+        after += 1
+      }
+      this.seenSequenceRanges.splice(first, after - first, { start: mergedStart, end: mergedEnd })
+      if (unseenCount > 0) additions.push(unseenCount === count ? event : { ...event, count: unseenCount })
+    }
+    // 与原先 2000 项去重窗口保持同量级上界；被淘汰的极旧区间不再重新计入显示。
+    if (this.seenSequenceRanges.length > 2000) {
+      const removed = this.seenSequenceRanges.splice(0, this.seenSequenceRanges.length - 1000)
+      this.seenSequenceFloor = removed[removed.length - 1].end
+    }
+    return additions
   }
 
   private ingest(playerId: string, additions: readonly StoredGameLog[]): void {
@@ -275,13 +324,11 @@ class GameLogService {
     for (const entry of sortedAdditions) {
       // 高频消耗品自动使用与到期耗尽不入日志展示
       if (entry.template.startsWith('自动使用 ') || entry.template.endsWith('的持续时间已耗尽。')) continue
-      if (this.seenIds.has(entry.id)) continue
-      this.seenIds.add(entry.id)
       received += 1
 
       const incomingCount = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
       const last = this.collapsedEntries[this.collapsedEntries.length - 1]
-      if (last && last.template === entry.template && last.channel === entry.channel) {
+      if (last && last.template === entry.template && last.channel === entry.channel && last.streamId === entry.streamId) {
         this.collapsedEntries[this.collapsedEntries.length - 1] = {
           ...last,
           count: last.count + incomingCount,
@@ -293,12 +340,6 @@ class GameLogService {
           this.collapsedEntries.shift()
         }
       }
-    }
-
-    // 去重集合无界增长时保留最近一半，避免长跑会话内存膨胀（牺牲极旧 ID 的重放判定）
-    if (this.seenIds.size > 2000) {
-      const idsArray = Array.from(this.seenIds)
-      this.seenIds = new Set(idsArray.slice(-1000))
     }
 
     this.snapshot = {

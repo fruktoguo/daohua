@@ -75,6 +75,7 @@ try {
         export { GameClient } from './src/network/gameClient.ts'
         export { COMBAT_TRIGGER_COMPARATORS, COMBAT_TRIGGER_CONDITIONS, COMBAT_TRIGGER_DEPENDENCIES } from './src/game/types.ts'
         export { setSessionAccount } from './src/network/sessionState.ts'
+        export { gameLogService } from './src/logging/gameLogService.ts'
         export { parseCsvToMap, LOCALES } from './src/i18n/index.ts'
         export {
           registerBaseAttributeAnchors,
@@ -269,15 +270,31 @@ try {
 
   // 旧 socket 的延迟 Blob 解码完成后必须被世代校验拦截，不能写入新会话。
   let releaseDelayedBlob
-  const delayedBlob = new Blob([encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 3, { events: [] })])
+  const oldLogBytes = encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 3, {
+    events: [{ streamId: 'old-log-stream', sequence: 40, timestampUnixMilliseconds: 1000, template: '旧流晚到', count: 40, channel: 'system' }],
+  })
+  const delayedBlob = new Blob([oldLogBytes])
   delayedBlob.arrayBuffer = () => new Promise(resolve => { releaseDelayedBlob = resolve })
   const delayed = client.handleMessage(delayedBlob, socket, 7, 'player.test')
   const replacementSocket = { readyState: 1 }
   client.socket = replacementSocket
   client.sessionGeneration = 8
-  releaseDelayedBlob(new ArrayBuffer(0))
+  client.lastServerSequence = 0
+  const newLogEvents = [{ streamId: 'new-log-stream', sequence: 2, timestampUnixMilliseconds: 2000, template: '新缓冲日志', count: 2, channel: 'system' }]
+  await client.handleMessage(encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 1, { events: newLogEvents }), replacementSocket, 8, 'player.test')
+  releaseDelayedBlob(oldLogBytes)
   await delayed
   assert.equal(client.parseFailureCount, 0)
+  let logEntries = mod.gameLogService.getSnapshot().latest
+  assert.deepEqual(logEntries.map(entry => [entry.streamId, entry.sequence, entry.count]), [['new-log-stream', 2, 2]])
+  assert.ok(logEntries[0].id.includes('new-log-stream'), '日志唯一键必须保留流标识')
+  await client.handleMessage(encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 2, { events: newLogEvents }), replacementSocket, 8, 'player.test')
+  assert.equal(mod.gameLogService.getSnapshot().latest[0].count, 2, '同流累计回放不增加计数')
+  await client.handleMessage(encodeJsonEnvelope(WireMessageType.LogBatch, createRequestId(), 3, {
+    events: [{ ...newLogEvents[0], streamId: 'restarted-log-stream', sequence: 1, count: 1 }],
+  }), replacementSocket, 8, 'player.test')
+  logEntries = mod.gameLogService.getSnapshot().latest
+  assert.deepEqual(logEntries.map(entry => [entry.streamId, entry.count]), [['new-log-stream', 2], ['restarted-log-stream', 1]])
 
   // 命令回执增量形态：snapshotForm=delta 时 changedSections 位于 snapshot 成员内，
   // data 字节区间按同一校验和口径复算（与服务端 CommandResultDto 内嵌结构一致）。

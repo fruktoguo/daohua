@@ -16,8 +16,8 @@ export interface QqEmojiProps {
  *
  * 容灾与加载流转机制：
  * 1. 本地离线检查：优先尝试从 IndexedDB (daohua_image_cache) 读取已解包的 Blob URL，秒开且零流量；
- * 2. 一级优先分发：尝试加载 Cloudflare R2 自建图床 (https://img.yuohira.com/emotes/s{qsid}.gif)；
- * 3. 二级自愈回退：若 CF 图床遇到网络异常或未命中，自动切换为本地游戏服务器资源 (/emotes/s{qsid}.gif)；
+ * 2. 同源按需分发：实际渲染时加载随前端发布的 /emotes/s{qsid}.gif，不预取未使用的表情；
+ * 3. 缺图自愈回退：同源图片不可用时才尝试外部图床，不让常规内置表情走跨域中继；
  * 4. 离线沉淀：网络拉取成功后，自动写入 IndexedDB，后续离线脱机可用；
  * 5. 极端兜底：全部资源不可用时，优雅展示 [表情名] 文本徽章。
  */
@@ -38,7 +38,7 @@ function QqEmojiImage({
   qsid,
 }: QqEmojiProps & { generation: number; qsid: string }): React.JSX.Element {
   const { cfUrl, localUrl } = getQqEmojiUrls(qsid)
-  const [currentSource, setCurrentSource] = useState<'cf' | 'local' | 'failed'>('cf')
+  const [currentSource, setCurrentSource] = useState<'cf' | 'local' | 'failed'>('local')
   const imageUrl = currentSource === 'cf' ? cfUrl : currentSource === 'local' ? localUrl : null
   const displaySrc = useChatImageSource(imageUrl, generation)
 
@@ -55,7 +55,7 @@ function QqEmojiImage({
         className="qq-emoji-img"
         height={size}
         loading="lazy"
-        onError={() => setCurrentSource(currentSource === 'cf' ? 'local' : 'failed')}
+        onError={() => setCurrentSource(currentSource === 'local' ? 'cf' : 'failed')}
         src={displaySrc}
         style={{ width: size, height: size, objectFit: 'contain' }}
         width={size}

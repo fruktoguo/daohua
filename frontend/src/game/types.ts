@@ -1202,6 +1202,8 @@ export interface ItemBuffEffectDefinition extends BuffModifiers {
  * 服务端下发的日志事件数据
  */
 export interface LogEvent {
+  /** 当前内存日志流代际；玩家卸载重建或同版本重启后更换 */
+  streamId?: string | null
   /** 服务端日志单调序号（用于去重与排序） */
   sequence: number
   /** 发生时刻（Unix 毫秒） */

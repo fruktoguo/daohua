@@ -2,7 +2,7 @@ import { memo, type ReactNode, useCallback } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { readableEntityName, resolveAssetName, resolveEntityName } from '../game/entityNames'
+import { readableEntityName, resolveAssetName, resolveEntityName, resolveLocalizedEntityName } from '../game/entityNames'
 import { calculateEquipmentSellPrice, findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveCatalogItemMetadata, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveEquipmentBaseSellPrice, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, resolveProtectionUnitPrice, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
@@ -290,7 +290,7 @@ export function resolveItemTooltipAsideCards(
         list.push(
           createStandaloneBuffAsideCard({
             id: `aside-eq-buff-${buff.name || buff.buffId}`,
-            name: buff.name || t('market.aside.buff'),
+            name: resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name),
             kind: items.some(item => String(item.value).startsWith('-')) ? 'debuff' : 'buff',
             durationSeconds: buffDuration,
             tone: 'gold',
@@ -641,7 +641,7 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
         icon={<StatGlyph glyph="cooldown-reduction" size={14.5} />}
         label={t('market.aside.badgeDuration')}
         tone="slate"
-        value={`${formatNumber(effectiveDuration)}秒`}
+        value={`${formatNumber(effectiveDuration)}${t('market.aside.unitSeconds')}`}
       />
     )
   }
@@ -1084,7 +1084,7 @@ export function extractBuffBonusItems(buff: {
         glyph: 'mp-regen',
         label: t('market.effect.badgeMpRegen'),
         tone: 'cyan',
-        value: '+5/5秒',
+        value: `+5${t('market.effect.unitPerFiveSec')}`,
       },
       {
         glyph: 'mp-regen',
@@ -1513,7 +1513,7 @@ export function resolveItemAsideCards(
     cards.push(
       createStandaloneBuffAsideCard({
         id: `aside-buff-${buff.name}`,
-        name: buff.name,
+        name: buff.buffId ? resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name) : buff.name,
         kind: items.some(item => String(item.value).startsWith('-')) ? 'debuff' : 'buff',
         durationSeconds: buff.durationSeconds,
         tone: 'gold',
@@ -1968,7 +1968,7 @@ export function createBuffAsideCard(
   return createBonusAsideCard({
     id: `aside-active-buff-${buff.buffId}`,
     mark: resolvedMark,
-    title: buff.name,
+    title: resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name),
     tone,
     items,
   })

@@ -1009,8 +1009,8 @@ export class GameClient {
           const batch = decodeJsonPayload<LogBatchDto>(envelope)
           if (!batch || !Array.isArray(batch.events)) throw new Error('日志批次载荷无效。')
           if (batch.events.length > 0) {
-            gameLogService.ingestBatch(this.playerId, batch.events)
-            notifyIncomingLogEvents(batch.events)
+            const newEvents = gameLogService.ingestBatch(this.playerId, batch.events)
+            notifyIncomingLogEvents(newEvents)
           }
           appliedBusinessPayload = true
           break

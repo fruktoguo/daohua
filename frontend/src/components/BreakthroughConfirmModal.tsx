@@ -77,8 +77,8 @@ export function BreakthroughConfirmModal({
     after: calculateBaseAttributes(0, realmLevel + 1),
   }), [realmLevel])
 
-  const realmBefore = useMemo(() => calculateRealmInfo(0, realmLevel).minorName, [realmLevel])
-  const realmAfter = useMemo(() => calculateRealmInfo(0, realmLevel + 1).minorName, [realmLevel])
+  const realmBefore = useMemo(() => calculateRealmInfo(0, realmLevel).minorName, [realmLevel, t])
+  const realmAfter = useMemo(() => calculateRealmInfo(0, realmLevel + 1).minorName, [realmLevel, t])
 
   // 只展示有增益的属性行（如最高境界无跳变时列表为空，走空态提示）。
   const changedRows = useMemo(() => COMPARISON_ROWS

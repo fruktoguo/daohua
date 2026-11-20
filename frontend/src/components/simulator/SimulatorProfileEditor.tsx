@@ -210,7 +210,7 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
 
   const realmInfo = useMemo(
     () => calculateRealmInfo(member.experience, member.realmLevel),
-    [member.experience, member.realmLevel],
+    [member.experience, member.realmLevel, t],
   )
 
   const traitIdSet = useMemo(() => new Set(member.traitIds ?? []), [member.traitIds])

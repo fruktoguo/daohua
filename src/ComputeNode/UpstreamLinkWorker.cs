@@ -54,7 +54,7 @@ public sealed class UpstreamLinkWorker(
     /// <summary>节点停机排空窗口：上报 draining 后给在飞批次跑完回传的有界时间，窗口外取消按租约退回。</summary>
     private static readonly TimeSpan NodeDrainWindow = TimeSpan.FromSeconds(10);
     private readonly ILogger _logger = loggerFactory.CreateLogger("ComputeNode.Upstream");
-    /// <summary>主服下发 drain 后置位：本链路在飞批次跑完即主动断链，消费后复位到最小退避档重连。</summary>
+    /// <summary>会话进入排空后置位：停止接纳新批次，发送完成后断链；主服排空后以最小退避档重连。</summary>
     private int _drainRequested;
     /// <summary>在飞批次数（ProcessBatchAsync 簿记）：排空等待以此判定"手头算力已清空"。</summary>
     private int _inFlightBatches;
@@ -185,14 +185,18 @@ public sealed class UpstreamLinkWorker(
         using var workCts = new CancellationTokenSource();
         using var drainGate = new CancellationTokenSource();
         Task? drainTask = null;
+        var drainSync = new object();
         var sessionToken = session.Token;
-        var stopRegistration = cancellationToken.Register(() =>
-        {
-            var task = BeginNodeDrain(session, workCts, outbound.Writer, drainGate.Token);
-            Volatile.Write(ref drainTask, task);
-        });
         var sendTask = SendLoopAsync(socket, outbound.Reader, sessionToken);
-        var receiveTask = ReceiveLoopAsync(socket, outbound.Writer, session, workCts, inFlightTasks);
+        void BeginDrain(bool notifyUpstream)
+        {
+            // 停机令牌与主服 drain 可同时抵达，共享窗口，不能重复启动排空或延长截止时间。
+            lock (drainSync)
+                drainTask ??= BeginNodeDrain(session, workCts, outbound.Writer, sendTask, notifyUpstream, drainGate.Token);
+        }
+        var stopRegistration = cancellationToken.Register(() => BeginDrain(notifyUpstream: true));
+        var receiveTask = ReceiveLoopAsync(socket, outbound.Writer, session, workCts, inFlightTasks,
+            () => BeginDrain(notifyUpstream: false));
         try
         {
             await Task.WhenAny(sendTask, receiveTask);
@@ -223,38 +227,39 @@ public sealed class UpstreamLinkWorker(
 
     /// <summary>
     /// 节点停机排空（stoppingToken 触发，经注册回调在取消线程上同步起跳）：
-    /// 先上报 draining 让主服立即停派新批次；在飞批次给有界窗口跑完回传后才断链，
+    /// 必要时上报 draining 让主服停派新批次；在飞计算与实际发送共用一个有界窗口，
     /// 窗口外残余批次取消，未完结任务按租约语义由主服重派。
     /// </summary>
-    private Task BeginNodeDrain(
+    private async Task BeginNodeDrain(
         CancellationTokenSource session,
         CancellationTokenSource workCts,
         ChannelWriter<byte[]> outbound,
+        Task sendTask,
+        bool notifyUpstream,
         CancellationToken drainToken)
     {
-        outbound.TryWrite(LinkCodec.Encode(new LinkDraining("node shutdown")));
-        return Task.Run(async () =>
+        Interlocked.Exchange(ref _drainRequested, 1);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(drainToken);
+        deadline.CancelAfter(NodeDrainWindow);
+        try
         {
-            var deadline = Stopwatch.GetTimestamp() + (long)(NodeDrainWindow.TotalSeconds * Stopwatch.Frequency);
-            while (Volatile.Read(ref _inFlightBatches) > 0
-                && !drainToken.IsCancellationRequested
-                && Stopwatch.GetTimestamp() < deadline)
-            {
-                try
-                {
-                    await Task.Delay(100, drainToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
-                {
-                    return;
-                }
-            }
+            if (notifyUpstream)
+                await outbound.WriteAsync(LinkCodec.Encode(new LinkDraining("node shutdown")), deadline.Token);
+            while (Volatile.Read(ref _inFlightBatches) > 0)
+                await Task.Delay(100, deadline.Token).ConfigureAwait(false);
+            outbound.TryComplete();
+            // Reader.Completion 只说明取完队列；必须等最后一次 socket.SendAsync 也完成。
+            await sendTask.WaitAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
+        finally
+        {
             if (!drainToken.IsCancellationRequested)
             {
                 workCts.Cancel();
                 session.Cancel();
             }
-        });
+        }
     }
 
     /// <summary>接收循环：batch 帧交给受闸批次任务；drain 帧进入排空；welcome/error/其他帧一律判协议违规断开。</summary>
@@ -263,7 +268,8 @@ public sealed class UpstreamLinkWorker(
         ChannelWriter<byte[]> outbound,
         CancellationTokenSource session,
         CancellationTokenSource workCts,
-        ConcurrentDictionary<long, Task> inFlightTasks)
+        ConcurrentDictionary<long, Task> inFlightTasks,
+        Action beginDrain)
     {
         var token = session.Token;
         long nextTaskId = 0;
@@ -276,6 +282,13 @@ public sealed class UpstreamLinkWorker(
                     // 在接收循环内先占闸再派生：节点满负荷时对主服形成自然背压。
                     await batchGate.WaitAsync(token);
                     Interlocked.Increment(ref _inFlightBatches);
+                    // 先占计数再检查排空标记：与停止回调竞态时，已接纳批次必被等待，后来者不再写已关闭队列。
+                    if (Volatile.Read(ref _drainRequested) != 0)
+                    {
+                        Interlocked.Decrement(ref _inFlightBatches);
+                        batchGate.Release();
+                        break;
+                    }
                     var taskId = ++nextTaskId;
                     var batchTask = ProcessBatchAsync(batch, outbound, session, workCts);
                     inFlightTasks[taskId] = batchTask;
@@ -295,7 +308,7 @@ public sealed class UpstreamLinkWorker(
                     if (Interlocked.Exchange(ref _drainRequested, 1) == 0)
                         _logger.LogInformation("主服请求排空 reason={Reason}：在飞批次跑完后断链重连。",
                             drain.Reason ?? "未说明");
-                    if (Volatile.Read(ref _inFlightBatches) == 0) session.Cancel();
+                    beginDrain();
                     break;
                 case LinkError error:
                     throw new InvalidOperationException($"主服关闭链路 {error.Code}: {error.Message}");
@@ -390,9 +403,8 @@ public sealed class UpstreamLinkWorker(
         {
             metrics.EndBatch();
             batchGate.Release();
-            // 排空等待点：主服 drain 后在飞清空即断链，交给重连逻辑落到新上游。
-            if (Interlocked.Decrement(ref _inFlightBatches) == 0 && _drainRequested != 0)
-                session.Cancel();
+            // 计算结束不等于发送结束；共享排空任务会在全部结果实际写完后断链。
+            Interlocked.Decrement(ref _inFlightBatches);
         }
     }
 

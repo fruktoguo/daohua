@@ -42,7 +42,7 @@ import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
 import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory, resolveQueueActionName, resolveWorldLocationName } from './game/ids'
 import { getDifficultyBracket } from './game/combatDifficulty'
 import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
 import { computeMsUntilNextChinaMidnight, getChinaDayIndex, hasCheckinRedDot, readDismissedCheckinDay, useCheckinStore } from './game/checkinStore'
@@ -101,18 +101,14 @@ function itemAmount(inventory: InventoryItem[], itemId: string): number {
   return inventory.find(item => item.itemId === itemId && !item.variant)?.amount ?? 0
 }
 
-/** 解析队列条目显示名：优先 wire 携带的 actionName，否则按 actionId 回查配表；传入 world+maps 时按当前驻留地点本地化 */
+/** 解析当前语言的队列条目显示名，并追加目标装备与强化等级。 */
 function resolveQueueEntryName(
   entry: QueueEntry,
   actions?: readonly ActionDefinition[],
   world?: WorldState,
   maps?: readonly WorldMapDefinition[],
 ): string {
-  const name = (entry.actionName && entry.actionName !== entry.actionId)
-    ? entry.actionName
-    : ((actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId))?.name
-      || entry.actionName || entry.actionId
-  const localized = world && maps ? localizeActionDisplayText(name, world, maps) : name
+  const localized = resolveQueueActionName(entry, actions, world, maps)
   // 目标型行动（装备强化）：名称后缀拼接目标装备名与目标强化等级
   if (entry.targetItemId) {
     const state = useGameStore.getState()
@@ -762,7 +758,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   )
   const realmInfo = useMemo(
     () => calculateRealmInfo(experience ?? 0, realmLevel, expToNextCap),
-    [realmLevel, experience, expToNextCap],
+    [realmLevel, experience, expToNextCap, t],
   )
   const connectionText = connection === 'online'
     ? t('app.topbar.connected')
@@ -2658,7 +2654,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
     <section className="panel skill-page" hidden={hidden}>
       <header className="panel-header">
         <h2>{t('app.nav.exploration')}</h2>
-        {world.locationName && <span className="location-sub-badge">{world.locationName}</span>}
+        {world.locationName && <span className="location-sub-badge">{resolveWorldLocationName(world)}</span>}
       </header>
       {hasBeenVisible && (
         <>
@@ -3000,10 +2996,17 @@ export default function App(): React.JSX.Element {
   const zongmenPlayerId = useGameStore(state => state.playerId)
   useEffect(() => {
     if (connection !== 'online' || !hasReceivedSnapshot) { useZongmenStore.getState().reset(); return }
-    const refresh = (): void => { void useZongmenStore.getState().refresh() }
+    const refresh = (): void => {
+      if (document.visibilityState !== 'visible') return
+      void useZongmenStore.getState().refresh()
+    }
     refresh()
     const timer = window.setInterval(refresh, 15_000)
-    return () => { window.clearInterval(timer) }
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [connection, hasReceivedSnapshot, zongmenPlayerId])
 
   const tabBlocked = useAntiMultiOpenStore(state => state.tabBlocked)
@@ -3191,7 +3194,6 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     installAntiMultiOpen()
     void restoreSession()
-    chatStickerService.scheduleIdlePreload()
     const onUnblocked = () => gameClient.connect()
     window.addEventListener('daohua:tab-unblocked', onUnblocked)
     return () => {

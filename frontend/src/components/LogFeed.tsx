@@ -152,7 +152,7 @@ const ChatRow = memo(function ChatRow({
     }
   }, [message.senderName])
 
-  const realmInfo = useMemo(() => calculateRealmInfo(0, message.senderRealmLevel), [message.senderRealmLevel])
+  const realmInfo = useMemo(() => calculateRealmInfo(0, message.senderRealmLevel), [message.senderRealmLevel, t])
 
   const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const handleSenderClick = useCallback(() => {

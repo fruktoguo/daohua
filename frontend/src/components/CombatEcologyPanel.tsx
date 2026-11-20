@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
 import { formatInteger } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { findEncounterInCatalog } from '../game/ids'
+import { findEncounterInCatalog, resolveWorldLocationName } from '../game/ids'
 import type { ActionDefinition, CombatantDefinition } from '../game/types'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -145,7 +145,8 @@ export const CombatEcologyPanel = memo(function CombatEcologyPanel({
       .filter((name): name is string => typeof name === 'string' && name.length > 0)
   }, [node, hasEcology, action.combatEncounterId, encounters])
 
-  const heading = node && hasEcology ? world.locationName : (encounterNames[0] ?? world.locationName)
+  const locationName = resolveWorldLocationName(world)
+  const heading = node && hasEcology ? locationName : (encounterNames[0] ?? locationName)
   const hasBudget = node && hasEcology && (world.maxBudget ?? 0) > 0
   const fallbackEncounter = !hasEcology && action.combatEncounterId
     ? findEncounterInCatalog(encounters, action.combatEncounterId)

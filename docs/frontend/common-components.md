@@ -233,7 +233,7 @@
   - **中文 TS 强类型源**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按业务域维护 `<域>.zh.ts`（common/app/insight/market/combat/game 六域，根键互不重叠），聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts) 作为全量 `Messages` 与点路径 `TranslationKey` 静态类型基准与首屏零延迟内置源。
   - **全自动生成翻译模板**：前端执行 `npm run dev` 或 `npm run build` 时，全自动从中文 TS 源生成最新 [`frontend/public/locales/template.csv`](../../frontend/public/locales/template.csv)（`key,zh_source,translation`），供外部/社区翻译对照。
   - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），构建时自动注册并显示到设置页，前端按需异步拉取并缓存；新增文件后需重新构建。空翻译或加载中回退至中文树状词典。
-- **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n
+- **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端协议原文不改写。持有实体 ID 的名称在渲染期复用已有词条与本地化目录；服务端自由文本、日志句式与玩家原文不做猜译。含译文的 `useMemo` 必须依赖 `useT()` 返回的翻译函数，以便语言切换和外语包就绪即时刷新。
 - **实体标识 → 展示名（禁止裸显 ID）**：
   - 物品与装备混用的场合（行动消耗/产出、图鉴配方、掉落明细）统一走 [`resolveAssetLabel(id, items, equipment)`](../../frontend/src/game/ids.ts)：物品目录 → 装备目录 → 静态元数据词条 → 原标识，三级回退。只查 `findItemInCatalog` 会让 `equipment.*` 条目直接露出原始 ID（锻造升级链把成品装备当作输入）。
   - 单实体卡片/悬浮卡走 `resolveItemMetadata(itemId)`（含 `game.item.<id>.label/description`）。
@@ -420,6 +420,7 @@
   - **8 个分组 Tab 的日志面板**（综合/世界/附近/系统/战斗/好友/宗门/队伍）-> `GameLogPanel`：综合 = 系统日志 + 好友私聊 + 队伍群聊按时间合并（只读）；系统/战斗 = 服务端日志事件按 `channel` 分流；世界/附近/好友/队伍 = 传音频道；宗门为占位。
   - **传音频道面板**（世界/附近/队伍共用单会话模板）-> `ChatChannelPanel`；**好友私聊面板**（好友列表 + 申请处理 + 道号检索 + 私聊会话）-> `FriendChannelPanel`；**队伍面板**（成员列表 + 邀请 + 队伍群聊）-> `PartyChannelPanel`；**综合只读合并面板** -> `AggregatePanel`。
   - **传音输入框**：按角色和会话持有草稿，路由/布局切换不清除，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定；左侧增设表情入口按钮呼出表情与表情包浮层 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **内置动态表情 (`QqEmoji`)**：消息或表情选择器实际展示时按需读取图片，复用 IndexedDB 租约缓存；默认取同源 `/emotes/*`，仅缺图时回退外部图床。登录页与应用启动不全量预取 205 张未使用表情，自定义收藏图的跨域缓存与过期自愈另由 `ChatSticker` 处理。
   - **可选中的聊天气泡与点按菜单**：`ChatMessageActions.tsx` 复用 `FloatingPopover`（复制、复读 +1、引用、可撤销的共享点赞）；保留长按选择与内部链接操作。`ChatQuote.tsx` 同时用于输入框可移除的引用条与已发送引用。`chatShare.ts` 先写入对应会话草稿，竖屏再打开传音页。
   - **表情与表情包选择器浮层面板 (`ChatEmojiPicker`)**：包含「表情」与「表情包」双 Tab；原生 Emoji 与自定义表情包图片均按使用频次自适应实时排序（高频在先）；自定义表情包上限 `100` 个（顶部显示 `X/100`），支持多图批量上传、批量勾选删除（「管理」模式）、右键删除、底部添加链接与多端云端同步；点击表情包时自动探测云端有效性并在过期时从本地 IndexedDB 静默重传换链后插入输入框。
   - **表情包与离线缓存图像组件 (`ChatSticker`)**：智能识别消息内图片链接；未加载前渲染精致玄墨微光 `[图片]` 占位符；加载后通过浏览器 **IndexedDB**（`daohua_chat_stickers` v2，`blobs` 按 SHA-256 去重、`images` 按 URL 映射）离线持久化二进制 Blob，相同链接 0 网络请求瞬时秒开；鼠标右键（或触屏长按）支持一键「添加到表情包」（自动强制缓存二进制至本地，跨域受限时走服务端无状态中继）；若云端过期且本地存有原图，支持点击或发送时自动静默重传并同步刷新直链。

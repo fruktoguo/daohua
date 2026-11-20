@@ -203,7 +203,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   // 徽章层进进度按服务端权威瓶颈（含灵根乘区）折算，与顶栏/内视同口径。
   const realmInfo = useMemo(
     () => calculateRealmInfo(experience ?? 0, realmLevel, serverExpToNextCap(expToNextLinggen, realmLevel)),
-    [realmLevel, experience, expToNextLinggen],
+    [realmLevel, experience, expToNextLinggen, t],
   )
 
   const equippedList = combat?.equipment ?? []

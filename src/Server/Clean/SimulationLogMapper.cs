@@ -31,13 +31,15 @@ public static class SimulationLogMapper
 
             var template = ToTemplate(simulationEvent, gameData);
             var timestamp = simulationEvent.At.ToUnixTimeMilliseconds();
+            var sequence = buffer.NextSequence();
 
-            if (result.Count > 0 && result[^1].Template == template && result[^1].Channel == channel)
+            if (result.Count > 0 && result[^1].Template == template && result[^1].Channel == channel
+                && result[^1].Sequence + 1 == sequence)
             {
                 var last = result[^1];
                 result[^1] = last with
                 {
-                    Sequence = buffer.NextSequence(),
+                    Sequence = sequence,
                     TimestampUnixMilliseconds = Math.Max(last.TimestampUnixMilliseconds, timestamp),
                     Count = last.Count + 1
                 };
@@ -45,11 +47,12 @@ public static class SimulationLogMapper
             else
             {
                 var logEvent = new LogEventDto(
-                    buffer.NextSequence(),
+                    sequence,
                     timestamp,
                     template,
                     1,
-                    channel);
+                    channel,
+                    buffer.StreamId);
                 result.Add(logEvent);
             }
         }

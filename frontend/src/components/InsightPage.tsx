@@ -103,7 +103,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const showOpenGateBtn = shouldShowOpenHeavenGate(realmLevel, stats.heavenGateEntered === true, expFull)
   const realmInfo = useMemo(
     () => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel, expToNextCap),
-    [stats.realmLevel, stats.experience, expToNextCap],
+    [stats.realmLevel, stats.experience, expToNextCap, t],
   )
 
   // 筑基期根基常驻养成状态（Lv.30 半步筑基满修为开启，Lv.31+ 天然常驻）

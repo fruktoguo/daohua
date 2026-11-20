@@ -9,6 +9,7 @@ import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingAsideC
 import { createStandaloneBuffAsideCard, extractBuffBonusItems } from './ItemDisplay'
 import { getT, useT } from '../i18n'
 import { isBuffEffectChannel, type BuffEffectEntry } from '../game/buffChannels'
+import { resolveLocalizedEntityName } from '../game/entityNames'
 export interface TraitBarItemProps {
   /** 特质定义 */
   def: TraitMeta
@@ -115,6 +116,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
   const cards: FloatingAsideCard[] = []
   if (def.buff) {
     const buff = def.buff
+    const displayName = resolveLocalizedEntityName(t, 'buff', buff.buffId, buff.name || t('combat.trait.stateMark'))
     const effects: BuffEffectEntry[] = []
     for (const [key, value] of Object.entries(buff)) {
       if (!isBuffEffectChannel(key) || typeof value !== 'number') continue
@@ -127,7 +129,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
     const isPerStack = def.id === 'trait.woyaodashige' || def.id === 'trait.ranhun'
     const items = extractBuffBonusItems({
       buffId: buff.buffId,
-      name: buff.name,
+      name: displayName,
       effects,
       stacks: 1,
       isPerStack,
@@ -150,7 +152,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
       cards.push(
         createStandaloneBuffAsideCard({
           id: `aside-trait-buff-${def.id}`,
-          name: buff.name || t('combat.trait.stateMark'),
+          name: displayName,
           kind,
           durationSeconds,
           refreshOnStack: buff.buffId === 'buff.yixing' || buff.buffId === 'buff.ranhun',
@@ -188,7 +190,7 @@ export const TraitBarItem = memo(function TraitBarItem({
   const qualityName = t(`insight.traits.qualityQ${quality}`)
   const reqExp = getExpForNextTraitLevel(level)
   const expProgress = Math.min(100, Math.max(0, (exp / reqExp) * 100))
-  const asideCards = useMemo(() => resolveTraitAsideCards(def, level), [def, level])
+  const asideCards = useMemo(() => resolveTraitAsideCards(def, level), [def, level, t])
 
   // 浮层内容构建
   const popoverContent = (

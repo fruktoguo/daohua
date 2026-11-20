@@ -2466,7 +2466,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     {
         var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
         var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            $"斗法遭遇：{opponentName} 与你狭路相逢。", 1, "system");
+            $"斗法遭遇：{opponentName} 与你狭路相逢。", 1, "system", buffer.StreamId);
         buffer.Append(logEvent);
         return logEvent;
     }
@@ -2557,7 +2557,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     private LogEventDto AppendInvitationLog(Guid playerId, string template)
     {
         var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
-        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), template, 1, "system");
+        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), template, 1, "system", buffer.StreamId);
         buffer.Append(logEvent);
         return logEvent;
     }
@@ -2576,7 +2576,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             first = false;
         }
         var buffer = _logs.GetOrAdd(playerId, static _ => new PlayerLogBuffer(LogBufferCapacity));
-        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), builder.ToString(), 1, "system");
+        var logEvent = new LogEventDto(buffer.NextSequence(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), builder.ToString(), 1, "system", buffer.StreamId);
         buffer.Append(logEvent);
         return logEvent;
     }

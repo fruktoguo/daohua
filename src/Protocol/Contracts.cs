@@ -768,9 +768,10 @@ public sealed record ErrorDto(string Code, string Message, string? RequestId = n
 /// <param name="Template">前端模板字符串</param>
 /// <param name="Count">连续相同模板合并次数，默认为 1</param>
 /// <param name="Channel">日志分组频道：`system`（系统）或 `combat`（战斗），缺省 `system`</param>
-public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1, string Channel = "system");
+/// <param name="StreamId">内存日志流标识；玩家缓冲重建或进程重启后更换，真实宿主始终填充</param>
+public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1, string Channel = "system", string? StreamId = null);
 
-/// <summary>日志事件批次载荷，按 sequence 单调递增推送。</summary>
+/// <summary>日志事件批次载荷，sequence 在同一 streamId 内单调递增。</summary>
 /// <param name="Events">日志事件列表</param>
 public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);
 

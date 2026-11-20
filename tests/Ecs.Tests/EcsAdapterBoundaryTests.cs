@@ -443,7 +443,7 @@ public sealed class EcsAdapterBoundaryTests
             var snapshot = await adapter.LoadAsync(playerId, timeout.Token);
             await adapter.FlushAsync(playerId, true, timeout.Token);
             Assert.Equal(snapshot.StateVersion, fixture.Sections.LatestSections.Values.Max(section => section.StateVersion));
-            Assert.Equal(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(playerId));
+            AssertLogEventsEqual(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(playerId));
             emitted = logs;
             order.Add("日志");
         };
@@ -456,9 +456,9 @@ public sealed class EcsAdapterBoundaryTests
 
         var result = await AdvanceAsync(fixture, Epoch.AddSeconds(37), batch);
 
-        Assert.Equal(expectedLogs, emitted);
+        AssertLogEventsEqual(expectedLogs, emitted);
         Assert.Equal(new[] { "日志", "快照" }, order);
-        if (!batch) Assert.Equal(expectedLogs, result!.LogEvents);
+        if (!batch) AssertLogEventsEqual(expectedLogs, result!.LogEvents);
     }
 
     [Theory]
@@ -502,8 +502,8 @@ public sealed class EcsAdapterBoundaryTests
 
         await AdvanceAsync(fixture, Epoch.AddSeconds(74), batch, requestId);
 
-        Assert.Equal(expectedLogs, emitted);
-        Assert.Equal(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(fixture.PlayerId));
+        AssertLogEventsEqual(expectedLogs, emitted);
+        AssertLogEventsEqual(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(fixture.PlayerId));
         Assert.Single(snapshots);
         Assert.Equal(JsonSerializer.Serialize(expectedPlayer.ExportState()), JsonSerializer.Serialize(snapshots[0].State));
     }
@@ -537,8 +537,8 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Empty(emitted);
         var loaded = await adapter.LoadAsync(fixture.PlayerId);
         Assert.Equal(JsonSerializer.Serialize(expectedPlayer.ExportState()), JsonSerializer.Serialize(loaded.State));
-        Assert.Equal(expectedLogs, emitted);
-        Assert.Equal(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(fixture.PlayerId));
+        AssertLogEventsEqual(expectedLogs, emitted);
+        AssertLogEventsEqual(expectedBuffer.SnapshotRecent(), adapter.GetRecentLogEvents(fixture.PlayerId));
     }
 
     [Fact]
@@ -1088,6 +1088,16 @@ public sealed class EcsAdapterBoundaryTests
         var result = await fixture.Adapter.ExecuteAsync(fixture.PlayerId, "simulation.advance", payload, 0, requestId ?? Guid.NewGuid());
         Assert.True(result.Success, result.Message);
         return result;
+    }
+
+    /// <summary>比较完整日志语义，并单独验证真实缓冲的随机流标识有效且一致。</summary>
+    private static void AssertLogEventsEqual(IEnumerable<LogEventDto> expected, IEnumerable<LogEventDto>? actual)
+    {
+        Assert.NotNull(actual);
+        var events = actual.ToArray();
+        var streamId = Assert.Single(events.Select(log => log.StreamId).Distinct());
+        Assert.True(Guid.TryParseExact(streamId, "D", out _));
+        Assert.Equal(expected.Select(log => log with { StreamId = streamId }), events);
     }
 
     private static Fixture CreateFixture(params AssetBalanceRecord[] balances)

@@ -87,6 +87,75 @@ public sealed class SimulationLogMapperTests
         Assert.Empty(buffer.SnapshotRecent());
     }
 
+    [Fact]
+    public void ConsecutiveTemplates_DoNotFoldAcrossInterleavedNotificationSequence()
+    {
+        var catalog = LoadCatalogFiles("equipment/weapons.json");
+        var buffer = new PlayerLogBuffer(16);
+        var first = new SimulationEvent(DateTimeOffset.UnixEpoch, "action.blocked", "相同行动日志");
+        var second = new SimulationEvent(DateTimeOffset.UnixEpoch.AddSeconds(2), "action.blocked", "相同行动日志");
+        var events = new InterleavedEvents([first, second], () =>
+            buffer.Append(new LogEventDto(buffer.NextSequence(), 1000, "邀请奖励通知")));
+
+        var logs = SimulationLogMapper.ToLogEvents(events, catalog, buffer);
+
+        Assert.Equal(new long[] { 1, 3 }, logs.Select(log => log.Sequence));
+        Assert.All(logs, log => Assert.Equal(1, log.Count));
+    }
+
+    [Fact]
+    public void LogBuffer_FoldsOnlyAdjacentSequenceRanges()
+    {
+        var buffer = new PlayerLogBuffer(16);
+        buffer.Append(new LogEventDto(2, 2000, "采集", 2));
+        buffer.Append(new LogEventDto(5, 5000, "采集", 2));
+        buffer.Append(new LogEventDto(8, 8000, "采集", 3));
+
+        var history = buffer.SnapshotRecent();
+        Assert.Equal(2, history.Count);
+        Assert.Equal((2L, 2), (history[0].Sequence, history[0].Count));
+        Assert.Equal((8L, 5), (history[1].Sequence, history[1].Count));
+    }
+
+    [Fact]
+    public void RecreatedLogBuffer_UsesNewStreamForSameLowSequence()
+    {
+        var catalog = LoadCatalogFiles("equipment/weapons.json");
+        var events = new[] { new SimulationEvent(DateTimeOffset.UnixEpoch, "action.blocked", "相同行动日志") };
+        var before = new PlayerLogBuffer(16);
+        var after = new PlayerLogBuffer(16);
+
+        var oldLog = Assert.Single(SimulationLogMapper.ToLogEvents(events, catalog, before));
+        var newLog = Assert.Single(SimulationLogMapper.ToLogEvents(events, catalog, after));
+
+        Assert.Equal(1, oldLog.Sequence);
+        Assert.Equal(1, newLog.Sequence);
+        Assert.True(Guid.TryParseExact(oldLog.StreamId, "D", out _));
+        Assert.NotEqual(oldLog.StreamId, newLog.StreamId);
+        Assert.Equal(before.StreamId, oldLog.StreamId);
+        Assert.Equal(after.StreamId, newLog.StreamId);
+        Assert.Equal(oldLog, Assert.Single(before.SnapshotRecent()));
+        Assert.Equal(newLog, Assert.Single(after.SnapshotRecent()));
+        after.Append(new LogEventDto(after.NextSequence(), 1000, "外部邀请通知"));
+        Assert.All(after.SnapshotRecent(), log => Assert.Equal(after.StreamId, log.StreamId));
+    }
+
+    /// <summary>在两条模拟事件之间确定性插入外部通知，复现多来源共享日志缓冲的序号交错。</summary>
+    private sealed class InterleavedEvents(SimulationEvent[] events, Action onSecondRead) : IReadOnlyList<SimulationEvent>
+    {
+        public int Count => events.Length;
+        public SimulationEvent this[int index]
+        {
+            get
+            {
+                if (index == 1) onSecondRead();
+                return events[index];
+            }
+        }
+        public IEnumerator<SimulationEvent> GetEnumerator() => ((IEnumerable<SimulationEvent>)events).GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     /// <summary>
     /// 按配置相对路径过滤 Domain 程序集内嵌的游戏数据并走正式解析链构建目录
     /// （与 EnhancementContractTests 同一装载口径，保证读取的就是随镜像发布的配表）。

@@ -375,6 +375,8 @@ export interface ErrorDto {
 
 /** 单条日志事件（传音道历原始记录） */
 export interface LogEventDto {
+  /** 当前内存日志流代际；缓冲重建后更换，流内序号独立去重 */
+  streamId?: string | null
   /** 服务端日志序号 */
   sequence: number
   /** 发生时刻（Unix 毫秒） */
