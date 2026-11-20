@@ -93,7 +93,8 @@ public sealed class HeavenGateCommandTests
             LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
             LinggenValues.MaxPointsPerElement, LinggenValues.MaxPointsPerElement,
             LinggenValues.MaxPointsPerElement);
-        var (playerId, runtime, rolledValues) = await RollUntilOverdrawRejectedAsync(overdrawn);
+        var (playerId, runtime, rolledValues) = await RollUntilAsync(GateAtFullExperience, new { action = "roll" },
+            values => !HeavenGateRules.IsValidAllocation(values, overdrawn));
         await using (runtime)
         {
             // 合法分配：散功轴选点数最大的系，散功后保留 1 点——roll 点数全部集中在单一系时
@@ -129,61 +130,75 @@ public sealed class HeavenGateCommandTests
     }
 
     /// <summary>
-    /// 建运行时并完成开天门抽取，直到抽取分布能保证给定透支候选必被拒：
-    /// 抽取种子取自随机 playerId，仅当 roll 恰好五系全 100（总值 500）时全 100 候选反而合法，
-    /// 命中该边界即换种子重试（概率极低，通常首次即返回）。
+    /// 建运行时并执行一次抽取类命令（roll/reroll），直到抽取分布满足 accept 谓词：
+    /// 抽取种子取自随机 playerId，命中「总值 &gt; 300 须用尽点数」等边界分布时换种子重试
+    /// （概率极低，通常首次即返回）。
     /// </summary>
-    private static async Task<(Guid PlayerId, EcsPlayerRuntimeAdapter Runtime, LinggenValues RolledValues)> RollUntilOverdrawRejectedAsync(LinggenValues overdrawn)
+    private static async Task<(Guid PlayerId, EcsPlayerRuntimeAdapter Runtime, LinggenValues RolledValues)> RollUntilAsync(
+        Action<PlayerAggregate> configure, object rollPayload, Func<LinggenValues, bool> accept)
     {
         for (var attempt = 0; ; attempt++)
         {
             var playerId = Guid.NewGuid();
-            var runtime = CreateRuntime(playerId, GateAtFullExperience);
+            var runtime = CreateRuntime(playerId, configure);
             await runtime.LoadAsync(playerId);
-            var rolled = await Execute(runtime, playerId, new { action = "roll" });
+            var rolled = await Execute(runtime, playerId, rollPayload);
             var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-            if (!HeavenGateRules.IsValidAllocation(rolledValues, overdrawn) || attempt >= 15)
+            if (accept(rolledValues) || attempt >= 15)
                 return (playerId, runtime, rolledValues);
             await runtime.DisposeAsync();
         }
     }
 
     /// <summary>
-    /// 入天门令灵根生效：入天门状态与确认灵根同时成立，随后突破前置解除；重复入天门被拒。
+    /// 「散功 2 点换灌注 1 点」的确定性微调候选：源选点数最大的系；
+    /// 全系点数不足 2 时不存在合法的散功换灌注分配，返回原生值（走直接候选值路径）。
     /// </summary>
+    private static LinggenValues BuildModifiedCandidate(LinggenValues innate)
+    {
+        var (source, target) = new[] { (LinggenElement.Metal, LinggenElement.Wood), (LinggenElement.Wood, LinggenElement.Metal),
+                (LinggenElement.Water, LinggenElement.Fire), (LinggenElement.Fire, LinggenElement.Water), (LinggenElement.Earth, LinggenElement.Metal) }
+            .OrderByDescending(pair => innate.Of(pair.Item1))
+            .First();
+        return innate.Of(source) >= 2
+            ? innate
+                .With(source, innate.Of(source) - 2)
+                .With(target, Math.Min(LinggenValues.MaxPointsPerElement, innate.Of(target) + 1))
+            : innate;
+    }
+
+    /// <summary>「全灌注金系」单轴候选：其余四轴散功返还的点数尽数灌入金系，单轴上限 100。</summary>
+    private static LinggenValues BuildSingleAxisMetalCandidate(LinggenValues innate)
+    {
+        var othersZero = innate with { Wood = 0, Water = 0, Fire = 0, Earth = 0 };
+        var maxMetal = HeavenGateRules.ResolveMaxReachableValue(innate, othersZero, LinggenElement.Metal);
+        return new LinggenValues(maxMetal, 0, 0, 0, 0);
+    }
+
     /// <summary>
     /// 入天门单次发包：enter 载荷中直接携带五行分配点数，服务端一次性完成校验、分配与入天门生效。
     /// </summary>
     [Fact]
     public async Task EnterWithDirectCandidateValuesSucceedsInSingleCommand()
     {
-        var playerId = Guid.NewGuid();
-        await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
-        await runtime.LoadAsync(playerId);
-        var rolled = await Execute(runtime, playerId, new { action = "roll" });
-        var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        // 微调源选点数最大的系，保证「散功 2 点」不越界；roll 出全系点数不足 2 时
-        // 不存在合法的散功换灌注分配，改为携带原生值走直接候选值路径。
-        var (source, target) = new[] { (LinggenElement.Metal, LinggenElement.Wood), (LinggenElement.Wood, LinggenElement.Metal),
-                (LinggenElement.Water, LinggenElement.Fire), (LinggenElement.Fire, LinggenElement.Water), (LinggenElement.Earth, LinggenElement.Metal) }
-            .OrderByDescending(pair => rolledValues.Of(pair.Item1))
-            .First();
-        var modified = rolledValues.Of(source) >= 2
-            ? rolledValues
-                .With(source, rolledValues.Of(source) - 2)
-                .With(target, Math.Min(100, rolledValues.Of(target) + 1))
-            : rolledValues;
-
-        var entered = await Execute(runtime, playerId, new
+        // 微调候选仅在「散功 2 点换灌注 1 点」不越界时才与抽取值满足最终分配约束；
+        // 抽取恰好使目标轴顶满 100 且总值 &gt; 300 时微调会残留 1 点未分配，换种子重试。
+        var (playerId, runtime, rolledValues) = await RollUntilAsync(GateAtFullExperience, new { action = "roll" },
+            values => HeavenGateRules.IsValidFinalAllocation(values, BuildModifiedCandidate(values)));
+        await using (runtime)
         {
-            action = "enter",
-            metal = modified.Metal, wood = modified.Wood, water = modified.Water,
-            fire = modified.Fire, earth = modified.Earth
-        });
-        Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
-        var gate = entered.Snapshot.State.Progression;
-        Assert.True(gate.HeavenGateEntered);
-        Assert.Equal(modified, gate.HeavenGateConfirmed);
+            var modified = BuildModifiedCandidate(rolledValues);
+            var entered = await Execute(runtime, playerId, new
+            {
+                action = "enter",
+                metal = modified.Metal, wood = modified.Wood, water = modified.Water,
+                fire = modified.Fire, earth = modified.Earth
+            });
+            Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
+            var gate = entered.Snapshot.State.Progression;
+            Assert.True(gate.HeavenGateEntered);
+            Assert.Equal(modified, gate.HeavenGateConfirmed);
+        }
     }
 
     /// <summary>
@@ -212,41 +227,44 @@ public sealed class HeavenGateCommandTests
         Assert.NotEqual(firstRolledValues, gate.HeavenGateRolled.Value);
     }
 
+    /// <summary>
+    /// 入天门令灵根生效：入天门状态与确认灵根同时成立，随后突破前置解除；重复入天门被拒。
+    /// </summary>
     [Fact]
     public async Task EnterActivatesLinggenAndUnblocksBreakthrough()
     {
-        var playerId = Guid.NewGuid();
-        await using var runtime = CreateRuntime(playerId, GateAtFullExperience);
-        await runtime.LoadAsync(playerId);
+        // 单轴候选在「总值 > 300 须用尽点数」规则下不可能合法（单轴上限 100 装不下全部点数），
+        // 换种子重试直至抽取分布使单轴入天门满足最终分配约束。
+        var (playerId, runtime, rolledValues) = await RollUntilAsync(GateAtFullExperience, new { action = "roll" },
+            values => HeavenGateRules.IsValidFinalAllocation(values, BuildSingleAxisMetalCandidate(values)));
+        await using (runtime)
+        {
+            var beforeEnter = await Execute(runtime, playerId, "progression.breakthrough", new { });
+            Assert.False(beforeEnter.Success);
+            Assert.Contains("叩开天门", beforeEnter.Message, StringComparison.Ordinal);
 
-        var beforeEnter = await Execute(runtime, playerId, "progression.breakthrough", new { });
-        Assert.False(beforeEnter.Success);
-        Assert.Contains("叩开天门", beforeEnter.Message, StringComparison.Ordinal);
+            var candidate = BuildSingleAxisMetalCandidate(rolledValues);
+            // enter 载荷直接携带单系分配：随机抽取可能落在多系，显式分配把乘区钉在 1.0，
+            // 让本用例专注于「入天门解除突破封锁」；乘区抬升语义由 Domain.Tests 权威覆盖。
+            var entered = await Execute(runtime, playerId, new { action = "enter", metal = candidate.Metal, wood = 0, water = 0, fire = 0, earth = 0 });
+            Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
+            var gate = entered.Snapshot.State.Progression;
+            Assert.True(gate.HeavenGateEntered);
+            Assert.Equal(candidate, gate.HeavenGateConfirmed);
+            // 入天门即生效：乘区按条数计算（单系为 1.0；五系齐全为 3.0 倍封顶）。
+            Assert.Equal(1d, HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered));
 
-        var rolled = await Execute(runtime, playerId, new { action = "roll" });
-        var rolledValues = rolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        var allOtherZero = rolledValues with { Wood = 0, Water = 0, Fire = 0, Earth = 0 };
-        var maxMetal = HeavenGateRules.ResolveMaxReachableValue(rolledValues, allOtherZero, LinggenElement.Metal);
-        // enter 载荷直接携带单系分配：随机抽取可能落在多系，显式分配把乘区钉在 1.0，
-        // 让本用例专注于「入天门解除突破封锁」；乘区抬升语义由 Domain.Tests 权威覆盖。
-        var entered = await Execute(runtime, playerId, new { action = "enter", metal = maxMetal, wood = 0, water = 0, fire = 0, earth = 0 });
-        Assert.True(entered.Success, $"{entered.Code}: {entered.Message}");
-        var gate = entered.Snapshot.State.Progression;
-        Assert.True(gate.HeavenGateEntered);
-        Assert.Equal(new LinggenValues(maxMetal, 0, 0, 0, 0), gate.HeavenGateConfirmed);
-        // 入天门即生效：乘区按条数计算（单系为 1.0；五系齐全为 3.0 倍封顶）。
-        Assert.Equal(1d, HeavenGateRules.ResolveCultivationMultiplier(gate.HeavenGateConfirmed ?? LinggenValues.Empty, gate.HeavenGateEntered));
+            var again = await Execute(runtime, playerId, new { action = "enter" });
+            Assert.False(again.Success);
+            Assert.Equal("HEAVEN_GATE_ALREADY_ENTERED", again.Code);
 
-        var again = await Execute(runtime, playerId, new { action = "enter" });
-        Assert.False(again.Success);
-        Assert.Equal("HEAVEN_GATE_ALREADY_ENTERED", again.Code);
-
-        // 灵根乘区已生效（总纲 §7.7.5.1）：入天门后突破瓶颈 = 配表值 × 条数乘区。
-        // 本用例开局只确认单系灵根（60,0,0,0,0），乘区恒 1.0，原 1000 修为仍可直接突破——
-        // 乘区抬升与阻断语义由 Domain.Tests.BreakthroughCapScalesWithLinggenMultiplierAfterEnteringGate 权威覆盖。
-        var breakthrough = await Execute(runtime, playerId, "progression.breakthrough", new { });
-        Assert.True(breakthrough.Success, $"{breakthrough.Code}: {breakthrough.Message}");
-        Assert.Equal(HeavenGateRules.HeavenGateRealmLevel + 1, breakthrough.Snapshot.State.Progression.RealmLevel);
+            // 灵根乘区已生效（总纲 §7.7.5.1）：入天门后突破瓶颈 = 配表值 × 条数乘区。
+            // 本用例开局只确认单系灵根，乘区恒 1.0，原修为仍可直接突破——
+            // 乘区抬升与阻断语义由 Domain.Tests.BreakthroughCapScalesWithLinggenMultiplierAfterEnteringGate 权威覆盖。
+            var breakthrough = await Execute(runtime, playerId, "progression.breakthrough", new { });
+            Assert.True(breakthrough.Success, $"{breakthrough.Code}: {breakthrough.Message}");
+            Assert.Equal(HeavenGateRules.HeavenGateRealmLevel + 1, breakthrough.Snapshot.State.Progression.RealmLevel);
+        }
     }
 
     /// <summary>
@@ -365,59 +383,51 @@ public sealed class HeavenGateCommandTests
     [Fact]
     public async Task RerollAcceptAndDiscardFlowBehavesCorrectly()
     {
-        var playerId = Guid.NewGuid();
-        await using var runtime = CreateRuntime(playerId, aggregate =>
+        // 微调候选与 EnterWithDirectCandidate 同源：抽取恰好使目标轴顶满 100 且总值 > 300 时
+        // accept 会残留 1 点未分配被拒，换种子重试直至改命候选满足最终分配约束。
+        var (playerId, runtime, candidateRoll) = await RollUntilAsync(
+            aggregate =>
+            {
+                GateEnteredAtFullExperience(aggregate);
+                aggregate.Progression.Foundation = 5000;
+            },
+            new { action = "reroll", usePill = false },
+            values => HeavenGateRules.IsValidFinalAllocation(values, BuildModifiedCandidate(values)));
+        await using (runtime)
         {
-            GateEnteredAtFullExperience(aggregate);
-            aggregate.Progression.Foundation = 5000;
-        });
-        await runtime.LoadAsync(playerId);
-        var initialConfirmed = (await runtime.LoadAsync(playerId)).State.Progression.HeavenGateConfirmed;
-        Assert.Equal(new LinggenValues(60, 0, 0, 0, 0), initialConfirmed);
+            // 改命已扣底蕴并刷新 Rolled，但 Confirmed 原样保留为入天门时的种子灵根。
+            var initialConfirmed = (await runtime.LoadAsync(playerId)).State.Progression.HeavenGateConfirmed;
+            Assert.Equal(new LinggenValues(60, 0, 0, 0, 0), initialConfirmed);
+            Assert.NotEqual(initialConfirmed, candidateRoll);
 
-        // 1. 改命：扣底蕴，次数+1，Rolled 刷新，Confirmed 原样保留
-        var rerolled = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
-        Assert.True(rerolled.Success);
-        var candidateRoll = rerolled.Snapshot.State.Progression.HeavenGateRolled!.Value;
-        Assert.NotEqual(initialConfirmed, candidateRoll);
-        Assert.Equal(initialConfirmed, rerolled.Snapshot.State.Progression.HeavenGateConfirmed);
+            // 2. 采纳替换（带微调）：散功 2 点换灌注 1 点，严格在额度内。
+            var modified = BuildModifiedCandidate(candidateRoll);
+            var accepted = await Execute(runtime, playerId, new
+            {
+                action = "accept",
+                metal = modified.Metal,
+                wood = modified.Wood,
+                water = modified.Water,
+                fire = modified.Fire,
+                earth = modified.Earth,
+            });
+            Assert.True(accepted.Success, $"{accepted.Code}: {accepted.Message}");
+            var gateAccepted = accepted.Snapshot.State.Progression;
+            Assert.Equal(modified, gateAccepted.HeavenGateConfirmed);
+            Assert.Equal(modified, gateAccepted.HeavenGateRolled);
 
-        // 2. 采纳替换（带微调）：散功 2 点换灌注 1 点，严格在额度内；微调源选点数最大的系，
-        //    全系点数不足 2 时改为采纳候选原生值（不存在合法的散功换灌注分配）。
-        var (source, target) = new[] { (LinggenElement.Metal, LinggenElement.Wood), (LinggenElement.Wood, LinggenElement.Metal),
-                (LinggenElement.Water, LinggenElement.Fire), (LinggenElement.Fire, LinggenElement.Earth), (LinggenElement.Earth, LinggenElement.Metal) }
-            .OrderByDescending(pair => candidateRoll.Of(pair.Item1))
-            .First();
-        var modified = candidateRoll.Of(source) >= 2
-            ? candidateRoll
-                .With(source, candidateRoll.Of(source) - 2)
-                .With(target, Math.Min(LinggenValues.MaxPointsPerElement, candidateRoll.Of(target) + 1))
-            : candidateRoll;
-        var accepted = await Execute(runtime, playerId, new
-        {
-            action = "accept",
-            metal = modified.Metal,
-            wood = modified.Wood,
-            water = modified.Water,
-            fire = modified.Fire,
-            earth = modified.Earth,
-        });
-        Assert.True(accepted.Success, $"{accepted.Code}: {accepted.Message}");
-        var gateAccepted = accepted.Snapshot.State.Progression;
-        Assert.Equal(modified, gateAccepted.HeavenGateConfirmed);
-        Assert.Equal(modified, gateAccepted.HeavenGateRolled);
+            // 3. 再次改命，随后放弃（discard）
+            var rerolledAgain = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
+            Assert.True(rerolledAgain.Success);
+            Assert.Equal(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateConfirmed);
+            Assert.NotEqual(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateRolled);
 
-        // 3. 再次改命，随后放弃（discard）
-        var rerolledAgain = await Execute(runtime, playerId, new { action = "reroll", usePill = false });
-        Assert.True(rerolledAgain.Success);
-        Assert.Equal(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateConfirmed);
-        Assert.NotEqual(modified, rerolledAgain.Snapshot.State.Progression.HeavenGateRolled);
-
-        var discarded = await Execute(runtime, playerId, new { action = "discard" });
-        Assert.True(discarded.Success, $"{discarded.Code}: {discarded.Message}");
-        var gateDiscarded = discarded.Snapshot.State.Progression;
-        Assert.Equal(modified, gateDiscarded.HeavenGateConfirmed);
-        Assert.Equal(modified, gateDiscarded.HeavenGateRolled);
+            var discarded = await Execute(runtime, playerId, new { action = "discard" });
+            Assert.True(discarded.Success, $"{discarded.Code}: {discarded.Message}");
+            var gateDiscarded = discarded.Snapshot.State.Progression;
+            Assert.Equal(modified, gateDiscarded.HeavenGateConfirmed);
+            Assert.Equal(modified, gateDiscarded.HeavenGateRolled);
+        }
     }
 
     /// <summary>同一 requestId 重放走幂等回执：状态不再变更，也不重复扣底蕴。</summary>
