@@ -5044,6 +5044,77 @@
   }
 }
 
+/* 英文标题独占槽位上方一行，避免沿用中文竖排规则逐字符拆开单词。 */
+.combat-slot-tray:lang(en) .combat-slot-row--consumables {
+  height: auto;
+  align-items: stretch;
+}
+
+.combat-slot-tray:lang(en) .combat-slot-section {
+  flex-direction: column;
+  justify-content: flex-start;
+  height: auto;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.combat-slot-tray:lang(en) .combat-slot-section > .slot-group-label {
+  position: static;
+  transform: none;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  width: auto;
+  max-width: 100%;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: normal;
+  word-break: normal;
+}
+
+@media (min-width: 961px) {
+  .expedition-duel-config {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .combat-slot-tray {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .combat-slot-tray .combat-slot-row--consumables {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    row-gap: 8px;
+  }
+
+  .combat-slot-tray .slot-group.combat-slot-section {
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    flex-shrink: 1;
+    box-sizing: border-box;
+  }
+
+  .combat-slot-tray :is(.auto-use-slots, .combat-slot-grid--abilities) {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 960px) {
+  .combat-slot-tray:lang(en) .combat-slot-row--consumables .combat-slot-section {
+    padding: 0 3px;
+  }
+
+  .combat-slot-tray:lang(en) .combat-slot-section--abilities {
+    padding: 6px;
+  }
+}
+
 /* ================= 详情页：生活行动总目标与空闲卡片 ================= */
 .arena-life-card {
   position: relative;

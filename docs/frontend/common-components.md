@@ -235,6 +235,8 @@
   - **全自动生成翻译模板**：前端执行 `npm run dev` 或 `npm run build` 时，全自动从中文 TS 源生成最新 [`frontend/public/locales/template.csv`](../../frontend/public/locales/template.csv)（`key,zh_source,translation`），供外部/社区翻译对照。
   - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），构建时自动注册并显示到设置页，前端按需异步拉取并缓存；新增文件后需重新构建。空翻译或加载中回退至中文树状词典。
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端协议原文不改写。持有实体 ID 的名称在渲染期复用已有词条与本地化目录；服务端自由文本、日志句式与玩家原文不做猜译。含译文的 `useMemo` 必须依赖 `useT()` 返回的翻译函数，以便语言切换和外语包就绪即时刷新。
+- **英文标题布局**：战斗装配分组使用文档 `lang` 的 `:lang(en)` 作用域，将英文标题横排置于槽位上方并保留独立流空间；简中保留原竖排标签与内边距。英文逐字符竖排属于语言适配问题，与公共槽位裁切分别验收。
+- **公共装配区布局**：桌面端不分语言，容器不足时依次让分组、组内槽位自然换行，窄主面板高度受限时在装配区内原生纵向滚动，使所有槽位可达；移动端保留上方消耗品、下方功法的分行布局，现有槽位尺寸不变。中英 1440×1000、390×844 与 961px 附近窄主面板均须检查标题完整、槽位无挤压和横向溢出，不能仅以静态词条门禁替代渲染验收。
 - **实体标识 → 展示名（禁止裸显 ID）**：
   - 物品与装备混用的场合（行动消耗/产出、图鉴配方、掉落明细）统一走 [`resolveAssetLabel(id, items, equipment)`](../../frontend/src/game/ids.ts)：物品目录 → 装备目录 → 静态元数据词条 → 原标识，三级回退。只查 `findItemInCatalog` 会让 `equipment.*` 条目直接露出原始 ID（锻造升级链把成品装备当作输入）。
   - 单实体卡片/悬浮卡走 `resolveItemMetadata(itemId)`（含 `game.item.<id>.label/description`）。
