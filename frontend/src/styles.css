@@ -7339,6 +7339,20 @@ input[type="checkbox"] {
   padding-bottom: 8px;
 }
 
+.party-loadout-lock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-block-start: 6px;
+  color: var(--gold-bright);
+  font-size: var(--text-sm);
+}
+
+.party-loadout-lock > button {
+  padding: 2px 8px;
+}
+
 .right-sidebar-nav {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

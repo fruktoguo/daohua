@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { assignAbilityToSlot, learnedAbilityLevel } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { describeAbility, formatAbilityCategory } from '../game/format'
@@ -19,7 +19,7 @@ import { ConditionedTile } from './ConditionedTile'
  *    槽位与功法类别互斥——内功位只收 discipline=internal 的心法，术法位只收术法，与服务端 loadout.replace 校验一致；
  * 2. 【已学功法分组总览】：已习得功法按内功心法 / 神通术法两组分列，支持查看详细词条、五行属性、灵力消耗与装配状态。
  */
-export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element {
+export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked: boolean }): React.JSX.Element {
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
@@ -27,6 +27,11 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const [activePicker, setActivePicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   // 触发条件按功法 ID 编辑（跟随功法而非槽位），编辑器打开的是功法维度的条件配置。
   const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!locked) return
+    setActivePicker(null)
+    setEditingTriggerAbilityId(null)
+  }, [locked])
 
   const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
   // 获得已学功法定义列表，并按 discipline 分为内功心法与神通术法两组（缺省按术法归组）
@@ -114,6 +119,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
       <button
         aria-label={slotAriaLabel}
         className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
+        disabled={locked}
         onClick={event => {
           const anchor = event.currentTarget
           setActivePicker(prev => prev?.index === index ? null : { index, anchor })
@@ -154,7 +160,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         as="div"
         asideCards={slotAsideCards}
         className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`}
-        condition={ability ? {
+        condition={!locked && ability ? {
           ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
           hasTriggers: triggerCount > 0,
           label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
@@ -173,7 +179,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         )}
         key={index}
         triggerClassName="combat-ability-slot-shell"
-        triggerTabIndex={-1}
+        triggerTabIndex={locked && ability ? 0 : -1}
       >
         {slotButton}
       </ConditionedTile>
@@ -250,13 +256,13 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   return (
                     <ConditionedTile
                       asideCards={cellAsideCards}
-                      condition={{
+                      condition={!locked ? {
                         ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
                         hasTriggers: triggerCount > 0,
                         label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
                         onClick: () => setEditingTriggerAbilityId(ability.abilityId),
                         title: t('app.combatPanel.editTriggersTitle'),
-                      }}
+                      } : null}
                       content={describeAbility(ability, learnedLevel)}
                       key={ability.abilityId}
                       triggerClassName="item-grid-picker-tooltip"
@@ -264,8 +270,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                       <button
                         className={`item-tile combat-ability-cell${equippedIndex !== null ? ' is-equipped' : ''}`}
                         data-rarity={group.key === 'internal' ? 'emperor' : 'mystic'}
+                        disabled={locked}
                         onClick={() => setEditingTriggerAbilityId(ability.abilityId)}
-                        title={t('app.combatPanel.editTriggersTitle')}
+                        title={locked ? undefined : t('app.combatPanel.editTriggersTitle')}
                         type="button"
                       >
                         <span aria-hidden="true" className="item-type-ribbon">
@@ -310,14 +317,14 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           }
           setActivePicker(null)
         }}
-        open={activePicker !== null}
+        open={!locked && activePicker !== null}
         slotIndex={activePicker?.index}
         title={pickerTitle}
         triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
         value={currentPickerValue}
       />
       {/* 触发条件编辑器（功法维度：title 用功法名） */}
-      {editingTriggerAbilityId !== null && (
+      {!locked && editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
           defaultTriggers={abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}
           initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}

@@ -73,6 +73,9 @@ interface SocialStore {
   outgoingRequests: readonly FriendRequestDto[]
   /** 所在队伍；未组队为 null */
   party: PartyDto | null
+  /** 确认解锁的会话 ID；不持久化，散场后清除。 */
+  unlockedPartyLoadoutSessionId: string | null
+  unlockPartyLoadout: (sessionId: string) => void
   /** 待处理的队伍邀请 */
   partyInvitation: PartyInvitationDto | null
   /** 本人「匹配中」散人登记；未登记为 null */
@@ -163,12 +166,13 @@ interface SocialStore {
   setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'playerCardError' | 'activeFriendId' | 'teammateReports'> = {
+const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'unlockedPartyLoadoutSessionId' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'playerCardError' | 'activeFriendId' | 'teammateReports'> = {
   douDiZhuInteractions: [],
   friends: [],
   incomingRequests: [],
   outgoingRequests: [],
   party: null,
+  unlockedPartyLoadoutSessionId: null,
   partyInvitation: null,
   seeking: null,
   nearbyPlayers: [],
@@ -182,12 +186,22 @@ const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingReq
   teammateReports: {},
 }
 
+export function selectPartyLoadoutLocked(state: Pick<SocialStore, 'party' | 'unlockedPartyLoadoutSessionId'>): boolean {
+  const sessionId = state.party?.activeSession?.sessionId
+  return sessionId !== undefined && sessionId !== state.unlockedPartyLoadoutSessionId
+}
+
 /**
  * 社交状态全局 Zustand Store。
  * 注意：选中好友在被删除或不再是好友时自动回落为 null，避免聊天面板停留在失效会话。
  */
 export const useSocialStore = create<SocialStore>((set, get) => ({
   ...EMPTY,
+  unlockPartyLoadout: sessionId => {
+    if (get().party?.activeSession?.sessionId === sessionId) {
+      set({ unlockedPartyLoadoutSessionId: sessionId })
+    }
+  },
   applyState: state => set(current => {
     const friends = Array.isArray(state.friends) ? state.friends : []
     const stillFriend = current.activeFriendId !== null && friends.some(friend => friend.playerId === current.activeFriendId)
@@ -199,6 +213,8 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
         ...state.party,
         douDiZhuGame: normalizeDouDiZhuGame(state.party.douDiZhuGame),
       } : null,
+      unlockedPartyLoadoutSessionId: state.party?.activeSession?.sessionId === current.unlockedPartyLoadoutSessionId
+        ? current.unlockedPartyLoadoutSessionId : null,
       douDiZhuInteractions: state.douDiZhuInteractions ?? [],
       partyInvitation: state.partyInvitation ?? null,
       seeking: state.seeking ?? null,

@@ -797,6 +797,13 @@ export const appZh = {
       triggerEditorTitle: '{name} · 触发条件',
       abilitySubtitle: 'Lv. 1 · {mana} 灵力 · {cast}s 施法',
     },
+    partyLoadout: {
+      confirmDescription: '解锁后可修改功法和装备。改动不影响当前战斗，需重新开始组队战斗才会生效。',
+      confirmTitle: '解锁组队配装？',
+      locked: '组队配装已锁定',
+      nextSession: '配装改动将在重新开始组队战斗后生效',
+      unlock: '解锁',
+    },
     // 右侧栏 Tab 切换
     rightTab: {
       inventory: '储物袋',

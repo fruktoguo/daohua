@@ -6,6 +6,7 @@ import { AwakenResultModal } from './components/AwakenResultModal'
 import { ChangelogNoticeModal } from './components/ChangelogNoticeModal'
 import { HelpPromptModal } from './components/HelpPromptModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { PartyLoadoutLock } from './components/PartyLoadoutLock'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
 import { CombatHeaderRateBar } from './components/ReportBriefSection'
@@ -46,7 +47,7 @@ import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, f
 import { getDifficultyBracket } from './game/combatDifficulty'
 import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
 import { computeMsUntilNextChinaMidnight, getChinaDayIndex, hasCheckinRedDot, readDismissedCheckinDay, useCheckinStore } from './game/checkinStore'
-import { useSocialStore } from './game/socialStore'
+import { selectPartyLoadoutLocked, useSocialStore } from './game/socialStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { chatStickerService } from './game/chatStickerService'
@@ -2406,6 +2407,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
   ) ?? EMPTY_ABILITY_COOLDOWNS
   const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
   const [pickerTarget, setPickerTarget] = useState<CombatPickerTarget | null>(null)
+  const locked = useSocialStore(selectPartyLoadoutLocked)
+  useEffect(() => {
+    if (!locked) return
+    setPickerTarget(null)
+    setEditingTriggerAbilityId(null)
+  }, [locked])
   // hooks 必须在早退之前调用：combat 在 undefined 与对象间切换时保持 hook 数量稳定。
   const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
   const learnedAbilities = useMemo(() => {
@@ -2446,6 +2453,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
 
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
+      {!hidden && <PartyLoadoutLock />}
       <div className="combat-slot-tray">
         <div className="combat-slot-row combat-slot-row--consumables">
           <AutoUseSlotGroup bar="combat" className="combat-slot-section" hidden={hidden} label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" />
@@ -2478,6 +2486,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
                 <button
                   aria-label={slotAriaLabel}
                   className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
+                  disabled={locked}
                   onClick={event => {
                     const anchor = event.currentTarget
                     setPickerTarget(prev => prev?.index === index ? null : { kind: 'ability', index, anchor })
@@ -2515,7 +2524,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
                   as="div"
                   asideCards={slotAsideCards}
                   className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
-                  condition={ability ? {
+                  condition={!locked && ability ? {
                     ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
                     hasTriggers: triggerCount > 0,
                     label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
@@ -2532,7 +2541,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
                   )}
                   key={index}
                   triggerClassName="combat-ability-slot-shell"
-                  triggerTabIndex={-1}
+                  triggerTabIndex={locked && ability ? 0 : -1}
                 >
                   {slotButton}
                 </ConditionedTile>
@@ -2551,13 +2560,13 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
         onClose={() => setPickerTarget(null)}
         onEditCondition={currentPickerAbility ? () => setEditingTriggerAbilityId(currentPickerAbility.abilityId) : undefined}
         onSelect={selectPickerValue}
-        open={pickerTarget !== null}
+        open={!locked && pickerTarget !== null}
         slotIndex={pickerTarget?.index}
         title={pickerTitle}
         triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
         value={pickerValue}
       />
-      {editingTriggerAbilityId !== null && (
+      {!locked && editingTriggerAbilityId !== null && (
         <CombatTriggerEditor
           defaultTriggers={findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}
           initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}

@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { selectPartyLoadoutLocked, useSocialStore } from '../game/socialStore'
 import { INVENTORY_GROUP_ORDER, calculateInventoryGroupTotalValue, getEquipmentMap, getItemMap, getOccupiedEquipmentCounts, parseEnhancementVariant, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
 import { formatNumber } from '../game/format'
 import type { InventoryItem } from '../game/types'
@@ -8,13 +9,14 @@ import { useT } from '../i18n'
 import { InventoryItemCell } from './InventoryItemCell'
 import { EquipmentPanel } from './EquipmentPanel'
 import { AbilitiesPanel } from './AbilitiesPanel'
+import { PartyLoadoutLock } from './PartyLoadoutLock'
 
 /**
  * 储物袋（背包）物品网格展示面板：
  * 物品按「重要 / 消耗品 / 装备法宝 / 功法 / 材料」五组小标题分段陈列（非顶部 Tab），
  * 空组不渲染；组内保持服务端资产顺序（asset_id 字典序）。
  */
-export const InventoryPanel = memo(function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
+export const InventoryPanel = memo(function InventoryPanel({ className = '', locked }: { className?: string; locked: boolean }): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const items = useGameStore(state => state.items)
@@ -97,7 +99,7 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
           </div>
           <div className="inventory-grid">
             {group.list.map(item => (
-              <InventoryItemCell item={item} key={`${item.itemId}#${item.variant ?? ''}`} />
+              <InventoryItemCell combatLoadoutLocked={locked && group.key === 'equipment'} item={item} key={`${item.itemId}#${item.variant ?? ''}`} />
             ))}
           </div>
         </section>
@@ -131,6 +133,7 @@ export const RightSidebar = memo(function RightSidebar({ className = '' }: { cla
   const t = useT()
   const rightColumnTab = useUiStore(state => state.rightColumnTab)
   const setRightColumnTab = useUiStore(state => state.setRightColumnTab)
+  const locked = useSocialStore(selectPartyLoadoutLocked)
 
   return (
     <section className={`panel right-sidebar-panel ${className}`.trim()}>
@@ -150,12 +153,13 @@ export const RightSidebar = memo(function RightSidebar({ className = '' }: { cla
             )
           })}
         </nav>
+        <PartyLoadoutLock />
       </header>
 
       <div className="right-sidebar-body">
-        {rightColumnTab === 'inventory' && <InventoryPanel />}
-        {rightColumnTab === 'equipment' && <EquipmentPanel />}
-        {rightColumnTab === 'abilities' && <AbilitiesPanel />}
+        {rightColumnTab === 'inventory' && <InventoryPanel locked={locked} />}
+        {rightColumnTab === 'equipment' && <EquipmentPanel locked={locked} />}
+        {rightColumnTab === 'abilities' && <AbilitiesPanel locked={locked} />}
       </div>
     </section>
   )

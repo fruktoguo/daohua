@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { resolvePlayerActorId, useAvatarStore } from '../game/avatarStore'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
@@ -86,6 +86,7 @@ interface EquipmentSlotCardProps {
   equipmentDef?: CombatEquipmentDefinition
   /** 该槽位正被待选列表设置中（高亮描边） */
   picking?: boolean
+  disabled?: boolean
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
 }
 const EquipmentSlotCard = memo(function EquipmentSlotCard({
@@ -94,6 +95,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
   definition,
   equipmentDef,
   picking = false,
+  disabled = false,
   onClick,
 }: EquipmentSlotCardProps): React.JSX.Element {
   const t = useT()
@@ -133,6 +135,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
       >
         <button
           className={`equipment-slot-btn is-equipped${picking ? ' is-picking' : ''}`}
+          disabled={disabled}
           onClick={onClick}
           onContextMenu={handleContextMenu}
           type="button"
@@ -164,6 +167,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
   return (
     <button
       className={`equipment-slot-btn is-empty${picking ? ' is-picking' : ''}`}
+      disabled={disabled}
       onClick={onClick}
       type="button"
       aria-label={slotName}
@@ -184,7 +188,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
  * 4. 【技艺工具槽位】：底部排布 7 个技艺工具专属槽位（采集/挖掘/炼丹/炼器/符箓/阵法/强化），
  *    点击同样呼出网格挑选穿脱，已装备工具为对应技艺行动提供速度加成。
  */
-export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element {
+export const EquipmentPanel = memo(function EquipmentPanel({ locked }: { locked: boolean }): React.JSX.Element {
   const t = useT()
   const playerName = useGameStore(state => state.name)
   const visual = useGameStore(state => state.visual)
@@ -198,7 +202,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const equipmentCatalog = useGameStore(state => state.equipment)
   const queueEntries = useGameStore(state => state.queue?.entries)
 
-  const [activePickingSlot, setActivePickingSlot] = useState<{ config: SlotConfig; anchor: HTMLElement } | null>(null)
+  const [pickingSlot, setActivePickingSlot] = useState<{ config: SlotConfig; anchor: HTMLElement } | null>(null)
+  const activePickingSlot = locked && !pickingSlot?.config.slot.startsWith('tool-') ? null : pickingSlot
+  useEffect(() => {
+    if (locked) setActivePickingSlot(previous => previous?.config.slot.startsWith('tool-') ? previous : null)
+  }, [locked])
 
   // 徽章层进进度按服务端权威瓶颈（含灵根乘区）折算，与顶栏/内视同口径。
   const realmInfo = useMemo(
@@ -352,6 +360,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
               <EquipmentSlotCard
                 config={config}
                 definition={data?.definition}
+                disabled={locked}
                 equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}
@@ -392,6 +401,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
               <EquipmentSlotCard
                 config={config}
                 definition={data?.definition}
+                disabled={locked}
                 equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}

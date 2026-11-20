@@ -140,13 +140,16 @@ function ItemQuantityDialog({
  * 4. 【数量】使用（秘籍/残卷）、丢弃与回收经统一数量选择 + 二次确认弹窗执行。
  */
 export const InventoryItemCell = memo(function InventoryItemCell({
+  combatLoadoutLocked,
   item,
 }: {
+  combatLoadoutLocked: boolean
   item: InventoryItem
 }): React.JSX.Element {
   const t = useT()
   const definition = useGameStore(state => findItemInCatalog(state.items, item.itemId))
   const equipmentDef = useGameStore(state => findEquipmentInCatalog(state.equipment, item.itemId))
+  const equipLocked = combatLoadoutLocked && equipmentDef !== undefined && !equipmentDef.slot.startsWith('tool-')
   // 已装配与强化锁定计数按 (itemId, 强化等级) 精确匹配：背包中同物不同 +N 变体行互不串位。
   // 占用表按状态引用缓存，每格 selector 只做一次 O(1) 查表，避免每补丁为每格重建整表。
   const enhancementLevel = parseEnhancementVariant(item.variant)
@@ -184,6 +187,10 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     }
     if (!equipmentDef) return
     const { combat, equipment, stats, setNotice } = useGameStore.getState()
+    if (equipLocked) {
+      setNotice(t('app.partyLoadout.locked'))
+      return
+    }
     if (!combat) return
     const realmLevel = stats?.realmLevel ?? 1
     const reqLevel = equipmentDef.level ?? 1
@@ -222,6 +229,8 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     <FloatingMenuGroup title={enhancementLevel > 0 ? `${item.name} +${enhancementLevel}` : item.name}>
       {usable && (
         <FloatingMenuItem
+          disabled={equipLocked}
+          hint={equipLocked ? t('app.partyLoadout.locked') : undefined}
           label={equipmentDef ? t('app.inventoryPanel.useEquip') : isStorageBag ? t('app.inventoryPanel.useOpen') : item.itemId === 'item.awakening-stone' ? t('app.inventoryPanel.useAwaken') : t('app.inventoryPanel.useLearn')}
           onClick={use}
           tone="jade"

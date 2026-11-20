@@ -182,6 +182,7 @@
   - **开天门阵盘与独立规则说明叠层弹窗**（横屏左右双栏 / 竖屏 `orientation: portrait` 顶部「天门 / 加成」双页签切换；横竖屏均提供「说明」按钮弹出独立 `HeavenGateGuideModal`，首次打开当前浏览器自动叠层弹出并保持底层聚焦「天门」，文内 `逆命丹` 走 `RichTemplateText` 图标与悬浮详情，Esc/关闭仅退顶层，记忆状态由 `heavenGateGuide.ts` `localStorage` 持久化） -> `HeavenGateModal`, `HeavenGateGuideModal`
   - **每日签到独立高密度弹窗**（归属「其他/更多 → 签到」，复用 `Modal`、`ItemTile`/`ItemTooltipTarget`/`ItemIcon`；横屏双栏展示功德·绑定赏赐与持仓/领奖回执、今日气运与本周气运道劫签文、连续与累计签到、本周 7 日条与本月统计，竖屏单栏自适应；每日首次在线与在线跨 UTC+8 零点自动弹出且避让新手引导与公告弹窗） -> `CheckinModal`
   - **二次确认 / 高危操作对话框**（重置、遗忘功法、摧毁物品、批量购买等，带取消/确认与高危危险样式） -> `ConfirmDialog`
+  - **组队装配编辑锁**：战斗详情、装备／功法与储物袋的配装入口共用 `PartyLoadoutLock` 状态栏，解锁复用 `ConfirmDialog`。源码 [`PartyLoadoutLock.tsx`](../../frontend/src/components/PartyLoadoutLock.tsx)，布局见 [`styles.css`](../../frontend/src/styles.css)。
   - 战斗技能触发条件编辑器弹窗 `CombatTriggerEditor` 见 §22，此处不再重复登记。
 - **组件源码**：
   - [`frontend/src/components/Modal.tsx`](../../frontend/src/components/Modal.tsx)
