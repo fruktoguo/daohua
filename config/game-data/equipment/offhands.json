@@ -5,10 +5,10 @@
     "description": "袖底藏锋，反握出奇。\n百炼铁包兽骨打制的贴身轻匕，短小精悍，反握藏锋。",
     "slot": "off-hand",
     "baseStatRatios": {
-      "physicalAttack": 0.1
+      "physicalAttack": 0.08
     },
     "flatStats": {
-      "physicalAttack": 6,
+      "physicalAttack": 8,
       "accuracy": 6,
       "physicalDamageBonusPoints": 4
     },
@@ -20,10 +20,10 @@
     "description": "桃木凝华，珠转法生。\n老桃木灵芯磨成的法珠，握于掌心可助法诀流转。",
     "slot": "off-hand",
     "baseStatRatios": {
-      "spellAttack": 0.1
+      "spellAttack": 0.08
     },
     "flatStats": {
-      "spellAttack": 6,
+      "spellAttack": 8,
       "accuracy": 6,
       "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
@@ -82,10 +82,10 @@
     "slot": "off-hand",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.12
+      "spellAttack": 0.1
     },
     "flatStats": {
-      "spellAttack": 8,
+      "spellAttack": 10,
       "accuracy": 7,
       "spellDamageBonusPoints": 4,
       "skillBonusPoints": 4
@@ -100,10 +100,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.16
+      "physicalAttack": 0.14
     },
     "flatStats": {
-      "physicalAttack": 11,
+      "physicalAttack": 13,
       "accuracy": 10,
       "physicalDamageBonusPoints": 6
     },
@@ -117,10 +117,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.16
+      "spellAttack": 0.14
     },
     "flatStats": {
-      "spellAttack": 11,
+      "spellAttack": 13,
       "accuracy": 10,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
@@ -168,10 +168,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.12
+      "physicalAttack": 0.1
     },
     "flatStats": {
-      "physicalAttack": 9,
+      "physicalAttack": 11,
       "accuracy": 10,
       "physicalDamageBonusPoints": 5,
       "criticalDamageBonusPoints": 30

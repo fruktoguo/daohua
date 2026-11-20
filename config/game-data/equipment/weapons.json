@@ -5,10 +5,10 @@
     "description": "青锋映水，寒光澄秋。\n青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
     "slot": "weapon",
     "baseStatRatios": {
-      "physicalAttack": 0.2
+      "physicalAttack": 0.15
     },
     "flatStats": {
-      "physicalAttack": 10,
+      "physicalAttack": 15,
       "accuracy": 10,
       "physicalDamageBonusPoints": 5
     },
@@ -20,12 +20,12 @@
     "description": "重刀沉似岳，劈落断山峦。\n沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
     "slot": "weapon",
     "baseStatRatios": {
-      "physicalAttack": 0.1,
-      "physicalArmor": 0.14
+      "physicalAttack": 0.06,
+      "physicalArmor": 0.18
     },
     "flatStats": {
-      "physicalAttack": 8,
-      "physicalArmor": 8,
+      "physicalAttack": 6,
+      "physicalArmor": 10,
       "threatBonusPoints": 200
     },
     "level": 1
@@ -36,10 +36,10 @@
     "description": "九节灵杖出山竹。\n老山竹根削成的九节法杖，通体油亮光滑。",
     "slot": "weapon",
     "baseStatRatios": {
-      "spellAttack": 0.2
+      "spellAttack": 0.15
     },
     "flatStats": {
-      "spellAttack": 10,
+      "spellAttack": 15,
       "accuracy": 10,
       "spellDamageBonusPoints": 5,
       "skillBonusPoints": 5
@@ -52,10 +52,10 @@
     "description": "桐木制琴，清音洗心。\n以山中老桐木制成的七弦古琴，音质清越素雅。",
     "slot": "weapon",
     "baseStatRatios": {
-      "spellAttack": 0.14
+      "spellAttack": 0.11
     },
     "flatStats": {
-      "spellAttack": 8,
+      "spellAttack": 11,
       "manapointRegen": 2,
       "healingBonusPoints": 50,
       "spellDamageBonusPoints": 5,
@@ -70,10 +70,10 @@
     "slot": "weapon",
     "tier": 1,
     "baseStatRatios": {
-      "physicalAttack": 0.24
+      "physicalAttack": 0.18
     },
     "flatStats": {
-      "physicalAttack": 12,
+      "physicalAttack": 18,
       "accuracy": 12,
       "physicalDamageBonusPoints": 6
     },
@@ -86,12 +86,12 @@
     "slot": "weapon",
     "tier": 1,
     "baseStatRatios": {
-      "physicalAttack": 0.12,
-      "physicalArmor": 0.16
+      "physicalAttack": 0.08,
+      "physicalArmor": 0.2
     },
     "flatStats": {
-      "physicalAttack": 10,
-      "physicalArmor": 10,
+      "physicalAttack": 8,
+      "physicalArmor": 12,
       "threatBonusPoints": 250
     },
     "level": 9
@@ -103,10 +103,10 @@
     "slot": "weapon",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.24
+      "spellAttack": 0.18
     },
     "flatStats": {
-      "spellAttack": 12,
+      "spellAttack": 18,
       "accuracy": 12,
       "spellDamageBonusPoints": 6,
       "skillBonusPoints": 6
@@ -120,10 +120,10 @@
     "slot": "weapon",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.16
+      "spellAttack": 0.13
     },
     "flatStats": {
-      "spellAttack": 10,
+      "spellAttack": 13,
       "manapointRegen": 2.5,
       "healingBonusPoints": 60,
       "spellDamageBonusPoints": 6,
@@ -139,10 +139,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.32
+      "physicalAttack": 0.24
     },
     "flatStats": {
-      "physicalAttack": 16,
+      "physicalAttack": 24,
       "accuracy": 16,
       "physicalDamageBonusPoints": 15
     },
@@ -156,12 +156,12 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.16,
-      "physicalArmor": 0.22
+      "physicalAttack": 0.1,
+      "physicalArmor": 0.26
     },
     "flatStats": {
-      "physicalAttack": 13,
-      "physicalArmor": 13,
+      "physicalAttack": 10,
+      "physicalArmor": 18,
       "threatBonusPoints": 300
     },
     "level": 18
@@ -174,10 +174,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.32
+      "spellAttack": 0.24
     },
     "flatStats": {
-      "spellAttack": 16,
+      "spellAttack": 24,
       "accuracy": 16,
       "spellDamageBonusPoints": 15,
       "skillBonusPoints": 15
@@ -192,10 +192,10 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.22
+      "spellAttack": 0.18
     },
     "flatStats": {
-      "spellAttack": 14,
+      "spellAttack": 18,
       "manapointRegen": 3,
       "healingBonusPoints": 75,
       "spellDamageBonusPoints": 15,
@@ -211,10 +211,10 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "physicalAttack": 0.38
+      "physicalAttack": 0.28
     },
     "flatStats": {
-      "physicalAttack": 19,
+      "physicalAttack": 29,
       "breakPower": 19,
       "attackSpeedPoints": 15,
       "physicalDamageBonusPoints": 20
@@ -232,10 +232,10 @@
     "tier": 3,
     "quality": 3,
     "baseStatRatios": {
-      "spellAttack": 0.38
+      "spellAttack": 0.28
     },
     "flatStats": {
-      "spellAttack": 19,
+      "spellAttack": 29,
       "accuracy": 19,
       "spellDamageBonusPoints": 20,
       "skillBonusPoints": 20,

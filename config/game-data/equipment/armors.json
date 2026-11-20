@@ -59,14 +59,14 @@
     "description": "劲风束发，目朗神清。\n细密皮革混织的武行束发带，束发齐整，目视精明。",
     "slot": "head",
     "baseStatRatios": {
-      "physicalAttack": 0.08
+      "physicalAttack": 0.04
     },
     "flatStats": {
-      "physicalAttack": 5,
+      "physicalAttack": 4,
       "accuracy": 3,
       "criticalChance": 2,
-      "maxHitpoints": 2,
-      "physicalArmor": 2,
+      "maxHitpoints": 5,
+      "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
     },
     "level": 1
@@ -77,14 +77,14 @@
     "description": "皮薄身轻，动如奔雷。\n坚韧兽皮剪裁缝制的轻巧短甲，护心御风，便于拳脚发力。",
     "slot": "armor",
     "baseStatRatios": {
-      "physicalAttack": 0.16
+      "physicalAttack": 0.08
     },
     "flatStats": {
-      "physicalAttack": 9,
+      "physicalAttack": 8,
       "accuracy": 5,
       "criticalChance": 3,
-      "maxHitpoints": 3,
-      "physicalArmor": 4,
+      "maxHitpoints": 8,
+      "physicalArmor": 8,
       "physicalDamageBonusPoints": 2
     },
     "level": 1
@@ -95,14 +95,14 @@
     "description": "轻裤疾行，纵跃随心。\n贴身剪裁的武修练功裤，绑腿利落，步履如风。",
     "slot": "legs",
     "baseStatRatios": {
-      "physicalAttack": 0.08
+      "physicalAttack": 0.04
     },
     "flatStats": {
-      "physicalAttack": 5,
+      "physicalAttack": 4,
       "accuracy": 3,
       "criticalChance": 2,
-      "maxHitpoints": 2,
-      "physicalArmor": 2,
+      "maxHitpoints": 5,
+      "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
     },
     "level": 1
@@ -113,14 +113,14 @@
     "description": "素巾笼道髻，混元养太和。\n道家修士常戴的素色道巾，轻柔透气。",
     "slot": "head",
     "baseStatRatios": {
-      "spellAttack": 0.08
+      "spellAttack": 0.04
     },
     "flatStats": {
-      "spellAttack": 5,
+      "spellAttack": 4,
       "accuracy": 3,
       "criticalChance": 2,
-      "maxHitpoints": 2,
-      "spellResistance": 2,
+      "maxHitpoints": 5,
+      "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -132,14 +132,14 @@
     "description": "宽袍麻袖不染尘。\n以粗麻纺织的宽松道袍，宽袖飘逸，不染俗尘。",
     "slot": "armor",
     "baseStatRatios": {
-      "spellAttack": 0.16
+      "spellAttack": 0.08
     },
     "flatStats": {
-      "spellAttack": 9,
+      "spellAttack": 8,
       "accuracy": 5,
       "criticalChance": 3,
-      "maxHitpoints": 3,
-      "spellResistance": 4,
+      "maxHitpoints": 8,
+      "spellResistance": 8,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -151,14 +151,14 @@
     "description": "宽裤行气，周天自畅。\n宽大舒适的练功长裤，透气吸汗，利于周天行气。",
     "slot": "legs",
     "baseStatRatios": {
-      "spellAttack": 0.08
+      "spellAttack": 0.04
     },
     "flatStats": {
-      "spellAttack": 5,
+      "spellAttack": 4,
       "accuracy": 3,
       "criticalChance": 2,
-      "maxHitpoints": 2,
-      "spellResistance": 2,
+      "maxHitpoints": 5,
+      "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -228,14 +228,14 @@
     "slot": "head",
     "tier": 1,
     "baseStatRatios": {
-      "physicalAttack": 0.1
+      "physicalAttack": 0.06
     },
     "flatStats": {
       "physicalAttack": 6,
       "accuracy": 4,
       "criticalChance": 3,
-      "maxHitpoints": 2,
-      "physicalArmor": 2,
+      "maxHitpoints": 4,
+      "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
     },
     "level": 9
@@ -247,14 +247,14 @@
     "slot": "armor",
     "tier": 1,
     "baseStatRatios": {
-      "physicalAttack": 0.2
+      "physicalAttack": 0.1
     },
     "flatStats": {
-      "physicalAttack": 11,
+      "physicalAttack": 10,
       "accuracy": 6,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "physicalArmor": 4,
+      "maxHitpoints": 8,
+      "physicalArmor": 10,
       "physicalDamageBonusPoints": 2
     },
     "level": 9
@@ -266,14 +266,14 @@
     "slot": "legs",
     "tier": 1,
     "baseStatRatios": {
-      "physicalAttack": 0.1
+      "physicalAttack": 0.06
     },
     "flatStats": {
       "physicalAttack": 6,
       "accuracy": 4,
       "criticalChance": 3,
-      "maxHitpoints": 2,
-      "physicalArmor": 2,
+      "maxHitpoints": 4,
+      "physicalArmor": 4,
       "physicalDamageBonusPoints": 2
     },
     "level": 9
@@ -285,14 +285,14 @@
     "slot": "head",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.1
+      "spellAttack": 0.06
     },
     "flatStats": {
       "spellAttack": 6,
       "accuracy": 4,
       "criticalChance": 3,
-      "maxHitpoints": 2,
-      "spellResistance": 2,
+      "maxHitpoints": 4,
+      "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -305,14 +305,14 @@
     "slot": "armor",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.2
+      "spellAttack": 0.1
     },
     "flatStats": {
-      "spellAttack": 11,
+      "spellAttack": 10,
       "accuracy": 6,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "spellResistance": 4,
+      "maxHitpoints": 8,
+      "spellResistance": 10,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -325,14 +325,14 @@
     "slot": "legs",
     "tier": 1,
     "baseStatRatios": {
-      "spellAttack": 0.1
+      "spellAttack": 0.06
     },
     "flatStats": {
       "spellAttack": 6,
       "accuracy": 4,
       "criticalChance": 3,
-      "maxHitpoints": 2,
-      "spellResistance": 2,
+      "maxHitpoints": 4,
+      "spellResistance": 4,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -406,14 +406,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.14
+      "physicalAttack": 0.08
     },
     "flatStats": {
       "physicalAttack": 8,
       "accuracy": 5,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "physicalArmor": 3,
+      "maxHitpoints": 6,
+      "physicalArmor": 6,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -426,14 +426,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.26
+      "physicalAttack": 0.14
     },
     "flatStats": {
       "physicalAttack": 14,
       "accuracy": 8,
       "criticalChance": 5,
-      "maxHitpoints": 5,
-      "physicalArmor": 6,
+      "maxHitpoints": 11,
+      "physicalArmor": 12,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -446,14 +446,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "physicalAttack": 0.14
+      "physicalAttack": 0.08
     },
     "flatStats": {
       "physicalAttack": 8,
       "accuracy": 5,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "physicalArmor": 3,
+      "maxHitpoints": 6,
+      "physicalArmor": 6,
       "physicalDamageBonusPoints": 2
     },
     "level": 18
@@ -466,14 +466,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.14
+      "spellAttack": 0.08
     },
     "flatStats": {
       "spellAttack": 8,
       "accuracy": 5,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "spellResistance": 3,
+      "maxHitpoints": 6,
+      "spellResistance": 6,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -487,14 +487,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.26
+      "spellAttack": 0.14
     },
     "flatStats": {
       "spellAttack": 14,
       "accuracy": 8,
       "criticalChance": 5,
-      "maxHitpoints": 5,
-      "spellResistance": 6,
+      "maxHitpoints": 11,
+      "spellResistance": 12,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
@@ -508,14 +508,14 @@
     "tier": 2,
     "quality": 2,
     "baseStatRatios": {
-      "spellAttack": 0.14
+      "spellAttack": 0.08
     },
     "flatStats": {
       "spellAttack": 8,
       "accuracy": 5,
       "criticalChance": 4,
-      "maxHitpoints": 3,
-      "spellResistance": 3,
+      "maxHitpoints": 6,
+      "spellResistance": 6,
       "spellDamageBonusPoints": 2,
       "skillBonusPoints": 2
     },
