@@ -575,19 +575,18 @@ public sealed class CombatantState
 
     /// <summary>
     /// 换入重新结算的战斗属性面板：供进行中战斗在外层推进步间跨步复用时同步最新属性输入
-    /// （战外 Buff 增减/到期、六维经验等），沿用恢复快照口径的越界校验——
-    /// 当前气血/灵力超出新上限即拒绝，与 <see cref="CombatEncounterState.Restore"/> 逐位等价。
+    /// （战外 Buff 增减/到期、六维经验等）。与快照恢复一致，仅裁去超出新上限的气血/灵力，不补充资源。
     /// 调用方须用 <see cref="PlayerAttributeResolver.ResolveForCombat"/> 计算定格特质的数值贡献；特质 ID/等级始终沿用入战状态。
     /// </summary>
     public void RefreshStats(CombatantStats stats)
     {
         ArgumentNullException.ThrowIfNull(stats);
         stats.Validate();
-        // 与 ApplySnapshot 的气血/灵力口径逐位一致：非负有限且不超出新面板上限。
-        if (!double.IsFinite(Hitpoints) || Hitpoints < 0 || Hitpoints > stats.MaxHitpoints
-            || !double.IsFinite(Manapoints) || Manapoints < 0 || Manapoints > stats.MaxManapoints)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
+        if (!double.IsFinite(Hitpoints) || Hitpoints < 0 || !double.IsFinite(Manapoints) || Manapoints < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "当前战斗单位的气血或灵力无效。");
         Stats = stats with { Traits = TraitState.Ids, TraitLevels = TraitState.Levels };
+        Hitpoints = Math.Min(Hitpoints, stats.MaxHitpoints);
+        Manapoints = Math.Min(Manapoints, stats.MaxManapoints);
         // 面板是折叠缓存的一部分：换面板后聚合面板必须重建。
         InvalidateBuffAggregates();
     }

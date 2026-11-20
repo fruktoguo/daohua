@@ -89,6 +89,30 @@ public sealed class CombatSnapshotRestoreTests
     }
 
     [Fact]
+    public void RefreshStats_WhenResourceCapsShrink_MatchesRestoreWithoutRefilling()
+    {
+        var original = CombatantStats.Create(1000, 100, 10, 1.0) with { MaxManapoints = 100 };
+        var player = new CombatantState("player", original) { Hitpoints = 800, Manapoints = 75 };
+        var reduced = original with { MaxHitpoints = 700, MaxManapoints = 50 };
+        var enemy = new CombatantState("enemy:0", original);
+        var restored = CombatEncounterState.Restore("encounter.test", 42,
+            new CombatantTemplate(reduced), CombatEncounterState.Snapshot(player),
+            [new CombatantTemplate(original)], [CombatEncounterState.Snapshot(enemy)], 0, CombatOutcome.Running);
+
+        player.RefreshStats(reduced);
+
+        Assert.Equal(700, player.Hitpoints);
+        Assert.Equal(50, player.Manapoints);
+        Assert.Equal(restored.Player.Hitpoints, player.Hitpoints);
+        Assert.Equal(restored.Player.Manapoints, player.Manapoints);
+
+        player.RefreshStats(original);
+
+        Assert.Equal(700, player.Hitpoints);
+        Assert.Equal(50, player.Manapoints);
+    }
+
+    [Fact]
     public void RetaggedSnapshotWithoutFormationCooldowns_RestoresAsUntriggered()
     {
         // 迁移只改标签，v43 战斗快照没有这两个 JSON 属性。

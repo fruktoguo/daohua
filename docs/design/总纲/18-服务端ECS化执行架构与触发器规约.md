@@ -227,6 +227,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 - `ActionExecutionRules.Pipeline/Resources/Timed/Travel` 与 `ActionClockSystem`、`ActionQueueSystem`、采集/制造/计时/旅行/结算 System 共同持有队列准入、资源边界、行动推进、产出、重复次数和 `-1` 无限循环语义。
 - `CombatActionRules` 持有搜寻、复活、入场、持续用品、斗法回放、胜负、掉落、统计和战斗收尾；`CombatEventAdvanceSystem` 持有自然边界、批量推进和固定相位派发；`CombatSystems` 持有战斗实体推进、目标索引、日志和实体释放。
+- 进行中的战斗换入新面板时，当前气血与灵力各自保留绝对值，仅超出新上限的部分裁去；上限增加不补充资源。快照恢复对合法资源值使用同一上限裁剪口径，仍拒绝负值、非有限值等无效载荷。
 - Buff 到期通过 `PlayerBuffExpiryInboxComponent` 与 `IExpirePlayerBuffs` Tag System 在资源边界同步裁决，真实删除才产生 Buffs 脏标记。
 - `DeterministicCombatEngine` 与 `SimulationEngine` 的旧公开入口只作为无世界测试/兼容门面，内部转发到上述 ECS System；Server、ComputeNode 和生产玩家运行时不从这些门面进入规则编排。
 
