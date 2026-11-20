@@ -52,6 +52,45 @@ const parityCases = JSON.parse(
 
 const catalog = buildGameDataCatalog(catalogJson)
 
+test('玩家双抗分来源缩放：境界和六维只翻固定值，装备目录已翻倍一次', async () => {
+  const { resolveAttributesCore } = await import('./attributeResolver.ts')
+  const { buildSimulatorCatalogPayload } = await import('../../../../../scripts/gen-simulator-catalog.mjs')
+  const currentCatalog = buildGameDataCatalog(buildSimulatorCatalogPayload())
+  const armorId = 'equipment.yulin-armor'
+  const roots = {
+    staminaExp: getRootCumulativeExpForLevel(10),
+    meridiansExp: getRootCumulativeExpForLevel(20),
+    attackExp: 0, boneExp: 0, agilityExp: 0, consciousnessExp: 0,
+  }
+  const linggen = { metal: 0, wood: 0, water: 0, fire: 0, earth: 0 }
+  const stats = resolveAttributesCore(30, [armorId], [{ itemId: armorId, enhancementLevel: 0 }],
+    [], null, roots, [], currentCatalog, null, null, null, linggen)
+
+  assert.equal(currentCatalog.baseAttributes.at(30).armor, 68)
+  assert.equal(currentCatalog.baseAttributes.at(30).mr, 56)
+  assert.ok(Math.abs(stats.armor - ((136 + 20) * 1.10 + 24) * 1.52) < 1e-9)
+  assert.ok(Math.abs(stats.magicResistance - ((112 + 40) * 1.20 + 8) * 1.12) < 1e-9)
+  assert.equal(stats.physicalDamageReductionPoints, 2)
+})
+
+test('装备固定回血随穿戴者中境界升档，装备目录保留基础值', async () => {
+  const { resolveAttributesCore } = await import('./attributeResolver.ts')
+  const { buildSimulatorCatalogPayload } = await import('../../../../../scripts/gen-simulator-catalog.mjs')
+  const live = buildGameDataCatalog(buildSimulatorCatalogPayload())
+  const id = 'equipment.shouya-pendant'
+  const roots = { staminaExp: 0, meridiansExp: 0, attackExp: 0, boneExp: 0, agilityExp: 0, consciousnessExp: 0 }
+  const linggen = { metal: 0, wood: 0, water: 0, fire: 0, earth: 0 }
+  assert.equal(live.rawEquipments.get(id).flatStats.hitpointRegen, 3)
+  for (const [level, expected] of [[1, 3], [6, 3], [7, 6], [9, 6], [18, 9], [19, 9],
+    [22, 12], [25, 15], [28, 18], [30, 18], [31, 18], [34, 21], [127, 90]]) {
+    const bare = resolveAttributesCore(level, [], [], [], null, roots, [], live, null, null, null, linggen)
+    const geared = resolveAttributesCore(level, [id], [{ itemId: id, enhancementLevel: 0 }],
+      [], null, roots, [], live, null, null, null, linggen)
+    assert.ok(Math.abs(geared.hpRegen - bare.hpRegen - expected) < 1e-9, `Lv${level} 装备回血应为 ${expected}`)
+    assert.equal(geared.mpRegen, bare.mpRegen)
+  }
+})
+
 test('listCombatNodeIds 严格按可用讨伐行动过滤非战斗节点与无战斗节点地图', () => {
   const validNodes = listCombatNodeIds(catalog)
   assert.ok(validNodes.includes('node.yunxi-village'), '有效战斗节点应保留在清单内')

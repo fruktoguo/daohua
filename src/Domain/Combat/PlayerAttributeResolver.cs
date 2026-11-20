@@ -294,6 +294,7 @@ public static class PlayerAttributeResolver
                 flat["fixedDamageReduction"] = flat.GetValueOrDefault("fixedDamageReduction") + HeavenGateRules.ResolveEarthFixedDamageReduction(earth);
             }
         }
+        var equipmentHpRegenMultiplier = EquipmentHpRegenMultiplier(level);
         foreach (var id in equipment)
         {
             // 配表历史删项或未知装备优雅跳过，不提供加成但拒绝阻断玩家加载与模拟
@@ -310,7 +311,9 @@ public static class PlayerAttributeResolver
                     if (!double.IsFinite(number)) throw new DomainException(DomainErrorCode.InvalidArgument, "装备属性必须为有限数值。");
                     var statName = NormalizeEquipmentStatKey(stat.Name);
                     var target = statName.EndsWith("Points", StringComparison.Ordinal) ? points : flat;
-                    target[statName] = target.GetValueOrDefault(statName) + number * enhancementScale;
+                    var value = number * enhancementScale;
+                    if (statName == "hitpointRegen") value *= equipmentHpRegenMultiplier;
+                    target[statName] = target.GetValueOrDefault(statName) + value;
                 }
             Add(item, "baseStatRatios", ratios, enhancementScale);
         }
@@ -348,15 +351,15 @@ public static class PlayerAttributeResolver
         // 叠加根基百分比增幅（每点 +1%，单项向上取整，总纲 §3.2.4）后的有效六维点数。
         var root = core.Levels(catalog.RealmProgression).WithGenjiBonus(genjiPoints);
         // 六维每点同时提供固定值与百分比（总纲 §3.2.2/§7.5）：固定值并入基础池，百分比为独立乘区；
-        // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力、神识术攻 +2、体魄回血每点 +0.5，其余映射属性每点 +1；
+        // 体魄/根骨每点 +12 生命、经脉/根骨每点 +7 灵力、术攻/护甲/法抗对应固定值每点 +2、体魄回血 +0.5；
         // 经脉灵力回复仅走百分比通道（每点 +2%，无固定值）。
         double RootFlat(string key) => key switch
         {
             "maxHitpoints" => (root.Stamina + root.Bone) * 12,
             "maxManapoints" => (root.Meridians + root.Bone) * 7,
-            "physicalArmor" => root.Stamina,
+            "physicalArmor" => root.Stamina * 2,
             "hitpointRegen" => root.Stamina * 0.5,
-            "spellResistance" => root.Meridians,
+            "spellResistance" => root.Meridians * 2,
             "physicalAttack" or "criticalChance" or "break" => root.Attack,
             "evasion" or "criticalAvoidance" => root.Agility,
             "parry" => root.Bone + root.Agility,
@@ -444,8 +447,9 @@ public static class PlayerAttributeResolver
         var spell = Stat("spellAttack", a.Ap);
         // 普攻基准读条恒为 1.0s：速度点数由引擎在出手边界按 NonLinear 双除数结算，不在此预折。
         const double interval = 1;
+        // 玩家境界基础双抗在锚点缩放、插值后翻倍；不修改原始锚点或怪物期望属性。
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
-            spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
+            spell, Stat("physicalArmor", a.Armor * 2), Stat("spellResistance", a.Mr * 2),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
             Stat("criticalAvoidance", a.Cavoid), Stat("break", a.BreakPt), Stat("parry", a.Parry),
             hpRegen, mpRegen, interval, Math.Max(0, P("damageAbsorptionPoints")),
@@ -498,6 +502,16 @@ public static class PlayerAttributeResolver
         (CombatElement.Fire, "fire"),
         (CombatElement.Earth, "earth")
     ];
+
+    /// <summary>装备固定回血：以 ×1 起步，只在中境界分段晋级时 +1（总纲 §4.1）。</summary>
+    private static double EquipmentHpRegenMultiplier(int realmLevel)
+    {
+        if (realmLevel <= 18) return 1 + (realmLevel - 1) / 6;
+
+        // 凡俗「玄／天」共升两档；修真每 12 层有三次晋级，大境界入口不重复加档。
+        var layerIndex = realmLevel - 19;
+        return 3 + layerIndex / 12 * 3 + layerIndex % 12 / 3;
+    }
 
     /// <summary>百分比比率按双模式 Linear 结算：正值 1+x，负值 1/(1+|x|) 软着陆。</summary>
     private static double SoftRatio(double ratio)

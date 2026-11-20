@@ -3,6 +3,7 @@ using Domain.Combat;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Player;
 using Domain.World;
 using Domain.Market;
@@ -518,8 +519,7 @@ public sealed class GameDataCatalog
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         RawItems = rawItems?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        RawEquipments = rawEquipments?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
-            ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        RawEquipments = NormalizeEquipments(rawEquipments);
         Abilities = abilities ?? new Dictionary<string, JsonElement>();
         // 功法配表在装载期整体过统一校验：配表笔误（无效触发词表/缺施放周期）加载即拒绝。
         foreach (var (abilityId, ability) in Abilities)
@@ -1398,6 +1398,69 @@ public sealed class GameDataCatalog
             $"{{\"dependency\":\"self\",\"condition\":\"current-hp-percentage\",\"comparator\":\"less-than-equal\",\"value\":{(ratio * 100).ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}}}")
             .RootElement.Clone();
 
+
+    private static readonly HashSet<string> EquipmentDefenseStatKeys = new(StringComparer.Ordinal)
+    {
+        "maxHitpoints",
+        "physicalArmor",
+        "spellResistance",
+        "evasion",
+        "criticalAvoidance",
+        "parry",
+        "parryResolve"
+    };
+
+    /// <summary>
+    /// 装备加载期归一化（总纲 §4.1）：保持原配表 JSON 数值守恒不变，在加载层将全部装备的防御相关属性
+    /// （生命上限、护甲、法抗、闪避、免爆、拆招）统一乘以 2；百分比减伤等 *Points、输出和回复在此保持原值。
+    /// 装备固定回血由玩家属性结算按穿戴者的境界阶段缩放。
+    /// </summary>
+    private static Dictionary<string, JsonElement> NormalizeEquipments(IReadOnlyDictionary<string, JsonElement>? rawEquipments)
+    {
+        if (rawEquipments is null || rawEquipments.Count == 0)
+            return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        var normalized = new Dictionary<string, JsonElement>(rawEquipments.Count, StringComparer.Ordinal);
+        foreach (var (id, element) in rawEquipments)
+            normalized[id] = ScaleEquipmentDefenseStats(element);
+        return normalized;
+    }
+
+    /// <summary>对单件装备的 baseStatRatios 与 flatStats 中的防御相关属性执行 ×2 缩放，其余字段保持原样。</summary>
+    private static JsonElement ScaleEquipmentDefenseStats(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return element.Clone();
+        if (!HasDefenseStats(element, "baseStatRatios") && !HasDefenseStats(element, "flatStats"))
+            return element.Clone();
+
+        var node = JsonNode.Parse(element.GetRawText())?.AsObject();
+        if (node is null) return element.Clone();
+
+        ScaleDefenseSection(node, "baseStatRatios");
+        ScaleDefenseSection(node, "flatStats");
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    private static bool HasDefenseStats(JsonElement element, string sectionName)
+    {
+        if (!element.TryGetProperty(sectionName, out var section) || section.ValueKind != JsonValueKind.Object)
+            return false;
+        foreach (var prop in section.EnumerateObject())
+            if (EquipmentDefenseStatKeys.Contains(prop.Name))
+                return true;
+        return false;
+    }
+
+    private static void ScaleDefenseSection(JsonObject root, string sectionName)
+    {
+        if (!root.TryGetPropertyValue(sectionName, out var sectionNode) || sectionNode is not JsonObject obj)
+            return;
+        foreach (var key in EquipmentDefenseStatKeys)
+        {
+            if (obj.TryGetPropertyValue(key, out var valNode) && valNode is JsonValue val && val.TryGetValue<double>(out var num))
+                obj[key] = JsonValue.Create(num * 2.0);
+        }
+    }
 
     private static ReadOnlyDictionary<ItemId, ItemDefinition> NormalizeItems(IReadOnlyDictionary<ItemId, ItemDefinition>? items)
     {

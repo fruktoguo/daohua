@@ -6,6 +6,25 @@ const repoRoot = resolve(import.meta.dirname, '..')
 const gameDataDir = join(repoRoot, 'config', 'game-data')
 const outFile = join(repoRoot, 'frontend', 'src', 'game', 'simulator', 'data', 'simulatorCatalog.json')
 
+// 离线目录直接读原配表，不经过服务端 GameDataCatalog；生成时应用同一套装备防御缩放。
+const equipmentDefenseStatKeys = [
+  'maxHitpoints', 'physicalArmor', 'spellResistance', 'evasion',
+  'criticalAvoidance', 'parry', 'parryResolve',
+]
+
+function normalizeEquipment(entry) {
+  const normalized = { ...entry }
+  for (const section of ['baseStatRatios', 'flatStats']) {
+    const stats = entry[section]
+    if (!stats) continue
+    normalized[section] = { ...stats }
+    for (const key of equipmentDefenseStatKeys) {
+      if (typeof stats[key] === 'number') normalized[section][key] = stats[key] * 2
+    }
+  }
+  return normalized
+}
+
 function collectJsonFiles(dir) {
   const result = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -70,7 +89,7 @@ export function buildSimulatorCatalogPayload() {
       } else if (id.startsWith('ability.')) {
         abilities[id] = entry
       } else if (id.startsWith('equipment.')) {
-        rawEquipments[id] = entry
+        rawEquipments[id] = normalizeEquipment(entry)
       } else if (id.startsWith('enemy.')) {
         monsters[id] = entry
       } else if (id.startsWith('encounter.')) {

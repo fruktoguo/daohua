@@ -65,6 +65,14 @@ function softRatio(ratio: number): number {
   return ratio >= 0 ? 1 + ratio : 1 / (1 - ratio);
 }
 
+/** 装备固定回血只随穿戴者的中境界阶段加档，与服务端玩家结算一致。 */
+function equipmentHpRegenMultiplier(level: number): number {
+  const realmLevel = Math.floor(level);
+  if (realmLevel <= 18) return 1 + Math.floor((realmLevel - 1) / 6);
+  const layerIndex = realmLevel - 19;
+  return 3 + Math.floor(layerIndex / 12) * 3 + Math.floor((layerIndex % 12) / 3);
+}
+
 function normalizeEquipmentStatKey(key: string): string {
   if (key === 'breakPower') return 'break';
   if (key === 'parryResolve') return 'parry';
@@ -249,6 +257,7 @@ export function resolveAttributesCore(
     }
   }
 
+  const gearHpRegenScale = equipmentHpRegenMultiplier(level);
   for (const eqId of equippedItemIds) {
     const item = catalog.rawEquipments.get(eqId);
     if (!item) continue;
@@ -268,7 +277,8 @@ export function resolveAttributesCore(
         if (statName.endsWith('Points')) {
           points.set(statName, P(statName) + numberVal * enhancementScale);
         } else {
-          flat.set(statName, F(statName) + numberVal * enhancementScale);
+          const value = numberVal * enhancementScale;
+          flat.set(statName, F(statName) + (statName === 'hitpointRegen' ? value * gearHpRegenScale : value));
         }
       }
     }
@@ -326,11 +336,11 @@ export function resolveAttributesCore(
       case 'maxManapoints':
         return (root.meridians + root.bone) * 7;
       case 'physicalArmor':
-        return root.stamina;
+        return root.stamina * 2;
       case 'hitpointRegen':
         return root.stamina * 0.5;
       case 'spellResistance':
-        return root.meridians;
+        return root.meridians * 2;
       case 'physicalAttack':
       case 'criticalChance':
       case 'break':
@@ -459,8 +469,9 @@ export function resolveAttributesCore(
     maxManapoints: stat('maxManapoints', a.mp),
     physicalAttack: physical,
     spellAttack: spell,
-    armor: stat('physicalArmor', a.armor),
-    magicResistance: stat('spellResistance', a.mr),
+    // 玩家境界基础双抗在插值后翻倍，怪物期望面板不变。
+    armor: stat('physicalArmor', a.armor * 2),
+    magicResistance: stat('spellResistance', a.mr * 2),
     accuracy: stat('accuracy', a.acc),
     evasion: stat('evasion', a.eva),
     critical: stat('criticalChance', a.crit),

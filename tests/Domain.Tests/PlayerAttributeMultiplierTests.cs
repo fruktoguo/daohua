@@ -26,11 +26,11 @@ public sealed class PlayerAttributeMultiplierTests
             new LinggenValues(Metal: 100, Wood: 0, Water: 0, Fire: 0, Earth: 0),
             entered: true, rerollCount: 0);
 
-        // 2. 特质天生蛮力 (trait.tianshengmanli)：物攻 +10% (0.10)
+        // 2. 特质天生蛮力 (trait.tianshengmanli)：物攻 +5% (0.05)
         player.Progression.TraitIds.Add("trait.tianshengmanli");
         player.Progression.UnlockedTraits["trait.tianshengmanli"] = new("trait.tianshengmanli", 1, 0);
 
-        // 3. 装备青锋剑 (equipment.qingfeng-sword)：物攻 +20% (0.20)，物攻固定值 +10
+        // 3. 装备青锋剑 (equipment.qingfeng-sword)：物攻 +15% (0.15)，物攻固定值 +15
         const string swordId = "equipment.qingfeng-sword";
         player.Loadout.EquippedItemIds.Add(new ItemId(swordId));
         player.Loadout.Equipment.Add(new PlayerEquipmentSlot(swordId, EnhancementLevel: 0));
@@ -42,14 +42,14 @@ public sealed class PlayerAttributeMultiplierTests
         var swordFlat = sword.GetProperty("flatStats").GetProperty("physicalAttack").GetDouble();
         var swordRatio = sword.GetProperty("baseStatRatios").GetProperty("physicalAttack").GetDouble();
 
-        // 验证三者比例累加：灵根 0.50 + 特质 0.10 + 装备 0.20 = 0.80 (1.80x)
-        var expectedTotalRatio = 0.50 + 0.10 + swordRatio;
+        // 验证三者比例累加：灵根 0.50 + 特质 0.05 + 装备 0.15 = 0.70 (1.70x)
+        var expectedTotalRatio = 0.50 + 0.05 + swordRatio;
         var expectedAttack = (baseAttr.Ad + swordFlat) * (1.0 + expectedTotalRatio);
 
-        // 必须严格等于加算后的 1.8x 系数，绝不能等于旧口径的独立连乘 (1 + 0.5 + 0.2) * 1.1 = 1.87x
+        // 必须严格等于加算后的 1.70x 系数，不能等于把特质单独连乘得到的 1.7325x
         Assert.Equal(expectedAttack, resolved.PhysicalAttack, precision: 6);
 
-        var oldMultiplicative = (baseAttr.Ad + swordFlat) * (1.0 + 0.50 + swordRatio) * (1.0 + 0.10);
+        var oldMultiplicative = (baseAttr.Ad + swordFlat) * (1.0 + 0.50 + swordRatio) * (1.0 + 0.05);
         Assert.NotEqual(oldMultiplicative, resolved.PhysicalAttack);
     }
 
@@ -180,5 +180,111 @@ public sealed class PlayerAttributeMultiplierTests
         var resolved = PlayerAttributeResolver.Resolve(equipped, catalog);
 
         Assert.Equal(baseAttrs.PhysicalDamageBonusPoints + staffBonus, resolved.PhysicalDamageBonusPoints, precision: 9);
+    }
+
+    [Fact]
+    public void PlayerDefense_DoublesRealmAndRootFlatsButNotRatiosOrEquipment()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var progression = catalog.RealmProgression!;
+        var player = CreatePlayer(catalog);
+        player.Progression.RealmLevel = 30;
+        var native = catalog.BaseAttributes!.At(30);
+        Assert.Equal(68, native.Armor);
+        Assert.Equal(56, native.Mr);
+
+        var bare = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(136, bare.Armor);
+        Assert.Equal(112, bare.MagicResistance);
+        Assert.Equal(native.Hp, bare.MaxHitpoints);
+        Assert.Equal(native.Ad, bare.PhysicalAttack);
+        Assert.Equal(native.Ap, bare.SpellAttack);
+
+        player.Loadout.CoreAttributes = new PlayerCoreAttributes(
+            StaminaExp: progression.RootCumulativeExpFor(10),
+            MeridiansExp: progression.RootCumulativeExpFor(20));
+        const string armorId = "equipment.yulin-armor";
+        player.Loadout.EquippedItemIds.Add(new ItemId(armorId));
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(armorId, EnhancementLevel: 0));
+        var equipped = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // 鱼鳞甲的固定值在六维乘区之后加入，只吃既有装备防御倍率。
+        Assert.Equal(((136 + 20) * 1.10 + 24) * 1.52, equipped.Armor, precision: 9);
+        Assert.Equal(((112 + 40) * 1.20 + 8) * 1.12, equipped.MagicResistance, precision: 9);
+        Assert.Equal(2, equipped.PhysicalDamageReductionPoints);
+    }
+
+    [Theory]
+    [InlineData(1, 1, 0)]
+    [InlineData(6, 1, 0)]
+    [InlineData(7, 2, 0)]
+    [InlineData(9, 2, 0)]
+    [InlineData(13, 3, 0)]
+    [InlineData(18, 3, 0)]
+    [InlineData(19, 3, 0)]
+    [InlineData(22, 4, 0)]
+    [InlineData(25, 5, 0)]
+    [InlineData(28, 6, 0)]
+    [InlineData(30, 6, 0)]
+    [InlineData(31, 6, 0)]
+    [InlineData(34, 7, 10)]
+    [InlineData(127, 30, 0)]
+    public void EquipmentRecovery_IncreasesOnlyFixedHpRegenAtMiddleRealmBreaks(
+        int level, double multiplier, double enhancement)
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        player.Progression.RealmLevel = level;
+        var bare = PlayerAttributeResolver.Resolve(player, catalog);
+        var realm = catalog.BaseAttributes!.At(level);
+        Assert.Equal(realm.HpRegen, bare.HpRegen, precision: 9);
+        Assert.Equal(realm.MpRegen, bare.MpRegen, precision: 9);
+
+        const string pendant = "equipment.shouya-pendant"; // 白板 +3 回血
+        const string flask = "equipment.ganlu-flask";     // 白板 +2 回血、+1 回灵
+        foreach (var id in new[] { pendant, flask })
+        {
+            player.Loadout.EquippedItemIds.Add(new ItemId(id));
+            player.Loadout.Equipment.Add(new PlayerEquipmentSlot(id, enhancement));
+        }
+        var geared = PlayerAttributeResolver.Resolve(player, catalog);
+        var scale = Math.Pow(1.05, enhancement);
+        Assert.Equal((3 + 2) * scale * multiplier, geared.HpRegen - bare.HpRegen, precision: 9);
+        Assert.Equal(scale, geared.MpRegen - bare.MpRegen, precision: 9);
+    }
+
+    [Fact]
+    public void LoadEmbedded_DoublesEquipmentDefenseStatsWithoutScalingOutputOrDamageReduction()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        var armor = catalog.RawEquipments["equipment.yulin-armor"];
+        Assert.Equal(0.52, armor.GetProperty("baseStatRatios").GetProperty("physicalArmor").GetDouble(), precision: 9);
+        Assert.Equal(0.12, armor.GetProperty("baseStatRatios").GetProperty("spellResistance").GetDouble(), precision: 9);
+        var armorFlat = armor.GetProperty("flatStats");
+        Assert.Equal(32.0, armorFlat.GetProperty("maxHitpoints").GetDouble(), precision: 9);
+        Assert.Equal(24.0, armorFlat.GetProperty("physicalArmor").GetDouble(), precision: 9);
+        Assert.Equal(8.0, armorFlat.GetProperty("spellResistance").GetDouble(), precision: 9);
+        Assert.Equal(2.0, armorFlat.GetProperty("physicalDamageReductionPoints").GetDouble(), precision: 9);
+        Assert.Equal(200.0, armorFlat.GetProperty("threatBonusPoints").GetDouble(), precision: 9);
+
+        var blade = catalog.RawEquipments["equipment.zhansha-blade"];
+        Assert.Equal(0.10, blade.GetProperty("baseStatRatios").GetProperty("physicalAttack").GetDouble(), precision: 9);
+        Assert.Equal(0.52, blade.GetProperty("baseStatRatios").GetProperty("physicalArmor").GetDouble(), precision: 9);
+        var bladeFlat = blade.GetProperty("flatStats");
+        Assert.Equal(10.0, bladeFlat.GetProperty("physicalAttack").GetDouble(), precision: 9);
+        Assert.Equal(36.0, bladeFlat.GetProperty("physicalArmor").GetDouble(), precision: 9);
+
+        var greaves = catalog.RawEquipments["equipment.fentian-greaves"];
+        Assert.Equal(0.32, greaves.GetProperty("baseStatRatios").GetProperty("evasion").GetDouble(), precision: 9);
+        Assert.Equal(20.0, greaves.GetProperty("flatStats").GetProperty("evasion").GetDouble(), precision: 9);
+        Assert.Equal(14.0, greaves.GetProperty("flatStats").GetProperty("criticalAvoidance").GetDouble(), precision: 9);
+        Assert.Equal(10.0, greaves.GetProperty("flatStats").GetProperty("actionSpeedPoints").GetDouble(), precision: 9);
+
+        var ring = catalog.RawEquipments["equipment.chiwen-ring"];
+        Assert.Equal(0.05, ring.GetProperty("baseStatRatios").GetProperty("physicalAttack").GetDouble(), precision: 9);
+        Assert.Equal(5.0, ring.GetProperty("flatStats").GetProperty("physicalAttack").GetDouble(), precision: 9);
+        Assert.Equal(7.0, ring.GetProperty("flatStats").GetProperty("criticalChance").GetDouble(), precision: 9);
+        Assert.Equal(5.0, ring.GetProperty("flatStats").GetProperty("hitpointRegen").GetDouble(), precision: 9);
     }
 }
