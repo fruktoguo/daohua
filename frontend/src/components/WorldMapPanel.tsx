@@ -1240,11 +1240,11 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   )
   useEffect(() => {
     if (hidden) return
-    let cancelled = false
-    void fetchNodeBuildingIndex()
-      .then(index => { if (!cancelled) setBuildingIndex(index) })
+    const controller = new AbortController()
+    void fetchNodeBuildingIndex(controller.signal)
+      .then(index => { if (!controller.signal.aborted) setBuildingIndex(index) })
       .catch(() => undefined)
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [ownBuildingsFingerprint, hidden])
 
   // 选中节点的玩家公共建筑：当前节点优先用快照实时投影（含刚发起的建造/升级），
