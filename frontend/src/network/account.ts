@@ -4,7 +4,8 @@ import { useGameStore } from '../game/gameStore'
 import { useMailStore } from '../game/mailStore'
 import { useCheckinStore } from '../game/checkinStore'
 import { useUiStore } from '../uiStore'
-import { requestJson } from './apiClient'
+import { getT } from '../i18n'
+import { ApiResponseError, requestJson } from './apiClient'
 import { gameClient } from './gameClient'
 import { getSessionGeneration, setSessionAccount, updateSessionDisplayName } from './sessionState'
 import { chatStickerService } from '../game/chatStickerService'
@@ -131,6 +132,9 @@ async function requestLogin(account: string, password: string): Promise<AuthResp
     })
     return authSuccess(dto)
   } catch (error) {
+    if (error instanceof ApiResponseError && error.code === 'INVALID_CREDENTIALS') {
+      return { success: false, message: getT()('app.login.errorLoginFailed') }
+    }
     return authFailure(error)
   }
 }

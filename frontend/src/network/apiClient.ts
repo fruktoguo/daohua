@@ -111,17 +111,29 @@ export interface ProblemDetailsLike {
   message?: string
 }
 
-async function parseError(response: Response): Promise<Error> {
+/** 保留接口错误码供调用方本地化；原有可读文案仍通过 message 提供。 */
+export class ApiResponseError extends Error {
+  readonly code: string | undefined
+
+  constructor(message: string, code: string | undefined) {
+    super(message)
+    this.code = code
+  }
+}
+
+async function parseError(response: Response): Promise<ApiResponseError> {
   let detail = `HTTP ${response.status}`
+  let code: string | undefined
   try {
     const body = await response.json() as ProblemDetailsLike
     detail = body.detail || body.message || body.title || body.code || detail
+    code = typeof body.code === 'string' ? body.code : typeof body.title === 'string' ? body.title : undefined
   } catch {
     // 非 JSON 错误只保留状态码或明确网关提示，避免把服务端 HTML 泄漏到 UI。
     if (response.status === 503) detail = '服务器正在维护或恢复中，请稍候重试。'
     else if (response.status === 502 || response.status === 504) detail = '服务器当前响应异常或正在重启恢复，请稍候重试。'
   }
-  return new Error(detail)
+  return new ApiResponseError(detail, code)
 }
 
 /**
