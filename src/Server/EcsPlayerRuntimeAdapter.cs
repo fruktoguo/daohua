@@ -471,6 +471,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             // StateVersion——那属于本命令管线之后的合法推进与在途推送；只有期望版本落在
             // 滑窗外的（声称未发布版本或落后整个窗口）才判定客户端真正过期。
             var entryStateVersion = before.StateVersion;
+            // 操作前分段脏流水号快照：置于前置对账之前，确保宗门驻地退回等前置变更也纳入增量触及集合。
+            var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
             if (ZongmenRules.TryResidenceId(before.State.World.NodeId, out _))
                 await ReconcileZongmenResidenceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
             await ReconcileParticipationOwnedAsync(playerId, _simulationClock.UtcNow, notifications, cancellationToken).ConfigureAwait(false);
@@ -517,9 +519,6 @@ public sealed partial class EcsPlayerRuntimeAdapter(
 
             try
             {
-                // 操作前分段脏流水号快照：命令结束后差集得出「本次操作触及分段」，
-                // 供网络增量窄化编码范围（不替代持久化脏集合语义；戳号不复用，差集不会漏报）。
-                var dirtyMarksBefore = ecs.GetDirtyMarks(playerId);
                 IReadOnlySet<PlayerSectionKind>? touched = null;
                 (Guid DuelId, Guid PeerId)? forfeit = null;
                 IReadOnlyList<Server.Clean.Social.InvitationMilestoneGrant>? invitationGrants = null;
@@ -1779,11 +1778,22 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                 after = ToSnapshot(ecs.ExportSnapshot(playerId));
                 var revisionNow = ecs.AttributeRevision(playerId);
                 var revisionBefore = _attributeRevisions.GetValueOrDefault(playerId, revisionNow);
+                var marksTouched = TouchedSectionsSince(dirtyMarksBefore, ecs.GetDirtyMarks(playerId));
+                IReadOnlySet<PlayerSectionKind> effectiveTouched;
+                if (touched is null)
+                {
+                    effectiveTouched = marksTouched;
+                }
+                else
+                {
+                    var mergedTouched = new HashSet<PlayerSectionKind>(touched);
+                    mergedTouched.UnionWith(marksTouched);
+                    effectiveTouched = mergedTouched;
+                }
                 after = after with
                 {
-                    // MutatePlayer 返回聚合侧精确差集；未走变更通道的命令用实体流水号差集兜底，
-                    // 成功命令的触及集必为非空集合（零触及=空集，语义不同于"未知"的 null）。
-                    TouchedSections = touched ?? TouchedSectionsSince(dirtyMarksBefore, ecs.GetDirtyMarks(playerId)),
+                    // MutatePlayer 返回聚合侧精确差集，并与前置对账以来的实体流水号差集求并，不漏报任何触及分段。
+                    TouchedSections = effectiveTouched,
                     WireAttributesChanged = revisionNow != revisionBefore
                 };
                 _attributeRevisions[playerId] = revisionNow;
@@ -2002,6 +2012,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
             var walletsSynced = new HashSet<Guid>();
             var buildingsChanged = new HashSet<Guid>();
             var failedBeforeSim = new HashSet<Guid>();
+            var marksBefore = ids.ToDictionary(id => id, ecs.GetDirtyMarks);
             foreach (var playerId in ids)
             {
                 try
@@ -2046,7 +2057,6 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                     : new Dictionary<AssetKey, double>());
             pendingFromBeforeBatch = ids.ToDictionary(id => id, id =>
                 _pendingSimulationFromAt.TryGetValue(id, out var fromAt) ? (DateTimeOffset?)fromAt : null);
-            var marksBefore = ids.ToDictionary(id => id, ecs.GetDirtyMarks);
             dirtyBefore = ids.ToDictionary(id => id, ecs.GetDirtySections);
             foreach (var playerId in walletsSynced.Except(failedMembers)) ecs.MarkExternalStateChanged(playerId);
             // World 可能已有本批取样后刚创建、仍在装载中的实体；全世界 Tick 会越过其玩家 gate。
@@ -2595,33 +2605,43 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     /// <summary>
     /// 邮件领奖等外部资产事务提交后立刻重读已加载玩家钱包，并直接向订阅者推送零触及分段的资产差量快照。
     /// 不推进 <c>StateVersion</c>，避免内存状态版本超前持久化分段头导致 CAS 冲突。
+    /// 热刷新属提交后补偿动作：重读或推送失败仅记告警并置位 <c>_walletReloadRequired</c>，
+    /// 不得让已入账请求误返 500；在线玩家下次门内推进经 <see cref="EnsureWalletFreshAsync"/> 自动补齐。
     /// </summary>
     public async ValueTask ReloadWalletAndNotifyAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         if (!_loaded.ContainsKey(playerId)) return;
-        PlayerRuntimeSnapshot? updated = null;
-        RefCountedGateMap<Guid>.Releaser gateLease;
-        using (RuntimeInstrumentation.Measure("queue.actor_wait"))
-            gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_loaded.ContainsKey(playerId)) return;
-            var changed = await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
-            if (!changed) return;
-            // 显式传空触及分段集合：ProtocolSnapshotMapper.BuildDelta 仅对 Assets 做差量比对，跳过 8 段全编码。
-            updated = ToSnapshot(ecs.ExportSnapshot(playerId)) with
+            PlayerRuntimeSnapshot? updated = null;
+            RefCountedGateMap<Guid>.Releaser gateLease;
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                gateLease = await _playerGates.AcquireAsync(playerId, cancellationToken).ConfigureAwait(false);
+            try
             {
-                TouchedSections = new HashSet<PlayerSectionKind>(),
-                WireAttributesChanged = false
-            };
-            _loaded[playerId] = updated;
+                if (!_loaded.ContainsKey(playerId)) return;
+                var changed = await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
+                if (!changed) return;
+                // 显式传空触及分段集合：ProtocolSnapshotMapper.BuildDelta 仅对 Assets 做差量比对，跳过 8 段全编码。
+                updated = ToSnapshot(ecs.ExportSnapshot(playerId)) with
+                {
+                    TouchedSections = new HashSet<PlayerSectionKind>(),
+                    WireAttributesChanged = false
+                };
+                _loaded[playerId] = updated;
+            }
+            finally
+            {
+                gateLease.Dispose();
+            }
+            if (updated is not null)
+                await EmitNotificationsAsync([new RuntimeNotification(playerId, null, updated)]).ConfigureAwait(false);
         }
-        finally
+        catch (Exception exception)
         {
-            gateLease.Dispose();
+            _logger.LogWarning(exception, "钱包热刷新失败，标记待重读 player={PlayerId}", playerId);
+            if (_loaded.ContainsKey(playerId)) _walletReloadRequired[playerId] = 0;
         }
-        if (updated is not null)
-            await EmitNotificationsAsync([new RuntimeNotification(playerId, null, updated)]).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -276,7 +276,8 @@ public sealed partial class PlayerLoadoutState
 
     /// <summary>分段回滚检查点专用：把装配各输入源修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
     internal void RestoreRevisionCounters(long coreAttributesVersion, long abilitySlotsVersion, long equipmentVersion,
-        long abilityExperiencesVersion, long techniqueExperiencesVersion = 0, long abilityTriggersVersion = 0)
+        long abilityExperiencesVersion, long techniqueExperiencesVersion = 0, long abilityTriggersVersion = 0,
+        long consumableTriggersVersion = 0)
     {
         CoreAttributesVersion = coreAttributesVersion;
         AbilitySlots.RestoreVersion(abilitySlotsVersion);
@@ -284,6 +285,7 @@ public sealed partial class PlayerLoadoutState
         AbilityExperiences.RestoreVersion(abilityExperiencesVersion);
         TechniqueExperiences.RestoreVersion(techniqueExperiencesVersion);
         AbilityTriggers.RestoreVersion(abilityTriggersVersion);
+        ConsumableTriggers.RestoreVersion(consumableTriggersVersion);
     }
 }
 

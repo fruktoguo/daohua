@@ -894,7 +894,8 @@ public sealed partial class PlayerAggregate
         long AbilityExperiencesVersion,
         long TechniqueExperiencesVersion,
         long EquippedItemIdsVersion,
-        long AbilityTriggersVersion);
+        long AbilityTriggersVersion,
+        long ConsumableTriggersVersion);
     private sealed record SettingsCheckpoint(PlayerSettingsStateDocument State);
     private sealed record ActionQueueCheckpoint(QueuedActionState[] Actions);
     private sealed record DuelCheckpoint(
@@ -969,7 +970,8 @@ public sealed partial class PlayerAggregate
             Loadout.AbilityExperiences.Version,
             Loadout.TechniqueExperiences.Version,
             Loadout.EquippedItemIds.Version,
-            Loadout.AbilityTriggers.Version),
+            Loadout.AbilityTriggers.Version,
+            Loadout.ConsumableTriggers.Version),
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
@@ -1037,7 +1039,8 @@ public sealed partial class PlayerAggregate
                 Loadout.LearnedAbilities.AddRange(data.LearnedAbilities);
                 Loadout.RestoreRevisionCounters(
                     data.CoreAttributesVersion, data.AbilitySlotsVersion, data.EquipmentVersion,
-                    data.AbilityExperiencesVersion, data.TechniqueExperiencesVersion, data.AbilityTriggersVersion);
+                    data.AbilityExperiencesVersion, data.TechniqueExperiencesVersion, data.AbilityTriggersVersion,
+                    data.ConsumableTriggersVersion);
                 Loadout.EquippedItemIds.RestoreVersion(data.EquippedItemIdsVersion);
                 break;
             }

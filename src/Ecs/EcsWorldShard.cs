@@ -770,36 +770,45 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         {
             foreach (var execution in executions.Values) execution.Detach();
             List<Exception>? rollbackFailures = null;
-            foreach (var (id, backup) in backups)
+            if (!_fiber.IsDisposed)
             {
-                if (!_players.ContainsKey(id)) continue;
-                try
+                await _fiber.PostAsync((_, _) =>
                 {
-                    var entity = GetPlayer(id);
-                    DestroyPlayerEncounters(entity.ID);
-                    ApplyAggregateState(entity, backup.State, backup.Assets);
-                    var identity = entity.GetComponent<PlayerIdentityComponent>()!;
-                    identity.DirtySections.Clear();
-                    identity.DirtySections.UnionWith(backup.Dirty);
-                    identity.DirtyMarks.Clear();
-                    foreach (var (section, mark) in backup.DirtyMarks)
-                        identity.DirtyMarks[section] = mark;
-                    if (backup.PendingEvents is { } pendingEvents)
-                        _simulationEvents[id] = [.. pendingEvents];
-                    else
-                        _simulationEvents.Remove(id);
-                    if (backup.PendingResult is { } pendingResult)
-                        _simulationResults[id] = pendingResult;
-                    else
-                        _simulationResults.Remove(id);
-                }
-                catch (Exception rollbackException)
-                {
-                    rollbackFailures ??= [];
-                    rollbackFailures.Add(rollbackException);
-                }
+                    foreach (var (id, backup) in backups)
+                    {
+                        if (!_players.ContainsKey(id)) continue;
+                        try
+                        {
+                            var entity = GetPlayer(id);
+                            DestroyPlayerEncounters(entity.ID);
+                            ApplyAggregateState(entity, backup.State, backup.Assets);
+                            SyncNodeMembership(entity);
+                            var identity = entity.GetComponent<PlayerIdentityComponent>()!;
+                            identity.DirtySections.Clear();
+                            identity.DirtySections.UnionWith(backup.Dirty);
+                            identity.DirtyMarks.Clear();
+                            foreach (var (section, mark) in backup.DirtyMarks)
+                                identity.DirtyMarks[section] = mark;
+                            if (backup.PendingEvents is { } pendingEvents)
+                                _simulationEvents[id] = [.. pendingEvents];
+                            else
+                                _simulationEvents.Remove(id);
+                            if (backup.PendingResult is { } pendingResult)
+                                _simulationResults[id] = pendingResult;
+                            else
+                                _simulationResults.Remove(id);
+                        }
+                        catch (Exception rollbackException)
+                        {
+                            rollbackFailures ??= [];
+                            rollbackFailures.Add(rollbackException);
+                        }
+                    }
+                    _clock.Current = _clock.Target = clockBefore;
+                    return ValueTask.CompletedTask;
+                }, CancellationToken.None).ConfigureAwait(false);
+                await _fiber.DrainMailboxAsync(CancellationToken.None).ConfigureAwait(false);
             }
-            _clock.Current = _clock.Target = clockBefore;
             if (rollbackFailures is { Count: > 0 })
                 throw new AggregateException("模拟回滚恢复失败，玩家内存快照可能已损坏。",
                     new[] { primaryException }.Concat(rollbackFailures));
