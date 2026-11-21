@@ -89,8 +89,10 @@ public static class PostgresSchema
     /// v62：兑换码系统（新增 economy.redeem_batches / economy.redeem_codes / economy.player_redeem_claims 旁路表）；玩家载荷标签保持 v44 不变。
     /// v63：传音消息增加引用快照与点赞版本，新增随消息删除的点赞状态表；玩家载荷标签保持 v44。
     /// v64：筑基期根基系统（progression 分段新增 genjiPoints/genjiUnlocked，可缺省解码），推进玩家载荷标签至 v45；无 DDL 变更。
+    /// v65：补齐两处高频扫描部分索引：platform.integration_outbox(delivered_at) WHERE delivered_at IS NOT NULL（留存清理防全表扫描）与
+    /// identity.auth_sessions(account_id) WHERE revoked_at IS NULL（改密批量吊销按账号索引）；玩家载荷标签保持 v45 不变。
     /// </summary>
-    public const int Version = 64;
+    public const int Version = 65;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -142,6 +144,7 @@ public static class PostgresSchema
         revoked_at timestamptz NULL
     );
     CREATE INDEX IF NOT EXISTS ix_auth_sessions_active ON identity.auth_sessions(token_hash, expires_at) WHERE revoked_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_auth_sessions_account_active ON identity.auth_sessions(account_id) WHERE revoked_at IS NULL;
     CREATE INDEX IF NOT EXISTS ix_auth_sessions_expires ON identity.auth_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS ix_auth_sessions_revoked ON identity.auth_sessions(revoked_at) WHERE revoked_at IS NOT NULL;
 
@@ -593,6 +596,7 @@ public static class PostgresSchema
     DROP INDEX IF EXISTS platform.ix_outbox_ready;
     CREATE INDEX IF NOT EXISTS ix_outbox_ready ON platform.integration_outbox(visible_at, lease_until) WHERE delivered_at IS NULL AND status = 'pending';
     CREATE INDEX IF NOT EXISTS ix_outbox_dead ON platform.integration_outbox(visible_at) WHERE delivered_at IS NULL AND status = 'dead';
+    CREATE INDEX IF NOT EXISTS ix_outbox_delivered ON platform.integration_outbox(delivered_at) WHERE delivered_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS platform.command_receipts (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
@@ -952,7 +956,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

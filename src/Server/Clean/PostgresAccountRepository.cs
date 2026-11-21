@@ -808,7 +808,17 @@ public sealed class PostgresAccountRepository(
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             await createTx.RollbackAsync(cancellationToken);
-            logger.LogWarning(ex, "TapTap 创号遇到唯一性冲突 openId={OpenId}", cleanOpenId);
+            if (string.Equals(ex.ConstraintName, "players_display_name_normalized_key", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning(ex, "TapTap 创号道号唯一性冲突 openId={OpenId}", cleanOpenId);
+                return FailureLogin("DISPLAY_NAME_CONFLICT", "默认道号冲突，请重试登录。");
+            }
+            if (string.Equals(ex.ConstraintName, "ux_players_invite_code", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning(ex, "TapTap 创号邀请码碰撞 openId={OpenId}", cleanOpenId);
+                return FailureLogin("INVITE_CODE_CONFLICT", "生成道友标识冲突，请重试登录。");
+            }
+            logger.LogWarning(ex, "TapTap 创号遇到唯一性冲突 openId={OpenId} constraint={Constraint}", cleanOpenId, ex.ConstraintName);
             return FailureLogin("TAPTAP_DUPLICATE", "该 TapTap 账号已被使用。");
         }
     }

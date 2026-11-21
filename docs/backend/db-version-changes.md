@@ -507,3 +507,36 @@
       VALUES (64, now()) ON CONFLICT (version) DO NOTHING;
   ```
 - 【离线脚本 / 人工步骤】：无。
+
+## v64 -> v65
+
+- **变更日期**：2026-11-22 01:18:00
+- **关联任务**：全仓静态审查性能与索引加固（`P2-2`）
+- **数据库版本**：`PostgresSchema.Version` 64 -> 65
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 保持 `45`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0065_v64_to_v65.sql`（支持目标版本幂等重试）
+- **存量处理结论**：仅补齐两个幂等部分索引并登记 `schema_version = 65`，无需改写存量行或玩家存档载荷
+
+### 1. 变了什么
+- 【库结构/权限】新增 `platform.ix_outbox_delivered`（`platform.integration_outbox(delivered_at) WHERE delivered_at IS NOT NULL`）与 `identity.ix_auth_sessions_account_active`（`identity.auth_sessions(account_id) WHERE revoked_at IS NULL`）；角色权限无变更。
+- 【存档载荷】无变更（保持 `v45`）。
+- 【配表/持久化语义】无变更。
+
+### 2. 是否需要处理存量数据
+- **无需改写业务数据**：索引建立自动覆盖现有数据行，纯增量 DDL。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0065_v64_to_v65.sql` 要点】：
+  ```sql
+  CREATE INDEX IF NOT EXISTS ix_outbox_delivered
+      ON platform.integration_outbox(delivered_at)
+      WHERE delivered_at IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS ix_auth_sessions_account_active
+      ON identity.auth_sessions(account_id)
+      WHERE revoked_at IS NULL;
+
+  INSERT INTO platform.schema_version(version, applied_at)
+      VALUES (65, now()) ON CONFLICT (version) DO NOTHING;
+  ```
+- 【离线脚本 / 人工步骤】：无。

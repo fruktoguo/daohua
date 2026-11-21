@@ -875,17 +875,27 @@ public sealed class PostgresSectionRepository(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                await transaction.RollbackAsync(CancellationToken.None);
+                try { await transaction.RollbackAsync(CancellationToken.None); }
+                catch (Exception rollbackEx) { logger.LogDebug(rollbackEx, "分段刷盘异常回滚原事务失败，准备切新连接释放租约"); }
                 failed += queueIds.Length;
                 if (_flushErrorLog.TryAcquire())
                     logger.LogError(ex, "写入玩家 section 批次失败 player={PlayerId} version={Version} sections={Sections}",
                         group.Key.PlayerId, group.Key.StateVersion, string.Join(',', items.Select(item => item.SectionKind)));
-                await using var releaseTransaction = await connection.BeginTransactionAsync(cancellationToken);
-                var deadCount = await ReleaseClaimsAsync(connection, releaseTransaction, queueIds, leaseToken, ex.Message, cancellationToken);
-                await releaseTransaction.CommitAsync(cancellationToken);
-                if (deadCount > 0)
-                    logger.LogError("玩家 section 队列达到最大重试次数转入死信 player={PlayerId} version={Version} deadCount={DeadCount}",
-                        group.Key.PlayerId, group.Key.StateVersion, deadCount);
+                try
+                {
+                    await using var releaseConnection = await dataSource.OpenConnectionAsync(CancellationToken.None);
+                    await using var releaseTransaction = await releaseConnection.BeginTransactionAsync(CancellationToken.None);
+                    var deadCount = await ReleaseClaimsAsync(releaseConnection, releaseTransaction, queueIds, leaseToken, ex.Message, CancellationToken.None);
+                    await releaseTransaction.CommitAsync(CancellationToken.None);
+                    if (deadCount > 0)
+                        logger.LogError("玩家 section 队列达到最大重试次数转入死信 player={PlayerId} version={Version} deadCount={DeadCount}",
+                            group.Key.PlayerId, group.Key.StateVersion, deadCount);
+                }
+                catch (Exception releaseEx)
+                {
+                    logger.LogWarning(releaseEx, "释放失败分段批次租约失败（等待租约自然到期） player={PlayerId} version={Version}",
+                        group.Key.PlayerId, group.Key.StateVersion);
+                }
             }
         }
 

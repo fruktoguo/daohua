@@ -46,16 +46,11 @@ public sealed class PostgresRedeemRepository(
     {
         now = now.ToUniversalTime();
 
-        long previewBatchId;
         IReadOnlyList<RedeemRewardDto> previewRewards;
         await using (var preConn = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false))
         {
-            var isBot = await ResolveIsBotAsync(preConn, playerId, ct).ConfigureAwait(false);
-            if (isBot is null)
-                throw new RedeemOperationException(RedeemOperationFailure.PlayerNotFound, "角色不存在或已停用。");
-            if (isBot.Value)
-                throw new RedeemOperationException(RedeemOperationFailure.BotRestricted, "系统或机器人账号不支持使用兑换码。");
-
+            // 预检合并为单命令双结果集一次往返：先验机器人，再取批次元数据与同批已兑判定。
+            // 预检在 Serializable 事务外执行，不产生谓词锁；事务内仍会完整复核全部条件。
             string mode;
             string rewardsJson;
             int? maxClaims;
@@ -63,21 +58,49 @@ public sealed class PostgresRedeemRepository(
             DateTimeOffset? expiresAt;
             DateTimeOffset? disabledAt;
             Guid? redeemedBy;
+            bool alreadyClaimed;
 
-            await using (var preCmd = new NpgsqlCommand("""
-                SELECT b.batch_id, b.mode, b.rewards::text, b.max_claims, b.claimed_count, b.expires_at, b.disabled_at, c.redeemed_by
-                FROM economy.redeem_codes c
-                JOIN economy.redeem_batches b ON b.batch_id = c.batch_id
-                WHERE c.code_normalized = $1
-                LIMIT 1
-                """, preConn))
+            await using (var preBatch = new NpgsqlBatch(preConn))
             {
-                preCmd.Parameters.Add(new NpgsqlParameter { Value = normalizedCode });
-                await using var reader = await preCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                var botCmd = new NpgsqlBatchCommand("""
+                    SELECT a.is_bot
+                    FROM identity.players p
+                    JOIN identity.accounts a ON a.account_id = p.account_id
+                    WHERE p.player_id = $1 AND a.status = 1
+                    LIMIT 1
+                    """);
+                botCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                preBatch.BatchCommands.Add(botCmd);
+
+                var codeCmd = new NpgsqlBatchCommand("""
+                    SELECT b.batch_id, b.mode, b.rewards::text, b.max_claims, b.claimed_count, b.expires_at, b.disabled_at, c.redeemed_by,
+                           EXISTS(
+                               SELECT 1 FROM economy.player_redeem_claims prc
+                               WHERE prc.player_id = $1 AND prc.batch_id = c.batch_id
+                           ) AS already_claimed
+                    FROM economy.redeem_codes c
+                    JOIN economy.redeem_batches b ON b.batch_id = c.batch_id
+                    WHERE c.code_normalized = $2
+                    LIMIT 1
+                    """);
+                codeCmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                codeCmd.Parameters.Add(new NpgsqlParameter { Value = normalizedCode });
+                preBatch.BatchCommands.Add(codeCmd);
+
+                await using var reader = await preBatch.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+                var isBot = await reader.ReadAsync(ct).ConfigureAwait(false) && !reader.IsDBNull(0)
+                    ? reader.GetBoolean(0)
+                    : (bool?)null;
+                if (isBot is null)
+                    throw new RedeemOperationException(RedeemOperationFailure.PlayerNotFound, "角色不存在或已停用。");
+                if (isBot.Value)
+                    throw new RedeemOperationException(RedeemOperationFailure.BotRestricted, "系统或机器人账号不支持使用兑换码。");
+
+                if (!await reader.NextResultAsync(ct).ConfigureAwait(false)
+                    || !await reader.ReadAsync(ct).ConfigureAwait(false))
                     throw new RedeemOperationException(RedeemOperationFailure.NotFound, "兑换码不存在，请核对后重试。");
 
-                previewBatchId = reader.GetInt64(0);
                 mode = reader.GetString(1);
                 rewardsJson = reader.GetString(2);
                 maxClaims = reader.IsDBNull(3) ? null : reader.GetInt32(3);
@@ -85,6 +108,7 @@ public sealed class PostgresRedeemRepository(
                 expiresAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5);
                 disabledAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6);
                 redeemedBy = reader.IsDBNull(7) ? null : reader.GetGuid(7);
+                alreadyClaimed = reader.GetBoolean(8);
             }
 
             if (disabledAt is not null)
@@ -92,7 +116,7 @@ public sealed class PostgresRedeemRepository(
             if (expiresAt is { } exp && exp <= now)
                 throw new RedeemOperationException(RedeemOperationFailure.Expired, "该兑换码已过期。");
 
-            if (await HasPlayerClaimedBatchAsync(preConn, null, playerId, previewBatchId, ct).ConfigureAwait(false))
+            if (alreadyClaimed)
                 throw new RedeemOperationException(RedeemOperationFailure.AlreadyClaimedBatch, "你已领取过该礼包，不可重复兑换。");
 
             if (mode == RedeemCodeRules.ModeSingleUse && redeemedBy is not null)
@@ -147,7 +171,7 @@ public sealed class PostgresRedeemRepository(
                 await using var connection = await dataSource.OpenConnectionAsync(token).ConfigureAwait(false);
                 await using var tx = await connection.BeginTransactionAsync(IsolationLevel.Serializable, token).ConfigureAwait(false);
 
-                // 1. 先按码定位 batch_id，再按固定锁序（redeem_batches -> redeem_codes -> player_redeem_claims -> economy）加锁，消除交叉死锁。
+                // 1. 先按码定位 batch_id，再在加锁前确认是否 UNKNOWN 重放或个人已领取，最后按固定锁序加锁，消除热点排队。
                 long batchId;
                 await using (var findBatchCmd = new NpgsqlCommand("""
                     SELECT batch_id
@@ -162,6 +186,33 @@ public sealed class PostgresRedeemRepository(
                     batchId = foundId;
                 }
 
+                // 若前一次 COMMIT 网络结果未知，核对当前防重记录以安全重放确认。
+                if (unknown is not null)
+                {
+                    var alreadyCommittedForCode = await IsCodeClaimedByPlayerAsync(connection, tx, playerId, batchId, normalizedCode, token).ConfigureAwait(false);
+                    if (alreadyCommittedForCode)
+                    {
+                        await using var replayBatchCmd = new NpgsqlCommand("""
+                            SELECT title, rewards::text
+                            FROM economy.redeem_batches
+                            WHERE batch_id = $1
+                            """, connection, tx);
+                        replayBatchCmd.Parameters.Add(new NpgsqlParameter { Value = batchId });
+                        await using var replayReader = await replayBatchCmd.ExecuteReaderAsync(token).ConfigureAwait(false);
+                        if (await replayReader.ReadAsync(token).ConfigureAwait(false))
+                        {
+                            var replayTitle = replayReader.GetString(0);
+                            var replayRewards = DeserializeRewards(replayReader.GetString(1));
+                            await replayReader.CloseAsync().ConfigureAwait(false);
+                            await tx.RollbackAsync(token).ConfigureAwait(false);
+                            return new RedeemCodeResponseDto(batchId, replayTitle, normalizedCode, replayRewards);
+                        }
+                    }
+                }
+
+                if (await HasPlayerClaimedBatchAsync(connection, tx, playerId, batchId, token).ConfigureAwait(false))
+                    throw new RedeemOperationException(RedeemOperationFailure.AlreadyClaimedBatch, "你已领取过该礼包，不可重复兑换。");
+
                 string title;
                 string mode;
                 string rewardsJson;
@@ -170,11 +221,13 @@ public sealed class PostgresRedeemRepository(
                 DateTimeOffset? expiresAt;
                 DateTimeOffset? disabledAt;
 
+                // 批次行改 FOR KEY SHARE：claimed_count 上限由下方守卫 UPDATE 权威裁决，
+                // 读路径不再互斥排队，削减同码并发核销的行锁占用时长与 40001 冲突放大。
                 await using (var lockBatchCmd = new NpgsqlCommand("""
                     SELECT title, mode, rewards::text, max_claims, claimed_count, expires_at, disabled_at
                     FROM economy.redeem_batches
                     WHERE batch_id = $1
-                    FOR UPDATE
+                    FOR KEY SHARE
                     """, connection, tx))
                 {
                     lockBatchCmd.Parameters.Add(new NpgsqlParameter { Value = batchId });
@@ -191,14 +244,17 @@ public sealed class PostgresRedeemRepository(
                     disabledAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6);
                 }
 
-                Guid? redeemedBy;
-                await using (var lockCodeCmd = new NpgsqlCommand("""
-                    SELECT redeemed_by
-                    FROM economy.redeem_codes
-                    WHERE code_normalized = $1
-                    FOR UPDATE
-                    """, connection, tx))
+                // 通用口令码全服共享同一码行且 redeemed_by 恒 NULL 永不回写，跳过码行排他锁消除热点；
+                // 单次码仍锁码行读取 redeemed_by，保证同码并发核销先到先得。
+                Guid? redeemedBy = null;
+                if (mode == RedeemCodeRules.ModeSingleUse)
                 {
+                    await using var lockCodeCmd = new NpgsqlCommand("""
+                        SELECT redeemed_by
+                        FROM economy.redeem_codes
+                        WHERE code_normalized = $1
+                        FOR UPDATE
+                        """, connection, tx);
                     lockCodeCmd.Parameters.Add(new NpgsqlParameter { Value = normalizedCode });
                     await using var reader = await lockCodeCmd.ExecuteReaderAsync(token).ConfigureAwait(false);
                     if (!await reader.ReadAsync(token).ConfigureAwait(false))
@@ -209,24 +265,10 @@ public sealed class PostgresRedeemRepository(
                 var rewards = DeserializeRewards(rewardsJson);
                 var idempotencyKey = $"ops.redeem:{playerId:D}:{batchId}";
 
-                // 若前一次 COMMIT 网络结果未知，核对当前防重记录以安全重放确认。
-                if (unknown is not null)
-                {
-                    var alreadyCommittedForCode = await IsCodeClaimedByPlayerAsync(connection, tx, playerId, batchId, normalizedCode, token).ConfigureAwait(false);
-                    if (alreadyCommittedForCode)
-                    {
-                        await tx.RollbackAsync(token).ConfigureAwait(false);
-                        return new RedeemCodeResponseDto(batchId, title, normalizedCode, rewards);
-                    }
-                }
-
                 if (disabledAt is not null)
                     throw new RedeemOperationException(RedeemOperationFailure.Disabled, "该兑换码已停用。");
                 if (expiresAt is { } exp && exp <= now)
                     throw new RedeemOperationException(RedeemOperationFailure.Expired, "该兑换码已过期。");
-
-                if (await HasPlayerClaimedBatchAsync(connection, tx, playerId, batchId, token).ConfigureAwait(false))
-                    throw new RedeemOperationException(RedeemOperationFailure.AlreadyClaimedBatch, "你已领取过该礼包，不可重复兑换。");
 
                 if (mode == RedeemCodeRules.ModeSingleUse && redeemedBy is not null)
                     throw new RedeemOperationException(RedeemOperationFailure.CodeAlreadyUsed, "该兑换码已被使用。");
@@ -252,13 +294,17 @@ public sealed class PostgresRedeemRepository(
                 await using (var updateBatchCmd = new NpgsqlCommand("""
                     UPDATE economy.redeem_batches
                        SET claimed_count = claimed_count + 1
-                     WHERE batch_id = $1 AND (max_claims IS NULL OR claimed_count < max_claims)
+                     WHERE batch_id = $1
+                       AND disabled_at IS NULL
+                       AND (expires_at IS NULL OR expires_at > $2)
+                       AND (max_claims IS NULL OR claimed_count < max_claims)
                     """, connection, tx))
                 {
                     updateBatchCmd.Parameters.Add(new NpgsqlParameter { Value = batchId });
+                    updateBatchCmd.Parameters.Add(new NpgsqlParameter { Value = now });
                     var updatedBatchRows = await updateBatchCmd.ExecuteNonQueryAsync(token).ConfigureAwait(false);
                     if (updatedBatchRows == 0)
-                        throw new RedeemOperationException(RedeemOperationFailure.Exhausted, "该兑换码名额已领完。");
+                        throw new RedeemOperationException(RedeemOperationFailure.Exhausted, "该兑换码名额已领完或已失效。");
                 }
 
                 await using (var insertClaimCmd = new NpgsqlCommand("""
@@ -625,20 +671,6 @@ public sealed class PostgresRedeemRepository(
         if (disabled)
             cmd.Parameters.Add(new NpgsqlParameter { Value = now });
         return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
-    }
-
-    private static async ValueTask<bool?> ResolveIsBotAsync(NpgsqlConnection connection, Guid playerId, CancellationToken ct)
-    {
-        await using var cmd = new NpgsqlCommand("""
-            SELECT a.is_bot
-            FROM identity.players p
-            JOIN identity.accounts a ON a.account_id = p.account_id
-            WHERE p.player_id = $1 AND a.status = 1
-            LIMIT 1
-            """, connection);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = playerId });
-        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return result is bool b ? b : null;
     }
 
     private static async ValueTask<bool> HasPlayerClaimedBatchAsync(
