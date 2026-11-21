@@ -1,34 +1,13 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { rm } from 'node:fs/promises'
-import { build } from 'esbuild'
 
-const tempOut = path.join(tmpdir(), `daohua-sustained-consumables-${Date.now()}.mjs`)
-await build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/sustainedConsumables.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-})
 const {
   hasActiveSustainedEffect,
   resolveEffectiveEnhancementSuccessBonuses,
   resolveSustainedDurationClock,
-} = await import(pathToFileURL(tempOut))
-
-const combatConstantsOut = path.join(tmpdir(), `daohua-combat-constants-${Date.now()}.mjs`)
-await build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/combatConstants.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: combatConstantsOut,
-  logLevel: 'error',
-})
-const { enhanceSuccessRate } = await import(pathToFileURL(combatConstantsOut))
+} = await import('./sustainedConsumables.ts')
+const { enhanceSuccessRate } = await import('./combatConstants.ts')
 
 const pill = overrides => ({
   itemId: 'item.test-pill',
@@ -207,6 +186,3 @@ test('resolveEffectiveEnhancementSuccessBonuses 按库存与激活残余即时�
   assert.ok(Math.abs(singleStockTwoSlots.totalBonus - 0.05) < 1e-12)
   assert.equal(singleStockTwoSlots.items.length, 1)
 })
-
-await rm(tempOut, { force: true })
-await rm(combatConstantsOut, { force: true })

@@ -875,7 +875,7 @@ public sealed class ParticipationAdapterIntegrationTests
             Source = source;
             StartedAt = startedAt;
             Players = players;
-            Clock = new ManualClock(startedAt);
+            Clock = new TestSimulationClock(startedAt);
             Sections = new(source, NullLogger<PostgresSectionRepository>.Instance);
             Store = new(source);
             Social = new(source);
@@ -895,7 +895,7 @@ public sealed class ParticipationAdapterIntegrationTests
         public Guid PartyId { get; private set; }
         public string SessionId { get; } = $"action:{Guid.NewGuid():N}";
         public Dictionary<Guid, Guid> PersonalActions { get; } = [];
-        public ManualClock Clock { get; }
+        public TestSimulationClock Clock { get; }
         public OnlinePresenceRegistry Presence { get; } = new();
         public PostgresSectionRepository Sections { get; }
         public PostgresParticipationSessionStore Store { get; }
@@ -1029,12 +1029,5 @@ public sealed class ParticipationAdapterIntegrationTests
             await SqlAsync("DELETE FROM social.party_sessions WHERE session_id = $1", SessionId);
             await SqlAsync("DELETE FROM social.parties WHERE party_id = $1", PartyId);
         }
-    }
-
-    private sealed class ManualClock(DateTimeOffset at) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; private set; } = at;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
     }
 }

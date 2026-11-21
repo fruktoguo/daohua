@@ -301,7 +301,7 @@ public sealed class SectionRepositoryTests
         await FlushUntilDrainedAsync(repository, source, playerId);
         await using var runtime = EcsRuntimeFactory.Create(repository, new PostgresAssetRepository(source),
             new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance),
-            catalog, simulationClock: new FixedSimulationClock(target));
+            catalog, simulationClock: TestSimulationClock.Fixed(target, throwOnAdvance: true));
         // 播种态为持久化 Online 崩溃残留：装载即规范化转离线（锚点=LastSimulatedAt），v7→v8 在装载完成。
         var loaded = await runtime.LoadAsync(playerId);
         Assert.Equal(8, loaded.StateVersion);
@@ -384,13 +384,6 @@ public sealed class SectionRepositoryTests
         var storedAt = Assert.IsType<DateTime>(stored);
         Assert.True(Math.Abs((storedAt - expectedOfflineSince.Value.UtcDateTime).TotalMilliseconds) < 1,
             $"offline_since 不一致：stored={storedAt:O} expected={expectedOfflineSince.Value.UtcDateTime:O}");
-    }
-
-    private sealed class FixedSimulationClock(DateTimeOffset value) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow => value;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => throw new NotSupportedException();
     }
 
     private static SectionWrite[] BuildAllSections(Guid player, long version, DateTimeOffset now, int actionCount)

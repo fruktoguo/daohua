@@ -1,26 +1,8 @@
+import '../../test-loader.mjs'
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
-import { compileFunction } from 'node:vm'
-import { build } from 'esbuild'
 
-const { outputFiles: [bundle] } = await build({
-  stdin: {
-    resolveDir: fileURLToPath(new URL('.', import.meta.url)),
-    contents: "export { selectPartyLoadoutLocked, useSocialStore } from './socialStore'",
-  },
-  bundle: true,
-  packages: 'external',
-  platform: 'node',
-  format: 'cjs',
-  define: { 'import.meta.env': '{}' },
-  logOverride: { 'empty-import-meta': 'silent' },
-  write: false,
-})
-const module = { exports: {} }
-compileFunction(bundle.text, ['require', 'module', 'exports'])(createRequire(import.meta.url), module, module.exports)
-const { selectPartyLoadoutLocked, useSocialStore } = module.exports
+const { selectPartyLoadoutLocked, useSocialStore } = await import('./socialStore.ts')
 
 const applyParty = (sessionId = null) => useSocialStore.getState().applyState({
   friends: [], incomingRequests: [], outgoingRequests: [], nearbyPlayers: [],

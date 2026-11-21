@@ -1,28 +1,19 @@
+import '../../test-loader.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
 
 const root = process.cwd()
-const output = path.join(tmpdir(), `daohua-runtime-localization-${process.pid}.mjs`)
-await build({
-  stdin: {
-    contents: `export { resolveQueueActionName, resolveWorldLocationName, localizeActionDisplayText } from './frontend/src/game/ids.ts';
-export { resolveLocalizedEntityName } from './frontend/src/game/entityNames.ts';
-export { getT, LOCALES, useI18nStore } from './frontend/src/i18n/index.ts';`,
-    resolveDir: root,
-    loader: 'ts',
-  },
-  bundle: true,
-  format: 'esm',
-  outfile: output,
-  logLevel: 'error',
-})
-const { resolveQueueActionName, resolveWorldLocationName, localizeActionDisplayText, resolveLocalizedEntityName, getT, LOCALES, useI18nStore } = await import(pathToFileURL(output).href)
-test.after(() => fs.rmSync(output, { force: true }))
+const [
+  { resolveQueueActionName, resolveWorldLocationName, localizeActionDisplayText },
+  { resolveLocalizedEntityName },
+  { getT, LOCALES, useI18nStore },
+] = await Promise.all([
+  import('./ids.ts'),
+  import('./entityNames.ts'),
+  import('../i18n/index.ts'),
+])
 
 test('运行态中文快照在英文态复用现有实体译名，语言切换后仍保留权威原值', async () => {
   const csv = fs.readFileSync(path.join(root, 'frontend/public/locales/en-US.csv'), 'utf8')

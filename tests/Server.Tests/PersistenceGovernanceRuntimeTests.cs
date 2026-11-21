@@ -32,7 +32,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     {
         var playerId = Guid.NewGuid();
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -123,7 +123,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     {
         var playerId = Guid.NewGuid();
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         assets.Seed(playerId, ("item.tome.heavy-slash", "", 1));
@@ -186,7 +186,7 @@ public sealed class PersistenceGovernanceRuntimeTests
         var brandNewPlayerId = Guid.NewGuid();
         var accountId = Guid.NewGuid();
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -229,7 +229,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task PvpDuel_NormalCompletionAndForfeit_RecordSingleDuelLogWithGainsLossesAndForceFlush()
     {
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -358,7 +358,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task AdvanceAllAsync_IsolatesBrokenPlayerAndAllowsHealthyPlayersToContinue()
     {
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -410,7 +410,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task BufferOnlineSimulationOwned_RejectsNegativeWalletDeltaAndSelfHealsOnNextTick()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -464,7 +464,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task AdvanceAllAsync_RespawningPvpDefenderIsNotMatchedIntoInvalidDuel()
     {
         var catalog = LoadIsolatedCatalog(playerRespawnSeconds: 60, onPartyWipe: "respawn", searchSeconds: 2);
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -536,7 +536,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task AdvanceAllAsync_EvictsCorruptedRollbackPlayerAndKeepsBoundaryHealthy()
     {
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var economy = new RecordingEconomy(sections, assets);
@@ -615,7 +615,7 @@ public sealed class PersistenceGovernanceRuntimeTests
     public async Task AdvanceAllAsync_BacksOffPersistentlyFailingPlayerAndUnblocksBoundary()
     {
         var catalog = LoadIsolatedCatalog();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new MultiPlayerSections();
         var assets = new MultiPlayerAssets();
         var failingPlayerId = Guid.Parse("00000000-0000-4000-8000-0000000000e2");
@@ -855,14 +855,6 @@ public sealed class PersistenceGovernanceRuntimeTests
         """));
 
         return GameDataCatalog.Parse(docs);
-    }
-
-    private sealed class MutableClock(DateTimeOffset initial) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; set; } = initial;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
-        public void Advance(TimeSpan delta) => UtcNow = UtcNow.Add(delta);
     }
 
     private sealed class MultiPlayerSections : IPlayerStateRepository

@@ -585,7 +585,7 @@ public sealed class HeavenGateCommandTests
             assets ?? new EmptyAssets(),
             economy ?? new NoopEconomy(),
             TestCatalog,
-            new FixedClock(Epoch),
+            TestSimulationClock.Fixed(Epoch),
             Epoch);
 
     /// <summary>测试配表：境界曲线 Lv18 本层上限 1000，其余各层 100，供成本折算断言。</summary>
@@ -601,17 +601,6 @@ public sealed class HeavenGateCommandTests
         }));
         return new GameDataCatalog("heaven-gate-test", "heaven-gate-test", ActionCatalog.Default,
             realmProgression: RealmProgressionCatalog.Parse(document.RootElement));
-    }
-
-    /// <summary>确定性固定时钟：避免真实墙钟把测试推进引入跨秒抖动。</summary>
-    private sealed class FixedClock(DateTimeOffset value) : IPlayerSimulationClock
-    {
-        /// <inheritdoc />
-        public DateTimeOffset UtcNow { get; } = value;
-        /// <inheritdoc />
-        public bool IsDeterministic => true;
-        /// <inheritdoc />
-        public void AdvanceTo(DateTimeOffset target) { }
     }
 
     /// <summary>全套 8 段存档的只读假仓库：按配置把初始状态编码成 durable bundle。</summary>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DaoHua.Ecs;
+using DaoHua.Ecs.Systems;
 using Domain.Common;
 using Domain.Combat;
 using Domain.Economy;
@@ -137,5 +138,135 @@ public sealed class EcsStateRoundTripTests
         var actualJson = JsonSerializer.Serialize(actual);
         Assert.True(string.Equals(expectedJson, actualJson, StringComparison.Ordinal),
             $"ECS 分段 {section} 往返不一致。expected={expectedJson} actual={actualJson}");
+    }
+
+    private static PlayerAggregateState CreateCombatRestoreState(GameDataCatalog catalog, Guid playerId, Guid accountId)
+        => PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId),
+            "战斗恢复", SeedTime, catalog.Fingerprint).ExportState();
+
+    [Fact]
+    public async Task TraitEquipmentChange_DoesNotAffectRunningOrRestoredBattle()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-00000000aa01");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-00000000aa01");
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        runtime.CreatePlayer(CreateCombatRestoreState(catalog, playerId, accountId));
+        runtime.MutatePlayer(playerId, player => player.Progression.TraitIds.Add(CombatTraitRules.DuelKingTraitId));
+        runtime.EnqueueAction(playerId, new ActionId("combat.hunt-qi-beast"), -1);
+
+        EcsPlayerSnapshot entry = runtime.ExportSnapshot(playerId);
+        for (var seconds = 1; seconds <= 60; seconds++)
+        {
+            await runtime.RunPlayerOnceAsync(playerId, SeedTime.AddSeconds(seconds));
+            entry = runtime.ExportSnapshot(playerId);
+            if (entry.State.Actions[0].Expedition?.Phase == CombatExpeditionPhase.Combat) break;
+        }
+        Assert.Equal(CombatExpeditionPhase.Combat, entry.State.Actions[0].Expedition?.Phase);
+        runtime.MutatePlayer(playerId, player => player.Progression.SetTraits([]));
+        await runtime.RunPlayerOnceAsync(playerId, entry.State.LastSimulatedAt.AddMilliseconds(10));
+        var changed = runtime.ExportSnapshot(playerId);
+        Assert.Empty(changed.State.Progression.TraitIds ?? []);
+        Assert.Contains(CombatTraitRules.DuelKingTraitId, changed.State.Actions[0].Expedition!.PlayerState!.Traits.Ids);
+
+        using var restored = new EcsGameRuntime(catalog, changed.State.LastSimulatedAt);
+        restored.CreatePlayer(PlayerAggregate.Restore(changed.State).ExportState());
+        await restored.RunPlayerOnceAsync(playerId, changed.State.LastSimulatedAt.AddMilliseconds(10));
+        var resumed = restored.ExportSnapshot(playerId);
+        Assert.Contains(CombatTraitRules.DuelKingTraitId, resumed.State.Actions[0].Expedition!.PlayerState!.Traits.Ids);
+    }
+
+    [Fact]
+    public void FrozenSkillCooldownSnapshot_ResumesIdenticallyAfterAFailedAdvance()
+    {
+        using var skill = JsonDocument.Parse("""{"id":"ability.test-heal","category":"spell","effectType":"heal","healingRatio":1,"castMilliseconds":500,"cooldownMilliseconds":10000,"targetType":"self"}""");
+        var player = new CombatantTemplate(CombatantStats.Create(1000, 20, 10, 2) with { SpellAttack = 100 },
+            [new SkillSlot(skill.RootElement, Triggers: [])]);
+        var enemy = new CombatantTemplate(CombatantStats.Create(1000, 10, 0, 2));
+        var battle = CombatEventAdvanceSystem.Start("cooldown-retry", 42, player, [enemy]);
+        battle.Player.Hitpoints = 500;
+        var frozen = CombatEncounterState.Snapshot(battle.Player);
+        var enemyBefore = CombatEncounterState.Snapshot(battle.Enemies[0]);
+        var frozenBytes = JsonSerializer.SerializeToUtf8Bytes(frozen);
+        CombatEncounterState Restore() => CombatEncounterState.Restore("cooldown-retry", 42,
+            player, frozen, [enemy], [enemyBefore], 0, CombatOutcome.Running);
+        var clean = Restore();
+
+        // 燃魂缺少来源会在 1 秒网格结算抛错；此时 0.5 秒已完成施法并写入冷却。
+        battle.Enemies[0].AddBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, 30, 1,
+            Effects: [new BuffEffect(BuffEffectChannel.FireSpellDamagePerSecond, 5)], SourceUnitId: "ally:99"));
+        Assert.Throws<DomainException>(() => CombatEventAdvanceSystem.AdvanceTo(battle, 1));
+        Assert.True(battle.Player.SkillCooldownUntil![0] > 0);
+        Assert.Equal(frozenBytes, JsonSerializer.SerializeToUtf8Bytes(frozen));
+
+        var retry = Restore();
+        var expected = CombatEventAdvanceSystem.AdvanceTo(clean, 2);
+        var actual = CombatEventAdvanceSystem.AdvanceTo(retry, 2);
+        Assert.Equal(expected.Events.ToArray(), actual.Events.ToArray());
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(CombatEncounterState.Snapshot(clean.Player)),
+            JsonSerializer.SerializeToUtf8Bytes(CombatEncounterState.Snapshot(retry.Player)));
+    }
+
+    [Fact]
+    public async Task MidCombatSnapshotRestoreThenAdvanceDoesNotDeadlock()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-00000000aa01");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-00000000aa01");
+        var state = CreateCombatRestoreState(catalog, playerId, accountId);
+
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        runtime.CreatePlayer(state);
+        runtime.EnqueueAction(playerId, new ActionId("combat.hunt-qi-beast"), -1);
+        await runtime.RunPlayerOnceAsync(playerId, SeedTime.AddSeconds(40));
+        var midCombat = runtime.ExportSnapshot(playerId);
+        Assert.Equal(CombatExpeditionPhase.Combat, midCombat.State.Actions[0].Expedition?.Phase);
+
+        var restored = PlayerAggregate.Restore(midCombat.State).ExportState();
+        var lastSimulated = midCombat.State.LastSimulatedAt;
+        using var runtime2 = new EcsGameRuntime(catalog, lastSimulated);
+        runtime2.CreatePlayer(restored, []);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await runtime2.RunPlayerOnceAsync(playerId, lastSimulated.AddSeconds(30), cts.Token);
+
+        var after = runtime2.ExportSnapshot(playerId);
+        Assert.True(after.State.LastSimulatedAt >= lastSimulated.AddSeconds(30));
+    }
+
+    /// <summary>长时间离线狩猎补算回归：12 小时补算整段结算不触顶且确定性一致。</summary>
+    [Fact]
+    public async Task LongOfflineCombatCatchUpDoesNotExhaustTransitionBudget()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-00000000aa01");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-00000000aa01");
+
+        async Task<EcsPlayerSnapshot> RunOnce()
+        {
+            using var runtime = new EcsGameRuntime(catalog, SeedTime);
+            runtime.CreatePlayer(CreateCombatRestoreState(catalog, playerId, accountId));
+            runtime.EnqueueAction(playerId, new ActionId("combat.hunt-qi-beast"), -1);
+            var target = SeedTime.AddHours(12);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            await runtime.RunPlayerOnceAsync(playerId, target, cts.Token);
+            return runtime.ExportSnapshot(playerId);
+        }
+
+        var first = await RunOnce();
+        Assert.True(first.State.LastSimulatedAt >= SeedTime.AddHours(12));
+        Assert.Single(first.State.Actions);
+        Assert.Equal(-1, first.State.Actions[0].RemainingRepeats);
+        var activity = first.State.Progression;
+        Assert.True(activity.NormalKills + activity.EliteKills + activity.BossKills + activity.TotalDefeats > 0
+            || first.State.Actions[0].CompletedRepeats > 0,
+            $"狩猎 12h 未产生战斗活动（kills={activity.NormalKills},defeats={activity.TotalDefeats},repeats={first.State.Actions[0].CompletedRepeats}）");
+
+        var second = await RunOnce();
+        Assert.Equal(first.State.StateVersion, second.State.StateVersion);
+        Assert.Equal(first.State.LastSimulatedAt, second.State.LastSimulatedAt);
+        Assert.Equal(first.State.Progression.Experience, second.State.Progression.Experience);
+        Assert.Equal(first.State.Progression.NormalKills, second.State.Progression.NormalKills);
+        Assert.Equal(first.State.Progression.TotalDefeats, second.State.Progression.TotalDefeats);
+        Assert.Equal(first.State.Progression.CompletedActions, second.State.Progression.CompletedActions);
     }
 }

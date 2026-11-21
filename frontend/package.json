@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "node ../scripts/gen-simulator-catalog.mjs && node ../scripts/export-i18n-csv.mjs && vite",
     "build": "node ../scripts/gen-simulator-catalog.mjs && node ../scripts/export-i18n-csv.mjs && tsc -b && vite build && node ../scripts/gen-asset-manifest.mjs dist",
+    "build:bundle": "tsc -b && vite build && node ../scripts/gen-asset-manifest.mjs dist",
     "preview": "vite preview",
     "i18n:export": "node ../scripts/export-i18n-csv.mjs"
   },

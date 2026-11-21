@@ -1,10 +1,9 @@
+import '../../../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
+import { fileURLToPath } from 'node:url'
 import { buildGameDataCatalog } from './catalog.ts'
 import { CombatEncounterState, CombatantState } from './combatModels.ts'
 import { advanceCombatTo, decideInitialActions } from './combatEngine.ts'
@@ -23,24 +22,12 @@ import { pendingActionDurationOf } from './resourceBoundaries.ts'
 import { validateMember } from './validator.ts'
 import { useSimulatorStore } from '../simulatorStore.ts'
 
-// combatConstants 含 `../i18n` 目录导入，Node 原生 ESM 不支持，沿用 realmCalculations.test.mjs 的 esbuild 单文件打包范式
-const tempCombatOut = path.join(tmpdir(), `daohua-sim-combat-constants-${Date.now()}.mjs`)
-await build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/combatConstants.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempCombatOut,
-  logLevel: 'error',
-})
 const {
   ROOT_LEVEL_CAP,
   getRootCumulativeExpForLevel,
   getRootPointsForExp,
   calculateAbilityLevelAndProgress,
-} = await import(pathToFileURL(tempCombatOut).href)
-test.after(() => {
-  try { fs.unlinkSync(tempCombatOut) } catch { /* 临时文件可能已被清理 */ }
-})
+} = await import('../../combatConstants.ts')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const catalogJson = JSON.parse(

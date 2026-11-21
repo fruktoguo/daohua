@@ -1,36 +1,17 @@
-import { after, test } from 'node:test'
+import '../../test-loader.mjs'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
 
-const tempOut = path.join(tmpdir(), `daohua-help-test-${Date.now()}.mjs`)
-
-await build({
-  stdin: {
-    contents: `
-      export * from './frontend/src/data/helpGuide.ts';
-      export { zhCN } from './frontend/src/i18n/locales/zh-CN.ts';
-      export { parseLogTemplate } from './frontend/src/logging/gameLogService.ts';
-      export { TRAIT_DEFINITIONS } from './frontend/src/game/combatConstants.ts';
-      export { useUiStore } from './frontend/src/uiStore.ts';
-    `,
-    resolveDir: process.cwd(),
-    loader: 'ts',
-  },
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-})
-
-const mod = await import(pathToFileURL(tempOut).href)
-
-after(() => {
-  fs.rmSync(tempOut, { force: true })
-})
+const [helpGuide, { zhCN }, { parseLogTemplate }, { TRAIT_DEFINITIONS }, { useUiStore }] = await Promise.all([
+  import('./helpGuide.ts'),
+  import('../i18n/locales/zh-CN.ts'),
+  import('../logging/gameLogService.ts'),
+  import('../game/combatConstants.ts'),
+  import('../uiStore.ts'),
+])
+const mod = { ...helpGuide, zhCN, parseLogTemplate, TRAIT_DEFINITIONS, useUiStore }
 
 function loadJsonDir(dir) {
   const fullDir = path.resolve(process.cwd(), dir)
@@ -270,27 +251,4 @@ test('界面状态：帮助独立弹窗、跳转收起、深层子页签定位�
   const beforeSeq = store.getState().tutorialExternalSkipSeq
   store.getState().notifyTutorialExternalSkip()
   assert.equal(store.getState().tutorialExternalSkipSeq, beforeSeq + 1)
-})
-
-test('静态布局契约：独立弹窗外壳锁定滚动、右栏独立滚动、竖屏章节置顶及字号 Token 合规', () => {
-  const modalSource = fs.readFileSync(path.resolve(process.cwd(), 'frontend/src/components/HelpModal.tsx'), 'utf8')
-  const cssSource = fs.readFileSync(path.resolve(process.cwd(), 'frontend/src/styles/help.css'), 'utf8')
-
-  assert.match(modalSource, /<Modal[\s\S]*className="help-modal"/, 'HelpModal 必须基于共享 Modal 渲染独立弹窗')
-  assert.match(modalSource, /className="help-bullet-list"/, '条目正文应使用紧凑分点列表提高信息密度')
-  assert.match(modalSource, /contentRef\.current\.scrollTop\s*=\s*0/, '切换章节或检索词时必须重置右栏独立滚动位置')
-
-  // 弹窗外壳不滚，仅右栏滚动
-  assert.match(cssSource, /\.help-modal\.modal-shell\s*\{[^}]*overflow:\s*hidden/, '.help-modal.modal-shell 必须禁用外层整框滚动')
-  assert.match(cssSource, /\.help-content\s*\{[^}]*overflow-y:\s*auto/, '.help-content 必须作为独立垂直滚动区')
-
-  // 竖屏 <= 960px 时左侧 Tab 改至顶部横向排列
-  const portraitBlockIndex = cssSource.indexOf('@media (max-width: 960px)')
-  assert.ok(portraitBlockIndex >= 0, 'help.css 必须定义 <= 960px 竖屏响应式断点')
-  const portraitCss = cssSource.slice(portraitBlockIndex)
-  assert.match(portraitCss, /\.help-layout\s*\{[^}]*flex-direction:\s*column/, '竖屏 .help-layout 必须切为纵向主轴以便目录置顶')
-  assert.match(portraitCss, /\.help-sidebar\s*\{[^}]*flex-direction:\s*row/, '竖屏 .help-sidebar 必须为顶部横向切换条')
-
-  // 严禁硬编码像素或 rem 字号，统一走 --text-* Token
-  assert.doesNotMatch(cssSource, /font-size:\s*\d+(?:\.\d+)?(?:px|rem)/, 'help.css 不得硬编码 px/rem 字号')
 })

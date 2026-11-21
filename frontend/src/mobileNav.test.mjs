@@ -1,22 +1,7 @@
+import '../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 
-// mobileNav 依赖 uiStore 的类型与 components/Icon 的类型，Node 原生 ESM 无法解析
-// TS 目录导入，先用 esbuild 打包成单文件再加载。
-const require = createRequire(import.meta.url)
-const esbuild = require('esbuild')
-const tempOut = path.join(tmpdir(), `daohua-mobile-nav-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/mobileNav.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-})
 const {
   MOBILE_NAV_GROUPS,
   MOBILE_NAV_GROUP_ORDER,
@@ -24,7 +9,7 @@ const {
   TAB_ICON,
   mobileNavGroupById,
   mobileNavGroupIdOf,
-} = await import(pathToFileURL(tempOut).href)
+} = await import('./mobileNav.ts')
 
 test('移动端导航：一级分组恰好 7 项且覆盖全部页签，无重复无遗漏', () => {
   assert.equal(MOBILE_NAV_GROUPS.length, 7)

@@ -1,9 +1,6 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 
 const mockStorage = new Map()
 const mockSession = new Map()
@@ -25,22 +22,6 @@ globalThis.window = {
 }
 globalThis.sessionStorage = globalThis.window.sessionStorage
 
-const require = createRequire(import.meta.url)
-const esbuild = require('esbuild')
-const tempOut = path.join(tmpdir(), `daohua-checkin-store-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/checkinStore.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-  define: {
-    'import.meta.env.DEV': 'true',
-    'import.meta.env.VITE_APP_VERSION': '"dev"',
-    'import.meta.env.VITE_API_URL': 'undefined',
-    'import.meta.env.VITE_WS_URL': 'undefined',
-  },
-})
 const {
   getChinaDayIndex,
   getChinaDayOfWeekIndexMonday,
@@ -53,17 +34,8 @@ const {
   readDismissedCheckinDay,
   writeDismissedCheckinDay,
   useCheckinStore,
-} = await import(pathToFileURL(tempOut).href)
-
-const uiOut = path.join(tmpdir(), `daohua-checkin-uistore-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/uiStore.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: uiOut,
-  logLevel: 'error',
-})
-const { useUiStore } = await import(pathToFileURL(uiOut).href)
+} = await import('./checkinStore.ts')
+const { useUiStore } = await import('../uiStore.ts')
 
 test('UTC+8 自然日切换、零点倒计时与周偏移及签运归一化正确', () => {
   // 2026-11-16 23:59:59 UTC+8 == 1794844799 (周一)

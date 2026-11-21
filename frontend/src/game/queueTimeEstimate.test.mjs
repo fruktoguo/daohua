@@ -1,31 +1,6 @@
-import { after, describe, it } from 'node:test'
+import '../../test-loader.mjs'
+import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { rm } from 'node:fs/promises'
-import { build } from 'esbuild'
-
-const suffix = `${Date.now()}-${process.pid}`
-const estimateOut = path.join(tmpdir(), `daohua-queue-estimate-${suffix}.mjs`)
-const zhOut = path.join(tmpdir(), `daohua-queue-estimate-zh-${suffix}.mjs`)
-
-await Promise.all([
-  build({
-    entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/queueTimeEstimate.ts')],
-    bundle: true,
-    format: 'esm',
-    outfile: estimateOut,
-    logLevel: 'error',
-  }),
-  build({
-    entryPoints: [path.resolve(process.cwd(), 'frontend/src/i18n/locales/zh-CN.ts')],
-    bundle: true,
-    format: 'esm',
-    outfile: zhOut,
-    logLevel: 'error',
-  }),
-])
 
 const {
   calculateQueueActionEstimate,
@@ -33,15 +8,8 @@ const {
   formatQueueRepeatsText,
   getQueueEstimateDependencies,
   resolveLiveRemainingSeconds,
-} = await import(pathToFileURL(estimateOut))
-const { zhCN } = await import(pathToFileURL(zhOut))
-
-after(async () => {
-  await Promise.all([
-    rm(estimateOut, { force: true }),
-    rm(zhOut, { force: true }),
-  ])
-})
+} = await import('./queueTimeEstimate.ts')
+const { zhCN } = await import('../i18n/locales/zh-CN.ts')
 
 /** 测试用真实中文翻译器，校验词条路径与占位符完整闭合 */
 function t(key, params = {}) {

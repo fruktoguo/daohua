@@ -77,7 +77,7 @@ public sealed class UnknownCommitRecoveryTests
         using var ecs = new EcsGameRuntime(catalog, t0);
         var target = t0.AddMinutes(15);
         await using var old = new EcsPlayerRuntimeAdapter(ecs, sections, new PostgresAssetRepository(source), injector,
-            catalog, NullLogger<EcsPlayerRuntimeAdapter>.Instance, new FixedClock(target), ownership: ownership);
+            catalog, NullLogger<EcsPlayerRuntimeAdapter>.Instance, new TestSimulationClock(target), ownership: ownership);
 
         var unknown = await Assert.ThrowsAsync<EconomyCommitOutcomeUnknownException>(() => old.LoadAsync(player).AsTask());
         var originalAttempt = Assert.IsType<EconomyTransactionRequest>(injector.FirstRequest);
@@ -119,14 +119,6 @@ public sealed class UnknownCommitRecoveryTests
         }
         public ValueTask<EconomyTransactionResult?> FindCommittedAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
             => repository.FindCommittedAsync(request, cancellationToken);
-    }
-
-    private sealed class FixedClock(DateTimeOffset time) : IPlayerSimulationClock
-    {
-        private DateTimeOffset _time = time;
-        public DateTimeOffset UtcNow => _time;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => _time = target;
     }
 
     private static async Task<object?> Scalar(NpgsqlDataSource source, string sql, params object[] values)

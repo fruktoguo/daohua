@@ -91,7 +91,7 @@ public sealed class ZongmenIntegrationTests
         await fixture.Apply(leader, "invite", new { targetPlayerId = member });
         await fixture.Apply(member, "accept", new { zongmenId = own.Id });
         var sections = new PostgresSectionRepository(fixture.Source, NullLogger<PostgresSectionRepository>.Instance);
-        var clock = new Clock(DateTimeOffset.UtcNow);
+        var clock = new TestSimulationClock(DateTimeOffset.UtcNow);
         foreach (var player in fixture.Players)
         {
             var aggregate = PlayerAggregate.Create(new(player), new(player), player.ToString("N"), clock.UtcNow, fixture.Catalog.Fingerprint);
@@ -169,7 +169,7 @@ public sealed class ZongmenIntegrationTests
             """, builtSect.NodeId, t0.ToUnixTimeSeconds());
 
         var target = t0.AddMinutes(60);
-        var clock = new Clock(target);
+        var clock = new TestSimulationClock(target);
         using var ecs = new EcsGameRuntime(fixture.Catalog, target);
         var buildings = new NodeBuildingRegistry(new PostgresNodeBuildingRepository(fixture.Source), fixture.Catalog,
             NullLogger<NodeBuildingRegistry>.Instance);
@@ -222,7 +222,7 @@ public sealed class ZongmenIntegrationTests
             """, player);
 
         var startAt = new DateTimeOffset(2026, 11, 16, 8, 0, 0, TimeSpan.Zero);
-        var clock = new Clock(startAt);
+        var clock = new TestSimulationClock(startAt);
         var sections = new PostgresSectionRepository(fixture.Source, NullLogger<PostgresSectionRepository>.Instance);
         var aggregate = PlayerAggregate.Create(new(player), new(player), player.ToString("N"), startAt, fixture.Catalog.Fingerprint);
         aggregate.SkipTutorial();
@@ -280,8 +280,6 @@ public sealed class ZongmenIntegrationTests
             Assert.Equal(dbRow.Quantity, memRow?.Quantity ?? 0d);
         }
     }
-
-    private sealed class Clock(DateTimeOffset at) : IPlayerSimulationClock { public DateTimeOffset UtcNow { get; set; } = at; public bool IsDeterministic => true; public void AdvanceTo(DateTimeOffset target) => UtcNow = target; }
 
     private sealed class Fixture(NpgsqlDataSource source) : IAsyncDisposable
     {

@@ -1,19 +1,7 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
 
-const tempOut = path.join(tmpdir(), `daohua-genji-test-${Date.now()}.mjs`)
-await build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/genjiCalculations.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-})
 const {
   calculateGenjiCap,
   resolveGenjiBonusPoints,
@@ -21,11 +9,7 @@ const {
   resolveGenjiCondenseCost,
   isGenjiUnlocked,
   shouldShowCondenseGenjiForBreakthrough,
-} = await import(pathToFileURL(tempOut).href)
-
-test.after(() => {
-  try { fs.unlinkSync(tempOut) } catch { /* 忽略清理异常 */ }
-})
+} = await import('./genjiCalculations.ts')
 
 test('根基上限表与服务端档位覆盖规则逐位对齐', () => {
   assert.equal(calculateGenjiCap(29), 0)

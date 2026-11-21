@@ -166,19 +166,10 @@ public sealed class CheckinIntegrationTests
         Assert.False(claimed.Status.CanClaimToday);
     }
 
-    private sealed class MutableClock : IPlayerSimulationClock
-    {
-        private DateTimeOffset _now = DateTimeOffset.UtcNow;
-        public DateTimeOffset UtcNow => _now;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => _now = target;
-        public void SetNow(DateTimeOffset value) => _now = value;
-    }
-
     private sealed class CheckinFixture : IAsyncDisposable, IParticipationAssetBoundary, IPlayerRuntime
     {
         public NpgsqlDataSource Source { get; }
-        public MutableClock Clock { get; } = new();
+        public TestSimulationClock Clock { get; } = new();
         public PostgresCheckinRepository Repository { get; }
         public CheckinRuntime Runtime { get; }
         public List<Guid> WalletReloadedPlayers { get; } = [];

@@ -130,7 +130,7 @@ public sealed class RuntimeResilienceTests
     [Fact]
     public async Task PlayerSimulationHostedService_BoundaryThrows_DoesNotCrashLoop()
     {
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var runtime = new FaultyBoundaryRuntime();
         using var service = new PlayerSimulationHostedService(
             runtime, clock, NullLogger<PlayerSimulationHostedService>.Instance);
@@ -148,7 +148,7 @@ public sealed class RuntimeResilienceTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.NewGuid();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new InMemorySections();
         var assets = new InMemoryAssets();
         var ownership = new TrackingOwnershipStore();
@@ -193,7 +193,7 @@ public sealed class RuntimeResilienceTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var playerId = Guid.NewGuid();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new InMemorySections();
         var agg = PlayerAggregate.Create(new(playerId), new(playerId), "检查点道友", Epoch, catalog.Fingerprint);
         agg.SkipTutorial();
@@ -237,7 +237,7 @@ public sealed class RuntimeResilienceTests
         var playerLow = id1;
         var playerHigh = id2;
 
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var sections = new InMemorySections();
         var assets = new InMemoryAssets();
         var economy = new RecordingNoopEconomy();
@@ -311,7 +311,7 @@ public sealed class RuntimeResilienceTests
     public async Task ActionParticipationRuntime_CorruptRowOnRestoreAndOfflineDue_IsolatesBrokenSession()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        var clock = new MutableClock(Epoch);
+        var clock = new TestSimulationClock(Epoch);
         var presence = new OnlinePresenceRegistry();
         var store = new CorruptCapableParticipationStore();
 
@@ -395,14 +395,6 @@ public sealed class RuntimeResilienceTests
             ["Storage:ConnectionString"] = "Host=unused;Database=unused",
             ["Storage:OnlineCheckpointIntervalSeconds"] = "600"
         }).Build());
-
-    private sealed class MutableClock(DateTimeOffset initial) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; set; } = initial;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
-        public void Advance(TimeSpan delta) => UtcNow = UtcNow.Add(delta);
-    }
 
     private sealed class FaultyBoundaryRuntime : IPlayerRuntime
     {

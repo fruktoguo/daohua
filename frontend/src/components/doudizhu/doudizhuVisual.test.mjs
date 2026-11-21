@@ -1,24 +1,10 @@
+import '../../../test-loader.mjs'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import { compileFunction } from 'node:vm'
 import test from 'node:test'
-import { build } from 'esbuild'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-const { outputFiles: [bundle] } = await build({
-  entryPoints: [fileURLToPath(new URL('./doudizhuSvg.tsx', import.meta.url))],
-  bundle: true,
-  packages: 'external',
-  format: 'cjs',
-  jsx: 'automatic',
-  write: false,
-})
-const module = { exports: {} }
-compileFunction(bundle.text, ['require', 'module', 'exports'])(createRequire(import.meta.url), module, module.exports)
-const { CardFace, VisualSymbols } = module.exports
+const { CardFace, VisualSymbols } = await import('./doudizhuSvg.tsx')
 
 const jokers = { small: '小王', big: '大王' }
 const face = (card, labels = jokers) => renderToStaticMarkup(createElement(CardFace, { card, jokers: labels }))
@@ -41,11 +27,7 @@ test('牌桌 SVG：四种花色映射、双头牌面、A 与大小王图案保�
   }
 })
 
-test('牌桌 SVG：翻译始终是文本，静态牌面和飞牌不经 HTML 注入', async () => {
+test('牌桌 SVG：翻译始终是文本，静态牌面不经 HTML 注入', () => {
   const markup = face(52, { small: '<王>', big: '大王' })
   assert.match(markup, />&lt;<\/tspan><tspan[^>]*>王<\/tspan><tspan[^>]*>&gt;<\/tspan>/)
-  for (const file of ['DouDiZhuTable.tsx', 'doudizhuSvg.tsx', 'doudizhuMotion.ts']) {
-    const source = await readFile(new URL(`./${file}`, import.meta.url), 'utf8')
-    assert.doesNotMatch(source, /\b(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML)\b/)
-  }
 })

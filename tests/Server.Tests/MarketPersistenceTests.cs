@@ -354,7 +354,7 @@ public sealed class MarketPersistenceTests
         public required PlayerId Other { get; init; }
         public required Guid PartyId { get; init; }
         public required ActionParticipationSpec Spec { get; init; }
-        public required TestClock Clock { get; init; }
+        public required TestSimulationClock Clock { get; init; }
         public required ActionParticipationRuntime Participation { get; init; }
         public required PostgresParticipationSessionStore Sessions { get; init; }
         public required PostgresEconomyRepository Economy { get; init; }
@@ -411,7 +411,7 @@ public sealed class MarketPersistenceTests
             { ActionId = new ActionId("combat.hunt-qi-beast") };
             var presence = new OnlinePresenceRegistry();
             if (online) await presence.RegisterAsync(player.Value, "成员0", spec.NodeId);
-            var clock = new TestClock(startedAt);
+            var clock = new TestSimulationClock(startedAt);
             var sessions = new PostgresParticipationSessionStore(source);
             var participation = new ActionParticipationRuntime(catalog, sessions, presence, clock, NullLogger<ActionParticipationRuntime>.Instance);
             await participation.CreateAsync(partyId, spec);
@@ -435,13 +435,6 @@ public sealed class MarketPersistenceTests
             await Sql(Source, "DELETE FROM social.party_sessions WHERE session_id=$1", Spec.SessionId);
             await Sql(Source, "DELETE FROM social.parties WHERE party_id=$1", PartyId);
         }
-    }
-
-    private sealed class TestClock(DateTimeOffset start) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; private set; } = start;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
     }
 
     /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>

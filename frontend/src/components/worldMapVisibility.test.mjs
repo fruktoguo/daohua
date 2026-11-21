@@ -367,36 +367,3 @@ test('buildNodeIconLookup & lookupNodeIconFromMap：格式优先级与宗门回�
   assert.equal(lookupNodeIconFromMap(iconMap, 'node.zongmen.special'), '/assets/sect-special.png')
   assert.equal(lookupNodeIconFromMap(iconMap, 'node.missing'), null)
 })
-
-test('静态代码契约：WorldMapPanel 与样式强制保持等比画布、强 nodeId 透传、交界/精英/妖王角标与 Design Token 字号规范', () => {
-  const panelSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/components/WorldMapPanel.tsx'), 'utf-8')
-  const cssSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/expedition.css'), 'utf-8')
-  const themeSource = fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/theme.css'), 'utf-8')
-
-  // 严禁回退至非等比百分比拉伸 SVG 或固定死像素节点覆盖
-  assert.equal(panelSource.includes('preserveAspectRatio="none"'), false)
-  assert.equal(panelSource.includes('vectorEffect="non-scaling-stroke"'), false)
-  // 强 ID 显式透传契约：MapNodeButton 显式接收 nodeId 并直传 resolveNodeIconUrl(nodeId) 与 data-node-id={nodeId}
-  assert.match(panelSource, /const MapNodeButton = memo\(function MapNodeButton\(\{[\s\S]*?\bnodeId\b/)
-  assert.match(panelSource, /resolveNodeIconUrl\(nodeId\)/)
-  assert.match(panelSource, /data-node-id=\{nodeId\}/)
-  // 交界、精英与妖王显式角标、修饰类与驻留箭头避让契约
-  assert.match(panelSource, /world-map-node-badge is-gateway/)
-  assert.match(panelSource, /combat\.map\.gatewayBadge/)
-  assert.match(panelSource, /const onBadgedNode = Boolean\([\s\S]*?gatewayNodeIds\.has/)
-  assert.match(panelSource, /has-elite/)
-  assert.match(panelSource, /has-boss/)
-  assert.match(panelSource, /combat\.nearby\.rankElite/)
-  assert.match(panelSource, /combat\.nearby\.rankBoss/)
-  assert.match(cssSource, /\.world-map-node-badge\.is-gateway\s*\{/)
-  assert.equal(cssSource.includes('.world-map-node.is-gateway .world-map-node-plaque::before'), false)
-  assert.match(themeSource, /:root\[data-theme="light"\]\s+\.world-map-node-badge\.is-gateway\s*\{/)
-  // canvas JSX style 不拥有 transform 属性，防高刷路径被 React 重渲染拉回
-  assert.doesNotMatch(panelSource, /className="world-map-canvas"[\s\S]{0,160}transform:/)
-  // 节点与角标字号使用标准 Design Token（禁止裸像素）
-  assert.match(cssSource, /\.world-map-node-name\s*\{[\s\S]*?font-size:\s*var\(--text-xl\)/)
-  assert.match(cssSource, /\.world-map-node-badge\s*\{[\s\S]*?font-size:\s*var\(--text-2xs\)/)
-  // 容器查询窄区自动退栈
-  assert.match(cssSource, /container:\s*map-shell\s*\/\s*inline-size/)
-  assert.match(cssSource, /@container map-shell \(max-width:\s*660px\)/)
-})

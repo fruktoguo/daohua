@@ -1,38 +1,10 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 
-const require = createRequire(import.meta.url)
-const esbuild = require('esbuild')
-const esbuildDefine = {
-  'import.meta.env': JSON.stringify({ DEV: false, VITE_APP_VERSION: 'test' }),
-}
-
-const gameStoreOut = path.join(tmpdir(), `daohua-duel-store-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/gameStore.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: gameStoreOut,
-  define: esbuildDefine,
-  logLevel: 'error',
-})
-const { useGameStore } = await import(pathToFileURL(gameStoreOut).href)
-
-const snapshotOut = path.join(tmpdir(), `daohua-duel-snapshot-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/network/snapshot.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: snapshotOut,
-  define: esbuildDefine,
-  logLevel: 'error',
-})
-const { decodePlayerSnapshotDeltaDto } = await import(pathToFileURL(snapshotOut).href)
+const { useGameStore } = await import('../game/gameStore.ts')
+const { decodePlayerSnapshotDeltaDto } = await import('./snapshot.ts')
 
 test('斗法增量解码完整保留 duel.events 中的动画与结算字段', async () => {
   useGameStore.getState().resetGameStore()

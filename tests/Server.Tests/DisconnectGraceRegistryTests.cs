@@ -127,7 +127,7 @@ public sealed class DisconnectGraceRegistryTests
             {
                 ["Storage:ConnectionString"] = "Host=unused;Database=unused"
             }).Build()) with { OfflineGrace = grace };
-        return new DisconnectGraceRegistry(presence, runtime, new FixedClock(), options,
+        return new DisconnectGraceRegistry(presence, runtime, TestSimulationClock.Realtime(), options,
             NullLogger<DisconnectGraceRegistry>.Instance);
     }
 
@@ -135,13 +135,6 @@ public sealed class DisconnectGraceRegistryTests
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         while (!condition()) await Task.Delay(25, deadline.Token);
-    }
-
-    private sealed class FixedClock : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-        public bool IsDeterministic => false;
-        public void AdvanceTo(DateTimeOffset target) => throw new NotSupportedException();
     }
 
     /// <summary>记录型运行时替身：只响应卸载调用，其余通道本测试不触达。</summary>

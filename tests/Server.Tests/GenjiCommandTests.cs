@@ -43,7 +43,7 @@ public sealed class GenjiCommandTests
             new EmptyAssets(),
             new NoopEconomy(),
             Catalog,
-            new FixedClock(Epoch),
+            TestSimulationClock.Fixed(Epoch),
             Epoch);
 
         await runtime.LoadAsync(playerId);
@@ -72,13 +72,6 @@ public sealed class GenjiCommandTests
         Assert.True(doc.RootElement.GetProperty("genjiUnlocked").GetBoolean());
         Assert.Equal(30, doc.RootElement.GetProperty("genjiCap").GetInt32());
         Assert.True(doc.RootElement.GetProperty("genjiNextCost").GetDouble() > 0);
-    }
-
-    private sealed class FixedClock(DateTimeOffset value) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; } = value;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) { }
     }
 
     private sealed class FakeRepository : IPlayerStateRepository

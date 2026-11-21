@@ -556,14 +556,7 @@ public sealed class ActionParticipationRuntimeTests
         }
 
         public ActionParticipationRuntime NewRuntime() => new(Catalog, Store, Presence,
-            new FixedClock(), NullLogger<ActionParticipationRuntime>.Instance);
-    }
-
-    private sealed class FixedClock : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow => StartedAt;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => throw new NotSupportedException();
+            TestSimulationClock.Fixed(StartedAt, throwOnAdvance: true), NullLogger<ActionParticipationRuntime>.Instance);
     }
 
     /// <summary>在同一锁内核对检查点 CAS 与钱包读集，原子发布余额、流水和收件箱；故障只影响单次提交。</summary>

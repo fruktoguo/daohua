@@ -1,41 +1,12 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { SNAPSHOT_SCHEMA_VERSION } from './snapshotSchemaGate.ts'
 
-// snapshot 与 gameStore 涉及跨域模块路径，用 esbuild 打包后以原生 node:test 校验隐私状态默认与增量同步。
-const require = createRequire(import.meta.url)
-const esbuild = require('esbuild')
-const esbuildDefine = {
-  'import.meta.env': JSON.stringify({ DEV: false, VITE_APP_VERSION: 'test' }),
-}
-
-const tempOut = path.join(tmpdir(), `daohua-snapshot-privacy-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/gameStore.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  define: esbuildDefine,
-  logLevel: 'error',
-})
-const { useGameStore } = await import(pathToFileURL(tempOut).href)
-
-const snapshotOut = path.join(tmpdir(), `daohua-snapshot-codec-${Date.now()}.mjs`)
-await esbuild.build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/network/snapshot.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: snapshotOut,
-  define: esbuildDefine,
-  logLevel: 'error',
-})
-const { decodePlayerSnapshotDeltaDto } = await import(pathToFileURL(snapshotOut).href)
+const { useGameStore } = await import('../game/gameStore.ts')
+const { decodePlayerSnapshotDeltaDto } = await import('./snapshot.ts')
 
 test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配装、增量补丁可准确切换并随 reset 复位', async () => {
   const codec = await readFile(new URL('../../../src/Domain/Persistence/SectionCodec.cs', import.meta.url), 'utf8')

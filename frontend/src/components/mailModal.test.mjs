@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile, rm } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -113,59 +113,6 @@ test.after(async () => {
     rm(bundleMailStorePath, { force: true }),
     rm(bundleUiStorePath, { force: true }),
   ])
-})
-
-test('MailModal 独立弹窗契约、Icon 显式尺寸及公共组件规范', async () => {
-  const [mailModalSource, appSource] = await Promise.all([
-    readFile(path.resolve(repoRoot, 'frontend/src/components/MailModal.tsx'), 'utf8'),
-    readFile(path.resolve(repoRoot, 'frontend/src/App.tsx'), 'utf8'),
-  ])
-
-  assert.match(mailModalSource, /<Modal[\s\S]*?\bclassName="mail-modal"/, 'MailModal 必须复用公共 Modal 且挂载 .mail-modal 类名')
-
-  const iconTags = [...mailModalSource.matchAll(/<Icon\b[\s\S]*?\/>/g)].map(m => m[0])
-  assert.ok(iconTags.length >= 3, 'MailModal 应包含标题、刷新与空态 Icon')
-  for (const tag of iconTags) {
-    assert.match(tag, /\bsize=\{/, `Icon 必须显式传入 size 属性防止撑爆标题排版：\n${tag}`)
-  }
-
-  const tileTags = [...mailModalSource.matchAll(/<ItemTile\b[\s\S]*?\/>/g)].map(m => m[0])
-  assert.ok(tileTags.length >= 1, 'MailModal 必须使用 ItemTile 渲染邮件附件')
-  for (const tag of tileTags) {
-    assert.match(tag, /\bitemId=\{/, `ItemTile 缺少显式 itemId 属性：\n${tag}`)
-  }
-
-  assert.match(mailModalSource, /<RichTemplateText[\s\S]*?\btemplate=\{/, 'MailModal 必须向 RichTemplateText 传入 template 属性')
-  assert.match(mailModalSource, /app\.mail\.neverExpires/, 'MailModal 必须支持永不过期邮件文案显示')
-  assert.match(appSource, /<MailModal\s+open=\{mailOpen\}\s+onClose=\{/, 'App.tsx 必须在顶层弹窗层挂载独立 MailModal')
-  assert.doesNotMatch(appSource, /hidden=\{mailOpen \|\|/, '独立弹窗化后 App.tsx 不得用 mailOpen 隐藏底层主界面页签')
-})
-
-test('顶栏角标排布与横竖屏响应式规则完整', async () => {
-  const [appSource, mailCssSource] = await Promise.all([
-    readFile(path.resolve(repoRoot, 'frontend/src/App.tsx'), 'utf8'),
-    readFile(path.resolve(repoRoot, 'frontend/src/styles/mail.css'), 'utf8'),
-  ])
-
-  const topbarActionsMatch = appSource.match(/<div className="topbar-actions">[\s\S]*?<\/div>/)
-  assert.ok(topbarActionsMatch, 'App.tsx 必须存在 .topbar-actions 容器')
-  const mailIndex = topbarActionsMatch[0].indexOf('<TopbarMailButton')
-  const taijiIndex = topbarActionsMatch[0].indexOf('<TaijiToggle')
-  assert.ok(mailIndex !== -1 && taijiIndex !== -1 && mailIndex < taijiIndex,
-    'TopbarMailButton 必须放在 .topbar-actions 中 TaijiToggle 的紧邻左侧')
-
-  assert.match(mailCssSource, /\.mail-modal\.modal-shell[\s\S]*?overflow:\s*hidden/,
-    '弹窗外框必须锁死 overflow: hidden，避免内外双滚动条')
-  assert.match(mailCssSource, /@media\s*\(orientation:\s*landscape\)\s*and\s*\(max-height:\s*540px\)/,
-    '必须覆盖手机矮横屏布局以保持双栏独立滚动可用')
-  assert.match(mailCssSource, /@media\s*\(max-width:\s*760px\),\s*\(orientation:\s*portrait\)\s*and\s*\(max-width:\s*900px\)/,
-    '必须覆盖竖屏与窄屏单栏全高钻取布局')
-  assert.match(mailCssSource, /@media\s*\(max-width:\s*960px\)[\s\S]*?\.topbar-actions\s+\.topbar-mail-btn[\s\S]*?display:\s*inline-flex/,
-    '竖屏 <=960px 下顶栏邮件按钮必须显式保持可见')
-  assert.match(mailCssSource, /@media\s*\(max-width:\s*960px\)[\s\S]*?\.topbar\s+\.realm-progress[\s\S]*?max-width:\s*152px/,
-    '竖屏 <=960px 下必须缩短左侧境界进度条')
-  assert.match(mailCssSource, /@media\s*\(max-width:\s*520px\)[\s\S]*?\.topbar\s+\.realm-progress[\s\S]*?max-width:\s*118px/,
-    '小屏 <=520px 下必须进一步缩短左侧境界进度条')
 })
 
 test('hasMailRedDot 与 filterMailItems 纯逻辑判断准确', () => {

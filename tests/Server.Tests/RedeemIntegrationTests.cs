@@ -232,19 +232,11 @@ public sealed class RedeemIntegrationTests
         }
     }
 
-    private sealed class MutableClock : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; private set; } = DateTimeOffset.UtcNow;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target.ToUniversalTime();
-        public void SetNow(DateTimeOffset value) => UtcNow = value.ToUniversalTime();
-    }
-
     private sealed class RedeemFixture : IAsyncDisposable, IPlayerRuntime, IParticipationAssetBoundary
     {
         public NpgsqlDataSource Source { get; }
         public GameDataCatalog GameData { get; } = GameDataCatalog.LoadEmbedded();
-        public MutableClock Clock { get; } = new();
+        public TestSimulationClock Clock { get; } = new();
         public PostgresRedeemRepository Repository { get; }
         public RedeemRuntime Runtime { get; }
         public List<Guid> WalletReloadedPlayers { get; } = [];

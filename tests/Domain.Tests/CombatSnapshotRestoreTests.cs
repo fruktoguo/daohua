@@ -153,4 +153,71 @@ public sealed class CombatSnapshotRestoreTests
             elapsedSeconds: 5,
             outcome: CombatOutcome.Running));
     }
+
+    private static PlayerAggregate BuildStuckCombatPlayer(GameDataCatalog catalog, DateTimeOffset baseline)
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", baseline, catalog.Fingerprint);
+        var exported = player.ExportState();
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, PvpEnabled: true),
+            baseline,
+            ActionQueueStatus.Running,
+            0, -1, 0,
+            new CombatExpeditionState(
+                "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, unchecked((long)4122577177101012044UL),
+                15.472613, 88.20322454180142, 45, 16, 15, 88.20322454180142, CombatOutcome.Running, 1,
+                [new ExpeditionEnemyState("enemy.wood-spirit",
+                    new CombatantSnapshot(150, 4.752941176470588, 15.997984378936762, 7, 13.111788034361007, 1))])
+            {
+                PlayerState = new CombatantSnapshot(88.20322454180142, 45, 16, 15, 88.20322454180142)
+            });
+        return PlayerAggregate.Restore(exported with
+        {
+            Actions = [action],
+            Combat = new PlayerCombatStateDocument(88.20322454180142, 100, 45, 50, 11, 11, 1.5453399),
+        });
+    }
+
+    /// <summary>一次性大步长补算路径：模拟时钟必须推进到目标时刻且至少完成一轮讨伐。</summary>
+    [Fact]
+    public void PersistedCombatExpeditionAdvancesAcrossLongCatchUp()
+    {
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = BuildStuckCombatPlayer(catalog, baseline);
+
+        var result = SimulationEngine.AdvanceTo(player, baseline.AddSeconds(32_000), catalog,
+            duel: new DuelAdvanceOptions(MatchingEnabled: true));
+
+        Assert.Equal(baseline.AddSeconds(32_000), player.LastSimulatedAt);
+        Assert.True(result.CompletedRepeats > 0 || player.Progression.TotalDefeats > 0,
+            "长时间补算应至少完成一轮讨伐或产生败走结论。");
+        Assert.True(player.Progression.NormalKills + player.Progression.EliteKills
+            + player.Progression.BossKills + player.Progression.TotalDefeats > 0);
+    }
+
+    /// <summary>在线小步推进路径：远征战斗计时必须持续增长，不得原地踏步。</summary>
+    [Fact]
+    public void PersistedCombatExpeditionAdvancesInSmallSteps()
+    {
+        var baseline = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = BuildStuckCombatPlayer(catalog, baseline);
+
+        var cursor = baseline;
+        for (var i = 0; i < 200; i++)
+        {
+            cursor = cursor.AddSeconds(0.25);
+            SimulationEngine.AdvanceTo(player, cursor, catalog, duel: new DuelAdvanceOptions(MatchingEnabled: true));
+        }
+        Assert.Equal(cursor, player.LastSimulatedAt);
+        var expedition = player.Actions[0].Expedition!;
+        Assert.True(expedition.Phase != CombatExpeditionPhase.Combat
+            || expedition.BattleElapsedSeconds > 15.472613
+            || expedition.WaveNumber > 1,
+            $"逐拍推进下战斗时钟与相位均不得原地踏步（phase={expedition.Phase} " +
+            $"elapsed={expedition.BattleElapsedSeconds} wave={expedition.WaveNumber} " +
+            $"kills={player.Progression.NormalKills} defeats={player.Progression.TotalDefeats}）。");
+    }
 }

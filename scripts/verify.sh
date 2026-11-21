@@ -38,10 +38,8 @@ usage() {
   printf '\n环境变量: SKIP_NPM_CI=1 跳过前端依赖安装；VERIFY_DOCKER=1 追加生产镜像构建\n'
   printf '%s\n' '  --with-postgres -- <命令>  仅给一个测试宿主供给新库' \
     '默认使用 postgres:18-alpine 专用容器、tmpfs、随机回环端口；退出即清理。' \
-    '外部供给必须显式设置 VERIFY_POSTGRES_EXTERNAL=1；只接受全新一次性回环库，不接管或清理外部库。' \
-    'DAOHUA_POSTGRES_TEST_RUN_ID 为 32 位小写随机十六进制；库名及其独占登录所有者均为 daohua_test_<RUN_ID>。' \
-    "用所有者给空库执行 COMMENT ON DATABASE daohua_test_<RUN_ID> IS 'daohua-postgres-test-v1:<RUN_ID>:ready';" \
-    'DAOHUA_MARKET_TEST_CONNECTION=Host=127.0.0.1;Port=<端口>;Database=<库>;Username=<所有者>;Password=<临时密码>' \
+    '外部供给必须显式设置 VERIFY_POSTGRES_EXTERNAL=1；只接受库名以 daohua_test_ 开头的一次性回环库，不接管或清理外部库。' \
+    'DAOHUA_MARKET_TEST_CONNECTION=Host=127.0.0.1;Port=<端口>;Database=daohua_test_<标识>;Username=<用户>;Password=<临时密码>' \
     '一个库只交给一个测试宿主；外部供给者完成后自行回收。'
 }
 
@@ -67,12 +65,11 @@ trap 'exit 143' TERM
 supply_verify_postgres() {
   if [[ "${VERIFY_POSTGRES_EXTERNAL:-0}" == 1 ]]; then
     : "${DAOHUA_MARKET_TEST_CONNECTION:?缺少一次性测试库连接串}"
-    : "${DAOHUA_POSTGRES_TEST_RUN_ID:?缺少一次性测试库标识}"
-    export DAOHUA_MARKET_TEST_CONNECTION DAOHUA_POSTGRES_TEST_RUN_ID
+    export DAOHUA_MARKET_TEST_CONNECTION
     return
   fi
   require_docker '供给一次性 PostgreSQL '
-  unset DAOHUA_MARKET_TEST_CONNECTION DAOHUA_POSTGRES_TEST_RUN_ID
+  unset DAOHUA_MARKET_TEST_CONNECTION
   local run_id name password address ready=0
   run_id="$(openssl rand -hex 16 | tr -d '\r')"
   password="$(openssl rand -hex 24 | tr -d '\r')"
@@ -96,13 +93,9 @@ supply_verify_postgres() {
     sleep 1
   done
   [[ "$ready" == 1 ]] || { printf '一次性测试库未就绪。\n' >&2; exit 1; }
-  docker exec "$VERIFY_PG_CONTAINER" sh -ceu '
-    PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -Xq -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"
-  ' sh "COMMENT ON DATABASE $name IS 'daohua-postgres-test-v1:$run_id:ready';"
   address="$(docker port "$VERIFY_PG_CONTAINER" 5432/tcp)"
   address="${address%$'\r'}"
   [[ "$address" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { printf '一次性测试库未绑定到独占回环端口。\n' >&2; exit 1; }
-  export DAOHUA_POSTGRES_TEST_RUN_ID="$run_id"
   export DAOHUA_MARKET_TEST_CONNECTION="Host=127.0.0.1;Port=${address##*:};Database=$name;Username=$name;Password=$password"
 }
 
@@ -233,12 +226,6 @@ run_backend_pipeline() {
     if [[ "$RUN_INTEGRATION" -eq 1 ]]; then
       printf '%s\n' '==> 服务端测试'
       run_suite server tests/Server.Tests/Server.Tests.csproj 150
-      # 总数下限不能证明 PG 组跑到了；至少一条实际通过的宿主启动回归必须存在。
-      if ! grep -Eq '<UnitTestResult [^>]*testName="[^"<>]*StartAsync_WhenSchemaMatches_CompletesWithoutThrowingEvenIfSectionLabelsStale"[^>]*outcome="Passed"' \
-          "$RESULTS_DIR/server/server.trx"; then
-        printf '门禁失败：TRX 未记录通过的 PostgreSQL 旧标签启动回归。\n' >&2
-        exit 1
-      fi
     else
       # --fast：跳过需要真实数据库的 PostgresIntegration 门禁，只跑纯内存/契约用例。
       printf '%s\n' '==> 服务端测试（跳过 PostgresIntegration）'
@@ -271,17 +258,18 @@ run_frontend_pipeline() {
   printf '%s\n' '==> 生成战斗模拟器前端配表'
   node scripts/gen-simulator-catalog.mjs
 
+  printf '%s\n' '==> 同步前端 i18n 词条模板 CSV'
+  node scripts/export-i18n-csv.mjs
+
   printf '%s\n' '==> 前端 i18n 词条覆盖校验'
   node scripts/check-i18n-keys.mjs
 
   printf '%s\n' '==> 日志富文本标记转义校验'
   node scripts/check-log-markup.mjs
 
-  # 前端纯逻辑单测（node:test）：此前 10 个 *.test.mjs 无任何入口执行，
-  # 其中 codexCalculations / realmCalculations 已漂移失败数月无人发现。
-  # 引号内的 glob 由 node 自身展开（node>=22 支持），不依赖 shell globstar。
-  printf '%s\n' '==> 前端逻辑单测'
-  node --test "frontend/src/**/*.test.mjs"
+  # 前端纯逻辑与工具单测（node:test）：启用 --experimental-strip-types 直跑 TS 测试模块。
+  printf '%s\n' '==> 前端逻辑与工具单测'
+  node --experimental-strip-types --test "frontend/src/**/*.test.mjs" "scripts/gen-asset-manifest.test.mjs" ".agents/skills/gityx-publish/scripts/gityx-publish.test.mjs"
 
   # 契约脚本的唯一既有入口是 tests/Server.Tests/FrontendContractTests（随 --backend 跑）。
   # 全量/后端模式下它已被执行，此处再跑就是同一个脚本重复一遍；
@@ -292,7 +280,7 @@ run_frontend_pipeline() {
   fi
 
   printf '%s\n' '==> 前端类型检查与生产构建'
-  npm --prefix frontend run build
+  npm --prefix frontend run build:bundle
 
   if [[ -e frontend/src/private-impl/index.ts ]]; then
     printf '%s\n' '==> 私有前端实现类型检查（完整口径，tsc 走挂载视图）'

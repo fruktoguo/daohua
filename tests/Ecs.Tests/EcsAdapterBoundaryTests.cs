@@ -1017,7 +1017,7 @@ public sealed class EcsAdapterBoundaryTests
         var loaded = await adapter.LoadAsync(fixture.PlayerId);
         var actionId = loaded.State.Actions[0].Id;
 
-        var mutableClock = new MutableTestClock(Epoch);
+        var mutableClock = new TestSimulationClock(Epoch);
         using var ecs2 = new EcsGameRuntime(fixture.Catalog, Epoch);
         var sections2 = new MemorySections(ToBundle(loaded.State));
         var assets2 = new MemoryAssets([]);
@@ -1057,13 +1057,6 @@ public sealed class EcsAdapterBoundaryTests
         Assert.False(overflow.Success);
         Assert.Null(ecs2.DrainSimulationResult(fixture.PlayerId));
         Assert.Equal(beforeOverflow.LastSimulatedAt, ecs2.ExportSnapshot(fixture.PlayerId).State.LastSimulatedAt);
-    }
-
-    private sealed class MutableTestClock(DateTimeOffset value) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; set; } = value;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
     }
 
     private static async Task<PlayerRuntimeSnapshot> EnqueueGatheringAsync(Fixture fixture)
@@ -1137,7 +1130,7 @@ public sealed class EcsAdapterBoundaryTests
             ? []
             : balances.Select(balance => balance with { PlayerId = playerId }).ToArray());
         var economy = new MemoryEconomy(sections, assets);
-        var clock = new FixedClock(clockAt);
+        var clock = TestSimulationClock.Fixed(clockAt);
         var ecs = new EcsGameRuntime(catalog, Epoch, duelAdvance: duelAdvance);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
             NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock, simulationTransactionIdentity: new DeterministicSimulationTransactionIdentity(),
@@ -1171,7 +1164,7 @@ public sealed class EcsAdapterBoundaryTests
             ? []
             : balances.Select(balance => balance with { PlayerId = playerId }).ToArray());
         var economy = new MemoryEconomy(sections, assets);
-        var clock = new FixedClock(now ?? Epoch);
+        var clock = TestSimulationClock.Fixed(now ?? Epoch);
         var ecs = new EcsGameRuntime(catalog, Epoch);
         var adapter = new EcsPlayerRuntimeAdapter(ecs, sections, assets, economy, catalog,
             NullLogger<EcsPlayerRuntimeAdapter>.Instance, clock,
@@ -1223,13 +1216,6 @@ public sealed class EcsAdapterBoundaryTests
             ReleaseCalls++;
             return ValueTask.CompletedTask;
         }
-    }
-
-    private sealed class FixedClock(DateTimeOffset value) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow => value;
-        public bool IsDeterministic => true;
-        public void AdvanceTo(DateTimeOffset target) { }
     }
 
     private sealed class MemorySections(PlayerStateBundle initial) : IPlayerStateRepository

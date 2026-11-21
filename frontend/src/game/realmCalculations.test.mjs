@@ -1,25 +1,18 @@
+import '../../test-loader.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
-import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
 
-// combatConstants 走 `import { getT } from '../i18n'` 的目录导入（Vite 解析），
-// Node 原生 ESM 不支持目录导入，必须先用 esbuild 打包成单文件再加载。
-const tempOut = path.join(tmpdir(), `daohua-realm-test-${Date.now()}.mjs`)
-await build({
-  entryPoints: [path.resolve(process.cwd(), 'frontend/src/game/combatConstants.ts')],
-  bundle: true,
-  format: 'esm',
-  outfile: tempOut,
-  logLevel: 'error',
-})
-const { calculateRealmInfo, calculateRealmProgress, serverExpToNextCap } = await import(pathToFileURL(tempOut).href)
-test.after(() => {
-  try { fs.unlinkSync(tempOut) } catch { /* 临时文件可能已被清理 */ }
-})
+const {
+  calculateRealmInfo,
+  calculateRealmProgress,
+  serverExpToNextCap,
+  TECHNIQUE_EXP_TO_NEXT,
+  calculateTechniqueProgress,
+  techniqueEarlyDiscountRatio,
+  REALM_LEVEL_UPGRADE_EXP_TO_NEXT,
+  earlyUpgradeDiscountRatio,
+  getRootCumulativeExpForLevel,
+} = await import('./combatConstants.ts')
 
 test('境界判定：Lv.18（叩天门）在有本层修为经验时不跃迁为修真段或飞升', () => {
   // 零经验 Lv.18
@@ -141,4 +134,30 @@ test('入天门乘区瓶颈：进度与满修判定必须用服务端权威 expT
   assert.equal(serverExpToNextCap(Number.NaN, 18), undefined)
   assert.equal(serverExpToNextCap(1456551, 127), undefined)
   assert.equal(calculateRealmProgress(485517, 18, undefined).progressPercentage, 100)
+})
+
+test('升级经验削减曲线：境界、六维与技艺前 30 段线性削减锚点严格对齐', () => {
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[0], 500)
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[1], 993)
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[17], 485517)
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[28], 9163645)
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[29], 12631000)
+  assert.equal(TECHNIQUE_EXP_TO_NEXT[30], 15158000)
+  assert.equal(techniqueEarlyDiscountRatio(1), 0.95)
+  assert.equal(techniqueEarlyDiscountRatio(30), 0)
+  assert.equal(techniqueEarlyDiscountRatio(31), 0)
+  assert.equal(earlyUpgradeDiscountRatio(1), 0.95)
+  assert.equal(earlyUpgradeDiscountRatio(15), 0.95 * 15 / 29)
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[0], 500)
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[17], 485517)
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[28], 9163645)
+  assert.equal(REALM_LEVEL_UPGRADE_EXP_TO_NEXT[29], 12631000)
+  assert.equal(calculateRealmProgress(499, 1).progressPercentage < 100, true)
+  assert.equal(calculateRealmProgress(500, 1).expToNext, 500)
+  assert.equal(getRootCumulativeExpForLevel(1), 500)
+  assert.equal(getRootCumulativeExpForLevel(3), 1500)
+  assert.equal(getRootCumulativeExpForLevel(4), 2000)
+  assert.deepEqual(calculateTechniqueProgress(500), { level: 1, currentLayerExp: 0, expToNext: 993, progressPercentage: 0 })
+  assert.equal(calculateTechniqueProgress(1525564).level, 18)
+  assert.equal(calculateTechniqueProgress(1525563).level, 17)
 })
