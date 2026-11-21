@@ -119,6 +119,29 @@ public sealed class TapTapAuthTests
         Assert.Null(profile);
     }
 
+    [Fact]
+    public void TryResolveAllowedRedirectUri_EnforcesWhitelist()
+    {
+        var service = new TapTapAuthService(
+            new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            Options.Create(new TapTapOptions
+            {
+                ClientId = "demo_client_id",
+                ClientSecret = "demo_secret",
+                RedirectUri = "https://daohua.yuohira.com/api/v1/auth/taptap/callback",
+                AllowedRedirectUris = ["http://daohua.localhost/api/v1/auth/taptap/callback"]
+            }),
+            NullLogger<TapTapAuthService>.Instance);
+
+        Assert.True(service.TryResolveAllowedRedirectUri(null, out var def));
+        Assert.Equal("https://daohua.yuohira.com/api/v1/auth/taptap/callback", def);
+        Assert.True(service.TryResolveAllowedRedirectUri("http://daohua.localhost/api/v1/auth/taptap/callback", out var whitelisted));
+        Assert.Equal("http://daohua.localhost/api/v1/auth/taptap/callback", whitelisted);
+
+        Assert.False(service.TryResolveAllowedRedirectUri("https://evil.example.com/callback", out _));
+        Assert.False(service.TryResolveAllowedRedirectUri("javascript:alert(1)", out _));
+    }
+
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

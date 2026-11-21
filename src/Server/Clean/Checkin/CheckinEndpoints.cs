@@ -13,7 +13,7 @@ public static class CheckinEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var group = endpoints.MapGroup("/api/v1/checkin").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/checkin").RequireAuthorization().RequireRateLimiting("command");
 
         group.MapGet("/", async (ClaimsPrincipal user, CheckinRuntime runtime, CancellationToken ct) =>
         {

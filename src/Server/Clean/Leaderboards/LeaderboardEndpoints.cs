@@ -15,7 +15,7 @@ public static class LeaderboardEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var group = endpoints.MapGroup("/api/v1/leaderboards").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/leaderboards").RequireAuthorization().RequireRateLimiting("command");
 
         group.MapGet("/", (HttpContext context, LeaderboardRuntime runtime) =>
         {

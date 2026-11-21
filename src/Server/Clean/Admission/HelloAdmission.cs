@@ -58,19 +58,53 @@ public interface IHelloAdmissionHook
 }
 
 /// <summary>
-/// 默认开放语义：无条件放行并登记首个会话（供广播与运维可见）；同账号后续连接静默共存，不拒绝不顶替。
+/// 默认开放语义：无条件放行并登记首个会话（供广播与运维可见）；同账号后续连接静默共存，
+/// 按活跃连接引用计数仅当最后一个连接断开时才返回 true 触发断线宽限与卸载。
 /// </summary>
 /// <param name="sessions">在线会话注册表</param>
 public sealed class OpenHelloAdmissionHook(SessionRegistry sessions) : IHelloAdmissionHook
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, List<WebSocketSession>> _coexisting = new();
+
     public HelloAdmissionVerdict Admit(WebSocketSession session, string? deviceKey, string? moduleDeclaration, AccountAbuse.AccountRiskPolicy policy)
     {
+        var list = _coexisting.GetOrAdd(session.PlayerId, _ => []);
+        lock (list)
+        {
+            list.Add(session);
+        }
         // 互斥登记失败（已有在线会话）时静默共存：开放语义不拒绝任何连接，广播与运维可见性归属首个会话。
         sessions.TryAdd(session);
         return HelloAdmissionVerdict.Accept();
     }
 
-    public bool Release(WebSocketSession session) => sessions.Remove(session.PlayerId, session);
+    public bool Release(WebSocketSession session)
+    {
+        var removedFromRegistry = sessions.Remove(session.PlayerId, session);
+        if (!_coexisting.TryGetValue(session.PlayerId, out var list))
+            return removedFromRegistry;
+
+        WebSocketSession? promoted = null;
+        bool lastDisconnected;
+        lock (list)
+        {
+            list.RemoveAll(item => ReferenceEquals(item, session));
+            lastDisconnected = list.Count == 0;
+            if (!lastDisconnected)
+                promoted = list[0];
+        }
+
+        if (lastDisconnected)
+        {
+            _coexisting.TryRemove(new KeyValuePair<Guid, List<WebSocketSession>>(session.PlayerId, list));
+            return true;
+        }
+
+        // 若被移除的是注册表中的主会话，自动把仍在活跃的共存连接顶补进注册表，保持单播/运维可见。
+        if (removedFromRegistry && promoted is not null)
+            sessions.TryAdd(promoted);
+        return false;
+    }
 
     public bool TabGuardEnabled(AccountAbuse.AccountRiskPolicy policy) => false;
 }

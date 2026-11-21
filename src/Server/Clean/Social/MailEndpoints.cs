@@ -13,7 +13,7 @@ public static class MailEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var group = endpoints.MapGroup("/api/v1/mails").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/mails").RequireAuthorization().RequireRateLimiting("command");
 
         group.MapGet("/", async (ClaimsPrincipal user, MailRuntime runtime, CancellationToken ct) =>
         {

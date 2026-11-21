@@ -227,8 +227,8 @@ public sealed class MailRuntime(
     {
         var loaded = await repository.LoadActiveBroadcastsAsync(now, ct).ConfigureAwait(false);
         _activeBroadcasts = loaded;
-        // 缓存自动失效锚点取「最早到期时刻」与「5 分钟保底轮巡」的较早者。
-        var nextExpiry = now.AddMinutes(5);
+        // 缓存自动失效锚点取「最早到期时刻」与「30 秒保底轮巡」的较早者，兼顾多副本撤回同步时效。
+        var nextExpiry = now.AddSeconds(30);
         foreach (var item in loaded)
         {
             if (item.ExpiresAt is { } exp && exp < nextExpiry) nextExpiry = exp;

@@ -50,7 +50,7 @@ public static class SimulatorEndpoints
                     .Where(balance => gameData.Items.ContainsKey(new Domain.Common.ItemId(balance.AssetId)))
                     .Select(balance => new SimulatorAssetDto(balance.AssetId, balance.Variant, balance.Quantity)),
                 gameData));
-        });
+        }).RequireRateLimiting("command");
         players.MapGet("/{playerId:guid}/simulator-environment", async (Guid playerId,
             ClaimsPrincipal user, HttpContext context,
             NodeBuildingRegistry nodeBuildings, Domain.GameData.GameDataCatalog gameData,
@@ -87,7 +87,7 @@ public static class SimulatorEndpoints
             }
             return Results.Ok(new SimulatorEnvironmentDto(
                 SimulatorContractVersions.Environment, gameData.Fingerprint, nowUnixSeconds, nodes));
-        });
+        }).RequireRateLimiting("command");
     }
 
     private static bool IsPlayer(ClaimsPrincipal principal, Guid playerId) =>

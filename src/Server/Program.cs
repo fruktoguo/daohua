@@ -57,6 +57,24 @@ builder.Services.AddProblemDetails();
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
     rateLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    rateLimiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/healthz")
+            || context.Request.Path.StartsWithSegments("/readyz")
+            || context.Request.Path.StartsWithSegments("/internal"))
+            return RateLimitPartition.GetNoLimiter("internal");
+        var key = context.User.FindFirstValue("player_id")
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+        return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = 300,
+            TokensPerPeriod = 150,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
     rateLimiterOptions.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -73,6 +91,15 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             TokenLimit = 120,
             TokensPerPeriod = 60,
             ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+    rateLimiterOptions.AddPolicy("ws", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue("player_id") ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
             AutoReplenishment = true
         }));
@@ -478,7 +505,7 @@ if (processRole == ServerProcessRole.Api)
             if (entries.Length > 0) result[nodeId] = entries!;
         }
         return Results.Ok(result);
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
 
     var auth = app.MapGroup("/api/v1/auth");
     auth.MapGet("/client-policy", (PostgresAccountRiskRepository risk, HttpContext context) =>
@@ -577,7 +604,7 @@ if (processRole == ServerProcessRole.Api)
             displayName = user.FindFirstValue("display_name"),
             sequenceId = long.TryParse(user.FindFirstValue("sequence_id"), out var sequenceId) ? sequenceId : 0L
         });
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
 
     // TapTap 授权与一人一号登录
     auth.MapGet("/taptap/url", (
@@ -588,8 +615,10 @@ if (processRole == ServerProcessRole.Api)
     {
         if (!tapAuth.IsConfigured)
             return Results.Json(Problem(503, "TAPTAP_NOT_CONFIGURED", "当前环境未配置 TapTap 网页授权凭据。"), statusCode: 503);
+        if (!tapAuth.TryResolveAllowedRedirectUri(redirectUri, out var resolvedRedirectUri))
+            return Results.BadRequest(Problem(400, "INVALID_REDIRECT_URI", "TapTap 回调地址不在允许白名单内。"));
         var state = stateProtector.IssueStateCookie(context);
-        var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
+        var url = tapAuth.BuildAuthorizeUrl(state, resolvedRedirectUri);
         return Results.Ok(new { url, state });
     }).RequireRateLimiting("auth");
     auth.MapGet("/taptap/authorize", (
@@ -600,9 +629,11 @@ if (processRole == ServerProcessRole.Api)
     {
         if (!tapAuth.IsConfigured)
             return Results.Redirect("/?login_error=taptap_not_configured");
+        if (!tapAuth.TryResolveAllowedRedirectUri(redirectUri, out var resolvedRedirectUri))
+            return Results.Redirect("/?login_error=invalid_redirect_uri");
         // 严禁直接回显客户端传入的 state，始终由服务端生成高熵 state 并绑定 HttpOnly Cookie。
         var state = stateProtector.IssueStateCookie(context);
-        var url = tapAuth.BuildAuthorizeUrl(state, redirectUri);
+        var url = tapAuth.BuildAuthorizeUrl(state, resolvedRedirectUri);
         return Results.Redirect(url);
     }).RequireRateLimiting("auth");
     auth.MapGet("/taptap/callback", async (
@@ -744,7 +775,10 @@ if (processRole == ServerProcessRole.Api)
         if (string.IsNullOrWhiteSpace(request.Code))
             return Results.BadRequest(Problem(400, "MISSING_CODE", "缺少 TapTap 授权码。"));
 
-        var token = await tapAuth.ExchangeCodeForTokenAsync(request.Code, request.RedirectUri, ct);
+        if (!tapAuth.TryResolveAllowedRedirectUri(request.RedirectUri, out var resolvedRedirectUri))
+            return Results.BadRequest(Problem(400, "INVALID_REDIRECT_URI", "TapTap 回调地址不在允许白名单内。"));
+
+        var token = await tapAuth.ExchangeCodeForTokenAsync(request.Code, resolvedRedirectUri, ct);
         if (token is null)
             return Results.BadRequest(Problem(400, "TOKEN_EXCHANGE_FAILED", "TapTap 授权码换取凭据失败。"));
 
@@ -765,7 +799,7 @@ if (processRole == ServerProcessRole.Api)
     {
         if (!Guid.TryParse(user.FindFirstValue("player_id"), out var playerId)) return Results.Unauthorized();
         return Results.Ok(await zongmen.StateAsync(playerId, presence, search ?? "", ct));
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
 
     // 邀请总览：本人邀请码 + 被邀请人进度列表；低频拉取，不走 WebSocket 帧。
     app.MapGet("/api/v1/invitation", async (ClaimsPrincipal user, Server.Clean.Social.IInvitationRepository invitations, CancellationToken ct) =>
@@ -788,7 +822,7 @@ if (processRole == ServerProcessRole.Api)
             }).ToArray(),
             overview.InvitedByName,
         });
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
     Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     Server.Clean.Social.MailEndpoints.Map(app);
     Server.Clean.Checkin.CheckinEndpoints.Map(app);
@@ -803,7 +837,7 @@ if (processRole == ServerProcessRole.Api)
         if (!IsPlayer(user, playerId)) return Results.Forbid();
         var snapshot = await runtime.LoadAsync(playerId, ct);
         return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData));
-    });
+    }).RequireRateLimiting("command");
     SimulatorEndpoints.Map(players);
     players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {
@@ -839,7 +873,7 @@ if (processRole == ServerProcessRole.Api)
                 purchased.GetValueOrDefault(offer.Id)))
             .ToArray();
         return Results.Ok(new ShopStateDto(dayIndex, offers));
-    });
+    }).RequireRateLimiting("command");
     players.MapGet("/{playerId:guid}/market/orders", (Guid playerId, ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();
@@ -851,7 +885,7 @@ if (processRole == ServerProcessRole.Api)
         {
             return Results.Json(Problem(503, "MARKET_NOT_READY", exception.Message), statusCode: 503);
         }
-    });
+    }).RequireRateLimiting("command");
 
     var market = app.MapGroup("/api/v1/market");
     market.MapGet("/book", (string assetId, string? variant, int? depth, MarketRuntime marketRuntime, Domain.GameData.GameDataCatalog gameData) =>
@@ -915,7 +949,7 @@ if (processRole == ServerProcessRole.Api)
     {
         if (user.Identity?.IsAuthenticated != true) return Results.Unauthorized();
         return Results.Ok(marketRuntime.GetMetrics());
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
     market.MapPost("/orders", async (MarketOrderRequestDto request, ClaimsPrincipal user, MarketRuntime marketRuntime, Domain.GameData.GameDataCatalog gameData, CancellationToken ct) =>
     {
         if (!Guid.TryParse(user.FindFirstValue("player_id"), out var playerId)
@@ -990,9 +1024,9 @@ if (processRole == ServerProcessRole.Api)
             sessions = sessions.Count,
             market = marketRuntime.GetMetrics()
         });
-    }).RequireAuthorization();
+    }).RequireAuthorization().RequireRateLimiting("command");
     benchmark?.MapEndpoints(app);
-    app.Map("/ws", WebSocketEndpoint.HandleAsync);
+    app.Map("/ws", WebSocketEndpoint.HandleAsync).RequireRateLimiting("ws");
     // 计算节点反向拨入链路：节点主动 WebSocket 注册，主服经连接下发冷挂机批次。
     app.Map(Server.Clean.ComputeLinkContract.Path, Server.Clean.ComputeLinkEndpoint.HandleAsync);
     if (opsPanelEnabled)

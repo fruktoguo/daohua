@@ -21,6 +21,9 @@ public sealed class TapTapOptions
 
     /// <summary>OAuth 2.0 网页授权回调默认重定向地址。</summary>
     public string RedirectUri { get; set; } = "https://daohua.yuohira.com/api/v1/auth/taptap/callback";
+
+    /// <summary>允许的额外回调重定向地址白名单（未配置时仅允许默认 RedirectUri）。</summary>
+    public string[] AllowedRedirectUris { get; set; } = [];
 }
 
 /// <summary>TapTap 授权换取 Token 的原始凭据。</summary>
@@ -59,10 +62,60 @@ public sealed class TapTapAuthService
         !string.IsNullOrWhiteSpace(_options.ClientId)
         && !string.IsNullOrWhiteSpace(_options.ClientSecret);
 
+    /// <summary>校验并解析允许的回调重定向地址；未传自定义地址时回落到服务端配置默认值。</summary>
+    public bool TryResolveAllowedRedirectUri(string? customRedirectUri, out string resolvedRedirectUri)
+    {
+        if (string.IsNullOrWhiteSpace(customRedirectUri))
+        {
+            resolvedRedirectUri = _options.RedirectUri;
+            return !string.IsNullOrWhiteSpace(resolvedRedirectUri);
+        }
+
+        var candidate = customRedirectUri.Trim();
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var candidateUri)
+            || (candidateUri.Scheme != Uri.UriSchemeHttps && candidateUri.Scheme != Uri.UriSchemeHttp))
+        {
+            resolvedRedirectUri = string.Empty;
+            return false;
+        }
+
+        if (MatchesAllowedUri(candidateUri, _options.RedirectUri))
+        {
+            resolvedRedirectUri = _options.RedirectUri;
+            return true;
+        }
+
+        if (_options.AllowedRedirectUris is { Length: > 0 })
+        {
+            foreach (var allowed in _options.AllowedRedirectUris)
+            {
+                if (MatchesAllowedUri(candidateUri, allowed))
+                {
+                    resolvedRedirectUri = allowed.Trim();
+                    return true;
+                }
+            }
+        }
+
+        resolvedRedirectUri = string.Empty;
+        return false;
+    }
+
+    private static bool MatchesAllowedUri(Uri candidateUri, string? allowedRaw)
+    {
+        if (string.IsNullOrWhiteSpace(allowedRaw)) return false;
+        if (!Uri.TryCreate(allowedRaw.Trim(), UriKind.Absolute, out var allowedUri)) return false;
+        return string.Equals(candidateUri.Scheme, allowedUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidateUri.Host, allowedUri.Host, StringComparison.OrdinalIgnoreCase)
+            && candidateUri.Port == allowedUri.Port
+            && string.Equals(candidateUri.AbsolutePath, allowedUri.AbsolutePath, StringComparison.Ordinal);
+    }
+
     /// <summary>构造 TapTap 网页授权跳转地址。</summary>
     public string BuildAuthorizeUrl(string state, string? customRedirectUri = null)
     {
-        var redirect = !string.IsNullOrWhiteSpace(customRedirectUri) ? customRedirectUri : _options.RedirectUri;
+        if (!TryResolveAllowedRedirectUri(customRedirectUri, out var redirect))
+            throw new ArgumentException("回调地址不在 TapTap 授权白名单内。", nameof(customRedirectUri));
         var encodedRedirect = Uri.EscapeDataString(redirect);
         var encodedState = Uri.EscapeDataString(state);
         return $"https://www.taptap.cn/oauth2/v2/auth?client_id={_options.ClientId}&response_type=code&redirect_uri={encodedRedirect}&scope=public_profile&state={encodedState}";
@@ -77,7 +130,11 @@ public sealed class TapTapAuthService
             return null;
         }
 
-        var redirect = !string.IsNullOrWhiteSpace(customRedirectUri) ? customRedirectUri : _options.RedirectUri;
+        if (!TryResolveAllowedRedirectUri(customRedirectUri, out var redirect))
+        {
+            _logger.LogWarning("Rejected non-whitelisted TapTap redirectUri.");
+            return null;
+        }
         var parameters = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",

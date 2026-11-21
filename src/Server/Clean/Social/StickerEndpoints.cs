@@ -21,7 +21,7 @@ public static class StickerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var group = endpoints.MapGroup("/api/v1/chat/stickers").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/chat/stickers").RequireAuthorization().RequireRateLimiting("command");
 
         group.MapGet("/", async (ClaimsPrincipal user, PostgresStickerRepository repo, CancellationToken ct) =>
         {

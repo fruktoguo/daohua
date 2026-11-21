@@ -505,6 +505,8 @@ public static class OpsPanel
             return Results.Ok(new { action = "kick", playerId = request.PlayerId, closeCode = KickCloseCode });
         });
 
+        var heavyOpGate = new int[3]; // 0: flush-all, 1: grant-foundation-all, 2: leaderboard.rebuild
+
         group.MapPost("/api/actions/flush", async (HttpContext context, OpsFlushRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
@@ -512,13 +514,30 @@ public static class OpsPanel
             {
                 if (request.PlayerId is { } playerId && playerId != Guid.Empty)
                 {
-                    await players.FlushAsync(playerId, request.Force, CancellationToken.None);
+                    using var playerCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                    playerCts.CancelAfter(TimeSpan.FromSeconds(30));
+                    await players.FlushAsync(playerId, request.Force, playerCts.Token);
                     Audit(loggerFactory, context, "flush", playerId);
                     return Results.Ok(new { action = "flush", scope = "player", playerId, force = request.Force });
                 }
-                await players.FlushAllAsync(request.Force, CancellationToken.None);
-                Audit(loggerFactory, context, "flush-all", null);
-                return Results.Ok(new { action = "flush", scope = "all", loadedPlayers = players.LoadedCount, force = request.Force });
+                if (Interlocked.CompareExchange(ref heavyOpGate[0], 1, 0) != 0)
+                    return Results.Json(new { code = "OPERATION_IN_PROGRESS", message = "全服刷盘正在执行中，请勿重复触发。" }, statusCode: StatusCodes.Status409Conflict);
+                try
+                {
+                    using var allCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                    allCts.CancelAfter(TimeSpan.FromSeconds(120));
+                    await players.FlushAllAsync(request.Force, allCts.Token);
+                    Audit(loggerFactory, context, "flush-all", null);
+                    return Results.Ok(new { action = "flush", scope = "all", loadedPlayers = players.LoadedCount, force = request.Force });
+                }
+                finally
+                {
+                    Volatile.Write(ref heavyOpGate[0], 0);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return Results.Json(new { code = "OPERATION_TIMEOUT", message = "刷盘操作超时或已取消。" }, statusCode: StatusCodes.Status504GatewayTimeout);
             }
             catch (InvalidOperationException exception)
             {
@@ -531,7 +550,9 @@ public static class OpsPanel
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             if (request.PlayerId == Guid.Empty)
                 return Results.BadRequest(new { code = "INVALID_PLAYER", message = "必须提供 playerId。" });
-            await players.RemoveAsync(request.PlayerId, request.Flush, null, CancellationToken.None);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            await players.RemoveAsync(request.PlayerId, request.Flush, null, cts.Token);
             Audit(loggerFactory, context, "unload", request.PlayerId);
             return Results.Ok(new { action = "unload", playerId = request.PlayerId, flushed = request.Flush });
         });
@@ -539,28 +560,47 @@ public static class OpsPanel
         group.MapPost("/api/actions/grant-foundation", async (HttpContext context, OpsGrantFoundationRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory) =>
         {
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            if (!double.IsFinite(request.Amount) || request.Amount > 1e15)
+                return Results.BadRequest(new { code = "INVALID_AMOUNT", message = "底蕴数值无效（须为有限数值且不超过 1e15）。" });
             var amount = request.Amount <= 0 ? 100_000_000d : request.Amount;
             if (request.PlayerId is { } targetId && targetId != Guid.Empty)
             {
+                using var playerCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                playerCts.CancelAfter(TimeSpan.FromSeconds(30));
                 await players.MutateOwnedAsync(targetId, agg =>
                 {
                     agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
                     agg.Touch(PlayerSectionKind.Progression);
-                }, CancellationToken.None);
+                }, playerCts.Token);
                 Audit(loggerFactory, context, "grant-foundation", targetId);
                 return Results.Ok(new { action = "grant-foundation", playerId = targetId, amount });
             }
-            var loaded = await players.GetLoadedSnapshotsAsync(CancellationToken.None);
-            foreach (var snapshot in loaded)
+            if (Interlocked.CompareExchange(ref heavyOpGate[1], 1, 0) != 0)
+                return Results.Json(new { code = "OPERATION_IN_PROGRESS", message = "全服发放底蕴正在执行中，请勿重复触发。" }, statusCode: StatusCodes.Status409Conflict);
+            try
             {
-                await players.MutateOwnedAsync(snapshot.PlayerId, agg =>
+                using var allCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                allCts.CancelAfter(TimeSpan.FromSeconds(120));
+                var loaded = await players.GetLoadedSnapshotsAsync(allCts.Token);
+                foreach (var snapshot in loaded)
                 {
-                    agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
-                    agg.Touch(PlayerSectionKind.Progression);
-                }, CancellationToken.None);
+                    await players.MutateOwnedAsync(snapshot.PlayerId, agg =>
+                    {
+                        agg.Progression.Foundation = Math.Max(agg.Progression.Foundation, amount);
+                        agg.Touch(PlayerSectionKind.Progression);
+                    }, allCts.Token);
+                }
+                Audit(loggerFactory, context, "grant-foundation-all", null);
+                return Results.Ok(new { action = "grant-foundation", scope = "all", count = loaded.Count, amount });
             }
-            Audit(loggerFactory, context, "grant-foundation-all", null);
-            return Results.Ok(new { action = "grant-foundation", scope = "all", count = loaded.Count, amount });
+            catch (OperationCanceledException)
+            {
+                return Results.Json(new { code = "OPERATION_TIMEOUT", message = "全服发放底蕴超时或已取消。" }, statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+            finally
+            {
+                Volatile.Write(ref heavyOpGate[1], 0);
+            }
         });
 
         group.MapPost("/api/actions/compute-drain", (HttpContext context, OpsDrainRequest request, OpsOptions opts, ComputeLinkRegistry registry, ILoggerFactory loggerFactory) =>
@@ -589,9 +629,24 @@ public static class OpsPanel
             if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
             if (leaderboard is null)
                 return Results.NotFound(new { code = "LEADERBOARD_UNAVAILABLE", message = "当前进程角色未启用排行榜服务。" });
-            await leaderboard.RebuildAsync(CancellationToken.None);
-            Audit(loggerFactory, context, "leaderboard.rebuild", null);
-            return Results.Ok(leaderboard.GetStatus());
+            if (Interlocked.CompareExchange(ref heavyOpGate[2], 1, 0) != 0)
+                return Results.Json(new { code = "OPERATION_IN_PROGRESS", message = "天榜重算正在进行中，请勿重复触发。" }, statusCode: StatusCodes.Status409Conflict);
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+                cts.CancelAfter(TimeSpan.FromSeconds(120));
+                await leaderboard.RebuildAsync(cts.Token);
+                Audit(loggerFactory, context, "leaderboard.rebuild", null);
+                return Results.Ok(leaderboard.GetStatus());
+            }
+            catch (OperationCanceledException)
+            {
+                return Results.Json(new { code = "OPERATION_TIMEOUT", message = "天榜重算超时或已取消。" }, statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+            finally
+            {
+                Volatile.Write(ref heavyOpGate[2], 0);
+            }
         });
 
         // 市场快捷操作：系统身份批量挂售/收购与撤单（端点实现在 OpsMarketActions）。

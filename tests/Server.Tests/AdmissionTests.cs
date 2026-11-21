@@ -65,6 +65,27 @@ public sealed class AdmissionTests
         Assert.Equal(0, sessions.Count);
     }
 
+    /// <summary>开放语义：首会话先于共存会话断开时，仅移交登记位而不触发卸载；最后一个连接断开才返回 true。</summary>
+    [Fact]
+    public void OpenHook_PromotesRemainingSession_And_OnlyReleasesOnLastDisconnect()
+    {
+        var sessions = new SessionRegistry();
+        var hook = new OpenHelloAdmissionHook(sessions);
+        var playerId = Guid.NewGuid();
+        var first = new WebSocketSession(playerId, 8);
+        var second = new WebSocketSession(playerId, 8);
+
+        Assert.True(hook.Admit(first, null, null, AccountRiskPolicy.Default).Accepted);
+        Assert.True(hook.Admit(second, null, null, AccountRiskPolicy.Default).Accepted);
+
+        Assert.False(hook.Release(first));
+        Assert.Equal(1, sessions.Count);
+        Assert.True(sessions.TryGet(playerId, out var promoted) && ReferenceEquals(second, promoted));
+
+        Assert.True(hook.Release(second));
+        Assert.Equal(0, sessions.Count);
+    }
+
     /// <summary>开放语义：不下发标签页互斥开关。</summary>
     [Fact]
     public void OpenHook_NeverPublishesTabGuard()
