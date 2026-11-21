@@ -37,7 +37,11 @@ read_env_value() {
 }
 
 exec 9>/run/lock/daohua-install-caddy.lock
-flock 9
+flock -w "${CADDY_LOCK_TIMEOUT:-60}" -E 75 9 || {
+  rc=$?
+  printf '获取 Caddy 安装锁失败（退出码 %s）。\n' "$rc" >&2
+  exit "$rc"
+}
 resolved_token="${DAOHUA_BACKUP_TOKEN:-}"
 if [[ -z "$resolved_token" ]]; then
   resolved_token="$(read_env_value "$ENV_FILE" "BACKUP_TOKEN" || true)"

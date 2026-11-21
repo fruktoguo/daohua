@@ -213,6 +213,13 @@ services:
     pids_limit: 256
     cpus: "${WORKER_CPUS:-0.50}"
     mem_limit: ${WORKER_MEM_LIMIT:-512m}
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8081/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     logging:
       driver: json-file
       options:

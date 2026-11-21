@@ -47,6 +47,19 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# 容器换代与定时备份互斥：先持锁（带超时）再切入维护态，避免备份卡死或锁超时把线上无故留在维护页。
+exec 8>/run/lock/daohua-db-backup.lock
+backup_lock_timeout="${RELEASE_BACKUP_LOCK_TIMEOUT:-300}"
+flock -w "$backup_lock_timeout" -E 75 8 || {
+  rc=$?
+  if ((rc == 75)); then
+    printf '等待共享备份锁超时（%s 秒），发布中止（尚未进入维护态）；请核对备份任务后重试。\n' "$backup_lock_timeout" >&2
+    exit 1
+  fi
+  printf '获取共享备份锁失败（flock 退出码 %s），发布中止。\n' "$rc" >&2
+  exit "$rc"
+}
+
 # 先阻止自动更新；维护标记也保护失败后的 timer 再启动或主机重启。
 maintenance=1
 touch maintenance.flag
@@ -94,9 +107,6 @@ install -m 0755 "$stage/install-caddy.sh" ./install-caddy.sh
   ./install-caddy.sh "$stage/daohua.yuohira.com.caddy"
 fi
 
-# 容器换代与定时备份互斥，迁移工具以 --no-stop-writers 校验停写，不恢复写者。
-exec 8>/run/lock/daohua-db-backup.lock
-flock 8
 # 读者组是主服显式配置；不从 Caddy 用户名、现有 GID 或 SSH 账号猜测授权。
 (
   source ./daohua.env
@@ -119,7 +129,7 @@ compute_id="$(docker image inspect --format '{{.Id}}' "$compute")"
 [[ "$(docker inspect --format '{{.Image}} {{.State.Health.Status}}' daohua-app)" == "$app_id healthy" ]]
 [[ "$(docker inspect --format '{{.Image}} {{.State.Health.Status}}' daohua-compute)" == "$compute_id healthy" ]]
 if [[ -f release-worker.expected ]]; then
-  [[ "$(docker inspect --format '{{.Image}} {{.State.Running}}' daohua-persistence-worker)" == "$app_id true" ]]
+  [[ "$(docker inspect --format '{{.Image}} {{.State.Health.Status}}' daohua-persistence-worker)" == "$app_id healthy" ]]
 fi
 curl --max-time 10 --fail --silent --show-error http://127.0.0.1:15128/readyz >/dev/null
 if [[ "$smoke" == 1 ]]; then
