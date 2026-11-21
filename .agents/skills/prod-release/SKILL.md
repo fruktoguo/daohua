@@ -137,14 +137,13 @@ rm -rf /tmp/daohua-compute-odin \
 ## 阶段 2.5：生产库版本迁移（仅当库版本 < `PostgresSchema.Version` 或存在待修存档/配表时执行）
 
 - 若阶段 0 查出生产库 `max(version) == PostgresSchema.Version` 且 `min/max(schema_version) == SectionCodec.CurrentSchemaVersion` 且无存量配表删改处理需求：直接跳过本阶段进入阶段 3。
-- 若生产库版本落后或需存量数据处置：**严禁先替换启动新镜像**（新镜像启动门禁会 fail-fast 并被 `ccr-auto-update.sh` 自动回滚拉黑）。必须先向用户说明来自 `docs/backend/db-version-changes.md` 的 `[db_ver -> target_ver]` 迁移范围及所选路线并获准：
+- 若生产库版本落后或需存量数据处置：**严禁先替换启动新镜像**（新镜像启动门禁会 fail-fast）。必须先向用户说明来自 `docs/backend/db-version-changes.md` 的 `[db_ver -> target_ver]` 迁移范围及所选路线并获准：
   - **路线 A（增量脚本已连续覆盖或已在阶段 0 补齐并提交至 `migrations/`）**：可直接继续由阶段 3 的 `scripts/deploy-prod.sh` 自动调用 `/opt/daohua/migrate-prod-db.sh` 完成「停写 → 备份 → 链式应用 `migrations/NNNN_vX_to_vY.sql` → `schema_version` 零残留校验」；若需人工观测缩短停机，按下列等价步骤执行。
   - **路线 B（prod 时手动迁移）**：必须先完成阶段 1（推送镜像）∥ 阶段 2（远端全库备份），再执行下列 `1 → 4` 步人工停写与迁移验收，**保持旧写者容器停止**直至阶段 3 `deploy-prod.sh` 启动新镜像（`migrate-prod-db.sh` 检测到库版本与标签已全部收敛时会自动放行重启）：
   1. **预拉取新镜像**（缩短停机窗口）：`ssh yuohira "sudo docker pull <app@sha256> && sudo docker pull <compute@sha256>"`
-  2. **停自动更新 timer 与全部写者容器**：
+  2. **停全部写者容器**：
      ```bash
      ssh -o BatchMode=yes yuohira '
-       sudo systemctl stop daohua-ccr-auto-update.timer
        sudo docker stop daohua-app daohua-compute 2>/dev/null || sudo docker stop daohua-app
        sudo docker rm -f daohua-persistence-worker 2>/dev/null || true
      '
@@ -173,7 +172,7 @@ scripts/deploy-prod.sh \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<compute_digest>
 ```
 
-- 内置完成：远端环境校验 → 资产与 systemd timer 安装 → `ccr-auto-update.sh` 成对更新 → Caddy 校验重载 → 回环 `/readyz` → 回环全量烟测 → 公网 HTTPS/WebSocket 烟测（断言 `/readyz` 返回 `blocked`）。
+- 内置完成：远端环境校验 → 资产与 systemd timer 安装 → 成对摘要容器换代 → Caddy 校验重载 → 回环 `/readyz` → 回环全量烟测 → 公网 HTTPS/WebSocket 烟测（断言 `/readyz` 返回 `blocked`）。
 
 ### 阶段 4b：odin 原子换目录与重启
 

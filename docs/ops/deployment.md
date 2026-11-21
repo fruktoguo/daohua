@@ -121,34 +121,31 @@ scripts/deploy-prod.sh \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute@sha256:<ComputeNode digest>
 ```
 
-受控更新固定 Server/ComputeNode 成对 digest，核对构建来源和两个 schema 标签，在共享更新锁中接管 timer、停写、备份、迁移并启动候选。只有健康、回环 `/readyz` 和配置的烟测通过后，才提交候选并解除维护。应用只绑定 `127.0.0.1:15128`，公网由 Caddy 转发；Caddy 验证或 reload 失败时自动还原本次改动的配置，不重启共享服务。
+受控更新固定 Server/ComputeNode 成对 digest，核对构建来源和两个 schema 标签，在共享备份锁中切入维护态、停写、备份、迁移并启动候选。只有健康、回环 `/readyz` 和配置的烟测通过后，才提交候选并解除维护。应用只绑定 `127.0.0.1:15128`，公网由 Caddy 转发；Caddy 验证或 reload 失败时自动还原本次改动的配置，不重启共享服务。
 
-部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）和 `daohua-ledger-archive.timer`（每日清理超过 30 天的遗留归档分区）；单机生产默认禁用连续 WAL 归档并停用 `daohua-wal-archive.timer`，避免 WAL 积压占满 40G 根分区。任一启用的定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
+部署启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）和 `daohua-ledger-archive.timer`（每日清理超过 30 天的遗留归档分区）；单机 `2c4g/40g` 生产关闭连续 WAL 归档（`archive_mode=off`）并移除连续 WAL 定时安装，避免 WAL 积压占满 40G 根分区。任一启用的定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
 部署脚本在替换镜像前会强制执行一次数据库迁移闸门（`/opt/daohua/migrate-prod-db.sh`）：
 
 1. 从仓库源码读出两个独立目标：`EXPECTED_SCHEMA_VERSION`（`PostgresSchema.Version`）与 `EXPECTED_SECTION_VERSION`（`SectionCodec.CurrentSchemaVersion`）。两者**不相等**（例如库 v41 对应存档标签 v38），用错会把标签推进到解码器拒绝的值，脚本因此拒绝在缺少目标时继续。
-2. 写入维护标记、停用自动更新，并确认 API、Worker、计算节点均已停写。独立迁移脚本不会重新启动写者；只有外层发布流程可在校验通过后启动匹配的候选。
+2. 写入维护标记，并确认 API、Worker、计算节点均已停写。独立迁移脚本不会重新启动写者；只有外层发布流程可在校验通过后启动匹配的候选。
 3. 全库 `pg_dump -Fc` 备份到 `/opt/daohua/backups/pre-migration/`（失败即中止，`--skip-backup` 可跳过）。
 4. 按 `platform.schema_version` 链式应用 `migrations/` 中落后脚本（日常开发完成时应已逐版本增量编写，并在 `prod-release` 前依据 [`db-version-changes.md`](../backend/db-version-changes.md) 与 `git diff` 查漏补齐；若发版走停写人工迁移，则在此前已完成版本与标签收敛，此处闸门核对通过即放行），涉及真实资产退款的脚本拒绝自动执行。
 5. 校验库版本达到代码要求，并要求 `game.player_state_heads` / `game.player_state_sections` / `platform.section_flush_queue` 的 `schema_version` **无任何一行**偏离当前解码器版本；不满足即非零退出，绝不带着旧标签启动新镜像。
 
 跨 schema 的候选失败时保留维护与停写；不会自动启动旧镜像。优先修复前向部署；若需恢复到旧 schema，须另行授权并用迁移前的完整备份恢复，再启动与备份匹配的镜像。迁移脚本不进入运行镜像。
 
-`daohua-ccr-auto-update.timer` 每分钟检查 `prod` 镜像对；同一镜像 ID 不重建。自动更新不执行迁移，只允许构建来源一致且库与载荷标签相同的候选。只有同 schema 更新失败才能回滚镜像对，并记录失败组合以免反复尝试。
-
-自动更新最多等待共享备份锁 `/run/lock/daohua-db-backup.lock` 30 秒。锁被备份任务占用而等待超时时，写入 journal 并正常跳过本轮，留待下一轮检查；`flock` 的其他错误使服务非零退出。只有持有备份锁且数据库校验通过后才创建维护标记；等待超时或加锁失败不会触发维护或变更容器。
+（`daohua-ccr-auto-update.timer` 已随受控发布单轨化下线，生产统一使用 `scripts/release-prod.sh` 或 `scripts/deploy-prod.sh` 按 `@sha256` 摘要发布与回滚。）
 
 查看状态：
 
 ```bash
-ssh yuohira 'sudo systemctl status daohua-ccr-auto-update.timer --no-pager'
 ssh yuohira 'sudo docker inspect --format "{{.Config.Image}} {{.Image}} {{.State.Health.Status}}" daohua-app'
 ssh yuohira 'curl -fsS http://127.0.0.1:15128/healthz'
 ssh yuohira 'curl -fsS http://127.0.0.1:15128/readyz'
 ```
 
-回滚前先停止自动更新，再部署已经验收过的不可变标签；确认健康后再恢复 timer。不得删除或重建 `daohua_daohua-postgres` 卷。
+回滚时直接使用 `scripts/deploy-prod.sh` 部署已经验收过的不可变标签即可。不得删除或重建 `daohua_daohua-postgres` 卷。
 
 ## 备份、恢复与硬盘控制
 

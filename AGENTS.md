@@ -26,7 +26,7 @@
 - `tests/Ecs.Tests`：ECS 运行时与适配器边界回归门禁（`EcsGameRuntime`/`EcsWorldShard`/`EcsPlayerRuntimeAdapter`）。
 - `tests/Domain.Tests`：领域和协议回归门禁。
 - `tests/Server.Tests`：服务端装配、持久化与跨边界协议回归门禁。
-- `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用、`combat-simulator.html`），不进入生产镜像。
+- `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用），不进入生产镜像。
 - `art/`：美术与图像设计源文件、分层稿件与高分辨率母模资产库；被 `.dockerignore` 全局忽略，不进入生产镜像与构建上下文。所有 AI 原图、源 PNG、分层稿必须归档于此；生产前端 `frontend/public/` 与 `frontend/src/assets/` 只接收经过优化提取的单一最优运行时格式（全部角色形象统一 **128px WebP q80**，道具图标统一 **48px WebP q90**；矢量与高分辨率母模归档 `art/avatars/`、`art/items/`），严禁未压缩的原始 PNG 源码直入前端制造生产死重。
 - `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置、PG 角色 SQL）。
 - `vendor/YuoCore`：固定版本的 Git submodule（上游的 `ecs-optimized` 分支），生产运行时内核。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。**在 submodule 内工作时，必须遵循其仓库内 `AGENTS.md` → `docs/ai-development-guide.md` → `docs/yuocore-ecs-kernel-rules.md` 的规范链**（ECS 内核的稠密索引纪律、生命周期语义红线、观测零成本与消融归因门禁以该链为准）；submodule 内的提交在其自身分支完成且不推送，本仓库只更新 submodule 指针与 `scripts/bench-service.sh` 的 `CORE_SHA` 钉。
@@ -283,13 +283,11 @@ scripts/docker-build-prod.sh --push
 - 默认服务器 SSH 别名为 `yuohira`，域名为 `daohua.yuohira.com`。
 - 生产目录固定为 `/opt/daohua`，Compose 项目名固定为 `daohua`。
 - 应用端口只绑定 `127.0.0.1:15128`，禁止直接暴露到公网。
-- 首次部署和受控更新使用 `scripts/deploy-prod.sh --image <不可变镜像>`。
-- **Android APK 构建策略（Web 化后硬规则）**：APK 仅承载原生壳与静态资源基线，前端代码与资源更新均走服务端热更，**严禁每次发布默认重打 APK**。仅在以下情况构建：原生壳/SDK/权限/更新器代码变更，或用户明确要求——通过 `release-prod.sh --with-apk`（可叠加 `--skip-apk-upload` 只构建不上传）。HD 画质包不受 APK 开关影响，每次发布自动重新生成并上传 `/hd/*`；`--skip-hd-pack` 可显式跳过。
-- `daohua-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
-- 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
+- 首次部署和受控更新使用 `scripts/release-prod.sh` 或 `scripts/deploy-prod.sh --image <不可变镜像>`（已下线 `daohua-ccr-auto-update.timer` 自动拉取换代，统一由受控发布单轨更新）。
+- 新镜像未通过健康检查时必须自动中止提交并保留维护态等待人工处置，绝不自动切换至旧 schema 或损坏镜像。
 - 更新不得删除、重建或改名 `daohua_daohua-postgres` 卷。
 - 当前进程内在线玩家由 ECS 适配器按玩家串行处理，数据库使用市场分区租约及 fence；`EcsGameRuntime` 分片数默认 1（构造参数 shardCount）；跨进程玩家分片所有权和红绿无停机仍未完成，正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
-- 回滚前先停用自动更新 timer，使用已验证的不可变镜像，验证完成后再决定是否恢复 timer。
+- 回滚时直接使用 `scripts/deploy-prod.sh` 部署已验证的不可变 `@sha256` 镜像并确认 `/healthz`/`/readyz` 通过。
 
 ## 13. Caddy 规则
 
