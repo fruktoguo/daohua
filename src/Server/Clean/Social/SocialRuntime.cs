@@ -902,6 +902,9 @@ public sealed class SocialRuntime
                 party.Members.Select(member => member.PlayerId).ToArray(), party.DouDiZhuStake, now);
             if (!await _repository.TryCreateDouDiZhuGameAsync(game, playerId, cancellationToken))
                 return new SocialOutcome(SocialFailure.DouDiZhuUnavailable);
+            if (game.BaseStake > 0)
+                foreach (var member in game.PlayerIds)
+                    AsyncEventDispatch.InvokeEach(WalletChanged, member, _logger, $"斗地主开局托管钱包通知异常 player={member:D}");
             await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
             return SocialOutcome.Ok;
         }

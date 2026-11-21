@@ -48,6 +48,8 @@ public sealed record DouDiZhuGameState
     public Guid[] PlayerIds { get; init; } = [];
     /// <summary>开局冻结的灵石底注。</summary>
     public double BaseStake { get; init; }
+    /// <summary>开局是否已在账本中实际托管扣除 BaseStake，结算时统一退还托管金并叠加净输赢。</summary>
+    public bool StakeEscrowed { get; init; }
     /// <summary>当前洗牌后的牌序，用于持久化后恢复。</summary>
     public int[] Deck { get; init; } = [];
     /// <summary>各座位当前手牌。</summary>
