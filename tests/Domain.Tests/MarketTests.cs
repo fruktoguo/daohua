@@ -213,4 +213,32 @@ public sealed class MarketTests
         Assert.NotNull(bigActive);
         Assert.Equal(10, bigActive.RemainingQuantity);
     }
+
+    [Fact]
+    public void PlaceRejectsExcessPricePrecisionProducesDeterministicFillIdAndAllowsExpiredRePlacement()
+    {
+        var instrument = new MarketInstrument(new ItemId("item.ningxue-grass"));
+        var bookA = new OrderBook(instrument);
+        var bookB = new OrderBook(instrument);
+        var seller = PlayerId.New();
+        var buyer = PlayerId.New();
+        var now = new DateTimeOffset(2026, 11, 20, 0, 0, 0, TimeSpan.Zero);
+
+        var error = Assert.Throws<DomainException>(() =>
+            bookA.Place(new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 10.12345, 1, now, new IdempotencyKey("bad-tick"))));
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+
+        var sellId = OrderId.New();
+        var buyId = OrderId.New();
+        bookA.Place(new PlaceOrderRequest(sellId, seller, instrument, MarketSide.Sell, 5.25, 2, now, new IdempotencyKey("s-a")));
+        var fillA = bookA.Place(new PlaceOrderRequest(buyId, buyer, instrument, MarketSide.Buy, 6, 1, now.AddSeconds(1), new IdempotencyKey("b-a"))).Fills.Single();
+
+        bookB.Place(new PlaceOrderRequest(sellId, seller, instrument, MarketSide.Sell, 5.25, 2, now, new IdempotencyKey("s-b")));
+        var fillB = bookB.Place(new PlaceOrderRequest(buyId, buyer, instrument, MarketSide.Buy, 6, 1, now.AddSeconds(1), new IdempotencyKey("b-b"))).Fills.Single();
+        Assert.Equal(fillA.TradeId, fillB.TradeId);
+
+        // 卖单 30 天到期后，即使尚未调用 Expire()，卖家仍可直接挂新单而不受过期旧单阻塞。
+        var renewed = bookA.Place(new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 8, 1, now.AddDays(30), new IdempotencyKey("s-renew")));
+        Assert.Equal(8, renewed.IncomingOrder.Price);
+    }
 }

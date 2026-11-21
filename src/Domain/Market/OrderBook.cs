@@ -118,13 +118,17 @@ public sealed class OrderBook
             !double.IsFinite(request.Price) || request.Price <= 0 ||
             !double.IsFinite(request.Quantity) || request.Quantity <= 0 || request.Quantity != Math.Floor(request.Quantity))
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单参数无效。");
+        var normalizedPrice = Math.Round(request.Price, 4, MidpointRounding.AwayFromZero);
+        if (normalizedPrice <= 0 || Math.Abs(request.Price - normalizedPrice) > 1e-9)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "订单价格精度超出最小刻度。");
         if (!Enum.IsDefined(request.Side))
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单方向无效。");
         if (request.Instrument != Instrument)
             throw new DomainException(DomainErrorCode.InvalidArgument, "订单品种与订单簿不一致。");
+        var createdAtUtc = request.CreatedAt.ToUniversalTime();
         // 每标的单笔约束：同一玩家在本簿只允许一笔活动挂单，双向共存与同向多单都被拒绝。
-        // 撤单/成交/到期会把订单移出属主索引，因此撤销后可立即换向重挂。
-        if (ActiveOrderOf(request.OwnerId) is { } existing)
+        // 撤单/成交/到期会把订单移出属主索引，因此撤销后可立即换向重挂；已超到期刻但尚未扫描下架的旧单不阻塞重挂。
+        if (ActiveOrderOf(request.OwnerId, createdAtUtc) is { } existing)
             throw new DomainException(DomainErrorCode.OwnerOrderExists,
                 existing.Side == MarketSide.Sell ? "该标的已有在售挂单，请先撤销后再操作。" : "该标的已有求购挂单，请先撤销后再操作。");
 
@@ -133,12 +137,12 @@ public sealed class OrderBook
             request.OwnerId,
             request.Instrument,
             request.Side,
-            request.Price,
+            normalizedPrice,
             request.Quantity,
             request.Quantity,
             checked(++_sequence),
-            request.CreatedAt.ToUniversalTime(),
-            request.CreatedAt.ToUniversalTime().AddDays(30),
+            createdAtUtc,
+            createdAtUtc.AddDays(30),
             MarketOrderStatus.Active);
         // 订单标识重复时拒绝；与原 TryAdd 行为一致——序号在冲突判定前已消耗，属于既定语义。
         if (_orders.ContainsKey(request.OrderId))
@@ -158,7 +162,7 @@ public sealed class OrderBook
             var buyer = incoming.Side == MarketSide.Buy ? incoming : maker;
             var seller = incoming.Side == MarketSide.Sell ? incoming : maker;
             fills.Add(new MarketFill(
-                TransactionId.New(),
+                CreateDeterministicFillId(incoming.OrderId, maker.OrderId, incoming.Sequence, maker.Sequence),
                 buyer.OrderId,
                 seller.OrderId,
                 buyer.OwnerId,
@@ -166,16 +170,20 @@ public sealed class OrderBook
                 Instrument,
                 price,
                 quantity,
-                request.CreatedAt.ToUniversalTime()));
+                createdAtUtc));
+            var incomingRemaining = incoming.RemainingQuantity - quantity;
+            var incomingFilled = incomingRemaining <= 1e-12;
             incoming = incoming with
             {
-                RemainingQuantity = Math.Max(0, incoming.RemainingQuantity - quantity),
-                Status = incoming.RemainingQuantity - quantity <= 1e-12 ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
+                RemainingQuantity = incomingFilled ? 0 : incomingRemaining,
+                Status = incomingFilled ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
             };
+            var makerRemaining = maker.RemainingQuantity - quantity;
+            var makerFilled = makerRemaining <= 1e-12;
             maker = maker with
             {
-                RemainingQuantity = Math.Max(0, maker.RemainingQuantity - quantity),
-                Status = maker.RemainingQuantity - quantity <= 1e-12 ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
+                RemainingQuantity = makerFilled ? 0 : makerRemaining,
+                Status = makerFilled ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
             };
             WriteOrder(incoming.OrderId, incoming, journal);
             WriteOrder(maker.OrderId, maker, journal);
@@ -269,36 +277,37 @@ public sealed class OrderBook
     public OrderBookSnapshot Snapshot(int depth = 20, DateTimeOffset? now = null)
     {
         if (depth is < 1 or > 200) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口深度必须在 1 到 200 之间。");
-        var askMap = new Dictionary<double, (double Quantity, int Count)>();
-        var bidMap = new Dictionary<double, (double Quantity, int Count)>();
+        var askMap = new Dictionary<decimal, (double Quantity, int Count)>();
+        var bidMap = new Dictionary<decimal, (double Quantity, int Count)>();
 
         foreach (var order in _orders.Values)
         {
             if (!IsActive(order)) continue;
+            var priceKey = (decimal)Math.Round(order.Price, 4, MidpointRounding.AwayFromZero);
             var targetMap = order.Side == MarketSide.Sell ? askMap : bidMap;
-            if (targetMap.TryGetValue(order.Price, out var current))
+            if (targetMap.TryGetValue(priceKey, out var current))
             {
-                targetMap[order.Price] = (current.Quantity + order.RemainingQuantity, current.Count + 1);
+                targetMap[priceKey] = (current.Quantity + order.RemainingQuantity, current.Count + 1);
             }
             else
             {
-                targetMap[order.Price] = (order.RemainingQuantity, 1);
+                targetMap[priceKey] = (order.RemainingQuantity, 1);
             }
         }
 
-        var askPrices = new double[askMap.Count];
+        var askPrices = new decimal[askMap.Count];
         askMap.Keys.CopyTo(askPrices, 0);
         Array.Sort(askPrices);
         var askCount = Math.Min(depth, askPrices.Length);
         var asks = new MarketLevel[askCount];
         for (var i = 0; i < askCount; i++)
         {
-            var price = askPrices[i];
-            var (qty, count) = askMap[price];
-            asks[i] = new MarketLevel(price, qty, count);
+            var priceKey = askPrices[i];
+            var (qty, count) = askMap[priceKey];
+            asks[i] = new MarketLevel((double)priceKey, qty, count);
         }
 
-        var bidPrices = new double[bidMap.Count];
+        var bidPrices = new decimal[bidMap.Count];
         bidMap.Keys.CopyTo(bidPrices, 0);
         Array.Sort(bidPrices);
         Array.Reverse(bidPrices);
@@ -306,9 +315,9 @@ public sealed class OrderBook
         var bids = new MarketLevel[bidCount];
         for (var i = 0; i < bidCount; i++)
         {
-            var price = bidPrices[i];
-            var (qty, count) = bidMap[price];
-            bids[i] = new MarketLevel(price, qty, count);
+            var priceKey = bidPrices[i];
+            var (qty, count) = bidMap[priceKey];
+            bids[i] = new MarketLevel((double)priceKey, qty, count);
         }
 
         return new OrderBookSnapshot(Instrument, asks, bids, _version, (now ?? DateTimeOffset.UtcNow).ToUniversalTime());
@@ -439,12 +448,30 @@ public sealed class OrderBook
     /// 与 <see cref="OrdersByOwner"/> 的区别：只查单簿、直接命中属主索引，不做跨簿聚合与排序。
     /// </summary>
     /// <param name="ownerId">订单属主玩家。</param>
-    public MarketOrder? ActiveOrderOf(PlayerId ownerId)
+    public MarketOrder? ActiveOrderOf(PlayerId ownerId) => ActiveOrderOf(ownerId, null);
+
+    private MarketOrder? ActiveOrderOf(PlayerId ownerId, DateTimeOffset? asOf)
     {
         if (!_ownerIndex.TryGetValue(ownerId, out var owned) || owned.Count == 0) return null;
         foreach (var orderId in owned)
-            if (_orders.TryGetValue(orderId, out var order) && IsActive(order)) return order;
+        {
+            if (_orders.TryGetValue(orderId, out var order) && IsActive(order)
+                && (asOf is null || order.ExpiresAt is null || order.ExpiresAt > asOf.Value))
+                return order;
+        }
         return null;
+    }
+
+    private static TransactionId CreateDeterministicFillId(OrderId incomingOrderId, OrderId makerOrderId, long incomingSequence, long makerSequence)
+    {
+        Span<byte> input = stackalloc byte[48];
+        incomingOrderId.Value.TryWriteBytes(input[..16]);
+        makerOrderId.Value.TryWriteBytes(input[16..32]);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(input[32..40], incomingSequence);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(input[40..48], makerSequence);
+        Span<byte> hash = stackalloc byte[32];
+        System.Security.Cryptography.SHA256.HashData(input, hash);
+        return new TransactionId(new Guid(hash[..16]));
     }
 
     /// <summary>判定订单是否属于有效挂牌中（未撤销未完成且剩余数量大于容差）</summary>
