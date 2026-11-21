@@ -428,19 +428,35 @@ public sealed record PlayerHeadDto(
     public int? MinReaderSchemaVersion { get; init; }
 }
 
+/// <summary>已规范化编码的 UTF-8 JSON 片段：序列化时零解析直接透传，避免 JsonDocument.Parse/Clone 往返。</summary>
+[JsonConverter(typeof(RawJsonPayloadConverter))]
+public readonly record struct RawJsonPayload(ReadOnlyMemory<byte> Utf8Bytes);
+
+/// <summary><see cref="RawJsonPayload"/> 序列化透传转换器。</summary>
+public sealed class RawJsonPayloadConverter : JsonConverter<RawJsonPayload>
+{
+    public override RawJsonPayload Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        using var doc = JsonDocument.ParseValue(ref reader);
+        return new RawJsonPayload(JsonSerializer.SerializeToUtf8Bytes(doc.RootElement, options));
+    }
+
+    public override void Write(Utf8JsonWriter writer, RawJsonPayload value, JsonSerializerOptions options)
+        => writer.WriteRawValue(value.Utf8Bytes.Span, skipInputValidation: true);
+}
+
 /// <summary>玩家分段快照载荷 DTO</summary>
 /// <param name="Section">分段标识名</param>
 /// <param name="SectionVersion">分段数据版本号</param>
 /// <param name="SchemaVersion">分段 schema 版本号</param>
-/// <param name="Data">分段业务载荷（规范化 JSON 直接内嵌，不再走 Base64 字节二次编码）；
-/// JsonElement.WriteTo 按原始文本透传，信封中该成员的字节区间即 <paramref name="Checksum"/> 哈希输入，客户端可逐字节复算</param>
-/// <param name="Checksum">规范化 JSON 字节的 SHA-256（小写 hex）</param>
+/// <param name="Data">分段业务载荷（服务端由 <see cref="RawJsonPayload"/> 直接透传规范化 JSON；反序列化时呈 <see cref="JsonElement"/>）</param>
+/// <param name="Checksum">规范化 JSON 字节的 SHA-256（小写 hex，供服务端增量 diff 使用）</param>
 /// <param name="UpdatedAt">分段更新时间</param>
 public sealed record PlayerSectionDto(
     string Section,
     long SectionVersion,
     int SchemaVersion,
-    JsonElement Data,
+    object Data,
     string Checksum,
     DateTimeOffset UpdatedAt)
 {

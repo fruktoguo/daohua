@@ -20,65 +20,8 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v18：战斗属性语义收敛为纯点数通道——战斗面板
-    /// （CombatantStats 随 actionQueue/duel 载荷持久化）移除 castTimeFactor/cooldownFactor/
-    /// basicAttackRatio/skillIntensity/criticalMultiplier/searchDelayFactor 六个独立乘区字段，
-    /// 等级成长折算点数注入行动速度/攻击速度/冷却缩减/普攻增幅/技能增幅通道，新增
-    /// criticalDamagePoints（基础 50 点 = 150% 暴伤）。旧载荷的已删字段按未知属性忽略，
-    /// 新字段缺省解码为类型默认值（criticalDamagePoints=50 即基础暴伤，其余点数 0），
-    /// 表结构未变，仅存档标签推进。
-    /// v17：world 分段载荷新增 nodeBuildingUsages 节点建筑拥挤使用快照
-    /// （可缺省解码为 null=未知拥挤，按零人数满效口径；仅展示与投影数据，不改写结算语义）。
-    /// v16：actionQueue 分段远征载荷新增 isPinned 遭遇供给标记
-    /// （可缺省解码为 false=池选口径；历史远征皆出自节点池，缺省语义天然正确）。
-    /// v15：settings 分段载荷新增 tutorialRewardsStep 新手引导奖励游标（可缺省解码回填）。
-    /// v14：settings 分段载荷新增 tutorialStep 新手引导里程碑
-    /// （可缺省解码为 0，无表结构变化）。v13：邀请系统表结构落地，载荷不变，仅同步内容标签。
-    /// v12：loadout 分段触发条件从 abilitySlots[].triggers
-    /// 槽位字段迁移为 abilityTriggers 按功法 ID 映射（可缺省解码，旧槽位 triggers 字段丢弃）。
-    /// v11：account_risk_events 约束修复，载荷不变，仅同步内容标签。
-    /// v10：账号检测表结构升级，载荷不变，仅同步内容标签。
-    /// v9：progression 分段载荷新增 traitIds 特质 ID 集合
-    /// （可缺省解码，无表结构变化）。v8：settings 分段载荷新增 queuePaused 队列暂停开关
-    /// （可缺省解码，无表结构变化）。v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
-    /// 存档载荷本体无字段变化，仅标签随库内容版本同步推进（v6：loadout 分段新增 techniqueExperiences
-    /// 技艺累计经验、行动意图新增 targetItemId/auxItemId 目标与辅助物品、战报新增 techniqueExp）。
-    /// v19：actionQueue 分段组队讨伐载荷落地——行动项新增参与会话绑定，远征状态新增
-    /// selfIndex/allies 盟友镜像、玩家快照新增 respawnAtSeconds 倒地截止点。
-    /// v21：行动参与绑定改为组织无关的 participation 字段，绑定规格新增真实 ActionId；旧
-    /// partySession/party.expedition 载荷不再兼容，内测库按清零规则处理。
-    /// v22：duel 分段行动账本载荷新增 combatants 战斗单位统计（物理/术法输出承伤减免、
-    /// 自动回复/其他治疗；可缺省解码，无表结构变化）。
-    /// v23：actionQueue 分段装配展示载荷落地——行动参与成员快照新增 equipment 冻结装备、
-    /// 斗法回放状态新增 opponentSkills/opponentEquipment 镜像装配（全部可缺省解码为 null，
-    /// 仅详情弹窗「装配」Tab 按需投影消费，不改写结算语义），表结构未变。
-    /// v25-v29：库内容版本链推进（事务时间窗索引、市场结算游标、flush 队列改追加式、
-    /// parties.pvp_enabled 队伍斗法开关），存档载荷本体无字段变化，仅标签随库版本同步推进。
-    /// v30：combat 分段新增战内 Buff 跨波携带态（Combat.Buffs）、参与成员快照新增 CombatBuffs
-    /// 冻结字段——全部可缺省解码（缺省为空携带态），表结构未变。
-    /// v31：settings 分段新增 offlineSinceAt 离线锚点（可缺省解码为 null）；
-    /// player_projection 表新增 offline_since 投影列。
-    /// v32：world 分段建筑效果 BuildingEffectSet 新增 monsterWeakenRatio（封魔阵怪物削弱，
-    /// 可缺省解码为 0）；组队会话规格新增 MonsterWeakenRatio 冻结字段（可缺省解码），表结构未变。
-    /// v33：新增 market.item_stats 每品种行情统计表，存档载荷未变，标签随库版本同步推进。
-    /// v34：settings 分段载荷新增 unlockedAvatars 已解锁形象集合（可缺省解码为 ["player", "player-male"]）；
-    /// v35：duel 分段行动账本载荷新增 duelItemsGained 与 duelItemsLost 斗法缴获与损失统计（可缺省解码为 null/[]，表结构未变）。
-    /// v36：progression 分段载荷新增 unlockedTraits 特质等级经验养成集合（可缺省解码为 null/[]，表结构未变）。
-    /// v37：loadout 分段载荷新增 consumableTriggers 消耗品触发条件映射（可缺省解码为 null/[]，表结构未变）——
-    /// 玩家按物品 ID 覆盖配表 consumable.triggers 出厂默认，与 abilityTriggers 同构（键存在即覆盖）。
-    /// v38：settings 分段载荷新增 respawnPolicy / respawnTargetPlayerId 组队复活时机策略（可缺省解码为
-    /// 直接复活与未指定）；combat 分段战斗快照新增 respawnPolicy / respawnTargetIndex /
-    /// respawnDeadlineSeconds（可缺省解码），表结构未变。
-    /// v39：Buff 效果载荷收敛为通道模型（总纲 §7.9.5.3）：buffs/combat/action_queue 分段内的
-    /// CombatBuffState/CombatBuffCarry/ActionSustainedBuff/ActiveBuff 平铺效果字段替换为 Effects 通道数组
-    /// （不可缺省解码——旧平铺载荷无法无损重写，经 reset-outdated-players.sh 链交互确认清零玩家游戏域数据）。
-    /// v41：随战面板新增 TraitLevels、Buff 新增 SourceUnitId、战报新增真实伤害输出/承伤，均可缺省解码。
-    /// v42：战斗单位快照新增入战定格特质 ID/等级，可缺省解码为 Empty；迁移 0052 同步推进存档标签，
-    /// 发布瞬间战斗中的玩家本场按无定格特质继续，下一场入战自动按新装配定格。
-    /// v43：progression 分段新增生涯斗法胜负计数 duelWins/duelLosses，settings 分段新增
-    /// publicLoadoutVisible 配装隐私开关（默认 true），均可缺省解码，不改变最低可读版本地板 v41。
-    /// v44：combat 分段的战斗单位快照新增天雷、血煞上次触发时刻，缺省时为未触发。
-    /// v45：progression 分段新增筑基期根基点数 genjiPoints 与解锁标记 genjiUnlocked（可缺省解码为 0/false），最低可读版本保持 v41。
+    /// <summary>当前分段编解码模式版本（v45：progression 新增筑基期根基点数 genjiPoints 与解锁标记 genjiUnlocked，可缺省解码为 0/false；最低可读版本保持 v41）。
+    /// 历次版本变动与存量处理台账见 docs/backend/db-version-changes.md。
     /// 升级约定：每次 bump 时同步递增 PostgresSchema.Version，在 docs/backend/db-version-changes.md
     /// 登记字段变动、缺省语义、最低可读版本及存量处理，并随版本编写 migrations/ 单步脚本。
     /// 本地开发由 reset-outdated-players.sh 优先执行已有迁移；缺失时须交互确认重置。运行时只解码当前版本。</summary>

@@ -41,7 +41,7 @@ public sealed class EnhancementContractTests
 
         var dto = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, "fp", catalog);
         var queue = Assert.Single(dto.Sections, section => section.Section == PlayerSectionKinds.ActionQueue);
-        var row = Assert.Single(queue.Data.EnumerateArray());
+        var row = Assert.Single(AsElement(queue.Data).EnumerateArray());
         Assert.Equal("equipment.qingfeng-sword", row.GetProperty("targetItemId").GetString());
         Assert.Equal("item.soul-talisman", row.GetProperty("auxItemId").GetString());
         Assert.Equal("equipment.qingfeng-sword", row.GetProperty("intent").GetProperty("targetItemId").GetString());
@@ -419,7 +419,7 @@ public sealed class EnhancementContractTests
 
         var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", GameDataCatalog.BuiltIn);
         var loadout = Assert.Single(dto.Sections, section => section.Section == PlayerSectionKinds.Loadout);
-        var experiences = loadout.Data.GetProperty("techniqueExperiences");
+        var experiences = AsElement(loadout.Data).GetProperty("techniqueExperiences");
         Assert.Equal(120, experiences.GetProperty("alchemy").GetDouble());
         Assert.Equal(30, experiences.GetProperty("enhancement").GetDouble());
     }
@@ -454,7 +454,7 @@ public sealed class EnhancementContractTests
         var snapshot = await runtime.LoadAsync(playerId);
         var dto = ProtocolSnapshotMapper.ToSnapshot(snapshot, "fp", catalog);
         var progressionSection = Assert.Single(dto.Sections, s => s.Section == PlayerSectionKinds.Progression);
-        var stagedProp = progressionSection.Data.GetProperty("stagedEnhancements");
+        var stagedProp = AsElement(progressionSection.Data).GetProperty("stagedEnhancements");
         Assert.Equal(JsonValueKind.Array, stagedProp.ValueKind);
         Assert.Equal(2, stagedProp.GetArrayLength());
 
@@ -470,7 +470,7 @@ public sealed class EnhancementContractTests
         // 3. 验证只有 actionA 被清除，actionB（进行中）严格保留
         var afterDto = ProtocolSnapshotMapper.ToSnapshot(ackResult.Snapshot, "fp", catalog);
         var afterProgression = Assert.Single(afterDto.Sections, s => s.Section == PlayerSectionKinds.Progression);
-        var afterStaged = afterProgression.Data.GetProperty("stagedEnhancements");
+        var afterStaged = AsElement(afterProgression.Data).GetProperty("stagedEnhancements");
         Assert.Equal(1, afterStaged.GetArrayLength());
         var remainingRecord = afterStaged[0];
         Assert.Equal(actionB.ToString("D"), remainingRecord.GetProperty("actionId").GetString());
@@ -547,7 +547,7 @@ public sealed class EnhancementContractTests
         // 必须带上 expected-attributes.json：realmProgression 缺失时技艺等级恒为 0，
         // 化灵成功率退化为 95% 而非本用例假设的 100%，判定种子又取随机 requestId，会造成 ~5%/轮 flaky。
         var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json", "expected-attributes.json");
-        var clock = new ManualClock(DateTimeOffset.UnixEpoch);
+        var clock = new TestSimulationClock(DateTimeOffset.UnixEpoch);
         var assets = new MutableAssets(playerId,
             ("item.beast-hide", string.Empty, 2),
             ("equipment.qingfeng-sword", "+5", 1));
@@ -599,7 +599,7 @@ public sealed class EnhancementContractTests
     {
         var playerId = Guid.NewGuid();
         var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
-        var clock = new ManualClock(DateTimeOffset.UnixEpoch);
+        var clock = new TestSimulationClock(DateTimeOffset.UnixEpoch);
         var assets = new MutableAssets(playerId, ("equipment.qingfeng-sword", string.Empty, 3));
         var economy = new RecordingEconomy(assets);
         await using var runtime = EcsRuntimeFactory.Create(
@@ -655,7 +655,7 @@ public sealed class EnhancementContractTests
     {
         var playerId = Guid.NewGuid();
         var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "items/manuals.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
-        var clock = new ManualClock(DateTimeOffset.UnixEpoch);
+        var clock = new TestSimulationClock(DateTimeOffset.UnixEpoch);
         var assets = new MutableAssets(playerId, ("item.fragment.heavy-slash", string.Empty, 10));
         var economy = new RecordingEconomy(assets);
         await using var runtime = EcsRuntimeFactory.Create(
@@ -690,7 +690,7 @@ public sealed class EnhancementContractTests
     {
         var playerId = Guid.NewGuid();
         var catalog = LoadCatalogFiles("actions/enhancement.json", "items/materials.json", "items/manuals.json", "actions/crafting.json", "actions/forging.json", "equipment/weapons.json");
-        var clock = new ManualClock(DateTimeOffset.UnixEpoch);
+        var clock = new TestSimulationClock(DateTimeOffset.UnixEpoch);
         var assets = new MutableAssets(playerId, ("item.fragment.heavy-slash", string.Empty, 1));
         var economy = new RecordingEconomy(assets);
         await using var runtime = EcsRuntimeFactory.Create(
@@ -969,6 +969,17 @@ public sealed class EnhancementContractTests
             ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
     }
 
+    private static JsonElement AsElement(object data)
+    {
+        if (data is JsonElement element) return element;
+        if (data is RawJsonPayload raw)
+        {
+            using var doc = JsonDocument.Parse(raw.Utf8Bytes);
+            return doc.RootElement.Clone();
+        }
+        return JsonSerializer.SerializeToElement(data, ProtocolJson.Options);
+    }
+
     private sealed class EmptyAssets : IAssetBalanceRepository
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
@@ -1054,13 +1065,5 @@ public sealed class EnhancementContractTests
                 _balances.Where(pair => pair.Value.Quantity > 0 || pair.Value.Version > 0)
                     .Select(pair => new AssetBalanceRecord(_playerId, pair.Key.AssetId, pair.Key.Variant, pair.Value.Quantity, pair.Value.Version))
                     .ToArray());
-    }
-
-    private sealed class ManualClock(DateTimeOffset start) : IPlayerSimulationClock
-    {
-        public DateTimeOffset UtcNow { get; private set; } = start;
-        public bool IsDeterministic => true;
-        public void Advance(TimeSpan delta) => UtcNow += delta;
-        public void AdvanceTo(DateTimeOffset target) => UtcNow = target;
     }
 }

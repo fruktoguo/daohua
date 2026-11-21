@@ -182,13 +182,13 @@ function snapshot(playerId, stateVersion = 5, schemaVersion = SNAPSHOT_SCHEMA_VE
 }
 const delta = (version, changes = {}) => ({ playerId: account().playerId, stateVersion: version, lastSimulatedAt: now, changedSections: [], ...changes })
 
-// C2：坏帧、期限、真实字节 checksum、资产补丁、重连预算和版本终态都通过线上信封入口。
+// C2：坏帧、期限、资产补丁、重连预算和版本终态都通过线上信封入口。
 test('坏首快照立即重连；有效全量、合法跳版本和同版本资产增量可以提交', async t => {
   const env = setup(t)
   let socket = env.login()
   await socket.hello()
   const bad = snapshot(account().playerId)
-  bad.head.checksum = '0'.repeat(64)
+  bad.head.stateVersion = -1
   await socket.deliver(Wire.Snapshot, bad)
   assert.equal(socket.readyState, WebSocket.CLOSED)
   assert.equal(useGameStore.getState().hasReceivedSnapshot, false)
@@ -198,7 +198,7 @@ test('坏首快照立即重连；有效全量、合法跳版本和同版本资�
   await socket.deliver(Wire.SnapshotDelta, delta(16))
   assert.equal(useGameStore.getState().hasReceivedSnapshot, false)
   const full = snapshot(account().playerId)
-  await decodePlayerSnapshotDto(full, Buffer.from(JSON.stringify(full)))
+  await decodePlayerSnapshotDto(full)
   await socket.deliver(Wire.Snapshot, full)
   assert.equal(useGameStore.getState().connection, 'online')
   await socket.deliver(Wire.SnapshotDelta, delta(16))

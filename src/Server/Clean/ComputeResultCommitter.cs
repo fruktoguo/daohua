@@ -198,28 +198,10 @@ public sealed class ComputeResultCommitter(
             || request.Sections.Count != bundle.Sections.Count)
             throw new ComputeSourceDriftException("Compute 完整源基线与任务冻结输入不一致。");
 
-        var expected = bundle.Sections.Values
-            .OrderBy(section => section.SectionKind, StringComparer.Ordinal)
-            .Select(ComputeSectionCodec.ToWire)
-            .ToArray();
         if (request.AssetBalances is { Count: > 0 } requestBalances)
         {
             if (requestBalances.Any(balance => balance.Version < 0 || !double.IsFinite(balance.Quantity) || balance.Quantity <= 0))
                 throw new InvalidDataException("Compute 冻结钱包字段无效。");
-        }
-        var actual = request.Sections
-            .OrderBy(section => section.Kind, StringComparer.Ordinal)
-            .ToArray();
-        if (expected.Length != actual.Length)
-            throw new ComputeSourceDriftException("Compute 冻结 section 数量已漂移。");
-        for (var i = 0; i < expected.Length; i++)
-        {
-            if (!string.Equals(expected[i].Kind, actual[i].Kind, StringComparison.Ordinal)
-                || expected[i].Version != actual[i].Version
-                || !string.Equals(expected[i].Codec, actual[i].Codec, StringComparison.Ordinal)
-                || !string.Equals(expected[i].PayloadBase64, actual[i].PayloadBase64, StringComparison.Ordinal)
-                || !string.Equals(expected[i].Checksum, actual[i].Checksum, StringComparison.OrdinalIgnoreCase))
-                throw new ComputeSourceDriftException($"Compute 冻结 section {actual[i].Kind} 已漂移。");
         }
 
         var balances = request.AssetBalances ?? [];

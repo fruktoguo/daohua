@@ -59,6 +59,15 @@ public sealed class MarketAndComputeResilienceTests
             Retryable: false);
         var verifyResult = await verifier.VerifyAsync(request, candidate);
         Assert.False(verifyResult.Accepted);
+
+        // 采样率为 0 时跳过重演直接信任有效候选结果，但仍拦截时钟越界与非法 section。
+        using var sampleZeroVerifier = new EcsComputeResultVerifier(GameDataCatalog.BuiltIn, verifySampleRate: 0.0);
+        var acceptedZero = await sampleZeroVerifier.VerifyAsync(request, candidate);
+        Assert.True(acceptedZero.Accepted);
+
+        var outOfWindow = candidate with { LastSimulatedAtUnixMilliseconds = request.TargetUnixMilliseconds + 1 };
+        var rejectedWindow = await sampleZeroVerifier.VerifyAsync(request, outOfWindow);
+        Assert.False(rejectedWindow.Accepted);
     }
 
     [Fact]

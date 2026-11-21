@@ -100,6 +100,8 @@ public sealed record ServerOptions(
     public TimeSpan ComputeRequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>任务最大领取次数；超过后进入 dead 终态保留诊断窗口</summary>
     public int ComputeMaxAttempts { get; init; } = 5;
+    /// <summary>冷挂机主服独立 ECS 重演抽检率（ComputeNode:VerifySampleRate，范围 0..1；默认 0 直接信任已鉴权自有节点结果）</summary>
+    public double ComputeVerifySampleRate { get; init; } = 0.0;
     /// <summary>离线挂机批算扫描间隔（OfflineIdle:ScanIntervalSeconds）</summary>
     public TimeSpan ColdCatchUpInterval { get; init; } = TimeSpan.FromMinutes(1);
     /// <summary>离线挂机批算单次扫描玩家上限（OfflineIdle:ScanBatchSize）</summary>
@@ -161,6 +163,7 @@ public sealed record ServerOptions(
         var computeLeaseSeconds = configuration.GetValue("ComputeNode:LeaseSeconds", 120);
         var computeTimeoutSeconds = configuration.GetValue("ComputeNode:RequestTimeoutSeconds", 30);
         var computeMaxAttempts = configuration.GetValue("ComputeNode:MaxAttempts", 5);
+        var computeVerifySampleRate = configuration.GetValue("ComputeNode:VerifySampleRate", 0.0);
         var coldScanSeconds = configuration.GetValue("OfflineIdle:ScanIntervalSeconds", 60);
         var coldBatchSize = configuration.GetValue("OfflineIdle:ScanBatchSize", 128);
         var offlineBatchMinutes = configuration.GetValue("OfflineIdle:BatchIntervalMinutes", 60);
@@ -201,6 +204,8 @@ public sealed record ServerOptions(
         if (computeLeaseSeconds is < 10 or > 3600) throw new InvalidOperationException("ComputeNode:LeaseSeconds 必须在 10..3600。");
         if (computeTimeoutSeconds is < 5 or > 600) throw new InvalidOperationException("ComputeNode:RequestTimeoutSeconds 必须在 5..600。");
         if (computeMaxAttempts is < 1 or > 100) throw new InvalidOperationException("ComputeNode:MaxAttempts 必须在 1..100。");
+        if (!double.IsFinite(computeVerifySampleRate) || computeVerifySampleRate is < 0.0 or > 1.0)
+            throw new InvalidOperationException("ComputeNode:VerifySampleRate 必须在 0..1。");
         if (coldScanSeconds is < 10 or > 86_400) throw new InvalidOperationException("OfflineIdle:ScanIntervalSeconds 必须在 10..86400。");
         if (coldBatchSize is < 1 or > 2_000) throw new InvalidOperationException("OfflineIdle:ScanBatchSize 必须在 1..2000。");
         if (offlineBatchMinutes is < 1 or > 1440) throw new InvalidOperationException("OfflineIdle:BatchIntervalMinutes 必须在 1..1440。");
@@ -263,6 +268,7 @@ public sealed record ServerOptions(
             ComputeLease = TimeSpan.FromSeconds(computeLeaseSeconds),
             ComputeRequestTimeout = TimeSpan.FromSeconds(computeTimeoutSeconds),
             ComputeMaxAttempts = computeMaxAttempts,
+            ComputeVerifySampleRate = computeVerifySampleRate,
             ColdCatchUpInterval = TimeSpan.FromSeconds(coldScanSeconds),
             ColdCatchUpBatchSize = coldBatchSize,
             OfflineBatchInterval = TimeSpan.FromMinutes(offlineBatchMinutes),

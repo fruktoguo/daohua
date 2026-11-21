@@ -4,12 +4,16 @@ using Server.Clean;
 namespace Server;
 
 /// <summary>
-/// 主服独立重演 ComputeNode 候选结果。
-/// 节点输出只作为候选，验证器以任务中冻结的完整源基线重新装载独立 ECS 世界，
-/// 逐 section 比较编码字节、原始 JSON 字节、checksum、版本与目标时钟；资产增量必须与独立重演逐项一致。
+/// 主服校验（及按采样率独立重演）ComputeNode 候选结果。
+/// 默认（verifySampleRate = 0）直接信任经 COMPUTE_TOKEN 鉴权的自有节点输出，只执行身份、版本、时钟、section 编码/校验和与资产增量合法性校验；
+/// 采样命中或 verifySampleRate = 1 时以冻结基线装载独立 ECS 世界重演并逐字节比对。
 /// </summary>
-public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComputeResultVerifier, IDisposable
+public sealed class EcsComputeResultVerifier(GameDataCatalog gameData, double verifySampleRate = 1.0) : IComputeResultVerifier, IDisposable
 {
+    private readonly double _verifySampleRate = double.IsFinite(verifySampleRate)
+        ? Math.Clamp(verifySampleRate, 0.0, 1.0)
+        : throw new ArgumentOutOfRangeException(nameof(verifySampleRate), "重演采样率必须在 0..1。");
+
     // 独立 ECS 补算重演分条带：单引擎内部门串行（18ms/单任务，串行 2000 任务达 37s 超 30s 门禁）；
     // 封顶 2~4 条带让多任务重演并行化，条带数对齐 2c 生产宿主并发预算。
     private readonly DeterministicCatchUpEngine[] _engines = Enumerable.Range(0, Math.Clamp(Environment.ProcessorCount, 2, 4))
@@ -32,6 +36,29 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
             if (candidate.SourceStateVersion != request.SourceStateVersion
                 || candidate.TargetStateVersion < candidate.SourceStateVersion)
                 return ComputeVerificationResult.Rejected("结果版本与冻结任务不一致。");
+            if (candidate.LastSimulatedAtUnixMilliseconds < request.FromUnixMilliseconds
+                || candidate.LastSimulatedAtUnixMilliseconds > request.TargetUnixMilliseconds)
+                return ComputeVerificationResult.Rejected("结果模拟时钟超出冻结任务时间窗。");
+
+            var candidateDeltas = ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
+                request.PlayerId, request, candidate.AssetDeltas, gameData);
+            var candidateWrites = ParseCandidateSections(request.PlayerId, candidate);
+            if (candidate.TargetStateVersion == candidate.SourceStateVersion && candidateWrites.Count != 0)
+                return ComputeVerificationResult.Rejected("版本未前进的结果不得携带 section。");
+
+            var shouldReplay = _verifySampleRate >= 1.0
+                || (_verifySampleRate > 0.0 && Random.Shared.NextDouble() < _verifySampleRate);
+            if (!shouldReplay)
+            {
+                return new ComputeVerificationResult(
+                    true,
+                    null,
+                    candidateWrites.Values.ToArray(),
+                    candidateDeltas,
+                    candidate.SourceStateVersion,
+                    candidate.TargetStateVersion,
+                    DateTimeOffset.FromUnixTimeMilliseconds(candidate.LastSimulatedAtUnixMilliseconds));
+            }
 
             var replay = await ReplayAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -41,12 +68,10 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
                 return ComputeVerificationResult.Rejected("独立重演版本或实际模拟时钟与节点结果不一致。");
 
             var expectedDeltas = MergeReplayAssetDeltas(request.PlayerId, replay.AssetDeltas);
-            var candidateDeltas = ComputeDispatcherWorker.ValidateAndMergeAssetDeltas(
-                request.PlayerId, request, candidate.AssetDeltas, gameData);
             if (!expectedDeltas.SequenceEqual(candidateDeltas))
                 return ComputeVerificationResult.Rejected("独立重演资产增量与节点结果不一致。");
 
-            var writes = CompareSections(request.PlayerId, replay.Sections, candidate);
+            var writes = CompareSections(replay.Sections, candidateWrites);
             if (replay.TargetStateVersion == replay.SourceStateVersion && writes.Count != 0)
                 return ComputeVerificationResult.Rejected("版本未前进的结果不得携带 section。");
 
@@ -192,26 +217,32 @@ public sealed class EcsComputeResultVerifier(GameDataCatalog gameData) : IComput
         return bundle;
     }
 
-    private static IReadOnlyList<SectionWrite> CompareSections(
+    private static Dictionary<string, SectionWrite> ParseCandidateSections(
         Guid playerId,
-        IReadOnlyList<SectionWrite> expected,
         ComputeAdvanceJobResult candidate)
     {
         var actualPayloads = candidate.Sections ?? [];
         var actualKinds = new HashSet<string>(StringComparer.Ordinal);
         var actual = new Dictionary<string, SectionWrite>(StringComparer.Ordinal);
+        var updatedAt = DateTimeOffset.FromUnixTimeMilliseconds(candidate.LastSimulatedAtUnixMilliseconds);
         foreach (var payload in actualPayloads)
         {
-            if (payload is null || !actualKinds.Add(payload.Kind))
-                throw new InvalidDataException("节点结果包含重复 section。");
+            if (payload is null || !PlayerSectionKinds.IsValid(payload.Kind) || !actualKinds.Add(payload.Kind))
+                throw new InvalidDataException("节点结果包含未知或重复 section。");
             if (payload.Version != candidate.TargetStateVersion)
                 throw new InvalidDataException("节点结果 section 版本不等于目标版本。");
             var write = ComputeSectionCodec.ToSectionWrite(
-                playerId, candidate.TargetStateVersion, payload, DateTimeOffset.UnixEpoch);
+                playerId, candidate.TargetStateVersion, payload, updatedAt);
             if (!actual.TryAdd(write.SectionKind, write))
                 throw new InvalidDataException("节点结果包含重复 section。");
         }
+        return actual;
+    }
 
+    private static IReadOnlyList<SectionWrite> CompareSections(
+        IReadOnlyList<SectionWrite> expected,
+        IReadOnlyDictionary<string, SectionWrite> actual)
+    {
         var expectedByKind = expected.ToDictionary(write => write.SectionKind, StringComparer.Ordinal);
         if (actual.Count != expectedByKind.Count || actual.Keys.Except(expectedByKind.Keys, StringComparer.Ordinal).Any())
             throw new InvalidDataException("节点结果 section 集合与独立重演不一致。");

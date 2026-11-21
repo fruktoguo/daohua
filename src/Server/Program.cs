@@ -248,7 +248,9 @@ builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEvent
 // 装配注册表只会空转，ColdCatchUpWorker 还会与 Api 重复生产任务。
 if (processRole == ServerProcessRole.Api)
 {
-    builder.Services.AddSingleton<IComputeResultVerifier, EcsComputeResultVerifier>();
+    builder.Services.AddSingleton<IComputeResultVerifier>(sp => new EcsComputeResultVerifier(
+        sp.GetRequiredService<GameDataCatalog>(),
+        sp.GetRequiredService<ServerOptions>().ComputeVerifySampleRate));
     if (benchmark is null) builder.Services.AddComputeDispatch();
     else
     {

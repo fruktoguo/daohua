@@ -1018,17 +1018,16 @@ public static class PostgresSchemaBootstrap
     }
 }
 
-/// <summary>启动期 schema 版本复检：在 HostedService 阶段二次确认库版本可用，异常时阻止服务进入就绪。</summary>
+/// <summary>启动期标签巡检：EnsureAsync 已完成 schema 版本门禁，HostedService 仅做就绪日志与非阻塞旧标签告警。</summary>
 public sealed class PostgresSchemaHostedService(
     NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<PostgresSchemaHostedService> logger) : IHostedService
 {
-    /// <summary>连接数据库并校验 schema 版本；版本不符抛出异常使启动失败。</summary>
+    /// <summary>记录 schema 就绪状态并巡检是否存在落后当前解码器版本的存档行。</summary>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await PostgresSchemaBootstrap.VerifyAsync(connection, cancellationToken);
         if (!options.EnableSchemaBootstrap)
             logger.LogInformation("PostgreSQL schema bootstrap 已关闭，已校验 schema v{Version}。", PostgresSchema.Version);
         else

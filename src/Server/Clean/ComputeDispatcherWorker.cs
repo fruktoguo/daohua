@@ -431,7 +431,7 @@ public sealed class ComputeDispatcherWorker(
 
         try
         {
-            // 节点输出只作候选：从冻结任务独立重演，写回使用主服自己的结果，不信任节点自证。
+            // 按 ComputeNode:VerifySampleRate 抽检独立重演或直接校验并采信已鉴权节点的输出。
             var verification = await resultVerifier.VerifyAsync(entry.Request, result, cancellationToken);
             if (!verification.Accepted)
                 throw new InvalidDataException(verification.Error ?? "主服独立重演拒绝节点结果。");

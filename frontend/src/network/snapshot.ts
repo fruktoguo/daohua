@@ -127,188 +127,20 @@ function identifierValue(value: unknown, name = '标识'): string {
 }
 
 // ── 信封 JSON 字节级区间扫描 ─────────────────────────────────────────────
-// section.checksum 的哈希输入是「信封 JSON 中 data 成员的原始字节」——即服务端
-// 规范化 JSON 编码的字节原文。前端不复序列化（.NET 数字与转义口径和 JSON.stringify
-// 不保证逐位一致），改为在线上原始字节上定位 data 区间直接复算，校验口径两端严格一致。
+// WSS 传输已由 TLS AEAD 与 TCP 校验保障链路完整性，前端直接消费服务端 JSON.parse 结果，
+// 仅校版本门禁与分段标识唯一性，不在高频下行热路径重复字节扫描与 SHA-256 复算。
 
-const JSON_QUOTE = 0x22 // "
-const JSON_ESCAPE = 0x5c // \
-const JSON_OPEN_OBJECT = 0x7b // {
-const JSON_CLOSE_OBJECT = 0x7d // }
-const JSON_OPEN_ARRAY = 0x5b // [
-const JSON_CLOSE_ARRAY = 0x5d // ]
-const JSON_COLON = 0x3a // :
-const JSON_COMMA = 0x2c // ,
-
-function isJsonWhitespace(byte: number): boolean {
-  return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d
-}
-
-function skipJsonWhitespace(bytes: Uint8Array, index: number): number {
-  while (index < bytes.length && isJsonWhitespace(bytes[index])) index += 1
-  return index
-}
-
-/** 从引号起点扫描完整 JSON 字符串 token，返回闭合引号后一位；结构非法即抛错。 */
-function scanJsonStringEnd(bytes: Uint8Array, index: number): number {
-  index += 1
-  while (index < bytes.length) {
-    const byte = bytes[index]
-    // UTF-8 多字节序列的后续字节均 ≥0x80，不会与 ASCII 结构字符混淆；
-    // 字符串内只需识别 \" 与 \\ 转义起点并跳过其后一字节。
-    if (byte === JSON_ESCAPE) index += 2
-    else if (byte === JSON_QUOTE) return index + 1
-    else index += 1
-  }
-  throw new Error('协议 JSON 字符串未闭合。')
-}
-
-/** 从任意 JSON 值起点返回其结束位：对象/数组按括号配对深度，原始量到分隔符为止。 */
-function scanJsonValueEnd(bytes: Uint8Array, index: number): number {
-  index = skipJsonWhitespace(bytes, index)
-  const head = bytes[index]
-  if (head === JSON_QUOTE) return scanJsonStringEnd(bytes, index)
-  if (head !== JSON_OPEN_OBJECT && head !== JSON_OPEN_ARRAY) {
-    while (index < bytes.length) {
-      const byte = bytes[index]
-      if (isJsonWhitespace(byte) || byte === JSON_COMMA || byte === JSON_CLOSE_OBJECT || byte === JSON_CLOSE_ARRAY) return index
-      index += 1
-    }
-    return index
-  }
-  let depth = 0
-  while (index < bytes.length) {
-    const byte = bytes[index]
-    if (byte === JSON_QUOTE) {
-      index = scanJsonStringEnd(bytes, index)
-      continue
-    }
-    if (byte === JSON_OPEN_OBJECT || byte === JSON_OPEN_ARRAY) depth += 1
-    else if (byte === JSON_CLOSE_OBJECT || byte === JSON_CLOSE_ARRAY) {
-      depth -= 1
-      if (depth === 0) return index + 1
-    }
-    index += 1
-  }
-  throw new Error('协议 JSON 结构未闭合。')
-}
-
-/** 在 objectStart 处的 JSON 对象内查找 ASCII 键成员，返回其值的原始字节区间；不存在返回 null。 */
-function findJsonMemberSpan(bytes: Uint8Array, objectStart: number, key: string): { start: number; end: number } | null {
-  let index = skipJsonWhitespace(bytes, objectStart)
-  if (bytes[index] !== JSON_OPEN_OBJECT) throw new Error('协议 JSON 成员定位期望对象。')
-  index += 1
-  while (index < bytes.length) {
-    index = skipJsonWhitespace(bytes, index)
-    if (bytes[index] === JSON_CLOSE_OBJECT) return null
-    if (bytes[index] !== JSON_QUOTE) throw new Error('协议 JSON 成员名无效。')
-    const nameStart = index + 1
-    const nameEnd = scanJsonStringEnd(bytes, index) - 1
-    index = skipJsonWhitespace(bytes, nameEnd + 1)
-    if (bytes[index] !== JSON_COLON) throw new Error('协议 JSON 成员缺少冒号分隔。')
-    const valueStart = skipJsonWhitespace(bytes, index + 1)
-    const valueEnd = scanJsonValueEnd(bytes, valueStart)
-    if (nameEnd - nameStart === key.length) {
-      let matched = true
-      for (let offset = 0; offset < key.length; offset += 1) {
-        if (bytes[nameStart + offset] !== key.charCodeAt(offset)) {
-          matched = false
-          break
-        }
-      }
-      if (matched) return { start: valueStart, end: valueEnd }
-    }
-    index = skipJsonWhitespace(bytes, valueEnd)
-    if (bytes[index] === JSON_COMMA) {
-      index += 1
-      continue
-    }
-    if (bytes[index] === JSON_CLOSE_OBJECT) return null
-    throw new Error('协议 JSON 对象成员分隔无效。')
-  }
-  return null
-}
-
-/**
- * 沿成员路径（如 ['sections'] 或 ['payload','sections']）定位分段数组字段，
- * 返回每个元素内 data 成员的原始字节区间，顺序与数组元素一致。
- * checksum 校验即以该区间字节做 SHA-256，与服务端编码字节逐位对齐。
- */
-function sectionDataSpans(bytes: Uint8Array, memberPath: readonly string[]): { start: number; end: number }[] {
-  let container = skipJsonWhitespace(bytes, 0)
-  for (let depth = 0; depth + 1 < memberPath.length; depth += 1) {
-    const span = findJsonMemberSpan(bytes, container, memberPath[depth])
-    if (!span) throw new Error(`协议 JSON 缺少 ${memberPath[depth]} 成员。`)
-    container = span.start
-  }
-  const list = findJsonMemberSpan(bytes, container, memberPath[memberPath.length - 1])
-  if (!list) throw new Error(`协议 JSON 缺少 ${memberPath[memberPath.length - 1]} 成员。`)
-  let index = skipJsonWhitespace(bytes, list.start)
-  if (bytes[index] !== JSON_OPEN_ARRAY) throw new Error('协议 JSON 分段列表必须是数组。')
-  index += 1
-  const spans: { start: number; end: number }[] = []
-  while (index < bytes.length) {
-    index = skipJsonWhitespace(bytes, index)
-    if (bytes[index] === JSON_CLOSE_ARRAY) return spans
-    const data = findJsonMemberSpan(bytes, index, 'data')
-    if (!data) throw new Error('协议 JSON 分段缺少 data 成员。')
-    spans.push(data)
-    index = skipJsonWhitespace(bytes, scanJsonValueEnd(bytes, index))
-    if (bytes[index] === JSON_COMMA) {
-      index += 1
-      continue
-    }
-    if (bytes[index] === JSON_CLOSE_ARRAY) return spans
-    throw new Error('协议 JSON 数组元素分隔无效。')
-  }
-  return spans
-}
-
-/**
- * 校验并取用单个 section 载荷：对信封中 data 成员的原始字节区间复算 SHA-256，
- * 与 section.checksum 一致即证明载荷未被篡改；data 已随信封 JSON.parse 就位，直接返回。
- */
-async function decodeSectionPayload(section: PlayerSectionDto, dataBytes: Uint8Array): Promise<unknown> {
-  if (!/^[0-9a-f]{64}$/i.test(section.checksum)) throw new Error(`section ${section.section} 校验和格式无效。`)
-  // 直接对视图区间哈希：Node Buffer.slice() 是视图而非拷贝，经 .buffer 取整段池化缓冲会得到错误哈希。
-  const digest = await crypto.subtle.digest('SHA-256', dataBytes as Uint8Array<ArrayBuffer>)
-  const checksum = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-  if (checksum !== section.checksum.toLowerCase()) throw new Error(`section ${section.section} 校验和不匹配。`)
-  return section.data
-}
-
-async function decodeSections(
-  sections: readonly PlayerSectionDto[],
-  payloadBytes: Uint8Array,
-  memberPath: readonly string[],
-): Promise<Map<string, unknown>> {
+function decodeSections(sections: readonly PlayerSectionDto[]): Map<string, unknown> {
   if (!Array.isArray(sections)) throw new Error('玩家 section 列表无效。')
-  const names = new Set<string>()
+  const decoded = new Map<string, unknown>()
   for (const section of sections) {
-    if (!section || typeof section.section !== 'string' || section.section.length === 0 || names.has(section.section)) {
+    if (!section || typeof section.section !== 'string' || section.section.length === 0 || decoded.has(section.section)) {
       throw new Error('玩家 section 标识重复或为空。')
     }
-    names.add(section.section)
     requireReadableSnapshotSchema(section.schemaVersion, section.minReaderSchemaVersion)
+    decoded.set(section.section, section.data)
   }
-  const spans = sectionDataSpans(payloadBytes, memberPath)
-  if (spans.length !== sections.length) throw new Error('玩家 section 数据区间与列表不一致。')
-  const decoded = await Promise.all(sections.map(async (section, index) =>
-    [section.section, await decodeSectionPayload(section, payloadBytes.subarray(spans[index].start, spans[index].end))] as const))
-  return new Map(decoded)
-}
-
-async function verifyHeadChecksum(dto: PlayerSnapshotDto): Promise<void> {
-  const expected = dto.head.checksum?.toLowerCase()
-  if (!expected || !/^[0-9a-f]{64}$/.test(expected)) throw new Error('玩家快照头校验和缺失或格式无效。')
-  const canonical = dto.sections
-    .slice()
-    .sort((left, right) => left.section.localeCompare(right.section))
-    .map(section => `${section.section}:${section.sectionVersion}:${section.checksum}`)
-    .join('|')
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical).buffer as ArrayBuffer)
-  const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-  if (actual !== expected) throw new Error('玩家快照头校验和不匹配。')
+  return decoded
 }
 
 function mapPresence(value: unknown): PlayerSnapshot['presenceMode'] {
@@ -1552,10 +1384,10 @@ function decodeUnlockedAvatars(value: unknown): string[] | undefined {
 
 export async function decodePlayerSnapshotDto(
   dto: PlayerSnapshotDto,
-  payloadBytes: Uint8Array,
+  _payloadBytes?: Uint8Array,
   account = '',
   sequenceId = 0,
-  sectionMemberPath: readonly string[] = TOP_SECTIONS_PATH,
+  _sectionMemberPath: readonly string[] = TOP_SECTIONS_PATH,
 ): Promise<PlayerSnapshot & SnapshotAvatarUpdate> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
@@ -1563,8 +1395,7 @@ export async function decodePlayerSnapshotDto(
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
-  await verifyHeadChecksum(dto)
-  const sections = await decodeSections(dto.sections, payloadBytes, sectionMemberPath)
+  const sections = decodeSections(dto.sections)
   for (const section of REQUIRED_SNAPSHOT_SECTIONS) {
     if (!sections.has(section)) throw new Error(`玩家快照缺少 ${section} section。`)
   }
@@ -1628,13 +1459,13 @@ const TOP_CHANGED_SECTIONS_PATH: readonly string[] = ['changedSections']
 export async function decodePlayerSnapshotDeltaDto(
   dto: PlayerSnapshotDeltaDto,
   current: PlayerSnapshot,
-  payloadBytes: Uint8Array,
-  sectionMemberPath: readonly string[] = TOP_CHANGED_SECTIONS_PATH,
+  _payloadBytes?: Uint8Array,
+  _sectionMemberPath: readonly string[] = TOP_CHANGED_SECTIONS_PATH,
 ): Promise<PlayerPatch & SnapshotAvatarUpdate> {
   if (!dto || dto.playerId !== current.playerId) throw new Error('玩家增量快照归属不一致。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家增量快照')
   if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
-  const sections = await decodeSections(dto.changedSections, payloadBytes, sectionMemberPath)
+  const sections = decodeSections(dto.changedSections)
   // 服务端权威时刻必须随每个增量刷新：行动倒计时与进度条以「服务端时刻 + 本地流逝」推算，
   // 若沿用上一次全量快照的时间戳，估算时钟偏移会随页面停留时长线性累积。
   // 每个增量必须提供可信的新时间锚点，缺失即协议错误。

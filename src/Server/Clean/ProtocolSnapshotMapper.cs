@@ -31,19 +31,17 @@ public static class ProtocolSnapshotMapper
     // 不再按输入分段并集放大候选，见 IsDeltaCandidate。
     /// <summary>
     /// 对单个分段载荷执行规范化 JSON 序列化并生成 PlayerSectionDto。
-    /// 规范化字节一次编码后既做 checksum 输入也直接内嵌为 data：
-    /// JsonElement.WriteTo 按原始文本透传，信封中 data 成员的字节区间与 checksum
-    /// 哈希输入逐位一致，客户端可对线上原始字节复算 SHA-256，无需再经 Base64 往返。
+    /// 规范化字节一次编码后既作服务端增量 diff 的 checksum，也经 <see cref="RawJsonPayload"/> 直接透传写出，
+    /// 省去 JsonDocument.Parse 与 RootElement.Clone 往返。
     /// </summary>
     public static PlayerSectionDto EncodeSection(Guid playerId, string kind, long stateVersion, object value, DateTimeOffset updatedAt)
     {
         var encoded = SectionCodec.Encode(playerId, kind, Math.Max(1, stateVersion), value, updatedAt, compress: false);
-        using var document = JsonDocument.Parse(encoded.Payload);
         return new PlayerSectionDto(
             kind,
             encoded.StateVersion,
             encoded.SchemaVersion,
-            document.RootElement.Clone(),
+            new RawJsonPayload(encoded.Payload),
             encoded.Checksum,
             encoded.UpdatedAt)
         {
