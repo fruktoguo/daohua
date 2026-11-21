@@ -860,6 +860,13 @@ export class GameClient {
       const envelope = decodeEnvelope(bytes)
       if (this.snapshotRecoveryPending || !this.isCurrentSession(sourceSocket, sourceGeneration, sourcePlayerId)) return
       if (envelope.sequence <= this.lastServerSequence) return
+      if (this.lastServerSequence > 0 && envelope.sequence > this.lastServerSequence + 1
+        && envelope.messageType !== WireMessageType.Snapshot) {
+        console.warn(`[gameClient] 检测到服务端协议序号断层：期望 ${this.lastServerSequence + 1}，实际 ${envelope.sequence}，触发重同步。`)
+        this.lastServerSequence = envelope.sequence
+        this.requestSnapshotOrResync()
+        return
+      }
       this.lastServerSequence = envelope.sequence
       authoritative = envelope.messageType === WireMessageType.Snapshot
         || envelope.messageType === WireMessageType.SnapshotDelta

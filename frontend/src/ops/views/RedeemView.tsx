@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { copyTextToClipboard } from '../../utils/clipboard'
 import { opsGet, opsPost } from '../opsClient'
@@ -58,7 +58,7 @@ function downloadCodesTextFile(filename: string, codes: string[]): void {
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function formatRewardsSummary(rewards: OpsRedeemReward[]): string {
@@ -96,40 +96,61 @@ export function OpsRedeemView(): React.JSX.Element {
   const [codeFilter, setCodeFilter] = useState<'all' | 'unused' | 'used'>('all')
   const [batchCodes, setBatchCodes] = useState<OpsRedeemCodeRow[]>([])
   const [loadingCodes, setLoadingCodes] = useState(false)
+  const batchesRequestRef = useRef<{ seq: number }>({ seq: 0 })
+  const codesRequestRef = useRef<{ seq: number; controller: AbortController | null }>({
+    seq: 0,
+    controller: null,
+  })
 
   const loadBatches = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++batchesRequestRef.current.seq
     setLoadingBatches(true)
     try {
       const data = await opsGet<{ items: OpsRedeemBatchItem[] }>('/redeem/batches', signal)
+      if (signal?.aborted || seq !== batchesRequestRef.current.seq) return
       setBatches(data.items)
     } catch (cause) {
-      if (signal?.aborted) return
+      if (signal?.aborted || seq !== batchesRequestRef.current.seq) return
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (!signal?.aborted) setLoadingBatches(false)
+      if (!signal?.aborted && seq === batchesRequestRef.current.seq) setLoadingBatches(false)
     }
   }, [])
 
   const loadBatchCodes = useCallback(async (batch: OpsRedeemBatchItem, filter: 'all' | 'unused' | 'used') => {
+    codesRequestRef.current.controller?.abort()
+    const controller = new AbortController()
+    const seq = ++codesRequestRef.current.seq
+    codesRequestRef.current.controller = controller
     setLoadingCodes(true)
     setError(null)
     try {
-      const query = new URLSearchParams({ status: filter, limit: '2000' })
+      const query = new URLSearchParams({ status: filter, limit: '5000' })
       const data = await opsGet<{ batchId: number; items: OpsRedeemCodeRow[] }>(
         `/redeem/batches/${batch.batchId}/codes?${query.toString()}`,
+        controller.signal,
       )
+      if (seq !== codesRequestRef.current.seq) return
       setBatchCodes(data.items)
     } catch (cause) {
+      if (controller.signal.aborted || seq !== codesRequestRef.current.seq) return
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setLoadingCodes(false)
+      if (seq === codesRequestRef.current.seq) {
+        setLoadingCodes(false)
+        codesRequestRef.current.controller = null
+      }
     }
   }, [])
 
   useEffect(() => {
     const controller = new AbortController()
     void loadBatches(controller.signal)
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      codesRequestRef.current.controller?.abort()
+      codesRequestRef.current.seq += 1
+    }
   }, [loadBatches])
 
   const execute = async (fn: () => Promise<void>): Promise<void> => {
@@ -479,16 +500,15 @@ export function OpsRedeemView(): React.JSX.Element {
               </thead>
               <tbody>
                 {batches.map(item => {
-                  const isExpired = item.expiresAt !== null && new Date(item.expiresAt).getTime() <= Date.now()
                   const isExhausted = item.maxClaims !== null && item.claimedCount >= item.maxClaims
                   const statusLabel = item.disabledAt
                     ? '已停用'
-                    : isExpired
-                      ? '已过期'
-                      : isExhausted
+                    : !item.isActive
+                      ? isExhausted
                         ? '已领完'
-                        : '生效中'
-                  const statusTone = item.isActive ? 'jade' : item.disabledAt ? 'danger' : 'muted'
+                        : '已过期'
+                      : '生效中'
+                  const statusTone = item.disabledAt ? 'danger' : item.isActive ? 'jade' : 'muted'
 
                   return (
                     <tr key={item.batchId}>

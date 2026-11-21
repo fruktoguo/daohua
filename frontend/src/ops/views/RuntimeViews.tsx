@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { opsGet } from '../opsClient'
 import type { OpsCompute, OpsLogEntry, OpsScheduler } from '../opsTypes'
 import {
@@ -236,16 +236,29 @@ function OpsCopyButton({ label, disabled, getText }: {
 }): React.JSX.Element {
   const [state, setState] = useState<'idle' | 'ok' | 'empty' | 'fail'>('idle')
   const timerRef = useRef<number | undefined>(undefined)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(timerRef.current)
+    }
+  }, [])
   const handleClick = (): void => {
     window.clearTimeout(timerRef.current)
     getText()
       .then(async text => {
         if (text) await writeClipboard(text)
-        setState(text ? 'ok' : 'empty')
+        if (mountedRef.current) setState(text ? 'ok' : 'empty')
       })
-      .catch(() => setState('fail'))
+      .catch(() => {
+        if (mountedRef.current) setState('fail')
+      })
       .finally(() => {
-        timerRef.current = window.setTimeout(() => setState('idle'), 2000)
+        if (!mountedRef.current) return
+        timerRef.current = window.setTimeout(() => {
+          if (mountedRef.current) setState('idle')
+        }, 2000)
       })
   }
   const text = state === 'ok' ? '已复制' : state === 'empty' ? '暂无内容' : state === 'fail' ? '复制失败' : label

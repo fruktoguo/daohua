@@ -73,4 +73,5 @@ test('simulator: bridge 与 worker 种子为字符串且不用 Math.random', asy
   assert.doesNotMatch(bridge, /Math\.random/, '桥接层禁止 Math.random')
   const worker = await readFile('frontend/src/game/simulator/simulatorWorker.ts', 'utf8')
   assert.doesNotMatch(worker, /Math\.random/, 'Worker 内核禁止 Math.random')
+  assert.match(worker, /\.catch\(/, 'Worker 配表加载失败后必须重置缓存 Promise')
 })

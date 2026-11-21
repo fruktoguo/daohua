@@ -65,8 +65,9 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
   const pinchRef = useRef<{ dist: number; transform: TransformState; midX: number; midY: number } | null>(null)
   // 单指拖拽基线
   const dragRef = useRef<{ pointerX: number; pointerY: number; transform: TransformState } | null>(null)
-  // 双击判定：上次 tap 时间与坐标
+  // 双击判定：上次 tap 时间与坐标及延迟关闭定时器
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
+  const tapCloseTimerRef = useRef<number | undefined>(undefined)
   const onCloseRef = useRef(onClose)
   useEffect(() => {
     onCloseRef.current = onClose
@@ -82,6 +83,10 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
     pinchRef.current = null
     dragRef.current = null
     lastTapRef.current = null
+    return () => {
+      window.clearTimeout(tapCloseTimerRef.current)
+      tapCloseTimerRef.current = undefined
+    }
   }, [open])
 
   if (!open) return null
@@ -175,12 +180,16 @@ export function ChatImageLightbox({ open, src, alt, onClose }: ChatImageLightbox
         const last = lastTapRef.current
         if (last && now - last.time <= DOUBLE_TAP_WINDOW
           && Math.hypot(e.clientX - last.x, e.clientY - last.y) <= 24) {
+          window.clearTimeout(tapCloseTimerRef.current)
+          tapCloseTimerRef.current = undefined
           lastTapRef.current = null
           handleDoubleTap(e.clientX, e.clientY)
         } else {
+          window.clearTimeout(tapCloseTimerRef.current)
           lastTapRef.current = { time: now, x: e.clientX, y: e.clientY }
           // 无双击配对的无位移单击：关闭灯箱（延迟到双击窗口结束后执行，避免双击时先关）
-          window.setTimeout(() => {
+          tapCloseTimerRef.current = window.setTimeout(() => {
+            tapCloseTimerRef.current = undefined
             if (lastTapRef.current !== null) {
               lastTapRef.current = null
               onCloseRef.current()

@@ -561,3 +561,21 @@ test('配表仅在整批指纹一致并校验成功后发布，混版整批 relo
   const hello = await socket.sendHello()
   assert.equal(JSON.parse(new TextDecoder().decode(hello.payload)).gameDataFingerprint, 'next')
 })
+
+test('检测到服务端非 Snapshot 序号跳号断层时主动关闭连接触发重同步', async t => {
+  const env = setup(t)
+  const socket = env.login()
+  await socket.sendHello()
+  await socket.hello()
+  await socket.deliver(Wire.Snapshot, snapshot(account('a').playerId, 1))
+  assert.equal(env.sockets.length, 1)
+
+  // 人为跳过一个序号（正常应为上一帧 + 1），应触发断开重同步。
+  socket.sequence += 1
+  await socket.deliver(Wire.SnapshotDelta, {
+    baseStateVersion: 1,
+    stateVersion: 2,
+    changedSections: {},
+  })
+  assert.equal(socket.readyState, 3)
+})

@@ -110,8 +110,13 @@ function ChatStickerImage({
 
   const handleOpenOriginal = (): void => {
     setMenuOpen(false)
-    if (typeof window !== 'undefined') {
-      window.open(trimmedUrl, '_blank', 'noopener,noreferrer')
+    if (typeof window === 'undefined') return
+    try {
+      const parsed = new URL(trimmedUrl)
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return
+      window.open(parsed.toString(), '_blank', 'noopener,noreferrer')
+    } catch {
+      // 非法外链协议或格式直接忽略，避免执行非 HTTP(S) URI
     }
   }
 

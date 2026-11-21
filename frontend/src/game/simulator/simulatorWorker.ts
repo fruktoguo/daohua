@@ -24,10 +24,15 @@ let catalogPromise: Promise<GameDataCatalog> | null = null
 /** 懒加载并构建推演配表目录，避免进入主包或在页面首屏阶段加载配表 JSON。 */
 function getCatalog(): Promise<GameDataCatalog> {
   if (!catalogPromise) {
-    catalogPromise = import('./data/simulatorCatalog.json').then((mod) => {
-      const raw = (mod as { default?: unknown }).default ?? mod
-      return buildGameDataCatalog(raw as CatalogJsonShape)
-    })
+    catalogPromise = import('./data/simulatorCatalog.json')
+      .then((mod) => {
+        const raw = (mod as { default?: unknown }).default ?? mod
+        return buildGameDataCatalog(raw as CatalogJsonShape)
+      })
+      .catch((error) => {
+        catalogPromise = null
+        throw error
+      })
   }
   return catalogPromise
 }

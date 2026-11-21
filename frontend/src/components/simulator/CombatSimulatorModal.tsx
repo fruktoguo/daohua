@@ -400,7 +400,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     a.href = url
     a.download = 'simulator-config.json'
     a.click()
-    URL.revokeObjectURL(url)
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }, [members, environment, selectedNodeIds, difficulties, durationSeconds, seed])
 
   const importConfig = useCallback(async (file: File) => {
