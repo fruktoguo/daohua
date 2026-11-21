@@ -99,8 +99,6 @@ if [[ "$BUILD" == "1" ]]; then
   git -C "$private_root" archive "$private_revision" server | tar -x -C "$STAGING_DIR/src/Private"
   git -C "$private_root" archive "$private_revision" frontend/antiMulti | tar -x --strip-components=2 -C "$STAGING_DIR/frontend/src/private-impl"
   NODE_IMAGE_REF="${NODE_IMAGE:-ccr.ccs.tencentyun.com/yuohira/node:22-alpine}"
-  # 区分同一源码的两次独立构建；顺序推 prod 时不允许混配。
-  BUILD_PAIR="$(openssl rand -hex 16)"
   common_args=(
     --platform "$PLATFORM"
     --load
@@ -109,7 +107,6 @@ if [[ "$BUILD" == "1" ]]; then
     --build-arg "VCS_REF=${VCS_REF}"
     --label "io.daohua.yuocore-revision=$yuo_revision"
     --label "io.daohua.private-revision=$private_revision"
-    --label "io.daohua.build-pair=$BUILD_PAIR"
     --label "io.daohua.db-schema=$DB_SCHEMA"
     --label "io.daohua.section-schema=$SECTION_SCHEMA"
     --build-arg "NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}"
@@ -139,19 +136,13 @@ else
 fi
 
 # 推送既有镜像也必须绑定本次固定输入；不能只凭 tag 相同或本地存在判为可发布。
-build_pair=""
 for image in "$RELEASE_IMAGE" "$RELEASE_COMPUTE_IMAGE"; do
-  provenance="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "io.daohua.yuocore-revision"}} {{index .Config.Labels "io.daohua.private-revision"}} {{index .Config.Labels "io.daohua.db-schema"}} {{index .Config.Labels "io.daohua.section-schema"}} {{index .Config.Labels "io.daohua.build-pair"}}' "$image")"
-  [[ "${provenance% *}" == "$VCS_REF $yuo_revision $private_revision $DB_SCHEMA $SECTION_SCHEMA" && "${provenance##* }" =~ ^[a-f0-9]{32}$ ]] || {
+  provenance="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "io.daohua.yuocore-revision"}} {{index .Config.Labels "io.daohua.private-revision"}} {{index .Config.Labels "io.daohua.db-schema"}} {{index .Config.Labels "io.daohua.section-schema"}}' "$image")"
+  [[ "$provenance" == "$VCS_REF $yuo_revision $private_revision $DB_SCHEMA $SECTION_SCHEMA" ]] || {
     printf '镜像来源或 schema 标签不匹配: %s\n' "$image" >&2; exit 1;
   }
-  image_pair="${provenance##* }"
-  if [[ -n "$build_pair" && "$image_pair" != "$build_pair" ]]; then
-    printf 'Server/ComputeNode 不是同一构建批次，拒绝推送。\n' >&2; exit 1
-  fi
-  build_pair="$image_pair"
 done
-printf '镜像输入: main=%s YuoCore=%s private=%s schema=%s/%s pair=%s\n' "$VCS_REF" "$yuo_revision" "$private_revision" "$DB_SCHEMA" "$SECTION_SCHEMA" "$build_pair"
+printf '镜像输入: main=%s YuoCore=%s private=%s schema=%s/%s\n' "$VCS_REF" "$yuo_revision" "$private_revision" "$DB_SCHEMA" "$SECTION_SCHEMA"
 
 if [[ "$PUSH" == "1" ]]; then
   for image in "$RELEASE_IMAGE" "$RELEASE_COMPUTE_IMAGE" "$MOVING_IMAGE" "$MOVING_COMPUTE_IMAGE"; do

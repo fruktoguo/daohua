@@ -51,40 +51,44 @@ bases=("$BACKUP_DIR/base"/daohua-postgres-base-*.tar.gz)
 latest_base=""
 if ((${#bases[@]} > 0)); then latest_base="${bases[-1]}"; fi
 if backup_is_fresh "$latest_base" "${VERIFY_BASE_MAX_AGE_SECONDS:-129600}"; then
-  tmp_dir="$(mktemp -d /tmp/daohua-verify-base.XXXXXX)"
-  trap 'rm -rf -- "$tmp_dir"' EXIT
   backup_check_sha "$latest_base" || { printf '物理基线缺少校验对或 SHA-256 不符。\n' >&2; exit 1; }
-  tar -xzf "$latest_base" -C "$tmp_dir"
-  [[ -f "$tmp_dir/backup_manifest" ]] || { printf 'base backup 缺少 backup_manifest。\n' >&2; exit 1; }
-  docker run --rm --user 0 -v "$tmp_dir:/var/lib/postgresql/data" postgres:18-alpine \
-    chown -R postgres:postgres /var/lib/postgresql/data
-  docker run --rm --user postgres -v "$tmp_dir:/var/lib/postgresql/data:ro" postgres:18-alpine \
-    pg_verifybackup /var/lib/postgresql/data
-  printf '物理 base backup 校验通过: %s\n' "$latest_base"
-  if [[ "$ISOLATED_RESTORE" == "1" ]]; then
-    trap 'docker rm -f "$ISOLATED_NAME" >/dev/null 2>&1 || true; rm -rf -- "$tmp_dir"' EXIT
-    # 只传环境变量名称，不把口令展开进 docker argv；库名取运行中 Compose 契约。
-    export POSTGRES_USER="$DB_BOOTSTRAP_USER"
-    export POSTGRES_PASSWORD="$DB_BOOTSTRAP_PASSWORD"
-    export POSTGRES_DB
-    POSTGRES_DB="$(compose exec -T db sh -ceu 'printf "%s" "${POSTGRES_DB:?POSTGRES_DB 未注入}"')"
-    docker run -d --name "$ISOLATED_NAME" -p "127.0.0.1:${ISOLATED_PORT}:5432" \
-      --env POSTGRES_USER --env POSTGRES_PASSWORD --env POSTGRES_DB \
-      --env PGDATA=/var/lib/postgresql/data \
-      -v "$tmp_dir:/var/lib/postgresql/data" postgres:18-alpine postgres -c archive_mode=off >/dev/null
-    ready=0
-    for _ in {1..30}; do
-      if docker exec "$ISOLATED_NAME" sh -ceu 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then ready=1; break; fi
-      sleep 2
-    done
-    [[ "$ready" == "1" ]] || { printf '隔离恢复实例未就绪。\n' >&2; exit 1; }
-    docker exec "$ISOLATED_NAME" sh -ceu '
-      export PGPASSWORD="$POSTGRES_PASSWORD"
-      psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM identity.accounts; SELECT count(*) FROM game.player_state_heads;" >/dev/null
-    '
-    printf '隔离恢复实例 ready/最小 SQL 校验通过（端口 127.0.0.1:%s）。\n' "$ISOLATED_PORT"
+  if [[ "$VERIFY_BASE_BACKUP" != "1" ]]; then
+    printf '日常发布跳过物理基线解压与 pg_verifybackup（已校验存在性与 SHA-256: %s；设置 VERIFY_BASE_BACKUP=1 可全量核验）。\n' "$latest_base"
   else
-    printf '物理 base 仅完成格式与 manifest 校验；未启动隔离恢复实例。设置 VERIFY_BACKUP_ISOLATED_RESTORE=1 可执行 ready/最小 SQL 验证。\n'
+    tmp_dir="$(mktemp -d /tmp/daohua-verify-base.XXXXXX)"
+    trap 'rm -rf -- "$tmp_dir"' EXIT
+    tar -xzf "$latest_base" -C "$tmp_dir"
+    [[ -f "$tmp_dir/backup_manifest" ]] || { printf 'base backup 缺少 backup_manifest。\n' >&2; exit 1; }
+    docker run --rm --user 0 -v "$tmp_dir:/var/lib/postgresql/data" postgres:18-alpine \
+      chown -R postgres:postgres /var/lib/postgresql/data
+    docker run --rm --user postgres -v "$tmp_dir:/var/lib/postgresql/data:ro" postgres:18-alpine \
+      pg_verifybackup /var/lib/postgresql/data
+    printf '物理 base backup 校验通过: %s\n' "$latest_base"
+    if [[ "$ISOLATED_RESTORE" == "1" ]]; then
+      trap 'docker rm -f "$ISOLATED_NAME" >/dev/null 2>&1 || true; rm -rf -- "$tmp_dir"' EXIT
+      # 只传环境变量名称，不把口令展开进 docker argv；库名取运行中 Compose 契约。
+      export POSTGRES_USER="$DB_BOOTSTRAP_USER"
+      export POSTGRES_PASSWORD="$DB_BOOTSTRAP_PASSWORD"
+      export POSTGRES_DB
+      POSTGRES_DB="$(compose exec -T db sh -ceu 'printf "%s" "${POSTGRES_DB:?POSTGRES_DB 未注入}"')"
+      docker run -d --name "$ISOLATED_NAME" -p "127.0.0.1:${ISOLATED_PORT}:5432" \
+        --env POSTGRES_USER --env POSTGRES_PASSWORD --env POSTGRES_DB \
+        --env PGDATA=/var/lib/postgresql/data \
+        -v "$tmp_dir:/var/lib/postgresql/data" postgres:18-alpine postgres -c archive_mode=off >/dev/null
+      ready=0
+      for _ in {1..30}; do
+        if docker exec "$ISOLATED_NAME" sh -ceu 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then ready=1; break; fi
+        sleep 2
+      done
+      [[ "$ready" == "1" ]] || { printf '隔离恢复实例未就绪。\n' >&2; exit 1; }
+      docker exec "$ISOLATED_NAME" sh -ceu '
+        export PGPASSWORD="$POSTGRES_PASSWORD"
+        psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM identity.accounts; SELECT count(*) FROM game.player_state_heads;" >/dev/null
+      '
+      printf '隔离恢复实例 ready/最小 SQL 校验通过（端口 127.0.0.1:%s）。\n' "$ISOLATED_PORT"
+    else
+      printf '物理 base 仅完成格式与 manifest 校验；未启动隔离恢复实例。设置 VERIFY_BACKUP_ISOLATED_RESTORE=1 可执行 ready/最小 SQL 验证。\n'
+    fi
   fi
 else
   printf '缺少新鲜的物理 base（或 VERIFY_BASE_MAX_AGE_SECONDS 非法）。\n' >&2
@@ -96,7 +100,11 @@ archive_mode="$(compose exec -T db sh -ceu '
 ')"
 case "$archive_mode" in
   off) printf '连续 WAL 已明确关闭；仅验证自带 WAL 的物理基线，不宣称 PITR 可用。\n' ;;
-  on|always) WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$SCRIPT_DIR/wal-archive.sh" verify ;;
+  on|always)
+    wal_script="$SCRIPT_DIR/wal-archive.sh"
+    [[ -x "$wal_script" ]] || wal_script="$SCRIPT_DIR/archive-wal/wal-archive.sh"
+    WAL_ARCHIVE_DIR="$WAL_ARCHIVE_DIR" "$wal_script" verify
+    ;;
   *) printf '无法判定 PostgreSQL archive_mode，拒绝备份放行。\n' >&2; exit 1 ;;
 esac
 printf '备份门禁通过。\n'

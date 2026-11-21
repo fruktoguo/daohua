@@ -178,24 +178,17 @@ scp -q \
   "$ROOT_DIR/deploy/apply-prod-release.sh" \
   "$ROOT_DIR/deploy/backup-checks.sh" \
   "$ROOT_DIR/deploy/backup-access.sh" \
-  "$ROOT_DIR/deploy/ccr-auto-update.sh" \
   "$ROOT_DIR/deploy/backup.sh" \
   "$ROOT_DIR/deploy/base-backup.sh" \
   "$ROOT_DIR/deploy/pitr-restore.sh" \
   "$ROOT_DIR/deploy/verify-backup.sh" \
-  "$ROOT_DIR/deploy/wal-archive.sh" \
   "$ROOT_DIR/deploy/market-ledger-archive.sh" \
-  "$ROOT_DIR/deploy/postgres-wal-archive.sh" \
-  "$ROOT_DIR/deploy/daohua-ccr-auto-update.service" \
-  "$ROOT_DIR/deploy/daohua-ccr-auto-update.timer" \
   "$ROOT_DIR/deploy/daohua-db-backup.service" \
   "$ROOT_DIR/deploy/daohua-db-backup.timer" \
   "$ROOT_DIR/deploy/daohua-base-backup.service" \
   "$ROOT_DIR/deploy/daohua-base-backup.timer" \
   "$ROOT_DIR/deploy/daohua-ledger-archive.service" \
   "$ROOT_DIR/deploy/daohua-ledger-archive.timer" \
-  "$ROOT_DIR/deploy/daohua-wal-archive.service" \
-  "$ROOT_DIR/deploy/daohua-wal-archive.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
   "$ROOT_DIR/deploy/daohua.yuohira.com.caddy" \
   "$ROOT_DIR/frontend/public/privacy.html" \
@@ -241,8 +234,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
   fi
 '
 
-# 单个远端事务持有与 CCR timer 共用的锁（最多等待 45s 避让 7s 周期的自动更新探测），直到切换、烟测和定时器提交完成。
+# 受控部署直接进入远端事务执行迁移、容器换代与双层烟测（已下线 CCR 自动更新竞争锁）。
 printf '==> 受控停写、迁移、切换和验收\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "sudo flock -w 45 /run/lock/daohua-ccr-auto-update.lock bash '$REMOTE_TMP/apply-prod-release.sh' '$REMOTE_TMP' '$IMAGE' '$COMPUTE_IMAGE' '$EXPECTED_SCHEMA_VERSION' '$EXPECTED_SECTION_VERSION' '$INSTALL_CADDY' '$RUN_PUBLIC_SMOKE'"
+ssh -o BatchMode=yes "$REMOTE_HOST" "sudo bash '$REMOTE_TMP/apply-prod-release.sh' '$REMOTE_TMP' '$IMAGE' '$COMPUTE_IMAGE' '$EXPECTED_SCHEMA_VERSION' '$EXPECTED_SECTION_VERSION' '$INSTALL_CADDY' '$RUN_PUBLIC_SMOKE'"
 
 printf '生产部署完成。\n'

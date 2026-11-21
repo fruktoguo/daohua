@@ -1,6 +1,6 @@
 [Unit]
 Description=道化 PostgreSQL 自动备份
-After=docker.service network-online.target daohua-ccr-auto-update.service
+After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
 

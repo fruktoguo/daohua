@@ -73,8 +73,7 @@ if [[ ! "$username" =~ ^[A-Za-z0-9._@-]+$ || -z "$password" ]]; then
   exit 1
 fi
 
-printf '==> 停用自动更新，安装远端 CCR 登录态\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo systemctl disable --now daohua-ccr-auto-update.timer >/dev/null 2>&1 || true'
+printf '==> 安装远端 CCR 登录态\n'
 printf '%s' "$password" | ssh -o BatchMode=yes "$REMOTE_HOST" \
   "sudo docker login --username '$username' --password-stdin '$REGISTRY'"
 
@@ -85,19 +84,10 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
   sudo jq -e --arg registry '$REGISTRY' '.auths[\$registry].auth | type == \"string\" and length > 0' /root/.docker/config.json >/dev/null
   sudo docker pull '$IMAGE' >/dev/null
-  if sudo systemctl cat daohua-ccr-auto-update.service >/dev/null 2>&1 \
-    && sudo test -f /opt/daohua/compose.prod.yaml; then
-    sudo systemctl start daohua-ccr-auto-update.service
-    sudo systemctl enable --now daohua-ccr-auto-update.timer
-    sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
-    sudo systemctl is-active daohua-ccr-auto-update.timer
-  else
-    printf 'CCR 拉取成功；部署资产尚未安装，暂不启用 timer。\n'
-  fi
 "
 
 if ssh -o BatchMode=yes "$REMOTE_HOST" 'curl --fail --silent --show-error http://127.0.0.1:15128/readyz >/dev/null 2>&1'; then
   printf '==> 公网闭环烟测\n'
   node "$ROOT_DIR/scripts/smoke-production.mjs" https://daohua.yuohira.com
 fi
-printf 'CCR 登录态已安装；存在部署资产时自动更新也已启用。\n'
+printf 'CCR 登录态已安装。\n'

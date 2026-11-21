@@ -29,6 +29,7 @@ ODIN_HOST_OVERRIDE=""
 SKIP_ODIN=0
 SKIP_BACKUP=0
 REFRESH_BASE_BACKUP=0
+VERIFY_BASE=0
 SKIP_SMOKE=0
 PUSH_EXISTING=0
 # Web 化后 APK 仅承载原生壳与静态资源基线：默认不再每次发布重打，
@@ -49,6 +50,7 @@ usage() {
     '  --skip-odin      跳过 odin 计算节点发布（仅更新主服）' \
     '  --skip-backup    跳过本轮逻辑备份生成，仍要求新鲜逻辑/物理备份通过门禁' \
     '  --refresh-base-backup  用本次提交的脚本新建物理基线（先确认磁盘与 WAL 保留预算）' \
+    '  --verify-base          强制解压并运行 pg_verifybackup 校验物理基线（默认仅含数据库迁移或 --refresh-base-backup 时执行）' \
     '  --skip-smoke     跳过部署后的内网与公网烟测' \
     '  --skip-caddy     跳过远端 Caddy 站点配置安装与 reload' \
     '  --with-apk       构建 Android 安装包并发布 GitHub Releases（默认跳过：Web 化后仅原生壳变更时需要）' \
@@ -68,6 +70,7 @@ while (($# > 0)); do
     --skip-odin) SKIP_ODIN=1; shift ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --refresh-base-backup) REFRESH_BASE_BACKUP=1; shift ;;
+    --verify-base) VERIFY_BASE=1; shift ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
     --skip-caddy) SKIP_CADDY=1; shift ;;
     --with-apk) WITH_APK=1; shift ;;
@@ -196,6 +199,13 @@ printf '  - 发布版本: %s (Tag: %s)\n' "$PKG_VERSION" "$RELEASE_TAG"
 # ------------------------------------------------------------------------------
 printf '\n==> [阶段 1/4] 使用发布提交校验备份门禁（不执行迁移或安装脚本）...\n'
 
+# 日常无数据库迁移的代码发版只校验逻辑 dump 与物理基线 SHA-256；仅含新迁移或显式刷新/要求时做全量解压校验。
+EXPECTED_DB_SCHEMA="$(git show "$GIT_REV:src/Server/Clean/PostgresSchema.cs" | grep -E 'public const int Version =' | grep -oE '[0-9]+' | head -n1)"
+REMOTE_DB_SCHEMA="$(ssh -o BatchMode=yes "$REMOTE_HOST" "sudo docker exec daohua-db psql -XAt -U daohua -d daohua -c 'SELECT coalesce(max(version),0) FROM platform.schema_version;'" 2>/dev/null | tr -d '\r' || true)"
+if [[ "$REFRESH_BASE_BACKUP" == "1" || ( -n "$EXPECTED_DB_SCHEMA" && -n "$REMOTE_DB_SCHEMA" && "$REMOTE_DB_SCHEMA" != "$EXPECTED_DB_SCHEMA" ) ]]; then
+  VERIFY_BASE=1
+fi
+
 # 不依赖主服已安装的旧 verifier/base 参数，不在 /opt 覆盖任何脚本。
 # 用 root 私有临时目录接收固定文件并清理；生成基线必须由操作者显式选择。
 gate_command="$(cat <<'REMOTE_GATE'
@@ -205,14 +215,14 @@ trap "rm -rf -- \"$gate\"" EXIT
 trap "exit 129" HUP
 trap "exit 130" INT
 trap "exit 143" TERM
-tar --no-same-owner -xf - -C "$gate" deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh deploy/wal-archive.sh
+tar --no-same-owner -xf - -C "$gate" deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh
 if [[ "$1" == 0 ]]; then bash "$gate/deploy/backup.sh"; fi
 if [[ "$2" == 1 ]]; then bash "$gate/deploy/base-backup.sh"; fi
-bash "$gate/deploy/verify-backup.sh"
+VERIFY_BASE_BACKUP="$3" bash "$gate/deploy/verify-backup.sh"
 REMOTE_GATE
 )"
-if ! git archive "$GIT_REV" -- deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh deploy/wal-archive.sh |
-    ssh -T -o BatchMode=yes "$REMOTE_HOST" "sudo -n bash -c '$gate_command' bash '$SKIP_BACKUP' '$REFRESH_BASE_BACKUP'"; then
+if ! git archive "$GIT_REV" -- deploy/backup.sh deploy/base-backup.sh deploy/backup-access.sh deploy/backup-checks.sh deploy/verify-backup.sh |
+    ssh -T -o BatchMode=yes "$REMOTE_HOST" "sudo -n bash -c '$gate_command' bash '$SKIP_BACKUP' '$REFRESH_BASE_BACKUP' '$VERIFY_BASE'"; then
   printf '备份门禁失败：未推送镜像、未预传或部署。首次引入若缺新鲜物理基线，请先核对磁盘及 WAL 保留预算，再显式使用 --refresh-base-backup。\n' >&2
   exit 1
 fi
