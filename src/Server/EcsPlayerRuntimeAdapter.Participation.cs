@@ -124,8 +124,19 @@ public sealed partial class EcsPlayerRuntimeAdapter
         var state = ecs.ExportSnapshot(playerId).State;
         if (state.Actions.Count > 0 && state.Actions[0].Participation is { } binding)
         {
-            var row = await socialRepository.GetPartySessionAsync(binding.SessionId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("参与引用缺少权威会话记录。");
+            if (pending.Count == 0 && !initialLoad && !advanceSession
+                && binding.Spec is not null && !double.IsFinite(binding.EndsAtUnixSeconds))
+            {
+                var wallNow = DateTimeOffset.UtcNow;
+                if (_lastParticipationBindingCheckAt.TryGetValue(playerId, out var lastCheck)
+                    && wallNow - lastCheck < TimeSpan.FromSeconds(5))
+                    return;
+            }
+            var row = sessions.TryGetValue(binding.SessionId, out var cachedRow)
+                ? cachedRow
+                : await socialRepository.GetPartySessionAsync(binding.SessionId, cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("参与引用缺少权威会话记录。");
+            _lastParticipationBindingCheckAt[playerId] = DateTimeOffset.UtcNow;
             if (row.EndedAt is { } endedAt && double.IsFinite(binding.EndsAtUnixSeconds))
             {
                 ecs.MutatePlayer(playerId, aggregate =>
@@ -136,7 +147,7 @@ public sealed partial class EcsPlayerRuntimeAdapter
                 TrackDirty(playerId);
                 _loaded[playerId] = ToSnapshot(ecs.ExportSnapshot(playerId));
             }
-            else
+            else if (binding.Spec is null)
             {
                 var spec = JsonSerializer.Deserialize<ActionParticipationSpec>(row.SpecJson, PersistenceJson.Options)
                     ?? throw new InvalidOperationException("会话冻结输入为空。");

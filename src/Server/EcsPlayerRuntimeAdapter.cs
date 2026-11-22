@@ -97,6 +97,8 @@ public sealed partial class EcsPlayerRuntimeAdapter(
     // 单玩家模拟推进连续失败退避：第 1 次失败仍允许下拍立即自愈重读，第 2 次起按指数退避隔离并从边界剔除，
     // 防止单名异常玩家把全服推进循环卡死在 50ms 空转（命令成功或推演成功立即清零）。
     private readonly ConcurrentDictionary<Guid, SimulationFailureBackoff> _simulationBackoffs = new();
+    // 组队参与者会话规格复查节流时间戳：避免 50ms 轮询重复读取 17KB spec::text。
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastParticipationBindingCheckAt = new();
 
     private readonly record struct SimulationFailureBackoff(int ConsecutiveFailures, DateTimeOffset BackoffUntilUtc);
 
@@ -2828,6 +2830,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _attributeRevisions.TryRemove(playerId, out _);
         _publishedVersions.TryRemove(playerId, out _);
         _simulationBackoffs.TryRemove(playerId, out _);
+        _lastParticipationBindingCheckAt.TryRemove(playerId, out _);
         return removedFromEcs;
     }
 
@@ -3213,6 +3216,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
         _recentRequests.TryRemove(playerId, out _);
         _attributeRevisions.TryRemove(playerId, out _);
         _publishedVersions.TryRemove(playerId, out _);
+        _lastParticipationBindingCheckAt.TryRemove(playerId, out _);
         RuntimeInstrumentation.Count("lifecycle.player_recovered_after_unknown_commit");
     }
 

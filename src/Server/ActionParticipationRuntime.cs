@@ -28,7 +28,22 @@ public sealed class ActionParticipationRuntime(
 
     private sealed record CommitFence(long ExpectedVersion, bool IsInitialization);
     private readonly record struct SessionFailureBackoff(int ConsecutiveFailures, DateTimeOffset BackoffUntilUtc);
+    private sealed record CachedSessionSnapshot(
+        long Version,
+        string SpecJson,
+        string StateJson,
+        ActionParticipationSpec Spec,
+        ActionParticipationSessionDocument Document,
+        DateTimeOffset? NextVisibleBoundaryUtc);
     private readonly ConcurrentDictionary<Guid, string> _participants = new();
+    private readonly ConcurrentDictionary<string, CachedSessionSnapshot> _snapshotCache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ActionParticipationSessionRecord> _committedRecords = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _lastValidityCheckTargetTicks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Guid, long> _inboxGen = new();
+    private readonly ConcurrentDictionary<Guid, (long Gen, long CheckedClockTicks)> _emptyInbox = new();
+    private long _lastOnlineScanTargetTicks = long.MinValue;
+    private bool _lastOnlineScanHadActiveSessions;
+    private int _onlineWakeDirty = 1;
     private readonly SemaphoreSlim _restoreGate = new(1, 1);
     private bool _relationsRestored;
     private static readonly SemaphoreSlim[] RelationGates = Enumerable.Range(0, 128).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
@@ -87,7 +102,11 @@ public sealed class ActionParticipationRuntime(
             }
             if (stored.PartyId != partyId || !JsonEquals(JsonSerializer.Serialize(ReadSpec(stored), PersistenceJson.Options), candidate.SpecJson))
                 throw new InvalidOperationException($"会话初始化输入冲突 session={spec.SessionId} version={stored.Version}。");
-            foreach (var member in spec.Members) _participants[Guid.Parse(member.PlayerId)] = spec.SessionId;
+            var memberIds = spec.Members.Select(member => Guid.Parse(member.PlayerId)).ToArray();
+            RegisterMembers(spec);
+            _committedRecords[stored.SessionId] = stored;
+            BumpInboxGeneration(memberIds);
+            Interlocked.Exchange(ref _onlineWakeDirty, 1);
             NotifyWalletChanges(deltas);
             return;
         }
@@ -104,8 +123,24 @@ public sealed class ActionParticipationRuntime(
     /// <inheritdoc />
     public async ValueTask AdvanceOnlineAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
     {
+        var simTarget = AtSimulationPrecision(target);
         var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
         online.UnionWith(_connectingMembers.Keys);
+        var lastScanTicks = Volatile.Read(ref _lastOnlineScanTargetTicks);
+        var cachedBoundaryTicks = Volatile.Read(ref _nextBoundaryTicks);
+        if (_fencedSessions.IsEmpty
+            && Volatile.Read(ref _onlineWakeDirty) == 0
+            && lastScanTicks != long.MinValue
+            && simTarget.UtcTicks > lastScanTicks
+            && simTarget.UtcTicks - lastScanTicks < TimeSpan.TicksPerSecond
+            && (!_lastOnlineScanHadActiveSessions
+                || (cachedBoundaryTicks > 0 && simTarget.UtcTicks < cachedBoundaryTicks))
+            && AllCachedModesMatchPresence(online))
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _onlineWakeDirty, 0);
         Volatile.Write(ref _nextBoundaryTicks, 0);
         var sessions = await store.ListActiveAsync(cancellationToken);
         await PruneSessionStateAsync(sessions, cancellationToken);
@@ -122,12 +157,12 @@ public sealed class ActionParticipationRuntime(
                 var spec = ReadSpec(session);
                 RegisterMembers(spec);
                 var memberOnline = spec.Members.Any(member => online.Contains(Guid.Parse(member.PlayerId)));
-                if (!memberOnline && ReadDocument(session).InventoryMode == ActionParticipationInventoryMode.Offline)
+                if (!memberOnline && GetOrParseSnapshot(session).Document.InventoryMode == ActionParticipationInventoryMode.Offline)
                 {
                     _sessionBackoffs.Remove(session.SessionId);
                     continue;
                 }
-                var boundary = await AdvanceSessionAsync(session.SessionId, target, endReason: null, desiredOnline: memberOnline, replenishOffline: false, cancellationToken);
+                var boundary = await AdvanceSessionAsync(session.SessionId, target, endReason: null, desiredOnline: memberOnline, replenishOffline: false, cancellationToken, respectBoundary: true, prefetched: session);
                 _sessionBackoffs.Remove(session.SessionId);
                 if (memberOnline && boundary is { } next)
                 {
@@ -149,7 +184,13 @@ public sealed class ActionParticipationRuntime(
                     (failures ??= []).Add(exception);
             }
         }
-        if (failures is not null) throw new AggregateException("部分在线组队会话推进失败。", failures);
+        if (failures is not null)
+        {
+            Interlocked.Exchange(ref _onlineWakeDirty, 1);
+            throw new AggregateException("部分在线组队会话推进失败。", failures);
+        }
+        _lastOnlineScanHadActiveSessions = sessions.Count > 0;
+        Volatile.Write(ref _lastOnlineScanTargetTicks, simTarget.UtcTicks);
     }
 
     /// <inheritdoc />
@@ -223,6 +264,17 @@ public sealed class ActionParticipationRuntime(
     public async ValueTask<IReadOnlyList<ParticipationInboxItem>> LoadPendingAsync(Guid playerId,
         CancellationToken cancellationToken = default)
     {
+        var nowTicks = clock.UtcNow.UtcTicks;
+        var gen = _inboxGen.GetValueOrDefault(playerId, 0);
+        if (_fencedSessions.IsEmpty
+            && _emptyInbox.TryGetValue(playerId, out var cachedEmpty)
+            && cachedEmpty.Gen == gen
+            && nowTicks > cachedEmpty.CheckedClockTicks
+            && nowTicks - cachedEmpty.CheckedClockTicks < TimeSpan.FromSeconds(2).Ticks)
+        {
+            return [];
+        }
+
         var initial = await store.LoadPendingAsync(playerId, cancellationToken);
         if (initial.Count == 0 && _participants.TryGetValue(playerId, out var knownSession))
         {
@@ -232,7 +284,14 @@ public sealed class ActionParticipationRuntime(
             if (initial.Count == 0 && (await store.ListActiveForMemberAsync(playerId, cancellationToken)).Count == 0)
                 _participants.TryRemove(new KeyValuePair<Guid, string>(playerId, knownSession));
         }
-        if (initial.Count == 0) return initial;
+        if (initial.Count == 0)
+        {
+            var latestGen = _inboxGen.GetValueOrDefault(playerId, 0);
+            if (latestGen == gen)
+                _emptyInbox[playerId] = (gen, clock.UtcNow.UtcTicks);
+            return initial;
+        }
+        _emptyInbox.TryRemove(playerId, out _);
         _participants[playerId] = initial[^1].SessionId;
         var result = new List<ParticipationInboxItem>(initial.Count);
         foreach (var sessionId in initial.Select(item => item.SessionId).Distinct(StringComparer.Ordinal))
@@ -245,7 +304,7 @@ public sealed class ActionParticipationRuntime(
             if (pending.Length == 0) continue;
             var checkpoint = await store.LoadAsync(sessionId, cancellationToken)
                 ?? throw new InvalidOperationException($"成员收件箱缺少会话检查点 session={sessionId} player={playerId:D}。");
-            var document = ReadDocument(checkpoint);
+            var document = GetOrParseSnapshot(checkpoint).Document;
             if (pending[^1].Sequence != document.Sequence)
                 throw new InvalidOperationException($"成员结算与检查点序号不一致 session={sessionId} player={playerId:D} inbox={pending[^1].Sequence} checkpoint={document.Sequence}。");
             var memberId = new PlayerId(playerId);
@@ -279,8 +338,17 @@ public sealed class ActionParticipationRuntime(
     {
         _corruptSessions.PruneExpired(clock.UtcNow);
         _sessionBackoffs.PruneExpired(clock.UtcNow);
-        if (_fencedSessions.IsEmpty) return;
         var activeIds = activeSessions.Select(session => session.SessionId).ToHashSet(StringComparer.Ordinal);
+        foreach (var cachedId in _snapshotCache.Keys)
+        {
+            if (!activeIds.Contains(cachedId)
+                && (!_committedRecords.TryGetValue(cachedId, out var rec) || rec.EndedAt is not null))
+            {
+                _snapshotCache.TryRemove(cachedId, out _);
+                _lastValidityCheckTargetTicks.TryRemove(cachedId, out _);
+            }
+        }
+        if (_fencedSessions.IsEmpty) return;
         foreach (var (sessionId, fence) in _fencedSessions)
         {
             if (activeIds.Contains(sessionId) && !fence.IsInitialization) continue;
@@ -310,58 +378,174 @@ public sealed class ActionParticipationRuntime(
         if (string.IsNullOrWhiteSpace(reason) || reason.Length > 64)
             throw new ArgumentException("散场原因不能为空且不得超过 64 字符。", nameof(reason));
         await AdvanceSessionAsync(sessionId, at, reason, cancellationToken);
+        Interlocked.Exchange(ref _onlineWakeDirty, 1);
     }
 
     private ValueTask<DateTimeOffset?> AdvanceSessionAsync(string sessionId, DateTimeOffset target, string? endReason,
         CancellationToken cancellationToken) => AdvanceSessionAsync(sessionId, target, endReason, null, false, cancellationToken);
 
     private async ValueTask<DateTimeOffset?> AdvanceSessionAsync(string sessionId, DateTimeOffset target, string? endReason,
-        bool? desiredOnline, bool replenishOffline, CancellationToken cancellationToken)
+        bool? desiredOnline, bool replenishOffline, CancellationToken cancellationToken,
+        bool respectBoundary = false, ActionParticipationSessionRecord? prefetched = null)
     {
         using var gate = await AcquireGateAsync(sessionId, cancellationToken);
-        return await AdvanceSessionUnderGateAsync(sessionId, target, endReason, desiredOnline, replenishOffline, cancellationToken);
+        return await AdvanceSessionUnderGateAsync(sessionId, target, endReason, desiredOnline, replenishOffline, cancellationToken, respectBoundary, prefetched);
     }
 
     /// <summary>临时引擎只从持久化检查点与精确钱包恢复；读集冲突丢弃整批，绝不保留未提交推进。</summary>
     private async ValueTask<DateTimeOffset?> AdvanceSessionUnderGateAsync(string sessionId, DateTimeOffset requestedTarget,
-        string? requestedEndReason, bool? desiredOnline, bool replenishOffline, CancellationToken cancellationToken)
+        string? requestedEndReason, bool? desiredOnline, bool replenishOffline, CancellationToken cancellationToken,
+        bool respectBoundary = false, ActionParticipationSessionRecord? prefetched = null)
     {
         ThrowIfFenced(sessionId);
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var target = AtSimulationPrecision(requestedTarget);
             var endReason = requestedEndReason;
-            var previous = await store.LoadAsync(sessionId, cancellationToken)
-                ?? throw new InvalidOperationException($"会话检查点尚未初始化 session={sessionId}。");
-            if (previous.EndedAt is not null) return null;
-            if (IsCorruptCheckpoint(previous))
-                throw new InvalidDataException($"会话检查点损坏，禁止推进 session={sessionId} version={previous.Version}。");
-            var document = ReadDocument(previous);
-            RegisterMembers(document.Spec);
-            if (endReason is null && await store.GetInvalidationReasonAsync(sessionId, cancellationToken) is { } invalidationReason)
+            ActionParticipationSessionRecord previous;
+            var loadedAuthoritative = false;
+            if (attempt == 0 && prefetched is not null)
             {
-                target = previous.LastSimulatedAt;
-                endReason = invalidationReason;
-                _logger.LogWarning("会话 {SessionId} 条件失效，按最后确定检查点 {CheckpointAt} 收尾：{Reason}。", sessionId, target, endReason);
+                if (_committedRecords.TryGetValue(sessionId, out var newer) && newer.Version > prefetched.Version)
+                    previous = newer;
+                else
+                    previous = prefetched;
             }
             else
             {
-                var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
-                online.UnionWith(_connectingMembers.Keys);
-                if (await store.GetOfflineExpiryAsync(sessionId, _offlineLimit, online, cancellationToken) is { } expiry && expiry <= target)
-                {
-                    target = AtSimulationPrecision(expiry);
-                    endReason = "member-offline-timeout";
-                }
+                previous = await store.LoadAsync(sessionId, cancellationToken)
+                    ?? throw new InvalidOperationException($"会话检查点尚未初始化 session={sessionId}。");
+                loadedAuthoritative = true;
             }
+            if (previous.EndedAt is not null)
+            {
+                EvictSessionCache(sessionId);
+                return null;
+            }
+            if (IsCorruptCheckpoint(previous))
+                throw new InvalidDataException($"会话检查点损坏，禁止推进 session={sessionId} version={previous.Version}。");
+            var parsed = GetOrParseSnapshot(previous);
+            var document = parsed.Document;
+            var memberIds = RegisterMembers(document.Spec);
+
             var compatible = string.Equals(document.GameDataFingerprint, gameData.Fingerprint, StringComparison.Ordinal);
             // 扫描存在感仅是候选提示；等待查询/会话门时可能已完成相反切换，不能回写旧模式。
             var onlineMode = desiredOnline.HasValue
-                ? document.Spec.Members.Any(member => IsMemberOnline(Guid.Parse(member.PlayerId)))
+                ? memberIds.Any(IsMemberOnline)
                 : document.InventoryMode == ActionParticipationInventoryMode.Online;
             var modeChanges = onlineMode != (document.InventoryMode == ActionParticipationInventoryMode.Online);
+
+            if (respectBoundary && endReason is null && !modeChanges && !replenishOffline && compatible)
+            {
+                if (target <= previous.LastSimulatedAt)
+                    return parsed.NextVisibleBoundaryUtc;
+
+                if (parsed.NextVisibleBoundaryUtc is { } nextBound && target < nextBound)
+                {
+                    if (_lastValidityCheckTargetTicks.TryGetValue(sessionId, out var lastValidTicks)
+                        && target.UtcTicks > lastValidTicks
+                        && target.UtcTicks - lastValidTicks < TimeSpan.TicksPerSecond)
+                    {
+                        return nextBound;
+                    }
+
+                    if (!loadedAuthoritative)
+                    {
+                        previous = await store.LoadAsync(sessionId, cancellationToken)
+                            ?? throw new InvalidOperationException($"会话检查点尚未初始化 session={sessionId}。");
+                        loadedAuthoritative = true;
+                        if (previous.EndedAt is not null)
+                        {
+                            EvictSessionCache(sessionId);
+                            return null;
+                        }
+                        if (IsCorruptCheckpoint(previous))
+                            throw new InvalidDataException($"会话检查点损坏，禁止推进 session={sessionId} version={previous.Version}。");
+                        parsed = GetOrParseSnapshot(previous);
+                        document = parsed.Document;
+                        memberIds = RegisterMembers(document.Spec);
+                        compatible = string.Equals(document.GameDataFingerprint, gameData.Fingerprint, StringComparison.Ordinal);
+                        onlineMode = desiredOnline.HasValue
+                            ? memberIds.Any(IsMemberOnline)
+                            : document.InventoryMode == ActionParticipationInventoryMode.Online;
+                        modeChanges = onlineMode != (document.InventoryMode == ActionParticipationInventoryMode.Online);
+                    }
+
+                    if (!modeChanges && compatible)
+                    {
+                        if (target <= previous.LastSimulatedAt)
+                            return parsed.NextVisibleBoundaryUtc;
+                        if (parsed.NextVisibleBoundaryUtc is { } authBound && target < authBound)
+                        {
+                            var authInvalidation = await store.GetInvalidationReasonAsync(sessionId, cancellationToken);
+                            if (authInvalidation is not null)
+                            {
+                                target = previous.LastSimulatedAt;
+                                endReason = authInvalidation;
+                                _logger.LogWarning("会话 {SessionId} 条件失效，按最后确定检查点 {CheckpointAt} 收尾：{Reason}。", sessionId, target, endReason);
+                            }
+                            else
+                            {
+                                var onlineNow = presence.SnapshotOnlinePlayerIds().ToHashSet();
+                                onlineNow.UnionWith(_connectingMembers.Keys);
+                                if (await store.GetOfflineExpiryAsync(sessionId, _offlineLimit, onlineNow, cancellationToken) is { } authExpiry && authExpiry <= target)
+                                {
+                                    target = AtSimulationPrecision(authExpiry);
+                                    endReason = "member-offline-timeout";
+                                }
+                                else
+                                {
+                                    _lastValidityCheckTargetTicks[sessionId] = target.UtcTicks;
+                                    return authBound;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (endReason is null)
+            {
+                if (!loadedAuthoritative)
+                {
+                    previous = await store.LoadAsync(sessionId, cancellationToken)
+                        ?? throw new InvalidOperationException($"会话检查点尚未初始化 session={sessionId}。");
+                    loadedAuthoritative = true;
+                    if (previous.EndedAt is not null)
+                    {
+                        EvictSessionCache(sessionId);
+                        return null;
+                    }
+                    if (IsCorruptCheckpoint(previous))
+                        throw new InvalidDataException($"会话检查点损坏，禁止推进 session={sessionId} version={previous.Version}。");
+                    parsed = GetOrParseSnapshot(previous);
+                    document = parsed.Document;
+                    memberIds = RegisterMembers(document.Spec);
+                    compatible = string.Equals(document.GameDataFingerprint, gameData.Fingerprint, StringComparison.Ordinal);
+                    onlineMode = desiredOnline.HasValue
+                        ? memberIds.Any(IsMemberOnline)
+                        : document.InventoryMode == ActionParticipationInventoryMode.Online;
+                    modeChanges = onlineMode != (document.InventoryMode == ActionParticipationInventoryMode.Online);
+                }
+                if (await store.GetInvalidationReasonAsync(sessionId, cancellationToken) is { } invalidationReason)
+                {
+                    target = previous.LastSimulatedAt;
+                    endReason = invalidationReason;
+                    _logger.LogWarning("会话 {SessionId} 条件失效，按最后确定检查点 {CheckpointAt} 收尾：{Reason}。", sessionId, target, endReason);
+                }
+                else
+                {
+                    var online = presence.SnapshotOnlinePlayerIds().ToHashSet();
+                    online.UnionWith(_connectingMembers.Keys);
+                    if (await store.GetOfflineExpiryAsync(sessionId, _offlineLimit, online, cancellationToken) is { } expiry && expiry <= target)
+                    {
+                        target = AtSimulationPrecision(expiry);
+                        endReason = "member-offline-timeout";
+                    }
+                }
+            }
             if (endReason is null && target <= previous.LastSimulatedAt && !modeChanges && !replenishOffline && compatible)
-                return ActionParticipationSessionEngine.Restore(document, gameData).NextVisibleBoundaryUtc;
+                return parsed.NextVisibleBoundaryUtc;
             if (target < previous.LastSimulatedAt)
                 throw new InvalidOperationException($"会话目标早于已提交检查点 session={sessionId} at={target:O} checkpoint={previous.LastSimulatedAt:O}。");
             IReadOnlyList<ActionParticipationMemberSettlement> settlements;
@@ -424,8 +608,34 @@ public sealed class ActionParticipationRuntime(
                     _fencedSessions[sessionId] = new(exception.Version, IsInitialization: false);
                     throw unresolved;
                 }
+                BumpInboxGeneration(memberIds);
                 _logger.LogWarning(exception, "会话 {SessionId} 提交响应丢失，已确认版本 {Version}。", sessionId, current.Version);
             }
+            var committedRecord = previous with
+            {
+                Version = nextDocument.Sequence,
+                StateJson = stateJson,
+                LastSimulatedAt = lastSimulatedAt,
+                EndedAt = endedAt,
+                EndReason = endReason
+            };
+            if (endedAt is not null)
+            {
+                EvictSessionCache(sessionId);
+            }
+            else
+            {
+                _committedRecords[sessionId] = committedRecord;
+                _snapshotCache[sessionId] = new CachedSessionSnapshot(
+                    committedRecord.Version,
+                    committedRecord.SpecJson,
+                    committedRecord.StateJson,
+                    nextDocument.Spec,
+                    nextDocument,
+                    nextBoundary);
+                _lastValidityCheckTargetTicks[sessionId] = target.UtcTicks;
+            }
+            BumpInboxGeneration(memberIds);
             NotifyWalletChanges(deltas);
             return nextBoundary;
         }
@@ -463,6 +673,7 @@ public sealed class ActionParticipationRuntime(
                     await AdvanceSessionUnderGateAsync(row.SessionId, clock.UtcNow, null,
                         spec.Members.Any(member => IsMemberOnline(Guid.Parse(member.PlayerId))), false, cancellationToken);
             }
+            Interlocked.Exchange(ref _onlineWakeDirty, 1);
             return new CompositeLease(leases);
         }
         catch
@@ -490,12 +701,14 @@ public sealed class ActionParticipationRuntime(
             if (boundary < current.LastSimulatedAt) boundary = current.LastSimulatedAt;
             await AdvanceSessionUnderGateAsync(row.SessionId, boundary, null, online, false, cancellationToken);
         }
+        Interlocked.Exchange(ref _onlineWakeDirty, 1);
     }
 
     /// <inheritdoc />
     public async ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
         _connectingMembers.AddOrUpdate(playerId, 1, static (_, count) => count + 1);
+        Interlocked.Exchange(ref _onlineWakeDirty, 1);
         var lease = new ConnectionLease(this, playerId);
         try { await SynchronizePresenceAsync(playerId, at, cancellationToken); }
         catch { await lease.DisposeAsync(); throw; }
@@ -546,9 +759,71 @@ public sealed class ActionParticipationRuntime(
         finally { _restoreGate.Release(); }
     }
 
-    private void RegisterMembers(ActionParticipationSpec spec)
+    private Guid[] RegisterMembers(ActionParticipationSpec spec)
     {
-        foreach (var member in spec.Members) _participants[Guid.Parse(member.PlayerId)] = spec.SessionId;
+        var memberIds = new Guid[spec.Members.Count];
+        for (var i = 0; i < spec.Members.Count; i++)
+        {
+            var memberId = Guid.Parse(spec.Members[i].PlayerId);
+            memberIds[i] = memberId;
+            if (_participants.TryAdd(memberId, spec.SessionId))
+            {
+                _inboxGen.AddOrUpdate(memberId, 1, static (_, g) => g + 1);
+                _emptyInbox.TryRemove(memberId, out _);
+            }
+            else
+            {
+                _participants[memberId] = spec.SessionId;
+            }
+        }
+        return memberIds;
+    }
+
+    private CachedSessionSnapshot GetOrParseSnapshot(ActionParticipationSessionRecord record)
+    {
+        if (_snapshotCache.TryGetValue(record.SessionId, out var cached)
+            && cached.Version == record.Version
+            && string.Equals(cached.StateJson, record.StateJson, StringComparison.Ordinal)
+            && string.Equals(cached.SpecJson, record.SpecJson, StringComparison.Ordinal))
+        {
+            return cached;
+        }
+        var document = ReadDocument(record);
+        DateTimeOffset? nextBoundary = null;
+        if (record.EndedAt is null && string.Equals(document.GameDataFingerprint, gameData.Fingerprint, StringComparison.Ordinal))
+            nextBoundary = ActionParticipationSessionEngine.Restore(document, gameData).NextVisibleBoundaryUtc;
+        var parsed = new CachedSessionSnapshot(record.Version, record.SpecJson, record.StateJson, document.Spec, document, nextBoundary);
+        if (_snapshotCache.Count > 512)
+            _snapshotCache.Clear();
+        _snapshotCache[record.SessionId] = parsed;
+        return parsed;
+    }
+
+    private void EvictSessionCache(string sessionId)
+    {
+        _snapshotCache.TryRemove(sessionId, out _);
+        _committedRecords.TryRemove(sessionId, out _);
+        _lastValidityCheckTargetTicks.TryRemove(sessionId, out _);
+    }
+
+    private bool AllCachedModesMatchPresence(HashSet<Guid> online)
+    {
+        foreach (var cached in _snapshotCache.Values)
+        {
+            var memberOnline = cached.Spec.Members.Any(member => online.Contains(Guid.Parse(member.PlayerId)));
+            if (memberOnline != (cached.Document.InventoryMode == ActionParticipationInventoryMode.Online))
+                return false;
+        }
+        return true;
+    }
+
+    private void BumpInboxGeneration(IEnumerable<Guid> memberIds)
+    {
+        foreach (var memberId in memberIds)
+        {
+            _inboxGen.AddOrUpdate(memberId, 1, static (_, g) => g + 1);
+            _emptyInbox.TryRemove(memberId, out _);
+        }
     }
 
     private bool IsMemberOnline(Guid playerId) => presence.IsOnline(playerId) || _connectingMembers.ContainsKey(playerId);

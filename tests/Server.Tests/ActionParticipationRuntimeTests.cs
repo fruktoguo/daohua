@@ -530,6 +530,43 @@ public sealed class ActionParticipationRuntimeTests
             (await fixture.Runtime.LoadOfflineReservesAsync(member)).Sum(row => row.Quantity));
     }
 
+    [Fact]
+    public async Task OnlineSubBoundaryTicksSkipHalfwayCommitsUntilBoundaryArrives()
+    {
+        var fixture = new Fixture();
+        await fixture.Presence.RegisterAsync(fixture.Members[0], "甲", fixture.Spec.NodeId);
+        await fixture.Runtime.CreateAsync(Guid.NewGuid(), fixture.Spec);
+        var initial = (await fixture.Store.LoadAsync(fixture.Spec.SessionId))!;
+        var initialDoc = JsonSerializer.Deserialize<ActionParticipationSessionDocument>(initial.StateJson, PersistenceJson.Options)!;
+        var first = StartedAt.AddSeconds(initialDoc.Expedition!.PhaseDurationSeconds).AddMilliseconds(100);
+        await fixture.Runtime.AdvanceOnlineAsync(first);
+        var committedAfterFirst = fixture.Store.CommittedCount;
+        Assert.Equal(1, committedAfterFirst);
+        var boundary = Assert.IsType<DateTimeOffset>(fixture.Runtime.NextAdvanceBoundaryUtc);
+        Assert.True(boundary > first);
+
+        // 在自然边界前连续 50ms 步进，不得产生半途空切片写库提交。
+        var probe = first.AddMilliseconds(50);
+        while (probe < boundary)
+        {
+            await fixture.Runtime.AdvanceOnlineAsync(probe);
+            Assert.Equal(committedAfterFirst, fixture.Store.CommittedCount);
+            probe = probe.AddMilliseconds(50);
+        }
+
+        // 抵达自然边界后正常提交，结果与从 first 直接推进到 boundary 逐位一致。
+        await fixture.Runtime.AdvanceOnlineAsync(boundary);
+        Assert.Equal(committedAfterFirst + 1, fixture.Store.CommittedCount);
+        var actual = (await fixture.Store.LoadAsync(fixture.Spec.SessionId))!;
+        Assert.Equal(boundary, actual.LastSimulatedAt);
+
+        var expected = ActionParticipationSessionEngine.Create(fixture.Spec, fixture.Catalog);
+        expected.AdvanceTo(StartedAt);
+        expected.AdvanceTo(first);
+        expected.AdvanceTo(boundary);
+        Assert.Equal(JsonSerializer.Serialize(expected.Export(), PersistenceJson.Options), actual.StateJson);
+    }
+
     private sealed class Fixture
     {
         public const string ConsumableId = "item.leiji-talisman";

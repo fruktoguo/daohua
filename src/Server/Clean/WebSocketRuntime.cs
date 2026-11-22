@@ -449,7 +449,12 @@ public static class WebSocketEndpoint
             && createdAtMs > 0
             ? DateTimeOffset.FromUnixTimeMilliseconds(createdAtMs)
             : DateTimeOffset.MinValue;
-        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+        using var socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext
+        {
+            DangerousEnableCompression = true,
+            DisableServerContextTakeover = false,
+            ServerMaxWindowBits = 12
+        });
         // 会话令牌哈希随会话登记：登出/改密吊销 HTTP 会话时按哈希精确踢线对应 WebSocket，
         // 避免被吊销的挂机连接继续持有可用的命令通道。
         byte[]? authSessionTokenHash = null;
