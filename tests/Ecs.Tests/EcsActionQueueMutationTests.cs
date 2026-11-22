@@ -430,6 +430,48 @@ public sealed class EcsActionQueueMutationTests
         Assert.Equal(1, playerB.Resources.Hitpoints);
     }
 
+    [Fact]
+    public void EcsActionRemovalMarksEnhancementCompletedAndReconcilesLegacyOrphans()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer(catalog);
+        var activeAction = player.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
+        var removedAction = player.Enqueue(new(new ActionId("cultivation.draw-qi"), -1), From, catalog.Actions);
+
+        // 1. 构造 260 条已完成/孤儿记录 + 1 条仍在队列中的活跃记录 + 1 条由 ECS 出队触发完成的记录
+        for (var i = 0; i < 260; i++)
+        {
+            var orphanId = Guid.NewGuid();
+            player.Progression.RecordEnhancementAttempt(orphanId, "equipment.qingfeng-sword", 1, true, From.ToUnixTimeSeconds() + i);
+        }
+        player.Progression.RecordEnhancementAttempt(activeAction.Id, "equipment.qingfeng-sword", 2, false, From.ToUnixTimeSeconds() + 300);
+        player.Progression.RecordEnhancementAttempt(removedAction.Id, "equipment.qingfeng-sword", 3, true, From.ToUnixTimeSeconds() + 301);
+
+        var seed = player.ExportState();
+        using var runtime = new EcsGameRuntime(catalog, From);
+        var id = runtime.CreatePlayer(seed);
+
+        // 装载对账应补标孤儿记录并按 256 上限裁剪最老记录，但保留活跃记录与待出队记录为未完成
+        var afterLoad = runtime.ExportSnapshot(id).State;
+        Assert.Equal(seed.StateVersion + 1, afterLoad.StateVersion);
+        Assert.Equal(PlayerProgression.MaxStagedEnhancementRecords, afterLoad.Progression.StagedEnhancements!.Count);
+        Assert.True(runtime.GetDirtySections(id).Contains(PlayerSectionKind.Progression));
+        Assert.False(afterLoad.Progression.StagedEnhancements!.Single(r => r.ActionId == activeAction.Id).IsCompleted);
+        Assert.False(afterLoad.Progression.StagedEnhancements!.Single(r => r.ActionId == removedAction.Id).IsCompleted);
+
+        // ECS 出队应自动标记 removedAction 为 IsCompleted = true
+        Assert.True(runtime.RemoveAction(id, removedAction.Id));
+        var afterRemove = runtime.ExportSnapshot(id).State;
+        Assert.True(afterRemove.Progression.StagedEnhancements!.Single(r => r.ActionId == removedAction.Id).IsCompleted);
+        Assert.False(afterRemove.Progression.StagedEnhancements!.Single(r => r.ActionId == activeAction.Id).IsCompleted);
+
+        // 健康存档再次装载不得递增版本或标脏 Progression
+        using var healthyRuntime = new EcsGameRuntime(catalog, From);
+        healthyRuntime.CreatePlayer(afterRemove);
+        Assert.Equal(afterRemove.StateVersion, healthyRuntime.ExportSnapshot(id).State.StateVersion);
+        Assert.Empty(healthyRuntime.GetDirtySections(id));
+    }
+
     private static ActionParticipationSpec CreateParticipationSpec(PlayerAggregate player, GameDataCatalog catalog)
         => new("session.capacity", "encounter.qi-beast", "node.test", 97, 0, From.ToUnixTimeSeconds(),
             [player.CaptureActionParticipantSnapshot(catalog)])

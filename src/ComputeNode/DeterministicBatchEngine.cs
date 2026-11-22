@@ -146,7 +146,7 @@ public sealed class DeterministicBatchEngine(GameDataCatalog gameData) : IDispos
             "brotli" => SectionCodec.BrotliJson,
             _ => throw new NotSupportedException($"不支持 section 编码: {section.Codec}")
         }, encoded);
-        if (raw.Length > ComputeContract.MaxPayloadBytesPerSection)
+        if (raw.Length > ComputeContract.MaxRawBytesPerSection)
         {
             throw new InvalidDataException("解压后的 section 载荷超过大小限制。");
         }

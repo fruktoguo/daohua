@@ -68,7 +68,11 @@ public sealed class PlayerActionQueueReportArchiveSystem : YuoSystem<PlayerActio
     {
         var work = mutation.Work;
         foreach (var instanceId in work.ArchiveIds)
+        {
             ActionReportBook.ArchiveActionReport(work.Player, instanceId, work.EndedAtUnixSeconds, work.MaxBattleReports);
+            if (work.Player.Progression.MarkEnhancementCompleted(instanceId, work.EndedAtUnixSeconds))
+                work.Player.MarkDirty(PlayerSectionKind.Progression);
+        }
     }
 }
 

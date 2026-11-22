@@ -44,6 +44,9 @@ public sealed class PlayerProgression
     public VersionedDictionary<string, Domain.Combat.TraitProgressState> UnlockedTraits { get; } = new(StringComparer.Ordinal);
     /// <summary>已击败妖兽 ID 集合（enemy.*，总纲 §23）：万象图鉴妖兽志解锁记录；写入递增版本号。</summary>
     public VersionedList<string> DefeatedMonsterIds { get; } = new();
+    /// <summary>服务端暂存的装备分级强化履历保留上限；超出后按时间升序淘汰已完结记录防单段无限膨胀。</summary>
+    public const int MaxStagedEnhancementRecords = 256;
+
     /// <summary>服务端暂存的装备分级强化履历记录（按 ActionId 索引）；供离线挂机暂存、客户端上线拉取与双向回执确认清理。</summary>
     public VersionedDictionary<Guid, ActionEnhancementRecord> StagedEnhancements { get; } = new();
 
@@ -64,12 +67,13 @@ public sealed class PlayerProgression
                 IsCompleted = false,
                 UpdatedAtUnixSeconds = atUnixSeconds
             };
-            StagedEnhancements[actionId] = record;
         }
 
         var current = record.Levels.TryGetValue(targetLevel, out var stat) ? stat : new EnhancementLevelStat(0, 0);
         record.Levels[targetLevel] = new EnhancementLevelStat(current.Attempts + 1, current.Successes + (success ? 1 : 0));
         record.UpdatedAtUnixSeconds = atUnixSeconds;
+        StagedEnhancements[actionId] = record;
+        TrimCompletedEnhancementRecords();
         return true;
     }
 
@@ -83,9 +87,55 @@ public sealed class PlayerProgression
         {
             record.IsCompleted = true;
             record.UpdatedAtUnixSeconds = atUnixSeconds;
+            StagedEnhancements[actionId] = record;
+            TrimCompletedEnhancementRecords();
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// 对账清理历史遗留的孤儿暂存记录：仍标记为未完成但对应行动已不在队列中的记录自动补标完成，
+    /// 并在总数超出上限时淘汰最老的已完成记录。健康存档返回 false 且不推进版本。
+    /// </summary>
+    public bool ReconcileEnhancementRecords(IReadOnlySet<Guid> activeActionIds, double fallbackUnixSeconds)
+    {
+        if (StagedEnhancements.Count == 0) return false;
+        var changed = false;
+        foreach (var pair in StagedEnhancements.ToArray())
+        {
+            var record = pair.Value;
+            if (!record.IsCompleted && !activeActionIds.Contains(record.ActionId))
+            {
+                record.IsCompleted = true;
+                if (record.UpdatedAtUnixSeconds <= 0 && fallbackUnixSeconds > 0)
+                    record.UpdatedAtUnixSeconds = fallbackUnixSeconds;
+                StagedEnhancements[pair.Key] = record;
+                changed = true;
+            }
+        }
+        if (TrimCompletedEnhancementRecords() > 0)
+            changed = true;
+        return changed;
+    }
+
+    private int TrimCompletedEnhancementRecords()
+    {
+        var excess = StagedEnhancements.Count - MaxStagedEnhancementRecords;
+        if (excess <= 0) return 0;
+        var candidates = StagedEnhancements.Values
+            .Where(record => record.IsCompleted)
+            .OrderBy(record => record.UpdatedAtUnixSeconds)
+            .ThenBy(record => record.ActionId)
+            .Take(excess)
+            .ToArray();
+        var removed = 0;
+        foreach (var candidate in candidates)
+        {
+            if (StagedEnhancements.Remove(candidate.ActionId))
+                removed++;
+        }
+        return removed;
     }
 
     /// <summary>

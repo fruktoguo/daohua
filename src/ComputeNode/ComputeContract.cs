@@ -27,8 +27,10 @@ public static class ComputeContract
     public const long MaxBatchBytes = 16L * 1024 * 1024;
     /// <summary>每个任务允许包含的最大 section 数量（v2 实际载荷恒等于 <see cref="PlayerSectionKinds.All"/> 全集）。</summary>
     public const int MaxSectionsPerJob = 32;
-    /// <summary>单个 section 载荷解压后的最大字节数。</summary>
-    public const int MaxPayloadBytesPerSection = 512 * 1024;
+    /// <summary>编码后单个 section 载荷的线字节上限（1 MiB）。</summary>
+    public const int MaxPayloadBytesPerSection = 1024 * 1024;
+    /// <summary>单个 section 载荷解压后的原始 JSON 最大字节数（与 SectionCodec.MaxRawBytes 一致：4 MiB）。</summary>
+    public const int MaxRawBytesPerSection = 4 * 1024 * 1024;
     /// <summary>单任务资产余额快照的最大行数（与主服 ComputeDispatchContract.MaxAssetBalancesPerJob 一致）。</summary>
     public const int MaxAssetBalancesPerJob = 1024;
     /// <summary>单任务资产增量回传的最大行数（与主服 ComputeDispatchContract.MaxAssetDeltasPerResult 一致）。</summary>
