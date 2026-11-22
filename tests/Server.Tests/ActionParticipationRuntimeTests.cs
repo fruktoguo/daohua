@@ -567,6 +567,34 @@ public sealed class ActionParticipationRuntimeTests
         Assert.Equal(JsonSerializer.Serialize(expected.Export(), PersistenceJson.Options), actual.StateJson);
     }
 
+    [Fact]
+    public async Task OfflineActiveSessionsDebounceOnlineScansAndWakeImmediatelyWhenMemberConnects()
+    {
+        var fixture = new Fixture();
+        await fixture.Runtime.CreateAsync(Guid.NewGuid(), fixture.Spec);
+        await fixture.Runtime.AdvanceOnlineAsync(StartedAt);
+        var scansAfterInitial = fixture.Store.ListActiveCount;
+        Assert.Equal(0, fixture.Store.CommittedCount);
+
+        // 仅存在全员离线活跃会话时，5 秒空闲窗口内的 50ms 连续推演不得重复扫库。
+        var probe = StartedAt;
+        for (var i = 0; i < 80; i++)
+        {
+            probe = probe.AddMilliseconds(50);
+            await fixture.Runtime.AdvanceOnlineAsync(probe);
+            Assert.Equal(scansAfterInitial, fixture.Store.ListActiveCount);
+            Assert.Equal(0, fixture.Store.CommittedCount);
+        }
+
+        // 成员上线后下一帧立刻感知存在感变化并唤醒推进，不受空闲窗口节流阻塞。
+        await fixture.Presence.RegisterAsync(fixture.Members[0], "甲", fixture.Spec.NodeId);
+        probe = probe.AddMilliseconds(50);
+        await fixture.Runtime.AdvanceOnlineAsync(probe);
+        Assert.Equal(scansAfterInitial + 1, fixture.Store.ListActiveCount);
+        Assert.Equal(1, fixture.Store.CommittedCount);
+        Assert.NotNull(fixture.Runtime.NextAdvanceBoundaryUtc);
+    }
+
     private sealed class Fixture
     {
         public const string ConsumableId = "item.leiji-talisman";
@@ -606,6 +634,7 @@ public sealed class ActionParticipationRuntimeTests
         private readonly HashSet<string> _transactions = new(StringComparer.Ordinal);
         public int CommittedCount;
         public int CommitAttempts;
+        public int ListActiveCount;
         public bool FailBeforeCommit;
         public bool LoseCommitResponse;
         public bool UnknownBeforeCommit;
@@ -644,6 +673,7 @@ public sealed class ActionParticipationRuntimeTests
             }
             lock (_gate)
             {
+                ListActiveCount++;
                 if (SkipNextActiveSnapshot)
                 {
                     SkipNextActiveSnapshot = false;

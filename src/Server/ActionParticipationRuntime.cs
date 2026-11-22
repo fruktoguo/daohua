@@ -42,7 +42,7 @@ public sealed class ActionParticipationRuntime(
     private readonly ConcurrentDictionary<Guid, long> _inboxGen = new();
     private readonly ConcurrentDictionary<Guid, (long Gen, long CheckedClockTicks)> _emptyInbox = new();
     private long _lastOnlineScanTargetTicks = long.MinValue;
-    private bool _lastOnlineScanHadActiveSessions;
+    private int _lastOnlineScanHadOnlineSessions;
     private int _onlineWakeDirty = 1;
     private readonly SemaphoreSlim _restoreGate = new(1, 1);
     private bool _relationsRestored;
@@ -128,12 +128,14 @@ public sealed class ActionParticipationRuntime(
         online.UnionWith(_connectingMembers.Keys);
         var lastScanTicks = Volatile.Read(ref _lastOnlineScanTargetTicks);
         var cachedBoundaryTicks = Volatile.Read(ref _nextBoundaryTicks);
+        var hadOnlineSessions = Volatile.Read(ref _lastOnlineScanHadOnlineSessions) != 0;
+        var idleWindowTicks = hadOnlineSessions ? TimeSpan.TicksPerSecond : TimeSpan.FromSeconds(5).Ticks;
         if (_fencedSessions.IsEmpty
             && Volatile.Read(ref _onlineWakeDirty) == 0
             && lastScanTicks != long.MinValue
             && simTarget.UtcTicks > lastScanTicks
-            && simTarget.UtcTicks - lastScanTicks < TimeSpan.TicksPerSecond
-            && (!_lastOnlineScanHadActiveSessions
+            && simTarget.UtcTicks - lastScanTicks < idleWindowTicks
+            && (!hadOnlineSessions
                 || (cachedBoundaryTicks > 0 && simTarget.UtcTicks < cachedBoundaryTicks))
             && AllCachedModesMatchPresence(online))
         {
@@ -144,6 +146,7 @@ public sealed class ActionParticipationRuntime(
         Volatile.Write(ref _nextBoundaryTicks, 0);
         var sessions = await store.ListActiveAsync(cancellationToken);
         await PruneSessionStateAsync(sessions, cancellationToken);
+        var hasOnlineActiveSession = false;
         List<Exception>? failures = null;
         foreach (var session in sessions)
         {
@@ -154,7 +157,11 @@ public sealed class ActionParticipationRuntime(
                 continue;
             try
             {
-                var spec = ReadSpec(session);
+                var spec = _snapshotCache.TryGetValue(session.SessionId, out var cached)
+                    && cached.Version == session.Version
+                    && string.Equals(cached.SpecJson, session.SpecJson, StringComparison.Ordinal)
+                    ? cached.Spec
+                    : ReadSpec(session);
                 RegisterMembers(spec);
                 var memberOnline = spec.Members.Any(member => online.Contains(Guid.Parse(member.PlayerId)));
                 if (!memberOnline && GetOrParseSnapshot(session).Document.InventoryMode == ActionParticipationInventoryMode.Offline)
@@ -166,6 +173,7 @@ public sealed class ActionParticipationRuntime(
                 _sessionBackoffs.Remove(session.SessionId);
                 if (memberOnline && boundary is { } next)
                 {
+                    hasOnlineActiveSession = true;
                     var current = Volatile.Read(ref _nextBoundaryTicks);
                     if (current == 0 || next.UtcTicks < current) Volatile.Write(ref _nextBoundaryTicks, next.UtcTicks);
                 }
@@ -189,7 +197,7 @@ public sealed class ActionParticipationRuntime(
             Interlocked.Exchange(ref _onlineWakeDirty, 1);
             throw new AggregateException("部分在线组队会话推进失败。", failures);
         }
-        _lastOnlineScanHadActiveSessions = sessions.Count > 0;
+        Volatile.Write(ref _lastOnlineScanHadOnlineSessions, hasOnlineActiveSession ? 1 : 0);
         Volatile.Write(ref _lastOnlineScanTargetTicks, simTarget.UtcTicks);
     }
 
