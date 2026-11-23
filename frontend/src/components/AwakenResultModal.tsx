@@ -106,10 +106,10 @@ export const AwakenResultModal = memo(function AwakenResultModal(): React.JSX.El
       <div className="awaken-result-dialog">
         <header className="awaken-result-header">
           <h2 id={titleId} className="awaken-result-title">
-            先天觉醒
+            {t('app.awaken.title')}
           </h2>
           <p className="awaken-result-subtitle text-dim">
-            天地玄机初露，气运造化入体。
+            {t('app.awaken.subtitle')}
           </p>
         </header>
 

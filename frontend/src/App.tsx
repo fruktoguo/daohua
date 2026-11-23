@@ -3,7 +3,6 @@ import { hasActionParticipation } from './game/types'
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PlayerCardModal } from './components/PlayerCardModal'
 import { AwakenResultModal } from './components/AwakenResultModal'
-import { ChangelogNoticeModal } from './components/ChangelogNoticeModal'
 import { HelpPromptModal } from './components/HelpPromptModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { PartyLoadoutLock } from './components/PartyLoadoutLock'
@@ -78,6 +77,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const CodexPage = lazy(() => import('./components/CodexPage').then(module => ({ default: module.CodexPage })))
 const LeaderboardPage = lazy(() => import('./components/LeaderboardPage').then(module => ({ default: module.LeaderboardPage })))
 const ChangelogPage = lazy(() => import('./components/ChangelogPage').then(module => ({ default: module.ChangelogPage })))
+const ChangelogNoticeModal = lazy(() => import('./components/ChangelogNoticeModal').then(module => ({ default: module.ChangelogNoticeModal })))
 const HelpModal = lazy(() => import('./components/HelpModal').then(module => ({ default: module.HelpModal })))
 const MailModal = lazy(() => import('./components/MailModal').then(module => ({ default: module.MailModal })))
 const CheckinModal = lazy(() => import('./components/CheckinModal').then(module => ({ default: module.CheckinModal })))
@@ -3340,12 +3340,16 @@ export default function App(): React.JSX.Element {
         <TutorialOverlay />
         <PlayerCardModal />
         <AwakenResultModal />
-        <ChangelogNoticeModal
-          entry={latestNoticeEntry}
-          onDismiss={handleDismissChangelogNotice}
-          onViewAll={handleViewAllChangelog}
-          open={changelogNoticeOpen}
-        />
+        {changelogNoticeOpen && (
+          <Suspense fallback={null}>
+            <ChangelogNoticeModal
+              entry={latestNoticeEntry}
+              onDismiss={handleDismissChangelogNotice}
+              onViewAll={handleViewAllChangelog}
+              open={changelogNoticeOpen}
+            />
+          </Suspense>
+        )}
         <HelpPromptModal />
         {helpModalOpen && (
           <Suspense fallback={null}>

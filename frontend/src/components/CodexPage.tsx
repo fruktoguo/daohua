@@ -964,7 +964,7 @@ const CodexCraftingEntry = memo(function CodexCraftingEntry({
           <div className="codex-hover-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
               <span className="codex-hover-title" style={{ color: 'var(--gold)' }}>
-                {techniqueName} · 耗时 {action.durationSeconds}s
+                {t('app.codex.craftingDurationMeta', { technique: techniqueName, seconds: action.durationSeconds })}
               </span>
               <span
                 className={`codex-unlock-condition-pill codex-unlock-condition-pill--${
@@ -1129,7 +1129,7 @@ const CodexAbilityEntry = memo(function CodexAbilityEntry({
             isLearned ? 'unlocked' : 'locked'
           }`}
         >
-          学习后解锁
+          {t('app.codex.unlockAfterLearn')}
         </div>
       }
       level={1}

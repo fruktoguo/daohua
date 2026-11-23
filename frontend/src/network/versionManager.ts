@@ -77,7 +77,10 @@ export function isReloadCircuitBroken(targetVersion: string): boolean {
 let baselineServerVersion: string | null = null
 let isReloading = false
 /** 仅供测试环境重置会话内版本状态 */
+let lastVersionETag: string | null = null
+
 export function _resetVersionStateForTest(): void {
+  lastVersionETag = null
   baselineServerVersion = null
   isReloading = false
   lastApiCheckAt = 0
@@ -163,15 +166,18 @@ export async function checkVersionFromApi(): Promise<void> {
   lastApiCheckAt = now
 
   try {
-    const response = await fetch(getApiUrl(`/api/v1/version?_t=${now}`), {
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (lastVersionETag) headers['If-None-Match'] = lastVersionETag
+    const response = await fetch(getApiUrl('/api/v1/version'), {
       method: 'GET',
-      headers: {
-        'Cache-Control': 'no-cache, no-store',
-        Pragma: 'no-cache',
-      },
+      headers,
+      cache: 'no-cache',
       signal: AbortSignal.timeout(8_000),
     })
+    if (response.status === 304) return
     if (!response.ok) return
+    const etag = response.headers.get('ETag')
+    if (etag) lastVersionETag = etag
     const data = (await response.json()) as { version?: string }
     if (data && typeof data.version === 'string' && data.version.length > 0) {
       notifyServerVersion(data.version)

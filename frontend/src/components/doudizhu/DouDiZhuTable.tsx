@@ -141,10 +141,13 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
     return { left: r.left + position.left * scaleX, top: r.top + position.top * scaleY, width: slots.width * scaleX, height: slots.height * scaleY }
   }
 
+  const clockIntervalMs = intro || revealing ? 50 : active ? 250 : 0
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 50)
+    if (clockIntervalMs <= 0) return undefined
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), clockIntervalMs)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [clockIntervalMs])
   useLayoutEffect(() => {
     setClockSync({ gameId: game.gameId, version: game.version,
       serverAt: game.serverNowUnixMilliseconds, clientAt: Date.now() })

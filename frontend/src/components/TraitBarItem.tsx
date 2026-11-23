@@ -234,7 +234,7 @@ export const TraitBarItem = memo(function TraitBarItem({
         <strong className="trait-bar-name">{def.name}</strong>
 
         {/* 消耗点数（内视和图鉴中展示） */}
-        {mode !== 'awaken' && <span className="trait-bar-cost">{def.cost}点</span>}
+        {mode !== 'awaken' && <span className="trait-bar-cost">{t('insight.traits.costValue', { cost: def.cost })}</span>}
 
         {/* 抽取模式展示数量 */}
         {mode === 'awaken' && quantity !== undefined && (

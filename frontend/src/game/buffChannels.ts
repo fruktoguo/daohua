@@ -1,3 +1,4 @@
+import { getT } from '../i18n'
 import { formatNumber } from './format'
 
 /**
@@ -107,7 +108,7 @@ export function formatBuffChannelValue(
   isPerStack = false,
 ): string {
   const scaled = info.perStack ? value * stacks : value
-  const perStackSuffix = isPerStack && stacks <= 1 ? '/层' : ''
+  const perStackSuffix = isPerStack && stacks <= 1 ? getT()('market.effect.perStackSuffix') : ''
   switch (info.format) {
     case 'flat':
       return `${scaled > 0 ? '+' : ''}${formatNumber(scaled)}${perStackSuffix}`

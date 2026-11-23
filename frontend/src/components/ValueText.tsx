@@ -1,8 +1,8 @@
 import React from 'react'
 import { StatGlyph, resolveStatGlyph } from './StatGlyph'
 
-/** 匹配包含修仙单位与符号的数值模式正则 */
-const NUMBER_PATTERN = /([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:万|亿|兆|%|秒|层|点)?)/g
+/** 匹配包含中英文修仙单位与符号的数值模式正则 */
+const NUMBER_PATTERN = /([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:万|亿|兆|%|秒|层|点|pts|s\b)?)/g
 /** 整组胶囊标记：[[文本]] 内的内容渲染为一个完整胶囊（如「60%术法攻击」） */
 const GROUP_PATTERN = /\[\[([^\]]+)\]\]/g
 
@@ -19,9 +19,9 @@ function valueTone(text: string, token: string, index: number): string {
   const context = `${text.slice(Math.max(0, index - 10), index)}${text.slice(index + token.length, index + token.length + 10)}`
   if (token.startsWith('+')) return 'positive'
   if (token.startsWith('-')) return 'negative'
-  if (/灵力|法力|真元/.test(context)) return 'mana'
-  if (/伤害|暴击|破招|穿透|汲取/.test(context)) return 'damage'
-  if (/生命|治疗|恢复|吸血/.test(context)) return 'health'
+  if (/灵力|法力|真元|\b(?:mp|mana)\b/i.test(context)) return 'mana'
+  if (/伤害|暴击|破招|穿透|汲取|\b(?:damage|dmg|crit|critical|break|pierce|drain|leech)\b/i.test(context)) return 'damage'
+  if (/生命|治疗|恢复|吸血|\b(?:hp|health|heal|healing|regen|restore)\b/i.test(context)) return 'health'
   if (token.includes('%')) return 'percent'
   return 'number'
 }

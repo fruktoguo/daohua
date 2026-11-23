@@ -1,6 +1,8 @@
 import { useLogUnreadStore } from '../logging/logUnreadStore'
 import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { resolveWorldLocationName } from '../game/ids'
+import { resolveLocalizedEntityName } from '../game/entityNames'
 import { useZongmenStore } from '../game/zongmenStore'
 import { useT } from '../i18n'
 import { useUiStore } from '../uiStore'
@@ -118,7 +120,8 @@ const ZongmenOverviewSection = memo(function ZongmenOverviewSection({
   ask: (title: string, description: string, action: () => void) => void
 }): React.JSX.Element {
   const t = useT()
-  const { pending, act } = useZongmenStore()
+  const pending = useZongmenStore(state => state.pending)
+  const act = useZongmenStore(state => state.act)
 
   const handleTravel = (): void => {
     gameClient.sendCommand('world.travel', {
@@ -153,7 +156,7 @@ const ZongmenOverviewSection = memo(function ZongmenOverviewSection({
         </div>
         <div className="zongmen-stat-box">
           <span className="zongmen-stat-label">{t('social.zongmen.scale')}</span>
-          <span className="zongmen-stat-value">{own.members.length} / {own.capacity} 人</span>
+          <span className="zongmen-stat-value">{t('social.zongmen.scaleFraction', { count: own.members.length, max: own.capacity })}</span>
         </div>
         <div className="zongmen-stat-box">
           <span className="zongmen-stat-label">{t('social.zongmen.createLocationLabel')}</span>
@@ -231,7 +234,8 @@ const ZongmenMembersSection = memo(function ZongmenMembersSection({
   ask: (title: string, description: string, action: () => void) => void
 }): React.JSX.Element {
   const t = useT()
-  const { pending, act } = useZongmenStore()
+  const pending = useZongmenStore(state => state.pending)
+  const act = useZongmenStore(state => state.act)
   const onlineCount = useMemo(() => own.members.filter(m => m.online).length, [own.members])
 
   return (
@@ -311,7 +315,8 @@ const ZongmenApplicationsSection = memo(function ZongmenApplicationsSection({
   own: ZongmenDto
 }): React.JSX.Element {
   const t = useT()
-  const { pending, act } = useZongmenStore()
+  const pending = useZongmenStore(state => state.pending)
+  const act = useZongmenStore(state => state.act)
   const [inviteName, setInviteName] = useState('')
   const applications = useMemo(() => own.requests.filter(r => r.kind === 'application'), [own.requests])
 
@@ -510,7 +515,7 @@ const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
                 <span className="building-bonus-title">{t('combat.nearby.buildingCurrentBonus')}：</span>
                 <span className="building-bonus-pill pill-tone--jade">
                   <span className="capsule-label">{t('social.zongmen.scale')}</span>
-                  <span className="underlined-value">{own.capacity} 人</span>
+                  <span className="underlined-value">{t('social.zongmen.capacityPeople', { count: own.capacity })}</span>
                 </span>
               </div>
             </section>
@@ -536,9 +541,9 @@ const ZongmenBuildingsSection = memo(function ZongmenBuildingsSection({
                   <li className="breakthrough-modal-row pill-tone--jade">
                     <span className="breakthrough-modal-row-label">{t('social.zongmen.scale')}</span>
                     <span className="breakthrough-modal-row-values">
-                      <span>{own.capacity} 人</span>
+                      <span>{t('social.zongmen.capacityPeople', { count: own.capacity })}</span>
                       <span className="breakthrough-modal-arrow">→</span>
-                      <strong>{own.capacity + 5} 人</strong>
+                      <strong>{t('social.zongmen.capacityPeople', { count: own.capacity + 5 })}</strong>
                     </span>
                   </li>
                 </ul>
@@ -682,7 +687,13 @@ const ZongmenlessView = memo(function ZongmenlessView({
   ask: (title: string, description: string, action: () => void) => void
 }): React.JSX.Element {
   const t = useT()
-  const { directory, invitations, applications, pending, loading, refresh, act } = useZongmenStore()
+  const directory = useZongmenStore(state => state.directory)
+  const invitations = useZongmenStore(state => state.invitations)
+  const applications = useZongmenStore(state => state.applications)
+  const pending = useZongmenStore(state => state.pending)
+  const loading = useZongmenStore(state => state.loading)
+  const refresh = useZongmenStore(state => state.refresh)
+  const act = useZongmenStore(state => state.act)
   const maps = useGameStore(state => state.maps)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -833,7 +844,9 @@ const ZongmenlessView = memo(function ZongmenlessView({
 /** 同道二级宗门页：根据玩家在宗/散修状态分流展示，支持独立立宗弹窗与附近拜帖递交。 */
 export const ZongmenPage = memo(function ZongmenPage(): React.JSX.Element {
   const t = useT()
-  const { zongmen: own, error, refresh } = useZongmenStore()
+  const own = useZongmenStore(state => state.zongmen)
+  const error = useZongmenStore(state => state.error)
+  const refresh = useZongmenStore(state => state.refresh)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
   const [confirm, setConfirm] = useState<{ title: string; description: string; action: () => void } | null>(null)
@@ -842,8 +855,14 @@ export const ZongmenPage = memo(function ZongmenPage(): React.JSX.Element {
   const currentNodeId = world?.nodeId ?? ''
   const currentNode = nodes.find(node => node.nodeId === currentNodeId)
   const publicLocation = !!currentNode && !world?.edgeId && !currentNodeId.startsWith('node.zongmen.') && !currentNode.hidden
-  const locationName = (id: string): string => nodes.find(node => node.nodeId === id)?.name ?? id
-  const currentNodeName = currentNode?.name ?? locationName(currentNodeId)
+  const locationName = (id: string): string => {
+    if (!id) return ''
+    if (world && world.nodeId === id && world.locationName) return resolveWorldLocationName(world)
+    if (own && own.nodeId === id) return own.name
+    const matched = nodes.find(node => node.nodeId === id)
+    return resolveLocalizedEntityName(t, 'location', id, matched?.name)
+  }
+  const currentNodeName = currentNodeId ? locationName(currentNodeId) : (world?.locationName ?? '')
   const ask = (title: string, description: string, action: () => void): void => setConfirm({ title, description, action })
 
   return (

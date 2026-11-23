@@ -347,6 +347,7 @@ export const marketZh = {
       badgeXuyiBurstDamage: '爆发伤害',
       xuyiBurstDamageValue: '主目标真实 / 其余物理',
       unitPerFiveSec: '/ 5秒',
+      perStackSuffix: '/层',
       restoreHp: '即时恢复气血',
       restoreMp: '即时恢复灵力',
       recoveryDuration: '药效持续时间',

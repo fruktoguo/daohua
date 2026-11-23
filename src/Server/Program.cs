@@ -377,11 +377,18 @@ if (processRole == ServerProcessRole.Api)
         gameDataFingerprint = gameData.Fingerprint
     }));
 
-    app.MapGet("/api/v1/version", (HttpContext context, GameDataCatalog gameData) =>
+    var versionRepresentation = new Lazy<(Microsoft.Net.Http.Headers.EntityTagHeaderValue Tag, byte[] Body)>(() =>
     {
-        context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0, must-revalidate";
-        context.Response.Headers.Pragma = "no-cache";
-        return Results.Ok(new ServerVersionDto(releaseVersion, gameData.Fingerprint, ProtocolConstants.CurrentVersion));
+        var gameData = app.Services.GetRequiredService<GameDataCatalog>();
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new ServerVersionDto(releaseVersion, gameData.Fingerprint, ProtocolConstants.CurrentVersion),
+            ProtocolJson.Options);
+        return (CatalogHttpCache.ComputeWeakETag(body), body);
+    });
+    app.MapGet("/api/v1/version", (HttpContext context) =>
+    {
+        var (tag, body) = versionRepresentation.Value;
+        return CatalogHttpCache.WriteConditionalJson(context, tag, body, "no-cache, max-age=0, must-revalidate");
     });
 
     var catalog = app.MapGroup("/api/v1/catalog");
@@ -938,14 +945,16 @@ if (processRole == ServerProcessRole.Api)
             return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
         }
     }).RequireRateLimiting("command");
-    market.MapGet("/stats", async (string? assetId, PostgresMarketRepository marketStore, MarketStatsCache statsCache, CancellationToken ct) =>
+    market.MapGet("/stats", async (HttpContext context, string? assetId, PostgresMarketRepository marketStore, MarketStatsCache statsCache, CancellationToken ct) =>
     {
         // 行情统计直读 market.item_stats 小表：悬浮行情卡轮询走全表（数百行内），单品种传 assetId 过滤。
-        // 全表经 10 秒共享缓存：多客户端同表轮询在服务端收敛为至多 6 秒一次回源。
+        // 全表经 10 秒共享缓存并复用预序列化 JSON + 弱 ETag，行情未变化时直接回 304 免重复分配与传输。
         if (assetId is not null && (assetId.Length == 0 || assetId.Length > 128))
             return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
-        var rows = await statsCache.GetAsync(marketStore, ct);
-        return Results.Ok((assetId is null ? rows : rows.Where(row => row.AssetId == assetId)).Select(MarketDtoMapper.ToStats).ToArray());
+        var payload = await statsCache.GetPayloadAsync(marketStore, ct);
+        if (assetId is null)
+            return CatalogHttpCache.WriteConditionalJson(context, payload.ETag, payload.AllStatsJsonUtf8, "private, no-cache");
+        return Results.Ok(payload.Rows.Where(row => row.AssetId == assetId).Select(MarketDtoMapper.ToStats).ToArray());
     }).RequireRateLimiting("command");
     market.MapGet("/metrics", (ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {

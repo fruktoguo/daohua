@@ -120,6 +120,7 @@ function resolveRetainedSelection(
 // 用模块级递增序号取消/忽略乱序响应，避免旧请求覆盖新列表或新选定邮件。
 let listRequestSeq = 0
 let detailRequestSeq = 0
+let mailResetEpoch = 0
 
 /**
  * 传书邮件前端状态机：
@@ -206,18 +207,48 @@ export const useMailStore = create<MailStore>((set, get) => ({
     }
 
     const seq = ++detailRequestSeq
+    const resetEpoch = mailResetEpoch
     set({ loadingDetailKey: mailKey })
     try {
       const response = await fetchMailDetail(mailKey)
-      if (generation !== getSessionGeneration()) return
-      if (seq !== detailRequestSeq) return
+      if (generation !== getSessionGeneration() || resetEpoch !== mailResetEpoch) return
       const detail = response.mail
-      set(state => ({
-        summary: response.summary,
-        detailsByKey: { ...state.detailsByKey, [mailKey]: detail },
-        mails: state.mails.map(item => (item.mailKey === mailKey ? { ...item, ...detail } : item)),
-        loadingDetailKey: state.loadingDetailKey === mailKey ? null : state.loadingDetailKey,
-      }))
+      set(state => {
+        const existingItem = state.mails.find(item => item.mailKey === mailKey)
+        // 若飞行途中该信件已被删除，绝不借迟到详情响应复活列表或缓存，仅收敛当前加载态。
+        if (!existingItem) {
+          return {
+            loadingDetailKey: seq === detailRequestSeq && state.loadingDetailKey === mailKey ? null : state.loadingDetailKey,
+          }
+        }
+        // 单封邮件状态合并：保证已读/已领取标记单调不回退，连续快速点击多封未读信件时先发响应不丢已读状态。
+        const mergedIsRead = Boolean(existingItem.isRead || detail.isRead)
+        const mergedIsClaimed = Boolean(existingItem.isClaimed || detail.isClaimed)
+        const mergedDetail: MailDetailDto = {
+          ...detail,
+          isRead: mergedIsRead,
+          isClaimed: mergedIsClaimed,
+        }
+        const nextMails = state.mails.map(item =>
+          item.mailKey === mailKey ? { ...item, ...mergedDetail } : item,
+        )
+        const nextSummary: MailSummaryDto = seq === detailRequestSeq
+          ? {
+              ...response.summary,
+              unreadCount: Math.min(response.summary.unreadCount, nextMails.filter(item => !item.isRead).length || response.summary.unreadCount),
+            }
+          : {
+              ...state.summary,
+              unreadCount: Math.min(state.summary.unreadCount, response.summary.unreadCount),
+            }
+        return {
+          summary: nextSummary,
+          detailsByKey: { ...state.detailsByKey, [mailKey]: mergedDetail },
+          mails: nextMails,
+          selectedMailKey: resolveRetainedSelection(state.selectedMailKey, nextMails, state.filter),
+          loadingDetailKey: seq === detailRequestSeq && state.loadingDetailKey === mailKey ? null : state.loadingDetailKey,
+        }
+      })
     } catch (cause) {
       if (generation !== getSessionGeneration()) return
       if (seq !== detailRequestSeq) return
@@ -378,6 +409,7 @@ export const useMailStore = create<MailStore>((set, get) => ({
   reset: () => {
     listRequestSeq += 1
     detailRequestSeq += 1
+    mailResetEpoch += 1
     set({
       summary: EMPTY_MAIL_SUMMARY,
       mails: [],

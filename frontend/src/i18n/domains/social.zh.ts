@@ -82,6 +82,8 @@ export const socialZh = {
       "currentAtResidence": "当前已在驻地中",
       "noPendingApplications": "暂无待审批的入宗拜帖",
       "memberStats": "同门弟子 {count} 人（{online} 人在线）· 上限 {max} 人",
+      "scaleFraction": "{count} / {max} 人",
+      "capacityPeople": "{count} 人",
       "myRoleLabel": "我的职位",
       "hallBuildingName": "宗门大殿"
     },

@@ -587,6 +587,7 @@ export const insightZh = {
       modalTitle: '调整特质装配',
       capacityLabel: '特质点数容量',
       pointUnit: '点',
+      costValue: '{cost}点',
       remainLabel: '余 {count} 点',
       modifyBtn: '调整装配',
       noneEquippedTip: '尚未装配任何特质。点击下方已觉醒特质直接装配。',

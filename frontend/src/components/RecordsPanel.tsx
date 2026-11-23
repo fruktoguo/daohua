@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { resolveQueueActionName } from '../game/ids'
 import { loadBattleReportHistory } from '../game/battleReportStore'
 import { useT } from '../i18n'
 import { formatReportTime, reportHasContent, ReportBlock, ReportExpSection, ReportInfoSection, ReportItemsSection } from './reportSections'
@@ -23,6 +24,9 @@ const SINGLETON_REPORT_IDS: ReadonlySet<string> = new Set(['offline', 'daily'])
 export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)
+  const actions = useGameStore(state => state.actions)
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const duel = useGameStore(state => state.duel)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
@@ -86,7 +90,7 @@ export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
               <ul className="battle-report-history">
                 {history.map(report => (
                   <li className="battle-report-row" key={report.reportId}>
-                    <strong>{report.actionName || report.actionId}</strong>
+                    <strong>{resolveQueueActionName({ actionId: report.actionId, actionName: report.actionName }, actions, world, maps)}</strong>
                     <span className="battle-report-row-time">{formatReportTime(report.startedAtUnixSeconds)}</span>
                     <div className="battle-report-row-sections">
                       <ReportExpSection report={report} />
