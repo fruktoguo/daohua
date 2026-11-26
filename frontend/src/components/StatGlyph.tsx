@@ -137,6 +137,14 @@ const STAT_KEY_TO_GLYPH: Record<string, string> = {
   skillBonusPoints: 'skill-bonus',
   技能增幅: 'skill-bonus',
 
+  talismanDamageBonus: 'talisman',
+  talismanDamageBonusPoints: 'talisman',
+  符箓伤害: 'talisman',
+
+  formationDamageBonus: 'formation',
+  formationDamageBonusPoints: 'formation',
+  阵法伤害: 'formation',
+
   threatBonus: 'threat-bonus',
   threatBonusPoints: 'threat-bonus',
   威胁增幅: 'threat-bonus',

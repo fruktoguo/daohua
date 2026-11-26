@@ -391,11 +391,10 @@ public static class DuelScriptEngine
                         var manaCost = strike.ManaCostRatio * caster.Stats.MaxManapoints;
                         if (!opponent.IsAlive || caster.Manapoints < manaCost - 1e-9) continue;
                         var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, strike.Element);
-                        // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
+                        // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
                         var strikeStats = caster.Stats with
                         {
-                            AttackPower = strike.ManaDamageRatio * caster.Stats.MaxManapoints
-                                + strike.SpellAttackRatio * caster.Stats.SpellAttack,
+                            AttackPower = DeterministicCombatEngine.ResolveConsumableStrikePower(slot.Item, strike, caster.Stats),
                             DamageKind = CombatDamageKind.Spell,
                             Element = strikeElement
                         };

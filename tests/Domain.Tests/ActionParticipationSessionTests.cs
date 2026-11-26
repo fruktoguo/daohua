@@ -1199,4 +1199,58 @@ public sealed class ActionParticipationSessionTests
             $"雷击符应已造成承伤：无符 {noTalisman}，有符 {withoutBonus}。");
         Assert.Equal(withoutBonus, withBonus, 9);
     }
+
+    /// <summary>
+    /// 组队雷击符打击吃符箓伤害增幅（抗性穿甲前 Linear 乘区，总纲 §20.1.3），且不受阵法伤害增幅影响。
+    /// </summary>
+    [Fact]
+    public void LeijiTalismanStrikeScalesWithTalismanDamageBonusPointsInParty()
+    {
+        double RunEnemyRemainingHitpoints(double talismanBonusPoints, double formationBonusPoints, bool withTalisman = true)
+        {
+            var (catalog, _, original) = CreateParty();
+            var member0 = original.Members[0];
+            var baseStats = member0.Stats with
+            {
+                AttackPower = 0,
+                MaxManapoints = 100,
+                SpellAttack = 50,
+                AttackIntervalSeconds = 100,
+                TalismanDamageBonusPoints = talismanBonusPoints,
+                FormationDamageBonusPoints = formationBonusPoints,
+            };
+            var spec = original with
+            {
+                Members = original.Members.Select((m, i) => i == 0
+                    ? m with
+                    {
+                        Stats = baseStats,
+                        InitialHitpoints = baseStats.MaxHitpoints,
+                        InitialManapoints = 100,
+                        ConsumableSlots = withTalisman
+                            ? [new ActionConsumableSlot("item.leiji-talisman", "combat", AutoUseSlotState.SlotGroupGeneral, 0)]
+                            : null
+                    }
+                    : m with
+                    {
+                        Stats = m.Stats with { AttackPower = 0, SpellAttack = 0, AttackIntervalSeconds = 100 }
+                    }).ToArray()
+            };
+            var session = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, "item.leiji-talisman", 5));
+            var searchSec = session.Export().Expedition!.PhaseDurationSeconds;
+            session.AdvanceTo(Baseline.AddSeconds(searchSec + 3));
+            var doc = session.Export();
+            Assert.Equal(CombatExpeditionPhase.Combat, doc.Expedition!.Phase);
+            return doc.Expedition.Enemies!.Sum(e => e.State.Hitpoints);
+        }
+
+        var baselineHp = RunEnemyRemainingHitpoints(0, 0, withTalisman: false);
+        var baseDamage = baselineHp - RunEnemyRemainingHitpoints(0, 0);
+        var boostedDamage = baselineHp - RunEnemyRemainingHitpoints(50, 0);
+        var formationOnlyDamage = baselineHp - RunEnemyRemainingHitpoints(0, 50);
+        Assert.True(baseDamage > 0, "组队雷击符应造成有效伤害。");
+        Assert.True(boostedDamage >= baseDamage * 1.5 - 1e-6,
+            $"符箓伤害 +50% 在抗性穿甲前生效，期望不低于 1.5× 实伤，实际 base={baseDamage}, boosted={boostedDamage}");
+        Assert.Equal(baseDamage, formationOnlyDamage, 9);
+    }
 }

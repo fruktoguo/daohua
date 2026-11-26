@@ -1469,6 +1469,8 @@ public sealed class GameDataCatalog
             TotalDamageBonusPoints = Modifier("totalDamageBonusPoints"),
             BasicAttackBonusPoints = Modifier("basicAttackBonusPoints") + CombatGrowthCurve.BasicAttackBonusPoints(level),
             SkillBonusPoints = Modifier("skillBonusPoints") + CombatGrowthCurve.SkillBonusPoints(tier),
+            TalismanDamageBonusPoints = Modifier("talismanDamageBonusPoints"),
+            FormationDamageBonusPoints = Modifier("formationDamageBonusPoints"),
             PhysicalDamageReductionPoints = Modifier("physicalDamageReductionPoints"),
             SpellDamageReductionPoints = Modifier("spellDamageReductionPoints"),
             MetalDamageReductionPoints = Modifier("metalDamageReductionPoints"),

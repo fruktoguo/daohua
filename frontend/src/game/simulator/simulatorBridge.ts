@@ -2,6 +2,7 @@ export interface SimulatorBridge {
   warm(): Promise<void>
   catalogFingerprint(): Promise<string>
   listCombatNodeIds(): Promise<string>
+  listDungeons(): Promise<string>
   createDefaultProfile(): Promise<string>
   resolveProfiles(requestJson: string): Promise<string>
   run(requestJson: string): Promise<string>
@@ -175,6 +176,7 @@ export function createSimulatorBridge(
     warm,
     catalogFingerprint: () => call('fingerprint'),
     listCombatNodeIds: () => call('listCombatNodeIds'),
+    listDungeons: () => call('listDungeons'),
     createDefaultProfile: () => call('createDefaultProfile'),
     resolveProfiles: (requestJson) => call('resolveProfiles', requestJson),
     run: (requestJson) => call('run', requestJson),

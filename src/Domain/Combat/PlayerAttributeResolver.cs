@@ -38,6 +38,10 @@ public sealed record PlayerAttributes(
     public double BasicAttackBonusPoints { get; init; }
     /// <summary>技能增幅点数。</summary>
     public double SkillBonusPoints { get; init; }
+    /// <summary>符箓伤害增幅点数（Linear：仅作用于造成直接伤害的符箓，符箓技艺每级 +1 点）。</summary>
+    public double TalismanDamageBonusPoints { get; init; }
+    /// <summary>阵法伤害增幅点数（Linear：仅作用于造成直接伤害的阵盘，阵法技艺每级 +1 点）。</summary>
+    public double FormationDamageBonusPoints { get; init; }
     /// <summary>物理减伤点数。</summary>
     public double PhysicalDamageReductionPoints { get; init; }
     /// <summary>法术减伤点数。</summary>
@@ -119,6 +123,8 @@ public sealed record PlayerAttributes(
             TotalDamageBonusPoints = TotalDamageBonusPoints,
             BasicAttackBonusPoints = BasicAttackBonusPoints,
             SkillBonusPoints = SkillBonusPoints,
+            TalismanDamageBonusPoints = TalismanDamageBonusPoints,
+            FormationDamageBonusPoints = FormationDamageBonusPoints,
             PhysicalDamageReductionPoints = PhysicalDamageReductionPoints,
             SpellDamageReductionPoints = SpellDamageReductionPoints,
             MetalDamageReductionPoints = MetalDamageReductionPoints,
@@ -206,6 +212,7 @@ public static class PlayerAttributeResolver
         PlayerBuffState buffs, PlayerLoadoutState loadout)
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
             + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
+            + loadout.TechniqueExperiences.Version
             + progression.TraitIds.Version + progression.UnlockedTraits.Version + loadout.AbilitySlots.Version
             + progression.HeavenGate.Version + progression.Genji.Version;
 
@@ -216,9 +223,22 @@ public static class PlayerAttributeResolver
     {
         var traits = traitIds is { Count: > 0 } ? traitIds.ToArray() : null;
         var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits, traitLevels);
+        // 符箓/阵法技艺等级每级分别提供 +1 点对应伤害增幅（总纲 §20.1.3，独立点数通道，仅作用于伤害型符/阵）。
+        var talismanExp = loadout.TechniqueExperiences is not null
+            && loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Talisman, out var storedTalismanExp)
+            ? storedTalismanExp : 0;
+        var formationExp = loadout.TechniqueExperiences is not null
+            && loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Formation, out var storedFormationExp)
+            ? storedFormationExp : 0;
+        var techniqueTalismanDamagePoints = TechniqueCatalog.DamageBonusPoints(
+            TechniqueCatalog.LevelFor(talismanExp, catalog.RealmProgression));
+        var techniqueFormationDamagePoints = TechniqueCatalog.DamageBonusPoints(
+            TechniqueCatalog.LevelFor(formationExp, catalog.RealmProgression));
         if (catalog.BaseAttributes is null)
             return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1)
             {
+                TalismanDamageBonusPoints = techniqueTalismanDamagePoints,
+                FormationDamageBonusPoints = techniqueFormationDamagePoints,
                 Traits = traits,
                 TraitLevels = traitLevels,
                 Effects = new CombatEffectProfile(ThreatOnTakenPoints: threatOnTaken)
@@ -226,10 +246,12 @@ public static class PlayerAttributeResolver
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
-        // 点数通道汇总：装备 flatStats 中 *Points 键（随强化缩放，总纲 §4）+ Buff/特质点数通道（100 点 = 100%）。
+        // 点数通道汇总：装备 flatStats 中 *Points 键（随强化缩放，总纲 §4）+ Buff/特质/技艺点数通道（100 点 = 100%）。
         var points = new Dictionary<string, double>(StringComparer.Ordinal);
         double P(string key) => points.GetValueOrDefault(key);
         void AddPoint(string key, double value) { if (value != 0) points[key] = P(key) + value; }
+        AddPoint("talismanDamageBonusPoints", techniqueTalismanDamagePoints);
+        AddPoint("formationDamageBonusPoints", techniqueFormationDamagePoints);
         // 特质百分比与装备、灵根加算并入常驻外物大乘区（TASK-20261026-03，三乘区收拢），特质点数并入点数通道。
         CombatTraitRules.AccumulateModifiers(traits, traitLevels, ratios, points);
         // 五行灵根点数并入对应五行增伤 / 减伤点数通道（总纲 §7.7.5）：每点灵根 1 点，
@@ -461,6 +483,8 @@ public static class PlayerAttributeResolver
             TotalDamageBonusPoints = P("totalDamageBonusPoints"),
             BasicAttackBonusPoints = P("basicAttackBonusPoints"),
             SkillBonusPoints = P("skillBonusPoints"),
+            TalismanDamageBonusPoints = P("talismanDamageBonusPoints"),
+            FormationDamageBonusPoints = P("formationDamageBonusPoints"),
             PhysicalDamageReductionPoints = P("physicalDamageReductionPoints"),
             SpellDamageReductionPoints = P("spellDamageReductionPoints"),
             MetalDamageBonusPoints = P("metalDamageBonusPoints"),

@@ -2,6 +2,7 @@ import { buildGameDataCatalog } from './engine/catalog.ts'
 import {
   createDefaultProfile,
   listCombatNodeIds,
+  listDungeonEntries,
   resolveProfilesResult,
   runSimulation,
 } from './engine/simulatorRunner.ts'
@@ -44,6 +45,8 @@ async function handleOperation(op: string, payload?: string): Promise<string> {
       return JSON.stringify({ fingerprint: catalog.fingerprint })
     case 'listCombatNodeIds':
       return JSON.stringify(listCombatNodeIds(catalog))
+    case 'listDungeons':
+      return JSON.stringify(listDungeonEntries(catalog))
     case 'createDefaultProfile':
       return JSON.stringify(createDefaultProfile(catalog))
     case 'resolveProfiles': {

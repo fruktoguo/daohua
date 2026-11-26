@@ -114,6 +114,10 @@ public sealed record CombatantStats(
     public double BasicAttackBonusPoints { get; init; }
     /// <summary>技能增幅点数（Linear：不带「普通攻击」tag 技能的增伤修饰）。</summary>
     public double SkillBonusPoints { get; init; }
+    /// <summary>符箓伤害增幅点数（Linear：仅作用于造成直接伤害的符箓打击，抗性穿甲前并入原始威力）。</summary>
+    public double TalismanDamageBonusPoints { get; init; }
+    /// <summary>阵法伤害增幅点数（Linear：仅作用于造成直接伤害的阵盘效果，抗性穿甲前并入原始威力）。</summary>
+    public double FormationDamageBonusPoints { get; init; }
     /// <summary>物理减伤点数（NonLinear：守方承受物理伤害的收敛减伤）。</summary>
     public double PhysicalDamageReductionPoints { get; init; }
     /// <summary>法术减伤点数。</summary>
@@ -179,6 +183,7 @@ public sealed record CombatantStats(
         double[] finite = [DamageAbsorptionPoints, ThreatBonusPoints,
             PhysicalDamageBonusPoints, SpellDamageBonusPoints, TotalDamageBonusPoints,
             BasicAttackBonusPoints, SkillBonusPoints,
+            TalismanDamageBonusPoints, FormationDamageBonusPoints,
             PhysicalDamageReductionPoints, SpellDamageReductionPoints,
             MetalDamageBonusPoints, WoodDamageBonusPoints, WaterDamageBonusPoints,
             FireDamageBonusPoints, EarthDamageBonusPoints,

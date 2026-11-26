@@ -641,6 +641,14 @@ export const TECHNIQUE_IDS = ['alchemy', 'forging', 'talisman', 'enhancement', '
 /** 每级技艺提供的行动速度加成比率：actual = base / (1 + 0.05×level) */
 export const TECHNIQUE_SPEED_RATIO_PER_LEVEL = 0.05
 
+/** 符箓/阵法技艺每级提供的对应伤害增幅点数（Linear：1 点 = +1%，仅作用于伤害型符/阵，与服务端 TechniqueCatalog.DamageBonusPointsPerLevel 镜像） */
+export const TECHNIQUE_DAMAGE_BONUS_POINTS_PER_LEVEL = 1
+
+/** 符箓或阵法技艺等级换算对应的伤害增幅点数（每级 +1 点） */
+export function calculateTechniqueDamageBonusPoints(level: number): number {
+  return TECHNIQUE_DAMAGE_BONUS_POINTS_PER_LEVEL * Math.max(0, Number.isFinite(level) ? level : 0)
+}
+
 /** 技艺前期经验削减覆盖的目标等级数：1~30 级线性下调，30 级以上不削减（与共享削减段表同值） */
 export const TECHNIQUE_EARLY_DISCOUNT_LEVELS = REALM_EARLY_DISCOUNT_LEVELS
 

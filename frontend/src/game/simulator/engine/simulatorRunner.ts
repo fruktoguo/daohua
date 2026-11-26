@@ -6,13 +6,20 @@ import {
   resolveProfilesResult,
   restoreToState,
 } from './attributeResolver.ts'
-import type { CombatActionDefinition, CombatEncounterDefinition, GameDataCatalog } from './catalog.ts'
+import {
+  resolveEncounterOrDungeon,
+  type CombatActionDefinition,
+  type CombatEncounterDefinition,
+  type DungeonDefinition,
+  type GameDataCatalog,
+} from './catalog.ts'
 import { createCombatSearchState } from './combatActionRules.ts'
 import {
   addDurationTruncTicks,
   compareOrdinal,
   deriveSessionGuidN,
   seedModulo,
+  ticksDiffSeconds,
   ticksFromUnixSeconds,
 } from './math.ts'
 import {
@@ -21,11 +28,19 @@ import {
   buildActionParticipantSnapshot,
   createActionParticipationSpec,
 } from './partySessionEngine.ts'
-import { AutoUseBar } from './rules.ts'
+import {
+  AutoUseBar,
+  DUNGEON_MAX_DIFFICULTY,
+  DUNGEON_MIN_DIFFICULTY,
+  DUNGEON_WAVE_TIMEOUT_SECONDS,
+  dungeonDifficultyDisplayName,
+  dungeonEnergyCost,
+} from './rules.ts'
 import { advanceSimulationTo } from './simulationEngine.ts'
 import {
   ActionQueueStatus,
   CombatExpeditionPhase,
+  ConsumableScheduleMode,
   assetKeyString,
   combatBuffCarryToDto,
   combatSkillsToDto,
@@ -41,6 +56,8 @@ import {
   type PlayerState,
   type SimulatorAssetDto,
   type SimulatorAutoUseSlotDto,
+  type SimulatorDungeonCatalogEntryDto,
+  type SimulatorDungeonSummaryDto,
   type SimulatorEnvironmentDto,
   type SimulatorEnvironmentNodeDto,
   type SimulatorExpeditionEnemyDto,
@@ -60,6 +77,8 @@ import {
 
 export const MIN_DURATION_SECONDS = 1
 export const MAX_DURATION_SECONDS = 86400
+export const MIN_DUNGEON_REPEATS = 1
+export const MAX_DUNGEON_REPEATS = 200
 
 const INT64_MIN = -(1n << 63n)
 const INT64_MAX = (1n << 63n) - 1n
@@ -87,6 +106,7 @@ function validateCommon(
   members: readonly SimulatorProfileDto[],
   nodeId: string,
   catalog: GameDataCatalog,
+  isDungeon = false,
 ): void {
   if (!environment || !members) {
     throw new SimulatorValidationError('推演请求缺少环境或成员参数。')
@@ -122,8 +142,10 @@ function validateCommon(
   validateRespawnTargets(members, memberIds)
   validateEnvironment(environment, catalog)
   const worldNode = catalog.worldNodes.get(nodeId)
-  if (!worldNode || worldNode.encounterIds.length === 0) {
-    throw new SimulatorValidationError('目标节点不存在或没有讨伐遭遇池。')
+  if (!worldNode || (!isDungeon && worldNode.encounterIds.length === 0)) {
+    throw new SimulatorValidationError(
+      isDungeon ? '目标副本所属节点不存在。' : '目标节点不存在或没有讨伐遭遇池。',
+    )
   }
 }
 
@@ -141,6 +163,7 @@ function requireEnvironmentNode(
 function resolveCombatAction(nodeId: string, catalog: GameDataCatalog): CombatActionDefinition {
   const matches: CombatActionDefinition[] = []
   for (const def of catalog.actions.values()) {
+    if (def.executionKind === 'dungeon') continue
     if (def.allowedNodeIds !== null && !def.allowedNodeIds.has(nodeId)) continue
     if (def.excludedNodeIds !== null && def.excludedNodeIds.has(nodeId)) continue
     matches.push(def)
@@ -505,10 +528,464 @@ export function listCombatNodeIds(catalog: GameDataCatalog): string[] {
   return nodeIds
 }
 
+/** 列出配表中全部可推演追忆副本的轻量元数据。 */
+export function listDungeonEntries(catalog: GameDataCatalog): SimulatorDungeonCatalogEntryDto[] {
+  const entries: SimulatorDungeonCatalogEntryDto[] = []
+  for (const dungeon of catalog.dungeons.values()) {
+    entries.push({
+      id: dungeon.id,
+      name: dungeon.name,
+      description: dungeon.description,
+      nodeId: dungeon.nodeId,
+      tier: dungeon.tier,
+      baseLevel: dungeon.baseLevel,
+      minMonsterLevel: dungeon.minMonsterLevel,
+      totalWaves: dungeon.totalWaves,
+      recommendedValuation: [...dungeon.recommendedValuation],
+    })
+  }
+  entries.sort((a, b) => {
+    if (a.baseLevel !== b.baseLevel) return a.baseLevel - b.baseLevel
+    return compareOrdinal(a.id, b.id)
+  })
+  return entries
+}
+
+function buildDungeonSummary(
+  dungeon: DungeonDefinition,
+  difficulty: number,
+  requestedRuns: number,
+  action: SimActionState,
+): SimulatorDungeonSummaryDto {
+  const clearedRuns = action.dungeonClearedRuns ?? 0
+  const failedRuns = action.dungeonFailedRuns ?? 0
+  const timedOutRuns = action.dungeonTimedOutRuns ?? 0
+  const completedRuns = clearedRuns + failedRuns
+  const energyPerRun = dungeonEnergyCost(difficulty)
+  const failedWaves: Record<number, number> = {}
+  if (action.dungeonFailedWaves) {
+    for (const [wave, count] of Object.entries(action.dungeonFailedWaves)) {
+      if (count > 0) failedWaves[Number(wave)] = count
+    }
+  }
+  return {
+    dungeonId: dungeon.id,
+    dungeonName: dungeon.name,
+    totalWaves: dungeon.totalWaves,
+    requestedRuns,
+    completedRuns,
+    clearedRuns,
+    failedRuns,
+    timedOutRuns,
+    energyPerRun,
+    totalEnergySpent: completedRuns * energyPerRun,
+    bestWaveCleared: action.dungeonBestWaveCleared ?? 0,
+    failedWaves,
+  }
+}
+
+function runDungeonSolo(
+  profile: SimulatorProfileDto,
+  request: SimulatorRunRequestDto,
+  environmentNode: SimulatorEnvironmentNodeDto,
+  dungeon: DungeonDefinition,
+  repeatCount: number,
+  seed: bigint,
+  catalog: GameDataCatalog,
+  startTicks: bigint,
+  maxTargetTicks: bigint,
+): { member: SimulatorMemberResultDto; simulatedSeconds: number; summary: SimulatorDungeonSummaryDto } {
+  const state = restoreToState(
+    profile,
+    0,
+    dungeon.nodeId,
+    environmentNode,
+    catalog,
+    request.environment.capturedAtUnixSeconds,
+  )
+  state.lastSimulatedAtTicks = startTicks
+  state.hitpoints = state.maxHitpoints
+  state.manapoints = state.maxManapoints
+  const player = createSimPlayerRuntime(state)
+  const wallet = buildWalletMap(profile.assets)
+  const dungeonEncounter = resolveEncounterOrDungeon(catalog, dungeon.id)!
+
+  const queued: SimActionState = {
+    id: `sim:solo:${dungeon.id}`,
+    actionId: dungeon.id,
+    difficulty: request.difficulty,
+    pvpEnabled: false,
+    remainingRepeats: repeatCount,
+    completedRepeats: 0,
+    progressSeconds: 0,
+    status: ActionQueueStatus.Running,
+    expedition: null,
+    participation: null,
+    dungeonRestartOnWipe: true,
+    dungeonClearedRuns: 0,
+    dungeonFailedRuns: 0,
+    dungeonTimedOutRuns: 0,
+    dungeonBestWaveCleared: 0,
+    dungeonFailedWaves: {},
+  }
+  player.actions.push(queued)
+  player.ensureActionReport(queued.id, dungeon.id, dungeon.name)
+  queued.expedition = {
+    ...createCombatSearchState(
+      player,
+      dungeonEncounter,
+      CombatExpeditionPhase.InitialSearch,
+      catalog,
+      0,
+      seed,
+      1,
+    ),
+    dungeonId: dungeon.id,
+    dungeonTotalWaves: dungeon.totalWaves,
+    isPinned: true,
+    originNodeId: dungeon.nodeId,
+  }
+
+  const result = advanceSimulationTo(
+    player,
+    maxTargetTicks,
+    catalog,
+    wallet,
+    ConsumableScheduleMode.EventDriven,
+    true,
+  )
+  const initEvent = simEventToDto({
+    atTicks: startTicks,
+    code: 'combat.search.started',
+    message: `准备挑战追忆副本：${dungeon.name}（${dungeonDifficultyDisplayName(request.difficulty)}）。`,
+    actionId: dungeon.id,
+    itemDeltas: null,
+  })
+  const finalState = player.state
+  const report = player.report
+  const expedition = queued.expedition
+
+  const rootExp: SimulatorRootExpDto = report
+    ? {
+        stamina: report.rootExp.stamina,
+        meridians: report.rootExp.meridians,
+        attack: report.rootExp.attack,
+        bone: report.rootExp.bone,
+        agility: report.rootExp.agility,
+        consciousness: report.rootExp.consciousness,
+      }
+    : { stamina: 0, meridians: 0, attack: 0, bone: 0, agility: 0, consciousness: 0 }
+
+  return {
+    simulatedSeconds: result.elapsedSeconds,
+    summary: buildDungeonSummary(dungeon, request.difficulty, repeatCount, queued),
+    member: {
+      memberIndex: 0,
+      playerId: player.playerId,
+      displayName: finalState.displayName,
+      hitpoints: finalState.hitpoints,
+      maxHitpoints: finalState.maxHitpoints,
+      manapoints: finalState.manapoints,
+      maxManapoints: finalState.maxManapoints,
+      regenCarrySeconds: finalState.regenCarrySeconds,
+      combatSkills: combatSkillsToDto(finalState.combatSkills),
+      combatBuffCarry: finalState.combatBuffCarry.map(combatBuffCarryToDto),
+      completedRepeats: queued.completedRepeats,
+      waveNumber: expedition?.waveNumber ?? dungeon.totalWaves,
+      phase: expedition?.phase ?? CombatExpeditionPhase.InitialSearch,
+      experience: report?.experience ?? 0,
+      foundation: report?.foundation ?? 0,
+      combatExperience: report?.combatExperience ?? 0,
+      lifetimeExperience: finalState.lifetimeExperience - profile.lifetimeExperience,
+      rootExp,
+      cycles: report?.cycles ?? 0,
+      encounters: report?.encounters ?? 0,
+      normalKills: report?.normalKills ?? 0,
+      eliteKills: report?.eliteKills ?? 0,
+      bossKills: report?.bossKills ?? 0,
+      deaths: report?.deaths ?? 0,
+      items: report ? report.toItemsDto() : [],
+      itemsLost: report ? report.toItemsLostDto() : [],
+      assetDeltas: result.assetDeltas,
+      remainingConsumableBalances: rebuildRemainingAssets(profile.assets, result.assetDeltas),
+      combatAutoUseSlots: finalState.autoUseSlots
+        .filter((slot) => slot.actionType === AutoUseBar.Combat)
+        .map(autoUseSlotToDto),
+      combatStats: report ? report.toCombatStatDtos() : [],
+      enemies: toEnemyDtos(expedition),
+      events: [initEvent, ...result.events.map(simEventToDto)],
+      droppedEventCount: result.droppedEventCount,
+    },
+  }
+}
+
+function runDungeonParty(
+  request: SimulatorRunRequestDto,
+  environmentNode: SimulatorEnvironmentNodeDto,
+  dungeon: DungeonDefinition,
+  repeatCount: number,
+  seed: bigint,
+  catalog: GameDataCatalog,
+  startTicks: bigint,
+  maxTargetTicks: bigint,
+): { members: SimulatorMemberResultDto[]; simulatedSeconds: number; summary: SimulatorDungeonSummaryDto } {
+  const count = request.members.length
+  const memberStates: PlayerState[] = new Array(count)
+  const snapshots: ActionParticipantSnapshot[] = new Array(count)
+  for (let i = 0; i < count; i++) {
+    const state = restoreToState(
+      request.members[i],
+      i,
+      dungeon.nodeId,
+      environmentNode,
+      catalog,
+      request.environment.capturedAtUnixSeconds,
+    )
+    state.hitpoints = state.maxHitpoints
+    state.manapoints = state.maxManapoints
+    memberStates[i] = state
+    snapshots[i] = buildActionParticipantSnapshot(state, catalog)
+  }
+
+  const sessionId = `action:${deriveSessionGuidN(seed, dungeon.id, request.difficulty)}`
+  const spec = createActionParticipationSpec(
+    sessionId,
+    dungeon.id,
+    dungeon.nodeId,
+    seed,
+    request.environment.capturedAtUnixSeconds,
+    snapshots,
+    dungeon.id,
+    0,
+    request.difficulty,
+    dungeon.id,
+  )
+
+  const workingWallet: { memberIndex: number; itemId: string; variant: string; quantity: number }[] =
+    []
+  for (let i = 0; i < count; i++) {
+    for (const asset of request.members[i].assets) {
+      if (asset.quantity <= 0) continue
+      const item = catalog.items.get(asset.itemId)
+      if (!item || !item.consumable) continue
+      workingWallet.push({
+        memberIndex: i,
+        itemId: asset.itemId,
+        variant: asset.variant ?? '',
+        quantity: asset.quantity,
+      })
+    }
+  }
+
+  const engine = ActionParticipationSessionEngine.create(spec, catalog, workingWallet)
+  engine.configureDungeonRepeatMode(repeatCount, true)
+  const settlements = engine.advanceTo(maxTargetTicks, { ignoreOfflineLimit: true })
+  const sessionAssetDeltas = engine.takeAssetDeltas()
+  const simulatedSeconds = ticksDiffSeconds(startTicks, engine.advancedAtTicks)
+  const summary = buildDungeonSummary(dungeon, request.difficulty, repeatCount, engine.canonicalAction)
+
+  const results: SimulatorMemberResultDto[] = new Array(count)
+  for (let i = 0; i < count; i++) {
+    const memberPlayer = createSimPlayerRuntime(memberStates[i])
+    const queued: SimActionState = {
+      id: `${sessionId}:member:${i}`,
+      actionId: spec.actionId,
+      difficulty: spec.difficulty,
+      pvpEnabled: false,
+      remainingRepeats: 0,
+      completedRepeats: 0,
+      progressSeconds: 0,
+      status: ActionQueueStatus.Running,
+      expedition: null,
+      participation: {
+        sessionId: spec.sessionId,
+        spec,
+        appliedSequence: 0,
+        endsAtUnixSeconds: Number.POSITIVE_INFINITY,
+      },
+    }
+    memberPlayer.actions.push(queued)
+
+    const playerId = memberPlayer.playerId
+    const memberDeltas: SimulatorAssetDto[] = []
+    const memberEvents: ReturnType<typeof simEventToDto>[] = []
+    let droppedEvents = 0
+
+    const matching = settlements
+      .filter((entry) => entry.playerId === playerId)
+      .sort((a, b) => a.sequence - b.sequence)
+    for (const settlement of matching) {
+      const applied = applyActionParticipationSettlement(memberPlayer, settlement, catalog)
+      memberDeltas.push(...applied.assetDeltas)
+      for (const ev of applied.events) memberEvents.push(simEventToDto(ev))
+      droppedEvents += applied.droppedEventCount
+    }
+
+    for (const delta of sessionAssetDeltas) {
+      if (delta.memberIndex !== i) continue
+      memberDeltas.push({
+        itemId: delta.itemId,
+        variant: delta.variant,
+        quantity: delta.quantityDelta,
+      })
+    }
+
+    const finalState = memberPlayer.state
+    const report = memberPlayer.report
+    const expedition = memberPlayer.actions[0].expedition
+    const core = finalState.coreAttributes
+    const baseCore = request.members[i].coreAttributes
+    const remaining = rebuildRemainingAssets(request.members[i].assets, memberDeltas)
+
+    results[i] = {
+      memberIndex: i,
+      playerId,
+      displayName: finalState.displayName,
+      hitpoints: finalState.hitpoints,
+      maxHitpoints: finalState.maxHitpoints,
+      manapoints: finalState.manapoints,
+      maxManapoints: finalState.maxManapoints,
+      regenCarrySeconds: finalState.regenCarrySeconds,
+      combatSkills: combatSkillsToDto(finalState.combatSkills),
+      combatBuffCarry: finalState.combatBuffCarry.map(combatBuffCarryToDto),
+      completedRepeats: queued.completedRepeats,
+      waveNumber: expedition?.waveNumber ?? dungeon.totalWaves,
+      phase: expedition?.phase ?? CombatExpeditionPhase.InitialSearch,
+      experience: finalState.experience - request.members[i].experience,
+      foundation: finalState.foundation - request.members[i].foundation,
+      combatExperience: finalState.combatExperience - request.members[i].combatExperience,
+      lifetimeExperience: finalState.lifetimeExperience - request.members[i].lifetimeExperience,
+      rootExp: {
+        stamina: core.staminaExp - baseCore.staminaExp,
+        meridians: core.meridiansExp - baseCore.meridiansExp,
+        attack: core.attackExp - baseCore.attackExp,
+        bone: core.boneExp - baseCore.boneExp,
+        agility: core.agilityExp - baseCore.agilityExp,
+        consciousness: core.consciousnessExp - baseCore.consciousnessExp,
+      },
+      cycles: report?.cycles ?? 0,
+      encounters: report?.encounters ?? 0,
+      normalKills: report?.normalKills ?? 0,
+      eliteKills: report?.eliteKills ?? 0,
+      bossKills: report?.bossKills ?? 0,
+      deaths: report?.deaths ?? 0,
+      items: report ? report.toItemsDto() : [],
+      itemsLost: report ? report.toItemsLostDto() : [],
+      assetDeltas: memberDeltas,
+      remainingConsumableBalances: remaining,
+      combatAutoUseSlots: finalState.autoUseSlots
+        .filter((slot) => slot.actionType === AutoUseBar.Combat)
+        .map(autoUseSlotToDto),
+      combatStats: report ? report.toCombatStatDtos() : [],
+      enemies: toEnemyDtos(expedition),
+      events: memberEvents,
+      droppedEventCount: droppedEvents,
+    }
+  }
+  return { members: results, simulatedSeconds, summary }
+}
+
 export function runSimulation(
   request: SimulatorRunRequestDto,
   catalog: GameDataCatalog,
 ): SimulatorRunResultDto {
+  const dungeonId =
+    typeof request.dungeonId === 'string' && request.dungeonId.trim().length > 0
+      ? request.dungeonId.trim()
+      : null
+
+  if (dungeonId !== null) {
+    const dungeon = catalog.dungeons.get(dungeonId)
+    if (!dungeon) {
+      throw new SimulatorValidationError(`目标追忆副本不存在：${dungeonId}。`)
+    }
+    const effectiveNodeId = request.nodeId || dungeon.nodeId
+    validateCommon(
+      request.formatVersion,
+      request.environment,
+      request.members,
+      effectiveNodeId,
+      catalog,
+      true,
+    )
+    if (effectiveNodeId !== dungeon.nodeId) {
+      throw new SimulatorValidationError('追忆副本节点与请求节点不一致。')
+    }
+    if (
+      !Number.isInteger(request.difficulty) ||
+      request.difficulty < DUNGEON_MIN_DIFFICULTY ||
+      request.difficulty > DUNGEON_MAX_DIFFICULTY
+    ) {
+      throw new SimulatorValidationError('追忆副本难度必须位于 0~10。')
+    }
+    const repeatCount =
+      request.repeatCount !== undefined && request.repeatCount !== null
+        ? Math.trunc(request.repeatCount)
+        : 10
+    if (
+      !Number.isFinite(repeatCount) ||
+      repeatCount < MIN_DUNGEON_REPEATS ||
+      repeatCount > MAX_DUNGEON_REPEATS
+    ) {
+      throw new SimulatorValidationError(
+        `追忆副本模拟次数必须位于 ${MIN_DUNGEON_REPEATS}~${MAX_DUNGEON_REPEATS}。`,
+      )
+    }
+    const seed = parseInt64Seed(request.seed)
+    const environmentNode = requireEnvironmentNode(request.environment, dungeon.nodeId)
+    const startTicks = ticksFromUnixSeconds(request.environment.capturedAtUnixSeconds)
+    const perWaveCap = DUNGEON_WAVE_TIMEOUT_SECONDS + Math.max(10, dungeon.waveRestSeconds + 10)
+    const maxBudgetSeconds = repeatCount * dungeon.totalWaves * perWaveCap
+    const maxTargetTicks = addDurationTruncTicks(startTicks, maxBudgetSeconds)
+
+    if (request.members.length === 1) {
+      const solo = runDungeonSolo(
+        request.members[0],
+        request,
+        environmentNode,
+        dungeon,
+        repeatCount,
+        seed,
+        catalog,
+        startTicks,
+        maxTargetTicks,
+      )
+      return {
+        formatVersion: SIMULATOR_FORMAT_VERSION,
+        nodeId: dungeon.nodeId,
+        difficulty: request.difficulty,
+        seed: request.seed,
+        requestedDurationSeconds: solo.simulatedSeconds,
+        simulatedSeconds: solo.simulatedSeconds,
+        members: [solo.member],
+        dungeonId: dungeon.id,
+        dungeonSummary: solo.summary,
+      }
+    }
+
+    const party = runDungeonParty(
+      request,
+      environmentNode,
+      dungeon,
+      repeatCount,
+      seed,
+      catalog,
+      startTicks,
+      maxTargetTicks,
+    )
+    return {
+      formatVersion: SIMULATOR_FORMAT_VERSION,
+      nodeId: dungeon.nodeId,
+      difficulty: request.difficulty,
+      seed: request.seed,
+      requestedDurationSeconds: party.simulatedSeconds,
+      simulatedSeconds: party.simulatedSeconds,
+      members: party.members,
+      dungeonId: dungeon.id,
+      dungeonSummary: party.summary,
+    }
+  }
+
   validateCommon(request.formatVersion, request.environment, request.members, request.nodeId, catalog)
   if (request.difficulty < 0 || request.difficulty > 5) {
     throw new SimulatorValidationError('讨伐难度必须位于 0~5。')

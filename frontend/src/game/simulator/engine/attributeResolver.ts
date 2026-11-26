@@ -158,6 +158,7 @@ export function resolvePlayerAttributesFromState(
     traitLevels,
     state.effectiveLinggen,
     state.genjiPoints,
+    state.techniqueExperiences,
   );
 }
 
@@ -182,6 +183,7 @@ export function resolveAttributesCore(
   traitLevels: Record<string, number> | null,
   linggen: LinggenValues,
   genjiPoints = 0,
+  techniqueExperiences?: Record<string, number> | null,
 ): PlayerAttributes {
   const traits = traitIds && traitIds.length > 0 ? [...traitIds] : null;
   const threatOnTaken = resolveThreatOnTakenPoints(traits, traitLevels);
@@ -196,6 +198,12 @@ export function resolveAttributesCore(
   };
   const F = (key: string) => flat.get(key) ?? 0;
   const R = (key: string) => ratios.get(key) ?? 0;
+
+  // 符箓/阵法技艺等级每级分别提供 +1 点对应伤害增幅（与服务端 PlayerAttributeResolver / TechniqueCatalog 1:1 镜像）。
+  const talismanExp = techniqueExperiences?.talisman ?? 0;
+  const formationExp = techniqueExperiences?.formation ?? 0;
+  addPoint('talismanDamageBonusPoints', catalog.realmProgression.techniqueLevelFor(talismanExp));
+  addPoint('formationDamageBonusPoints', catalog.realmProgression.techniqueLevelFor(formationExp));
 
   accumulateTraitModifiers(traits, traitLevels, ratios, points);
 
@@ -494,6 +502,8 @@ export function resolveAttributesCore(
     totalDamageBonusPoints: P('totalDamageBonusPoints'),
     basicAttackBonusPoints: P('basicAttackBonusPoints'),
     skillBonusPoints: P('skillBonusPoints'),
+    talismanDamageBonusPoints: P('talismanDamageBonusPoints'),
+    formationDamageBonusPoints: P('formationDamageBonusPoints'),
     physicalDamageReductionPoints: P('physicalDamageReductionPoints'),
     spellDamageReductionPoints: P('spellDamageReductionPoints'),
     metalDamageReductionPoints: P('metalDamageReductionPoints'),
@@ -558,6 +568,8 @@ export function playerAttributesToCombatantStats(
       totalDamageBonusPoints: attrs.totalDamageBonusPoints,
       basicAttackBonusPoints: attrs.basicAttackBonusPoints,
       skillBonusPoints: attrs.skillBonusPoints,
+      talismanDamageBonusPoints: attrs.talismanDamageBonusPoints,
+      formationDamageBonusPoints: attrs.formationDamageBonusPoints,
       physicalDamageReductionPoints: attrs.physicalDamageReductionPoints,
       spellDamageReductionPoints: attrs.spellDamageReductionPoints,
       metalDamageReductionPoints: attrs.metalDamageReductionPoints,

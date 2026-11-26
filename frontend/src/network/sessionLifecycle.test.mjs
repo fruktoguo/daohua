@@ -153,6 +153,7 @@ function snapshot(playerId, stateVersion = 5, schemaVersion = SNAPSHOT_SCHEMA_VE
     criticalDamagePoints breakPower parryResolve hpRegenPerFiveSeconds mpRegenPerFiveSeconds attackIntervalMilliseconds
     physicalDamageBonusPoints spellDamageBonusPoints metalDamageBonusPoints woodDamageBonusPoints waterDamageBonusPoints
     fireDamageBonusPoints earthDamageBonusPoints totalDamageBonusPoints basicAttackBonusPoints skillBonusPoints
+    talismanDamageBonusPoints formationDamageBonusPoints
     physicalDamageReductionPoints spellDamageReductionPoints metalDamageReductionPoints woodDamageReductionPoints
     waterDamageReductionPoints fireDamageReductionPoints earthDamageReductionPoints damageAbsorptionPoints
     fixedDamageBonus fixedDamageReduction fixedPhysicalDamageBonus fixedPhysicalDamageReduction fixedSpellDamageBonus fixedSpellDamageReduction attackSpeedPoints

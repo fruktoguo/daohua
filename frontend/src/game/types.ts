@@ -1094,6 +1094,10 @@ export interface CombatAttributes {
   basicAttackBonusPoints: number
   /** 技能增幅点数（Linear） */
   skillBonusPoints: number
+  /** 符箓伤害增幅点数（Linear：仅作用于造成伤害的符箓） */
+  talismanDamageBonusPoints?: number
+  /** 阵法伤害增幅点数（Linear：仅作用于造成伤害的阵盘） */
+  formationDamageBonusPoints?: number
   /** 物理减伤点数（NonLinear） */
   physicalDamageReductionPoints: number
   /** 法术减伤点数（NonLinear） */

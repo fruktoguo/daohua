@@ -2,8 +2,12 @@
 // 严格对应 DaoHua.Ecs.Systems.CombatActionRules
 
 import {
+  resolveDungeonClearRewards,
+  resolveDungeonMonster,
+  resolveEncounterOrDungeon,
   type CombatEncounterDefinition,
   type CombatMonsterDefinition,
+  type DungeonDefinition,
   type GameDataCatalog,
 } from './catalog.ts'
 import { decideInitialActions } from './combatEngine.ts'
@@ -22,6 +26,7 @@ import {
   clamp,
   createSeed,
   nextSeed,
+  roundToEven,
   seedModulo,
   ticksDiffSeconds,
   ticksToUnixSeconds,
@@ -36,16 +41,26 @@ import {
   ALL_TRAITS,
   CombatMonsterRank,
   CombatRespawnPolicy,
+  DUNGEON_IN_BATTLE_RESPAWN_SECONDS,
+  DUNGEON_INITIAL_SEARCH_SECONDS,
+  DUNGEON_WAVE_TIMEOUT_SECONDS,
   PartyWipeRule,
   PercentCurveMode,
   abilityLevelForExp,
   calculateStorageBagDropChance,
+  clampDungeonDifficulty,
   BROKEN_STORAGE_BAG_ITEM_ID,
   difficultyDropQuantityMultiplier,
   difficultyDropRateMultiplier,
   difficultyExperienceMultiplier,
+  dungeonDifficultyDisplayName,
+  dungeonEnergyCost,
+  dungeonEnergyCostScale,
+  dungeonRareDropRateMultiplier,
+  dungeonTotalRewardMultiplier,
   parseBuffEffects,
   percentMultiplier,
+  scaleDungeonMonsterStats,
   weakenMonsterStats,
 } from './rules.ts'
 import {
@@ -84,6 +99,20 @@ const DROP_QUANTITY_CHANNEL_SALT = BigInt.asIntN(64, 0x9e3779b97f4a7c15n)
 const UNIVERSAL_RARE_DROP_ROLL_SALT = BigInt.asIntN(64, 0x5a17b4c83d9e2f1an)
 const UNIVERSAL_RARE_DROP_ASSIGNMENT_SALT = BigInt.asIntN(64, 0x3d9e2f1a5a17b4c8n)
 const DROP_ASSIGNMENT_CHANNEL_SALT = BigInt.asIntN(64, 0xc2b2ae3d27d4eb4fn)
+const DUNGEON_MEMBER_SEED_SALT = BigInt.asIntN(64, 0x517cc1b727220a95n)
+const DUNGEON_CLEAR_LOOT_SALT = BigInt.asIntN(64, 0xa0761d6478bd642fn)
+const DUNGEON_RARE_ROLL_SALT = BigInt.asIntN(64, 0xe7037ed1a0b428dbn)
+const SPIRIT_STONE_ITEM_ID = 'currency.spirit-stone'
+
+export function tryGetDungeon(
+  expedition: SimCombatExpeditionState | null | undefined,
+  catalog: GameDataCatalog,
+): DungeonDefinition | null {
+  if (expedition?.dungeonId) {
+    return catalog.dungeons.get(expedition.dungeonId) ?? null
+  }
+  return null
+}
 
 export interface CombatEntryPreparation {
   battle: CombatEncounterState | null
@@ -210,6 +239,45 @@ function resetAllyCarry(
   return allies
 }
 
+function resetAllyCarryFullClean(
+  spec: SimActionParticipationSpec,
+  selfIndex: number,
+): ExpeditionAllyState[] {
+  const allies: ExpeditionAllyState[] = []
+  for (let i = 0; i < spec.members.length; i++) {
+    if (i === selfIndex) continue
+    const member = spec.members[i]
+    allies.push({
+      memberIndex: i,
+      state: {
+        hitpoints: member.stats.maxHitpoints,
+        manapoints: member.stats.maxManapoints,
+        nextAttackAtSeconds: 0,
+        attackCount: 0,
+        threat: 0,
+        pendingSkillIndex: -1,
+        threatBonusPoints: 0,
+        bonusAbsorptionPoints: 0,
+        skillCooldownUntil: null,
+        skillCastCount: 0,
+        buffs: null,
+        respawnAtSeconds: null,
+        respawnPolicy: CombatRespawnPolicy.Immediate,
+        respawnTargetIndex: -1,
+        respawnDeadlineSeconds: null,
+        respawnWaitingUntilSeconds: null,
+        traits: [],
+        traitLevels: null,
+      },
+      pendingAction: null,
+      pendingActionDurationSeconds: 0,
+      combatSkills: createEmptyCombatSkillState(),
+      combatBuffs: [],
+    })
+  }
+  return allies
+}
+
 export function createCombatSearchState(
   player: SimPlayerRuntime,
   encounter: CombatEncounterDefinition,
@@ -221,11 +289,15 @@ export function createCombatSearchState(
   spec: SimActionParticipationSpec | null = null,
   allies: ExpeditionAllyState[] | null = null,
 ): SimCombatExpeditionState {
+  const dungeon = catalog.dungeons.get(encounter.id) ?? null
   const searchSpeedPoints = spec
     ? spec.searchSpeedPoints
     : player.resolveAttributes(catalog).searchSpeedPoints
-  const duration =
-    phase === CombatExpeditionPhase.InitialSearch
+  const duration = dungeon
+    ? phase === CombatExpeditionPhase.InitialSearch
+      ? DUNGEON_INITIAL_SEARCH_SECONDS
+      : dungeon.waveRestSeconds
+    : phase === CombatExpeditionPhase.InitialSearch
       ? encounter.searchSeconds
       : encounter.respawnSeconds *
         percentMultiplier(searchSpeedPoints, PercentCurveMode.NonLinear)
@@ -253,14 +325,16 @@ export function createCombatSearchState(
     recentEvents: null,
     playerRespawnAtSeconds: null,
     playerState: null,
-    originNodeId: spec ? spec.nodeId : player.state.worldNodeId,
-    isPinned: spec !== null,
+    originNodeId: dungeon ? dungeon.nodeId : spec ? spec.nodeId : player.state.worldNodeId,
+    isPinned: dungeon !== null || spec !== null,
     selfIndex,
     allies:
       spec === null || spec.members.length === 1
         ? null
         : allies ?? buildAllyCarry(spec, selfIndex),
     duelSeekFailed: false,
+    dungeonId: dungeon ? dungeon.id : null,
+    dungeonTotalWaves: dungeon ? dungeon.totalWaves : null,
   }
 }
 
@@ -276,8 +350,39 @@ export function initializeCombatAction(
   if (!def) throw new Error(`未知行动: ${action.actionId}`)
   player.ensureActionReport(action.id, def.id, def.name)
   const spec = action.participation?.spec ?? null
+  if (def.executionKind === 'dungeon') {
+    const dungeon = catalog.dungeons.get(def.id)
+    if (dungeon) {
+      const dungeonEncounter = resolveEncounterOrDungeon(catalog, dungeon.id)!
+      const diff = clampDungeonDifficulty(spec ? spec.difficulty : action.difficulty)
+      action.expedition = {
+        ...createCombatSearchState(
+          player,
+          dungeonEncounter,
+          CombatExpeditionPhase.InitialSearch,
+          catalog,
+          action.completedRepeats,
+          null,
+          1,
+          spec,
+        ),
+        dungeonId: dungeon.id,
+        dungeonTotalWaves: dungeon.totalWaves,
+        isPinned: true,
+        originNodeId: dungeon.nodeId,
+      }
+      events.add({
+        atTicks,
+        code: 'combat.search.started',
+        message: `准备挑战追忆副本：${dungeon.name}（${dungeonDifficultyDisplayName(diff)}）。`,
+        actionId: def.id,
+        itemDeltas: null,
+      })
+      return
+    }
+  }
   if (spec) {
-    const pinned = catalog.encounters.get(spec.encounterId)
+    const pinned = resolveEncounterOrDungeon(catalog, spec.encounterId)
     if (!pinned) throw new Error(`参与会话遭遇 ${spec.encounterId} 不存在。`)
     action.expedition = createCombatSearchState(
       player,
@@ -565,26 +670,56 @@ export function prepareCombatEntry(
   const def = catalog.actions.get(action.actionId)
   if (!def) throw new Error(`未知行动: ${action.actionId}`)
   const spec = action.participation?.spec ?? null
-  const partySize = spec ? spec.members.length : 1
-  const wave = selectEncounterWave(
-    encounter,
-    catalog.monsters,
-    completedSearch.seed,
-    completedSearch.waveNumber,
-    partySize,
-  )
-  const weaken = player.state.nodeBuildingEffects.monsterWeakenRatio
+  const dungeon = tryGetDungeon(completedSearch, catalog)
   const difficulty = spec ? spec.difficulty : action.difficulty
+  if (dungeon && completedSearch.waveNumber === 1) {
+    const dungeonDiff = clampDungeonDifficulty(difficulty)
+    const energyCost = dungeonEnergyCost(dungeonDiff)
+    events.add({
+      atTicks: entryAtTicks,
+      code: 'dungeon.started',
+      message: `消耗 ${energyCost} 点体力，踏入 ${dungeon.name}（${dungeonDifficultyDisplayName(dungeonDiff)}）！`,
+      actionId: def.id,
+      itemDeltas: null,
+    })
+  }
+  const partySize = spec ? spec.members.length : 1
+  let wave: CombatMonsterDefinition[]
+  if (dungeon) {
+    const maxPartyRealmLevel =
+      spec && spec.members.length > 0
+        ? Math.max(...spec.members.map((m) => m.realmLevel))
+        : player.state.realmLevel
+    const waveDef = dungeon.waves[completedSearch.waveNumber - 1]
+    if (!waveDef) {
+      throw new Error(`追忆副本 ${dungeon.id} 波次 ${completedSearch.waveNumber} 超出范围。`)
+    }
+    wave = waveDef.enemyIds.map((eid) =>
+      resolveDungeonMonster(catalog, dungeon, eid, difficulty, maxPartyRealmLevel),
+    )
+  } else {
+    wave = selectEncounterWave(
+      encounter,
+      catalog.monsters,
+      completedSearch.seed,
+      completedSearch.waveNumber,
+      partySize,
+    )
+  }
+  const weaken = dungeon ? 0 : player.state.nodeBuildingEffects.monsterWeakenRatio
   const enemyTemplates: CombatantTemplate[] = wave.map((monster) => {
-    const scaled = scaleMonsterStats(monster.stats, difficulty)
+    const stats = dungeon
+      ? scaleDungeonMonsterStats(monster.stats, difficulty)
+      : weakenMonsterStats(scaleMonsterStats(monster.stats, difficulty), weaken)
     return {
-      stats: weakenMonsterStats(scaled, weaken),
+      stats,
       skills: monster.skills,
       definitionId: monster.id,
       rank: monster.rank,
     }
   })
-  const respawnSeconds = inBattleRespawnSeconds(encounter)
+  const respawnSeconds = dungeon ? DUNGEON_IN_BATTLE_RESPAWN_SECONDS : inBattleRespawnSeconds(encounter)
+  const wipeEndsBattle = dungeon !== null
   let battle: CombatEncounterState
 
   if (spec) {
@@ -600,6 +735,7 @@ export function prepareCombatEntry(
       selfIndex,
       enemyTemplates,
       respawnSeconds,
+      wipeEndsBattle,
     )
     const carried = completedSearch.allies
     const entryAtUnix = ticksToUnixSeconds(entryAtTicks)
@@ -714,6 +850,7 @@ export function prepareCombatEntry(
       },
       enemyTemplates,
       respawnSeconds,
+      wipeEndsBattle,
     )
     battle.player.hitpoints = clamp(player.state.hitpoints, 0, player.state.maxHitpoints)
     battle.player.manapoints = clamp(player.state.manapoints, 0, player.state.maxManapoints)
@@ -724,6 +861,9 @@ export function prepareCombatEntry(
     applyCombatBuffsToCombatant(player.state.combatBuffCarry, battle.player, battle.elapsedSeconds)
   }
 
+  if (dungeon) {
+    battle.maxBattleSeconds = DUNGEON_WAVE_TIMEOUT_SECONDS
+  }
   for (let i = 0; i < wave.length; i++) {
     battle.enemies[i].definitionId = wave[i].id
   }
@@ -791,7 +931,9 @@ export function prepareCombatEntry(
   events.add({
     atTicks: entryAtTicks,
     code: 'combat.started',
-    message: `遭遇妖兽：${waveNames}。`,
+    message: dungeon
+      ? `追忆第 ${completedSearch.waveNumber}/${dungeon.totalWaves} 波：遭遇 ${waveNames}。`
+      : `遭遇妖兽：${waveNames}。`,
     actionId: def.id,
     itemDeltas: null,
   })
@@ -806,19 +948,30 @@ export function restoreCombatBattle(
 ): CombatEncounterState {
   const expedition = action.expedition!
   const waveEnemies = expedition.enemies!
-  const weaken = player.state.nodeBuildingEffects.monsterWeakenRatio
+  const dungeon = tryGetDungeon(expedition, catalog)
+  const weaken = dungeon ? 0 : player.state.nodeBuildingEffects.monsterWeakenRatio
   const spec = action.participation?.spec ?? null
   const difficulty = spec ? spec.difficulty : action.difficulty
+  const restoreMaxRealmLevel =
+    spec && spec.members.length > 0
+      ? Math.max(...spec.members.map((m) => m.realmLevel))
+      : player.state.realmLevel
   const templates: CombatantTemplate[] = waveEnemies.map((enemy) => {
-    const monster = catalog.monsters.get(enemy.enemyId)!
-    const scaled = scaleMonsterStats(monster.stats, difficulty)
+    const monster = dungeon
+      ? resolveDungeonMonster(catalog, dungeon, enemy.enemyId, difficulty, restoreMaxRealmLevel)
+      : catalog.monsters.get(enemy.enemyId)!
+    const stats = dungeon
+      ? scaleDungeonMonsterStats(monster.stats, difficulty)
+      : weakenMonsterStats(scaleMonsterStats(monster.stats, difficulty), weaken)
     return {
-      stats: weakenMonsterStats(scaled, weaken),
+      stats,
       skills: monster.skills,
       definitionId: monster.id,
       rank: monster.rank,
     }
   })
+  const respawnSeconds = dungeon ? DUNGEON_IN_BATTLE_RESPAWN_SECONDS : inBattleRespawnSeconds(encounter)
+  const wipeEndsBattle = dungeon !== null
 
   const selfSnapshot: CombatantSnapshot = expedition.playerState ?? {
     hitpoints: expedition.playerHitpoints,
@@ -882,7 +1035,8 @@ export function restoreCombatBattle(
       expedition.battleElapsedSeconds,
       expedition.outcome,
       allyAttacks + enemyAttacks,
-      inBattleRespawnSeconds(encounter),
+      respawnSeconds,
+      wipeEndsBattle,
     )
     for (let i = 0; i < spec.members.length; i++) {
       const extBuffs = spec.members[i].externalBuffs
@@ -914,14 +1068,18 @@ export function restoreCombatBattle(
       expedition.battleElapsedSeconds,
       expedition.outcome,
       expedition.playerAttackCount + enemyAttacks,
-      inBattleRespawnSeconds(encounter),
+      respawnSeconds,
       expedition.playerRespawnAtSeconds ?? Number.POSITIVE_INFINITY,
+      wipeEndsBattle,
     )
     const activeBuffs = player.state.buffs
     battleState.player.externalBuffStacks = (buffId) =>
       sumUnmergedActiveBuffStacks(battleState.player.buffs, activeBuffs, buffId)
   }
 
+  if (dungeon) {
+    battleState.maxBattleSeconds = DUNGEON_WAVE_TIMEOUT_SECONDS
+  }
   for (let i = 0; i < waveEnemies.length; i++) {
     battleState.enemies[i].definitionId = waveEnemies[i].enemyId
   }
@@ -957,10 +1115,10 @@ export function advanceCombatPreparationCore(
       events,
     )
     expedition = action.expedition!
-    encounter = catalog.encounters.get(expedition.encounterId)!
+    encounter = resolveEncounterOrDungeon(catalog, expedition.encounterId)!
   } else {
-    const found = catalog.encounters.get(expedition.encounterId)
-    if (!found) throw new Error(`远征状态引用的遭遇 ${expedition.encounterId} 不存在。`)
+    const found = resolveEncounterOrDungeon(catalog, expedition.encounterId)
+    if (!found) throw new Error(`远征状态引用的遭遇或追忆副本 ${expedition.encounterId} 不存在。`)
     encounter = found
   }
 
@@ -1349,6 +1507,182 @@ function applyCombatRewards(
   }
 }
 
+function creditDungeonExperience(
+  player: SimPlayerRuntime,
+  attributes: ReturnType<SimPlayerRuntime['resolveAttributes']>,
+  experience: number,
+  atUnixSeconds: number,
+  catalog: GameDataCatalog,
+): void {
+  if (experience <= 0) return
+  const cultivationBonus = attributes.cultivationExpBonusPoints + attributes.combatExpBonusPoints
+  const cultivationExp =
+    cultivationBonus !== 0
+      ? Math.max(0, experience * (1 + cultivationBonus / 100))
+      : experience
+  const expCap = resolveExpCapWithLinggen(player.state, catalog)
+  const creditedExp = player.creditExperience(cultivationExp, expCap, experience)
+  player.recordStats(atUnixSeconds, {
+    experience: creditedExp,
+    foundation: cultivationExp - creditedExp,
+    combatExperience: experience,
+    cultivationExperience: cultivationExp,
+  })
+  distributeRootExp(player, experience, catalog, atUnixSeconds)
+}
+
+function applyDungeonMonsterRewards(
+  player: SimPlayerRuntime,
+  monster: CombatMonsterDefinition,
+  seed: bigint,
+  killAtUnixSeconds: number,
+  catalog: GameDataCatalog,
+  deltas: Map<string, number>,
+  spec: SimActionParticipationSpec | null,
+  selfIndex: number,
+  difficulty: number,
+): void {
+  const attributes = player.resolveAttributes(catalog)
+  const totalMult = dungeonTotalRewardMultiplier(difficulty)
+  const levelMalus = spec !== null ? spec.levelMaluses[selfIndex] : 0
+  if (monster.experience > 0) {
+    const experience = monster.experience * totalMult * (1.0 - levelMalus)
+    creditDungeonExperience(player, attributes, experience, killAtUnixSeconds, catalog)
+  }
+
+  const dropBonus = Math.max(
+    0,
+    1 + (spec !== null ? spec.members[selfIndex].dropBonusPoints : attributes.dropBonusPoints) / 100,
+  )
+  const rareRateMult = dungeonRareDropRateMultiplier(difficulty)
+  for (const drop of monster.dropTable) {
+    if (!drop.itemId || drop.minQuantity <= 0 || drop.maxQuantity < drop.minQuantity || drop.dropChance <= 0) {
+      continue
+    }
+    const roll = Number(BigInt.asUintN(64, nextSeed(seed)) % 1_000_000n) / 1_000_000
+    const quantityRoll =
+      Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DROP_QUANTITY_CHANNEL_SALT))) % 1_000_000n) /
+      1_000_000
+    seed = nextSeed(seed)
+
+    if (drop.dropChance >= 1.0 - 1e-9) {
+      const baseQty = clamp(
+        Math.floor(drop.minQuantity + (drop.maxQuantity - drop.minQuantity + 1) * quantityRoll),
+        drop.minQuantity,
+        drop.maxQuantity,
+      )
+      const scaled = baseQty * totalMult
+      const floorQty = Math.floor(scaled)
+      const frac = scaled - floorQty
+      const extraRoll =
+        Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DUNGEON_RARE_ROLL_SALT))) % 1_000_000n) /
+        1_000_000
+      const quantity = floorQty + (extraRoll < frac ? 1.0 : 0.0)
+      if (quantity <= 0) continue
+      addAssetDeltaMap(deltas, drop.itemId, quantity)
+      player.recordStats(killAtUnixSeconds, { gainedItem: drop.itemId, gainedQuantity: quantity })
+    } else {
+      const effectiveChance = Math.min(1.0, drop.dropChance * rareRateMult * dropBonus)
+      if (roll > effectiveChance) continue
+      const quantity = clamp(
+        Math.floor(drop.minQuantity + (drop.maxQuantity - drop.minQuantity + 1) * quantityRoll),
+        drop.minQuantity,
+        drop.maxQuantity,
+      )
+      addAssetDeltaMap(deltas, drop.itemId, quantity)
+      player.recordStats(killAtUnixSeconds, { gainedItem: drop.itemId, gainedQuantity: quantity })
+    }
+  }
+}
+
+function applyDungeonClearRewards(
+  player: SimPlayerRuntime,
+  dungeon: DungeonDefinition,
+  difficulty: number,
+  maxPartyRealmLevel: number,
+  seed: bigint,
+  clearAtUnixSeconds: number,
+  catalog: GameDataCatalog,
+  deltas: Map<string, number>,
+  spec: SimActionParticipationSpec | null,
+  selfIndex: number,
+): void {
+  const attributes = player.resolveAttributes(catalog)
+  const totalMult = dungeonTotalRewardMultiplier(difficulty)
+  const levelMalus = spec !== null ? spec.levelMaluses[selfIndex] : 0
+  const baseRewards = resolveDungeonClearRewards(catalog, dungeon, difficulty, maxPartyRealmLevel)
+
+  if (baseRewards.experience > 0) {
+    const clearExp = baseRewards.experience * totalMult * (1.0 - levelMalus)
+    creditDungeonExperience(player, attributes, clearExp, clearAtUnixSeconds, catalog)
+  }
+
+  if (baseRewards.spiritStones > 0) {
+    const stones = roundToEven(baseRewards.spiritStones * totalMult)
+    if (stones > 0) {
+      addAssetDeltaMap(deltas, SPIRIT_STONE_ITEM_ID, stones)
+      player.recordStats(clearAtUnixSeconds, {
+        gainedItem: SPIRIT_STONE_ITEM_ID,
+        gainedQuantity: stones,
+      })
+    }
+  }
+
+  const energyScale = dungeonEnergyCostScale(difficulty)
+  const rareRateMult = dungeonRareDropRateMultiplier(difficulty)
+  for (const entry of dungeon.clearLootTable) {
+    if (difficulty < entry.minDifficulty || !entry.itemId) continue
+    seed = nextSeed(seed)
+
+    if (entry.kind === 'guaranteed' || entry.dropChance >= 1.0 - 1e-9) {
+      const qtyRoll =
+        Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DROP_QUANTITY_CHANNEL_SALT))) % 1_000_000n) /
+        1_000_000
+      const baseQty = clamp(
+        Math.floor(entry.minQuantity + (entry.maxQuantity - entry.minQuantity + 1) * qtyRoll),
+        entry.minQuantity,
+        entry.maxQuantity,
+      )
+      const scaled = baseQty * totalMult
+      const floorQty = Math.floor(scaled)
+      const frac = scaled - floorQty
+      const fracRoll =
+        Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DUNGEON_RARE_ROLL_SALT))) % 1_000_000n) /
+        1_000_000
+      const finalQty = floorQty + (fracRoll < frac ? 1.0 : 0.0)
+      if (finalQty <= 0) continue
+      addAssetDeltaMap(deltas, entry.itemId, finalQty)
+      player.recordStats(clearAtUnixSeconds, { gainedItem: entry.itemId, gainedQuantity: finalQty })
+    } else {
+      const effectiveChance = Math.min(1.0, entry.dropChance * rareRateMult)
+      const guaranteedRolls = Math.floor(energyScale)
+      const extraChance = energyScale - guaranteedRolls
+      const extraRoll =
+        Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DUNGEON_RARE_ROLL_SALT))) % 1_000_000n) /
+        1_000_000
+      const totalRolls = guaranteedRolls + (extraRoll < extraChance ? 1 : 0)
+      let totalWon = 0
+      for (let r = 0; r < totalRolls; r++) {
+        seed = nextSeed(seed)
+        const hitRoll = Number(BigInt.asUintN(64, nextSeed(seed)) % 1_000_000n) / 1_000_000
+        if (hitRoll > effectiveChance) continue
+        const qtyRoll =
+          Number(BigInt.asUintN(64, nextSeed(BigInt.asIntN(64, seed ^ DROP_QUANTITY_CHANNEL_SALT))) % 1_000_000n) /
+          1_000_000
+        const qty = clamp(
+          Math.floor(entry.minQuantity + (entry.maxQuantity - entry.minQuantity + 1) * qtyRoll),
+          entry.minQuantity,
+          entry.maxQuantity,
+        )
+        totalWon += qty
+      }
+      if (totalWon <= 0) continue
+      addAssetDeltaMap(deltas, entry.itemId, totalWon)
+      player.recordStats(clearAtUnixSeconds, { gainedItem: entry.itemId, gainedQuantity: totalWon })
+    }
+  }
+}
+
 export function completeCombatAdvanceCore(
   player: SimPlayerRuntime,
   action: SimActionState,
@@ -1588,11 +1922,115 @@ export function completeCombatAdvanceCore(
 
   if (combatResult.outcome === CombatOutcome.Running) return
 
+  const dungeon = tryGetDungeon(updatedBattle, catalog)
+  const dungeonDifficulty = dungeon
+    ? clampDungeonDifficulty(spec ? spec.difficulty : action.difficulty)
+    : 0
+  const finishAtTicks = addSecondsExactTicks(fromTicks, totalSec - stateRef.remainingSeconds)
+  const finishAtUnix = ticksToUnixSeconds(finishAtTicks)
+
   if (combatResult.outcome !== CombatOutcome.PlayerWon) {
     player.state.totalDefeats += 1
     player.markDirty(PlayerSectionKind.Progression)
-    const lostAtTicks = addSecondsExactTicks(fromTicks, totalSec - stateRef.remainingSeconds)
-    player.recordStats(ticksToUnixSeconds(lostAtTicks), { deaths: 1 })
+    player.recordStats(finishAtUnix, { deaths: 1 })
+    if (dungeon) {
+      action.dungeonFailedRuns = (action.dungeonFailedRuns ?? 0) + 1
+      if (battleState.timedOut) {
+        action.dungeonTimedOutRuns = (action.dungeonTimedOutRuns ?? 0) + 1
+      }
+      const fw = (action.dungeonFailedWaves ??= {})
+      fw[updatedBattle.waveNumber] = (fw[updatedBattle.waveNumber] ?? 0) + 1
+      action.dungeonBestWaveCleared = Math.max(
+        action.dungeonBestWaveCleared ?? 0,
+        Math.max(0, updatedBattle.waveNumber - 1),
+      )
+      player.addCombatEvent(
+        events,
+        fromTicks,
+        targetTicks,
+        stateRef.remainingSeconds,
+        'dungeon.failed',
+        battleState.timedOut
+          ? `追忆副本战斗超时（${DUNGEON_WAVE_TIMEOUT_SECONDS}s）：${dungeon.name}（${dungeonDifficultyDisplayName(dungeonDifficulty)}，第 ${updatedBattle.waveNumber}/${dungeon.totalWaves} 波），判定失败。`
+          : `追忆副本挑战失败：${dungeon.name}（${dungeonDifficultyDisplayName(dungeonDifficulty)}，第 ${updatedBattle.waveNumber}/${dungeon.totalWaves} 波）。`,
+        def.id,
+      )
+      if (action.dungeonRestartOnWipe) {
+        if (action.remainingRepeats > 0) action.remainingRepeats -= 1
+        if (action.remainingRepeats === 0) {
+          if (player.state.hitpoints <= 0) player.state.hitpoints = 1
+          if (spec === null) {
+            const idx = player.actions.indexOf(action)
+            if (idx >= 0) player.actions.splice(idx, 1)
+          } else {
+            action.expedition = {
+              ...updatedBattle,
+              playerHitpoints: Math.max(1, player.state.hitpoints),
+              playerRespawnAtSeconds: null,
+            }
+          }
+          return
+        }
+        const respawnMember =
+          spec && expedition.selfIndex < spec.members.length
+            ? spec.members[expedition.selfIndex]
+            : null
+        player.state.hitpoints = respawnMember
+          ? respawnMember.stats.maxHitpoints
+          : player.state.maxHitpoints
+        player.state.manapoints = respawnMember
+          ? respawnMember.stats.maxManapoints
+          : player.state.maxManapoints
+        player.state.combatSkills = createEmptyCombatSkillState()
+        player.state.combatBuffCarry = []
+        player.markDirty(PlayerSectionKind.Combat)
+        const nextRunSearch = createCombatSearchState(
+          player,
+          encounter,
+          CombatExpeditionPhase.InitialSearch,
+          catalog,
+          action.completedRepeats,
+          nextSeed(updatedBattle.seed),
+          1,
+          spec,
+          spec ? resetAllyCarryFullClean(spec, expedition.selfIndex) : null,
+        )
+        action.expedition = {
+          ...nextRunSearch,
+          dungeonId: dungeon.id,
+          dungeonTotalWaves: dungeon.totalWaves,
+          recentEvents: updatedBattle.recentEvents,
+          playerRespawnAtSeconds: null,
+        }
+        action.progressSeconds = 0
+        player.addCombatEvent(
+          events,
+          fromTicks,
+          targetTicks,
+          stateRef.remainingSeconds,
+          'dungeon.restarted',
+          '重整旗鼓：全员恢复满状态，开启下一次挑战。',
+          def.id,
+        )
+        return
+      }
+      if (player.state.hitpoints <= 0) {
+        player.state.hitpoints = 1
+        player.markDirty(PlayerSectionKind.Combat)
+      }
+      action.remainingRepeats = 0
+      if (spec === null) {
+        const idx = player.actions.indexOf(action)
+        if (idx >= 0) player.actions.splice(idx, 1)
+      } else {
+        action.expedition = {
+          ...updatedBattle,
+          playerHitpoints: Math.max(1, player.state.hitpoints),
+          playerRespawnAtSeconds: null,
+        }
+      }
+      return
+    }
     const search = createCombatSearchState(
       player,
       encounter,
@@ -1639,10 +2077,166 @@ export function completeCombatAdvanceCore(
     )
   }
 
-  const pvpEnabled = action.pvpEnabled
-  const killAtTicks = addSecondsExactTicks(fromTicks, totalSec - stateRef.remainingSeconds)
-  const killAtUnix = ticksToUnixSeconds(killAtTicks)
+  const killAtUnix = finishAtUnix
   let killSeed = updatedBattle.seed
+
+  if (dungeon) {
+    const maxPartyRealmLevel =
+      spec && spec.members.length > 0
+        ? Math.max(...spec.members.map((m) => m.realmLevel))
+        : player.state.realmLevel
+    const memberSeedOffset = BigInt.asIntN(
+      64,
+      BigInt(expedition.selfIndex) * DUNGEON_MEMBER_SEED_SALT,
+    )
+    let dNormalKills = 0
+    let dEliteKills = 0
+    let dBossKills = 0
+    for (const enemy of waveEnemies) {
+      const monster = resolveDungeonMonster(
+        catalog,
+        dungeon,
+        enemy.enemyId,
+        dungeonDifficulty,
+        maxPartyRealmLevel,
+      )
+      applyDungeonMonsterRewards(
+        player,
+        monster,
+        BigInt.asIntN(64, killSeed ^ memberSeedOffset),
+        killAtUnix,
+        catalog,
+        deltas,
+        spec,
+        expedition.selfIndex,
+        dungeonDifficulty,
+      )
+      killSeed = nextSeed(killSeed)
+      if (monster.rank === CombatMonsterRank.Elite) {
+        player.state.eliteKills += 1
+        dEliteKills += 1
+      } else if (monster.rank === CombatMonsterRank.Boss) {
+        player.state.bossKills += 1
+        dBossKills += 1
+      } else {
+        player.state.normalKills += 1
+        dNormalKills += 1
+      }
+      player.state.defeatedMonsterIds.add(enemy.enemyId)
+    }
+
+    action.dungeonBestWaveCleared = Math.max(
+      action.dungeonBestWaveCleared ?? 0,
+      updatedBattle.waveNumber,
+    )
+    const isFinalWave = updatedBattle.waveNumber >= dungeon.totalWaves
+    player.recordStats(killAtUnix, {
+      cycles: isFinalWave ? 1 : 0,
+      normalKills: dNormalKills,
+      eliteKills: dEliteKills,
+      bossKills: dBossKills,
+    })
+    player.markDirty(PlayerSectionKind.Loadout)
+    player.markDirty(PlayerSectionKind.Progression)
+    player.markDirty(PlayerSectionKind.Combat)
+    player.markDirty(PlayerSectionKind.ActionQueue)
+
+    const remainingSelfOnDungeonWave =
+      spec !== null &&
+      !battleState.player.isAlive &&
+      Number.isFinite(battleState.playerRespawnAtSeconds)
+        ? Math.max(0, battleState.playerRespawnAtSeconds - battleState.elapsedSeconds)
+        : null
+
+    if (!isFinalWave) {
+      player.addCombatEvent(
+        events,
+        fromTicks,
+        targetTicks,
+        stateRef.remainingSeconds,
+        'combat.won',
+        `击破追忆副本第 ${updatedBattle.waveNumber}/${dungeon.totalWaves} 波：${getWaveNames()}。`,
+        def.id,
+      )
+      const nextWaveSearch = createCombatSearchState(
+        player,
+        encounter,
+        CombatExpeditionPhase.Search,
+        catalog,
+        action.completedRepeats,
+        nextSeed(updatedBattle.seed),
+        updatedBattle.waveNumber + 1,
+        spec,
+        spec ? carryAlliesToSearch(battleState) : null,
+      )
+      action.expedition = {
+        ...nextWaveSearch,
+        dungeonId: dungeon.id,
+        dungeonTotalWaves: dungeon.totalWaves,
+        recentEvents: updatedBattle.recentEvents,
+        playerRespawnAtSeconds: remainingSelfOnDungeonWave,
+      }
+      return
+    }
+
+    applyDungeonClearRewards(
+      player,
+      dungeon,
+      dungeonDifficulty,
+      maxPartyRealmLevel,
+      BigInt.asIntN(64, killSeed ^ memberSeedOffset ^ DUNGEON_CLEAR_LOOT_SALT),
+      killAtUnix,
+      catalog,
+      deltas,
+      spec,
+      expedition.selfIndex,
+    )
+    stateRef.completedActions += 1
+    stateRef.completedRepeats += 1
+    action.completedRepeats += 1
+    action.dungeonClearedRuns = (action.dungeonClearedRuns ?? 0) + 1
+    if (action.remainingRepeats > 0) action.remainingRepeats -= 1
+    player.state.completedActions += 1
+    player.addCombatEvent(
+      events,
+      fromTicks,
+      targetTicks,
+      stateRef.remainingSeconds,
+      'dungeon.cleared',
+      `追忆副本通关：${dungeon.name}（${dungeonDifficultyDisplayName(dungeonDifficulty)}）！`,
+      def.id,
+    )
+
+    if (action.remainingRepeats === 0) {
+      if (spec === null) {
+        const idx = player.actions.indexOf(action)
+        if (idx >= 0) player.actions.splice(idx, 1)
+      }
+      return
+    }
+
+    const nextRunSearch = createCombatSearchState(
+      player,
+      encounter,
+      CombatExpeditionPhase.InitialSearch,
+      catalog,
+      action.completedRepeats,
+      nextSeed(updatedBattle.seed),
+      1,
+      spec,
+      spec ? carryAlliesToSearch(battleState) : null,
+    )
+    action.expedition = {
+      ...nextRunSearch,
+      dungeonId: dungeon.id,
+      dungeonTotalWaves: dungeon.totalWaves,
+      recentEvents: updatedBattle.recentEvents,
+      playerRespawnAtSeconds: remainingSelfOnDungeonWave,
+    }
+    return
+  }
+
+  const pvpEnabled = action.pvpEnabled
   const difficulty = spec ? spec.difficulty : action.difficulty
   let normalKills = 0
   let eliteKills = 0

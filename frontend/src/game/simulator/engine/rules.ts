@@ -268,6 +268,156 @@ export function difficultyDropQuantityMultiplier(difficulty: number): number {
   return 1.0 + 0.25 * clampDifficulty(difficulty)
 }
 
+// ---------- 追忆副本 11 档难度阶梯与双轴数值缩放（严格对应 Domain.Combat.DungeonDifficultyRules） ----------
+
+export const DUNGEON_INITIAL_SEARCH_SECONDS = 5.0
+export const DUNGEON_IN_BATTLE_RESPAWN_SECONDS = 15.0
+export const DUNGEON_WAVE_TIMEOUT_SECONDS = 600.0
+export const DUNGEON_MIN_DIFFICULTY = 0
+export const DUNGEON_MAX_DIFFICULTY = 10
+export const DUNGEON_REALITY_MIN_DIFFICULTY = 3
+export const DUNGEON_MAX_MONSTER_LEVEL = 127
+export const DUNGEON_BASE_ENERGY_COST = 30.0
+
+export const DUNGEON_ENERGY_COSTS: readonly number[] = [
+  30, 40, 50, 60, 80, 100, 120, 150, 180, 210, 240,
+]
+
+export const DUNGEON_DIFFICULTY_NAMES: readonly string[] = [
+  '虚境·普通',
+  '虚境·困难',
+  '虚境·地狱',
+  '现世·凡阶',
+  '现世·黄阶',
+  '现世·玄阶',
+  '现世·地阶',
+  '现世·天阶',
+  '现世·灵阶',
+  '现世·圣阶',
+  '现世·帝阶',
+]
+
+export function clampDungeonDifficulty(difficulty: number): number {
+  return Math.max(DUNGEON_MIN_DIFFICULTY, Math.min(DUNGEON_MAX_DIFFICULTY, Math.trunc(difficulty)))
+}
+
+export function isDungeonDifficultyValid(difficulty: number): boolean {
+  return (
+    Number.isInteger(difficulty) &&
+    difficulty >= DUNGEON_MIN_DIFFICULTY &&
+    difficulty <= DUNGEON_MAX_DIFFICULTY
+  )
+}
+
+export function isDungeonReality(difficulty: number): boolean {
+  return clampDungeonDifficulty(difficulty) >= DUNGEON_REALITY_MIN_DIFFICULTY
+}
+
+export function dungeonEnergyCost(difficulty: number): number {
+  return DUNGEON_ENERGY_COSTS[clampDungeonDifficulty(difficulty)]
+}
+
+export function dungeonDifficultyDisplayName(difficulty: number): string {
+  return DUNGEON_DIFFICULTY_NAMES[clampDungeonDifficulty(difficulty)]
+}
+
+export function dungeonEnergyCostScale(difficulty: number): number {
+  return dungeonEnergyCost(difficulty) / DUNGEON_BASE_ENERGY_COST
+}
+
+export function dungeonEnergyEfficiencyMultiplier(difficulty: number): number {
+  return 1.0 + 0.15 * clampDungeonDifficulty(difficulty)
+}
+
+export function dungeonTotalRewardMultiplier(difficulty: number): number {
+  return dungeonEnergyCostScale(difficulty) * dungeonEnergyEfficiencyMultiplier(difficulty)
+}
+
+export function dungeonRareDropRateMultiplier(difficulty: number): number {
+  return 1.0 + 0.25 * clampDungeonDifficulty(difficulty)
+}
+
+export function dungeonHitpointMultiplier(difficulty: number): number {
+  return Math.pow(1.30, clampDungeonDifficulty(difficulty))
+}
+
+export function dungeonStatMultiplier(difficulty: number): number {
+  return Math.pow(1.15, clampDungeonDifficulty(difficulty))
+}
+
+export function resolveDungeonTargetBaseLevel(
+  minDungeonMonsterLevel: number,
+  maxPartyRealmLevel: number,
+  difficulty: number,
+): number {
+  const floor = clamp(Math.trunc(minDungeonMonsterLevel), 1, DUNGEON_MAX_MONSTER_LEVEL)
+  if (!isDungeonReality(difficulty)) return floor
+  return clamp(Math.max(Math.trunc(maxPartyRealmLevel), floor), 1, DUNGEON_MAX_MONSTER_LEVEL)
+}
+
+export function resolveDungeonDynamicMonsterLevel(
+  originalMonsterLevel: number,
+  minDungeonMonsterLevel: number,
+  maxPartyRealmLevel: number,
+  difficulty: number,
+): number {
+  const orig = clamp(Math.trunc(originalMonsterLevel), 1, DUNGEON_MAX_MONSTER_LEVEL)
+  if (!isDungeonReality(difficulty)) return orig
+  const floor = clamp(Math.trunc(minDungeonMonsterLevel), 1, DUNGEON_MAX_MONSTER_LEVEL)
+  const targetBase = resolveDungeonTargetBaseLevel(floor, maxPartyRealmLevel, difficulty)
+  const delta = Math.max(0, orig - floor)
+  return clamp(targetBase + delta, 1, DUNGEON_MAX_MONSTER_LEVEL)
+}
+
+export function scaleDungeonMonsterStats(
+  baseStats: CombatantStats,
+  difficulty: number,
+): CombatantStats {
+  const clamped = clampDungeonDifficulty(difficulty)
+  if (clamped === 0) return ceilCombatantStats(baseStats)
+  const hpMult = dungeonHitpointMultiplier(clamped)
+  const statMult = dungeonStatMultiplier(clamped)
+  return {
+    ...baseStats,
+    maxHitpoints: Math.ceil(baseStats.maxHitpoints * hpMult),
+    attackPower: Math.ceil(baseStats.attackPower * statMult),
+    defense: Math.ceil(baseStats.defense * statMult),
+    spellAttack: Math.ceil(baseStats.spellAttack * statMult),
+    maxManapoints: Math.ceil(baseStats.maxManapoints * statMult),
+    magicResistance: Math.ceil(baseStats.magicResistance * statMult),
+    accuracy: Math.ceil(baseStats.accuracy * statMult),
+    evasion: Math.ceil(baseStats.evasion * statMult),
+    critical: Math.ceil(baseStats.critical * statMult),
+    criticalResistance: Math.ceil(baseStats.criticalResistance * statMult),
+    criticalDamagePoints: Math.ceil(baseStats.criticalDamagePoints * statMult),
+    breakPower: Math.ceil(baseStats.breakPower * statMult),
+    parryResolve: Math.ceil(baseStats.parryResolve * statMult),
+    physicalDamageBonusPoints: Math.ceil(baseStats.physicalDamageBonusPoints * statMult),
+    spellDamageBonusPoints: Math.ceil(baseStats.spellDamageBonusPoints * statMult),
+    totalDamageBonusPoints: Math.ceil(baseStats.totalDamageBonusPoints * statMult),
+    basicAttackBonusPoints: Math.ceil(baseStats.basicAttackBonusPoints * statMult),
+    skillBonusPoints: Math.ceil(baseStats.skillBonusPoints * statMult),
+    talismanDamageBonusPoints: Math.ceil(baseStats.talismanDamageBonusPoints * statMult),
+    formationDamageBonusPoints: Math.ceil(baseStats.formationDamageBonusPoints * statMult),
+    physicalDamageReductionPoints: Math.ceil(baseStats.physicalDamageReductionPoints * statMult),
+    spellDamageReductionPoints: Math.ceil(baseStats.spellDamageReductionPoints * statMult),
+    damageAbsorptionPoints: Math.ceil(baseStats.damageAbsorptionPoints * statMult),
+    fixedDamageBonus: Math.ceil(baseStats.fixedDamageBonus * statMult),
+    fixedDamageReduction: Math.ceil(baseStats.fixedDamageReduction * statMult),
+    fixedPhysicalDamageBonus: Math.ceil(baseStats.fixedPhysicalDamageBonus * statMult),
+    fixedPhysicalDamageReduction: Math.ceil(baseStats.fixedPhysicalDamageReduction * statMult),
+    fixedSpellDamageBonus: Math.ceil(baseStats.fixedSpellDamageBonus * statMult),
+    fixedSpellDamageReduction: Math.ceil(baseStats.fixedSpellDamageReduction * statMult),
+    attackSpeedPoints: Math.ceil(baseStats.attackSpeedPoints * statMult),
+    actionSpeedPoints: Math.ceil(baseStats.actionSpeedPoints * statMult),
+    cooldownReductionPoints: Math.ceil(baseStats.cooldownReductionPoints * statMult),
+    threatBonusPoints: Math.ceil(baseStats.threatBonusPoints * statMult),
+    hpRegen: Math.ceil(baseStats.hpRegen * statMult),
+    mpRegen: Math.ceil(baseStats.mpRegen * statMult),
+    combatExperience: Math.ceil(baseStats.combatExperience * statMult),
+  }
+}
+
 export interface CombatEffectProfile {
   hpDrainPoints: number
   mpDrainPoints: number
@@ -312,6 +462,8 @@ export interface CombatantStats {
   totalDamageBonusPoints: number
   basicAttackBonusPoints: number
   skillBonusPoints: number
+  talismanDamageBonusPoints: number
+  formationDamageBonusPoints: number
   physicalDamageReductionPoints: number
   spellDamageReductionPoints: number
   metalDamageReductionPoints: number
@@ -376,6 +528,8 @@ export function createCombatantStats(
     totalDamageBonusPoints: 0,
     basicAttackBonusPoints: 0,
     skillBonusPoints: 0,
+    talismanDamageBonusPoints: 0,
+    formationDamageBonusPoints: 0,
     physicalDamageReductionPoints: 0,
     spellDamageReductionPoints: 0,
     metalDamageReductionPoints: 0,
@@ -425,6 +579,8 @@ export function ceilCombatantStats(stats: CombatantStats): CombatantStats {
     totalDamageBonusPoints: Math.ceil(stats.totalDamageBonusPoints),
     basicAttackBonusPoints: Math.ceil(stats.basicAttackBonusPoints),
     skillBonusPoints: Math.ceil(stats.skillBonusPoints),
+    talismanDamageBonusPoints: Math.ceil(stats.talismanDamageBonusPoints),
+    formationDamageBonusPoints: Math.ceil(stats.formationDamageBonusPoints),
     physicalDamageReductionPoints: Math.ceil(stats.physicalDamageReductionPoints),
     spellDamageReductionPoints: Math.ceil(stats.spellDamageReductionPoints),
     damageAbsorptionPoints: Math.ceil(stats.damageAbsorptionPoints),

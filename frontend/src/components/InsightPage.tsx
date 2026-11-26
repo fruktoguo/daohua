@@ -8,6 +8,7 @@ import {
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   TECHNIQUE_IDS,
   TECHNIQUE_SPEED_RATIO_PER_LEVEL,
+  TECHNIQUE_DAMAGE_BONUS_POINTS_PER_LEVEL,
   getRootCumulativeExpForLevel,
   calculateRealmInfo,
   calculateRealmProgress,
@@ -354,6 +355,10 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         tone: tones[id] ?? ('default' as PillTone),
         level: progress.level,
         speedPercent: progress.level * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100,
+        damageBonusPercent:
+          id === 'talisman' || id === 'formation'
+            ? progress.level * TECHNIQUE_DAMAGE_BONUS_POINTS_PER_LEVEL
+            : null,
         progress: {
           current: Math.floor(progress.currentLayerExp),
           max: Math.max(1, Math.floor(progress.expToNext)),
@@ -921,6 +926,23 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                       tone={tech.tone}
                       value={`+${formatNumber(tech.speedPercent, { maxDecimals: 0 })}%`}
                     />
+                    {tech.damageBonusPercent !== null && (
+                      <PillBonusLabel
+                        label={t(
+                          tech.id === 'talisman'
+                            ? 'insight.technique.talismanDamageBonusLabel'
+                            : 'insight.technique.formationDamageBonusLabel',
+                        )}
+                        tooltip={t(
+                          tech.id === 'talisman'
+                            ? 'insight.technique.talismanDamageBonusTooltip'
+                            : 'insight.technique.formationDamageBonusTooltip',
+                        )}
+                        tooltipTone="gold"
+                        tone={tech.tone}
+                        value={`+${formatNumber(tech.damageBonusPercent, { maxDecimals: 0 })}%`}
+                      />
+                    )}
                   </div>
                 </div>
               ))}

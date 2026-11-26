@@ -628,3 +628,28 @@
   - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `47 -> 48`；
   - `INSERT INTO platform.schema_version(version, applied_at) VALUES (68, now()) ON CONFLICT (version) DO NOTHING`。
 - 【离线脚本 / 人工步骤】：无。
+
+
+## v68 -> v69
+
+- **变更日期**：2026-11-26 18:43:00
+- **关联任务**：`TASK-20261126-07`（符箓与阵法技艺每级提升 1% 对应伤害）
+- **数据库版本**：`PostgresSchema.Version` 68 -> 69
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `48 -> 49`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0069_v68_to_v69.sql`（支持目标版本幂等重试）
+- **存量处理结论**：无 DDL/权限变更，仅推进三处玩家存档标签 `48 -> 49` 并登记 `schema_version = 69`
+
+### 1. 变了什么
+- 【库结构/权限】无。
+- 【存档载荷】
+  - `CombatantStats`（随 `actionQueue` 远征/参与成员与 `duel` 斗法镜像快照序列化）新增 `talismanDamageBonusPoints: double = 0`（符箓伤害增幅点数）与 `formationDamageBonusPoints: double = 0`（阵法伤害增幅点数），均为 additive 可缺省解码字段；在线与补算重算属性时自动由 `loadout.techniqueExperiences` 实时派生。
+- 【配表/持久化语义】无配表 ID 删改；`DataTool` 属性点数授权词汇表新增 `talismanDamageBonusPoints`、`formationDamageBonusPoints`。
+
+### 2. 是否需要处理存量数据
+- **仅需推进存档标签**：旧 `v48` 存档缺失上述两字段时缺省解码为 `0`，玩家恢复在线或下次属性解析即按既有 `techniqueExperiences` 自动生效，无需重写存量 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0069_v68_to_v69.sql` 要点】：
+  - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `48 -> 49`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (69, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。

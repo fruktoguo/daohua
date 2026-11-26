@@ -914,7 +914,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>
     /// 属性解析输入修订号：由全部属性输入源的单调版本号合成
-    /// （境界阶层 / 节点建筑效果三元组 / 穿戴装备 ID / 装备槽强化 / 六维经验 / 活跃 Buff / 五行灵根）。
+    /// （境界阶层 / 节点建筑效果三元组 / 穿戴装备 ID / 装备槽强化 / 六维经验 / 技艺经验 / 活跃 Buff / 五行灵根）。
     /// 任一输入源写入都会令其严格增大，合成值相等当且仅当全部输入未变；
     /// 属性解析缓存以「同配表实例 + 本修订号未变」为命中条件，命中结果与全量重算逐位一致。
     /// </summary>
@@ -925,6 +925,7 @@ public sealed partial class PlayerAggregate
         + Loadout.EquippedItemIds.Version
         + Loadout.Equipment.Version
         + Loadout.CoreAttributesVersion
+        + Loadout.TechniqueExperiences.Version
         + Progression.TraitIds.Version
         + Progression.UnlockedTraits.Version
         + Loadout.AbilitySlots.Version

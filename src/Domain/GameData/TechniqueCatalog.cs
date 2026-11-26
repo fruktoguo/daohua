@@ -9,7 +9,9 @@ namespace Domain.GameData;
 /// 总纲 §3.2.2）累计经验逐段推进：技艺从 0 级起算，升入 L 级消费第 L−1 段削减值
 /// （段目标 1 级削减 95% → 段目标 30 级削减 0%，30 级以上与修为曲线完全一致）；
 /// 削减只作用于升级需求侧，修为曲线配表原值与产出端不变。
-/// 等级只提供速度加成（每级 5%：实际耗时 = 基础耗时 / (1 + 0.05×L)），不影响配方产出。
+/// 等级提供对应行动速度加成（每级 5%：实际耗时 = 基础耗时 / (1 + 0.05×L)），不影响配方产出；
+/// 符箓（<see cref="Talisman"/>）与阵法（<see cref="Formation"/>）每级额外提供 +1 点（+1%）对应符箓/阵法伤害增幅
+/// （Linear 点数通道，抗性穿甲前并入原始威力，仅作用于造成伤害的符箓与阵盘，总纲 §20.1.3）。
 /// </summary>
 public static class TechniqueCatalog
 {
@@ -82,6 +84,12 @@ public static class TechniqueCatalog
 
     /// <summary>等级对应的行动耗时折减：duration /= 1 + 0.05×L。</summary>
     public static double SpeedBonusRatio(double level) => 0.05d * Math.Max(0, level);
+
+    /// <summary>符箓/阵法技艺每级提供的对应伤害增幅点数（Linear：1 点 = +1%，总纲 §20.1.3）。</summary>
+    public const double DamageBonusPointsPerLevel = 1.0d;
+
+    /// <summary>符箓或阵法技艺等级换算对应的伤害增幅点数（每级 +1 点，仅作用于伤害型符/阵）。</summary>
+    public static double DamageBonusPoints(double level) => DamageBonusPointsPerLevel * Math.Max(0, level);
 
     /// <summary>技艺工具专属槽位前缀：装备配表 slot 以此前缀声明绑定对应技艺的工具槽。</summary>
     public const string ToolSlotPrefix = "tool-";

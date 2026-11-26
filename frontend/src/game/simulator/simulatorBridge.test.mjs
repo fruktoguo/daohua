@@ -246,4 +246,11 @@ test('listCombatNodeIds 通过 Worker 转发 op 并返回 JSON 节点清单', as
   assert.equal(sent.op, 'listCombatNodeIds')
   Worker.instances[0].respondLast('["node.yunxi-village"]')
   assert.equal(await callPromise, '["node.yunxi-village"]')
+
+  const dungeonPromise = bridge.listDungeons()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const dungeonSent = Worker.instances[0].messages.at(-1)
+  assert.equal(dungeonSent.op, 'listDungeons')
+  Worker.instances[0].respondLast('[{"id":"dungeon.qingyun-secret-gorge"}]')
+  assert.equal(await dungeonPromise, '[{"id":"dungeon.qingyun-secret-gorge"}]')
 })

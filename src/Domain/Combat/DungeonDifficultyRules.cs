@@ -116,6 +116,8 @@ public static class DungeonDifficultyRules
             TotalDamageBonusPoints = Math.Ceiling(baseStats.TotalDamageBonusPoints * statMult),
             BasicAttackBonusPoints = Math.Ceiling(baseStats.BasicAttackBonusPoints * statMult),
             SkillBonusPoints = Math.Ceiling(baseStats.SkillBonusPoints * statMult),
+            TalismanDamageBonusPoints = Math.Ceiling(baseStats.TalismanDamageBonusPoints * statMult),
+            FormationDamageBonusPoints = Math.Ceiling(baseStats.FormationDamageBonusPoints * statMult),
             PhysicalDamageReductionPoints = Math.Ceiling(baseStats.PhysicalDamageReductionPoints * statMult),
             SpellDamageReductionPoints = Math.Ceiling(baseStats.SpellDamageReductionPoints * statMult),
             DamageAbsorptionPoints = Math.Ceiling(baseStats.DamageAbsorptionPoints * statMult),

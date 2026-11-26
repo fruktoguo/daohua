@@ -568,6 +568,7 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "metalDamageBonusPoints", "woodDamageBonusPoints", "waterDamageBonusPoints",
     "fireDamageBonusPoints", "earthDamageBonusPoints",
     "totalDamageBonusPoints", "basicAttackBonusPoints", "skillBonusPoints",
+    "talismanDamageBonusPoints", "formationDamageBonusPoints",
     "physicalDamageReductionPoints", "spellDamageReductionPoints",
     "metalDamageReductionPoints", "woodDamageReductionPoints", "waterDamageReductionPoints",
     "fireDamageReductionPoints", "earthDamageReductionPoints",

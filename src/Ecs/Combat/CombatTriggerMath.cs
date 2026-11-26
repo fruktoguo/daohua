@@ -100,7 +100,9 @@ public static class CombatTriggerMath
                     ally.Manapoints = Math.Max(0, ally.Manapoints - manaCost);
                     ally.LastTianleiTriggerAtSeconds = context.AtSeconds;
 
-                    var rawDamage = ally.EffectiveStats.SpellAttack * 0.5 + 10;
+                    // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（总纲 §7.7.1 / §20.1.3，阵法技艺每级 +1 点）；不放大耗蓝代价。
+                    var rawDamage = (ally.EffectiveStats.SpellAttack * 0.5 + 10)
+                        * PercentValue.Multiplier(ally.Stats.FormationDamageBonusPoints, PercentCurveMode.Linear);
                     var strikeElement = CombatTraitRules.ResolveDamageElement(ally.Stats.Traits, CombatElement.Wood);
                     var strikeStats = ally.EffectiveStats with
                     {
@@ -144,7 +146,9 @@ public static class CombatTriggerMath
                 {
                     ally.LastXueshaTriggerAtSeconds = context.AtSeconds;
 
-                    var rawDamage = ally.Stats.MaxHitpoints * 0.10;
+                    // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（总纲 §7.7.1 / §20.1.3，阵法技艺每级 +1 点）；不放大自损气血代价，吸血按最终实伤自然联动。
+                    var rawDamage = (ally.Stats.MaxHitpoints * 0.10)
+                        * PercentValue.Multiplier(ally.Stats.FormationDamageBonusPoints, PercentCurveMode.Linear);
                     var strikeElement = CombatTraitRules.ResolveDamageElement(ally.Stats.Traits, CombatElement.None);
                     var strikeStats = ally.EffectiveStats with
                     {

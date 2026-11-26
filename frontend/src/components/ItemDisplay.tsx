@@ -1646,6 +1646,10 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
 
   skillBonus: 'indigo',
   skillBonusPoints: 'indigo',
+  talismanDamageBonus: 'amber',
+  talismanDamageBonusPoints: 'amber',
+  formationDamageBonus: 'purple',
+  formationDamageBonusPoints: 'purple',
   // 生命类 (翡翠绿)
   maxHitpoints: 'emerald',
   hp: 'emerald',
@@ -1733,6 +1737,8 @@ const POINT_STAT_LABELS: Record<string, { label: string; curve: 'linear' | 'nonl
   totalDamageBonusPoints: { label: 'market.stat.totalDamageBonus', curve: 'linear' },
   basicAttackBonusPoints: { label: 'market.stat.basicAttackBonus', curve: 'linear' },
   skillBonusPoints: { label: 'market.stat.skillBonus', curve: 'linear' },
+  talismanDamageBonusPoints: { label: 'market.stat.talismanDamageBonus', curve: 'linear' },
+  formationDamageBonusPoints: { label: 'market.stat.formationDamageBonus', curve: 'linear' },
   physicalDamageReductionPoints: { label: 'market.stat.physicalDamageReduction', curve: 'nonlinear' },
   spellDamageReductionPoints: { label: 'market.stat.spellDamageReduction', curve: 'nonlinear' },
   metalDamageReductionPoints: { label: 'market.stat.metalDamageReduction', curve: 'nonlinear' },

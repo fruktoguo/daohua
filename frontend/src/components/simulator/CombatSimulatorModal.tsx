@@ -13,12 +13,14 @@ import {
 } from '../../game/simulator/simulatorBridge'
 import { fetchSimulatorEnvironment, fetchSimulatorProfile } from '../../network/apiClient'
 import type {
-  SimulatorEnvironmentDto, SimulatorProfileDto,
+  SimulatorDungeonCatalogEntryDto,
+  SimulatorEnvironmentDto, SimulatorMode, SimulatorProfileDto,
   SimulatorResolveRequestDto, SimulatorResolveResultDto, SimulatorRunRequestDto, SimulatorRunResultDto,
 } from '../../game/simulator/simulatorTypes'
 type SimulatorNodeEnvironmentDto = SimulatorEnvironmentDto['nodes'][number]
 import { SIMULATOR_FORMAT_VERSION } from '../../game/simulator/simulatorTypes'
 import { useSimulatorStore } from '../../game/simulator/simulatorStore'
+import { DUNGEON_DIFFICULTIES, getDungeonDifficultyMeta } from '../../game/dungeonRules'
 import { SimulatorProfileEditor } from './SimulatorProfileEditor'
 import { SimulatorResults } from './SimulatorResults'
 import type { CombatAttributes } from '../../game/types'
@@ -26,6 +28,10 @@ import type { CombatAttributes } from '../../game/types'
 interface Props { open: boolean; onClose: () => void }
 
 const DURATION_PRESETS = [600, 1800, 3600, 7200, 21600, 86400]
+const DUNGEON_REPEAT_PRESETS = [1, 5, 10, 28, 56]
+const ALL_DUNGEON_DIFFICULTIES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+const VIRTUAL_DUNGEON_DIFFICULTIES = [0, 1, 2]
+const REALITY_DUNGEON_DIFFICULTIES = [3, 4, 5, 6, 7, 8, 9, 10]
 const MAX_MEMBERS = 5
 const SIMULATED_CONSUMABLE_STOCK = 1_000_000
 const INT64_MIN = -(1n << 63n)
@@ -115,6 +121,8 @@ function toCombatAttributes(raw: Record<string, unknown> | undefined): CombatAtt
     totalDamageBonusPoints: n('totalDamageBonusPoints'),
     basicAttackBonusPoints: n('basicAttackBonusPoints'),
     skillBonusPoints: n('skillBonusPoints'),
+    talismanDamageBonusPoints: n('talismanDamageBonusPoints'),
+    formationDamageBonusPoints: n('formationDamageBonusPoints'),
     physicalDamageReductionPoints: n('physicalDamageReductionPoints'),
     spellDamageReductionPoints: n('spellDamageReductionPoints'),
     metalDamageReductionPoints: n('metalDamageReductionPoints'),
@@ -145,6 +153,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const playerId = useGameStore(state => state.playerId)
   const name = useGameStore(state => state.name)
   const maps = useGameStore(state => state.maps)
+  const storeDungeons = useGameStore(state => state.dungeons)
   const worldNodeId = useGameStore(state => state.world?.nodeId)
   const setNotice = useGameStore(state => state.setNotice)
   const party = useSocialStore(state => state.party)
@@ -154,6 +163,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const openGenRef = useRef(0)
   const runIdRef = useRef(0)
   const previewGenRef = useRef(0)
+  const dungeonInitRef = useRef(false)
   const importRef = useRef<Record<string, { seq: number; ctl: AbortController }>>({})
 
   const initialized = useSimulatorStore(s => s.initialized)
@@ -164,6 +174,10 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const setEnvironment = useSimulatorStore(s => s.setEnvironment)
   const combatNodeIds = useSimulatorStore(s => s.combatNodeIds)
   const setCombatNodeIds = useSimulatorStore(s => s.setCombatNodeIds)
+  const dungeonCatalog = useSimulatorStore(s => s.dungeonCatalog)
+  const setDungeonCatalog = useSimulatorStore(s => s.setDungeonCatalog)
+  const simMode = useSimulatorStore(s => s.simMode)
+  const setSimMode = useSimulatorStore(s => s.setSimMode)
   const activeTab = useSimulatorStore(s => s.activeTab)
   const setActiveTab = useSimulatorStore(s => s.setActiveTab)
   const profileSubTab = useSimulatorStore(s => s.profileSubTab)
@@ -178,6 +192,12 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const setDifficulties = useSimulatorStore(s => s.setDifficulties)
   const durationSeconds = useSimulatorStore(s => s.durationSeconds)
   const setDurationSeconds = useSimulatorStore(s => s.setDurationSeconds)
+  const selectedDungeonIds = useSimulatorStore(s => s.selectedDungeonIds)
+  const setSelectedDungeonIds = useSimulatorStore(s => s.setSelectedDungeonIds)
+  const dungeonDifficulties = useSimulatorStore(s => s.dungeonDifficulties)
+  const setDungeonDifficulties = useSimulatorStore(s => s.setDungeonDifficulties)
+  const dungeonRepeatCount = useSimulatorStore(s => s.dungeonRepeatCount)
+  const setDungeonRepeatCount = useSimulatorStore(s => s.setDungeonRepeatCount)
   const seed = useSimulatorStore(s => s.seed)
   const setSeed = useSimulatorStore(s => s.setSeed)
   const results = useSimulatorStore(s => s.results)
@@ -242,9 +262,55 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     selectedMapId === 'all' ? combatNodes : combatNodes.filter(n => n.mapId === selectedMapId),
   [combatNodes, selectedMapId])
 
+  const nodeMetaMap = useMemo(() => {
+    const map = new Map<string, { name: string; mapId: string; mapName: string }>()
+    for (const m of maps ?? []) {
+      for (const n of m.nodes ?? []) {
+        map.set(n.nodeId, {
+          name: n.name ?? n.nodeId,
+          mapId: m.mapId,
+          mapName: m.name ?? m.mapId,
+        })
+      }
+    }
+    return map
+  }, [maps])
+
+  const dungeonEntries = useMemo(() => {
+    const source: SimulatorDungeonCatalogEntryDto[] = dungeonCatalog && dungeonCatalog.length > 0
+      ? dungeonCatalog
+      : (storeDungeons ?? []).map(d => ({
+          id: d.dungeonId,
+          name: d.name,
+          description: d.description ?? '',
+          nodeId: d.nodeId,
+          tier: d.tier ?? 1,
+          baseLevel: d.baseLevel,
+          totalWaves: d.totalWaves ?? d.waves.length,
+          minMonsterLevel: d.minMonsterLevel ?? d.baseLevel,
+          recommendedValuation: d.recommendedValuation ? [...d.recommendedValuation] : [],
+        }))
+    return source.map(d => {
+      const meta = nodeMetaMap.get(d.nodeId)
+      return {
+        ...d,
+        nodeName: meta?.name ?? d.nodeId,
+        mapId: meta?.mapId ?? '',
+        mapName: meta?.mapName ?? '',
+        entry: nodeEnvMap.get(d.nodeId) ?? null,
+      }
+    })
+  }, [dungeonCatalog, nodeEnvMap, nodeMetaMap, storeDungeons])
+
+  const dungeonEntryMap = useMemo(() => {
+    const map = new Map<string, (typeof dungeonEntries)[number]>()
+    for (const d of dungeonEntries) map.set(d.id, d)
+    return map
+  }, [dungeonEntries])
+
   const nodeName = useCallback((id: string) =>
     combatNodes.find(n => n.id === id)?.name
-    ?? maps?.flatMap(m => m.nodes ?? []).find(n => n.nodeId === id)?.name ?? id, [combatNodes, maps])
+    ?? nodeMetaMap.get(id)?.name ?? id, [combatNodes, nodeMetaMap])
 
   const alive = useCallback((gen: number) => open && openGenRef.current === gen, [open])
 
@@ -313,6 +379,15 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
         })
         .catch(() => {})
     }
+    if (!dungeonCatalog) {
+      void bridge().listDungeons()
+        .then(json => {
+          if (!alive(gen)) return
+          const parsed = JSON.parse(json)
+          if (Array.isArray(parsed)) setDungeonCatalog(parsed as SimulatorDungeonCatalogEntryDto[])
+        })
+        .catch(() => {})
+    }
     if (initialized && environment !== null && members.length > 0) return
     Promise.all([
       members.length === 0 ? importSelf() : Promise.resolve(),
@@ -372,6 +447,25 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     }
   }, [selectedMapId, regionOptions, setSelectedMapId])
 
+  useEffect(() => {
+    if (dungeonEntries.length === 0) return
+    const validIds = new Set(dungeonEntries.map(d => d.id))
+    const filtered = selectedDungeonIds.filter(id => validIds.has(id))
+    if (filtered.length !== selectedDungeonIds.length) {
+      const preferred = dungeonEntries.find(d => d.nodeId === worldNodeId)?.id ?? dungeonEntries[0].id
+      dungeonInitRef.current = true
+      setSelectedDungeonIds(filtered.length > 0 ? filtered : [preferred])
+      return
+    }
+    if (!dungeonInitRef.current && selectedDungeonIds.length === 0) {
+      const preferred = dungeonEntries.find(d => d.nodeId === worldNodeId)?.id ?? dungeonEntries[0].id
+      dungeonInitRef.current = true
+      setSelectedDungeonIds([preferred])
+    } else if (selectedDungeonIds.length > 0) {
+      dungeonInitRef.current = true
+    }
+  }, [dungeonEntries, selectedDungeonIds, worldNodeId, setSelectedDungeonIds])
+
   const updateMember = useCallback((index: number, next: SimulatorProfileDto) => {
     setMembers(prev => prev.map((m, i) => (i === index ? next : m)))
     setConfigDirty(v => v + 1)
@@ -391,8 +485,17 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
 
   const exportConfig = useCallback(() => {
     const payload = {
-      formatVersion: SIMULATOR_FORMAT_VERSION, members, environment,
-      selectedNodeIds, difficulties, durationSeconds, seed,
+      formatVersion: SIMULATOR_FORMAT_VERSION,
+      simMode,
+      members,
+      environment,
+      selectedNodeIds,
+      difficulties,
+      durationSeconds,
+      selectedDungeonIds,
+      dungeonDifficulties,
+      dungeonRepeatCount,
+      seed,
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -401,7 +504,18 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     a.download = 'simulator-config.json'
     a.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }, [members, environment, selectedNodeIds, difficulties, durationSeconds, seed])
+  }, [
+    difficulties,
+    dungeonDifficulties,
+    dungeonRepeatCount,
+    durationSeconds,
+    environment,
+    members,
+    seed,
+    selectedDungeonIds,
+    selectedNodeIds,
+    simMode,
+  ])
 
   const importConfig = useCallback(async (file: File) => {
     const gen = openGenRef.current
@@ -418,38 +532,71 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
       const fingerprint = typeof env.gameDataFingerprint === 'string' ? env.gameDataFingerprint : ''
       if (!payload.members.every(m => validateProfileShape(m, fingerprint)))
         return fail('combat.simulator.error.members')
-      if (!Array.isArray(payload.selectedNodeIds) || payload.selectedNodeIds.length === 0
-        || !payload.selectedNodeIds.every(id => typeof id === 'string'
-          && (env.nodes as { nodeId: string }[]).some(n => n.nodeId === id)))
-        return fail('combat.simulator.error.nodes')
-      if (!Array.isArray(payload.difficulties) || payload.difficulties.length === 0
-        || !payload.difficulties.every(d => Number.isInteger(d) && d >= 0 && d <= 5))
-        return fail('combat.simulator.error.difficulties')
-      if (!isFiniteNumber(payload.durationSeconds)
-        || payload.durationSeconds < 1 || payload.durationSeconds > 86400)
-        return fail('combat.simulator.error.duration')
+      const importedMode: SimulatorMode = payload.simMode === 'dungeon' ? 'dungeon' : 'combat'
+      if (importedMode === 'combat') {
+        if (!Array.isArray(payload.selectedNodeIds) || payload.selectedNodeIds.length === 0
+          || !payload.selectedNodeIds.every(id => typeof id === 'string'
+            && (env.nodes as { nodeId: string }[]).some(n => n.nodeId === id)))
+          return fail('combat.simulator.error.nodes')
+        if (!Array.isArray(payload.difficulties) || payload.difficulties.length === 0
+          || !payload.difficulties.every(d => Number.isInteger(d) && d >= 0 && d <= 5))
+          return fail('combat.simulator.error.difficulties')
+        if (!isFiniteNumber(payload.durationSeconds)
+          || payload.durationSeconds < 1 || payload.durationSeconds > 86400)
+          return fail('combat.simulator.error.duration')
+      } else {
+        if (!Array.isArray(payload.selectedDungeonIds) || payload.selectedDungeonIds.length === 0
+          || !payload.selectedDungeonIds.every(id => typeof id === 'string' && id.startsWith('dungeon.')))
+          return fail('combat.simulator.error.dungeons')
+        if (!Array.isArray(payload.dungeonDifficulties) || payload.dungeonDifficulties.length === 0
+          || !payload.dungeonDifficulties.every(d => Number.isInteger(d) && d >= 0 && d <= 10))
+          return fail('combat.simulator.error.difficulties')
+        if (!isFiniteNumber(payload.dungeonRepeatCount)
+          || payload.dungeonRepeatCount < 1 || payload.dungeonRepeatCount > 200)
+          return fail('combat.simulator.error.repeatCount')
+      }
       if (typeof payload.seed !== 'string' || !parseSeed(payload.seed))
         return fail('combat.simulator.error.seed')
       const membersIn = payload.members as SimulatorProfileDto[]
       const envIn = env as unknown as SimulatorEnvironmentDto
-      const nodeIn = payload.selectedNodeIds as string[]
+      const fallbackNodeId = (env.nodes as { nodeId: string }[])[0]?.nodeId ?? ''
+      const verifyNodeId = importedMode === 'dungeon'
+        ? (dungeonEntryMap.get((payload.selectedDungeonIds as string[])[0])?.nodeId ?? fallbackNodeId)
+        : (payload.selectedNodeIds as string[])[0]
       const verifyReq: SimulatorResolveRequestDto = {
-        formatVersion: SIMULATOR_FORMAT_VERSION, nodeId: nodeIn[0], members: membersIn, environment: envIn,
+        formatVersion: SIMULATOR_FORMAT_VERSION, nodeId: verifyNodeId, members: membersIn, environment: envIn,
       }
       await bridge().resolveProfiles(JSON.stringify(verifyReq))
       if (!alive(gen)) return
+      setSimMode(importedMode)
       setMembers(membersIn)
       setEnvironment(envIn)
-      setSelectedNodeIds(nodeIn)
-      setDifficulties(payload.difficulties as number[])
-      setDurationSeconds(payload.durationSeconds)
+      if (Array.isArray(payload.selectedNodeIds) && payload.selectedNodeIds.every(x => typeof x === 'string')) {
+        setSelectedNodeIds(payload.selectedNodeIds)
+      }
+      if (Array.isArray(payload.difficulties) && payload.difficulties.every(d => Number.isInteger(d) && d >= 0 && d <= 5)) {
+        setDifficulties(payload.difficulties as number[])
+      }
+      if (isFiniteNumber(payload.durationSeconds) && payload.durationSeconds >= 1 && payload.durationSeconds <= 86400) {
+        setDurationSeconds(payload.durationSeconds)
+      }
+      if (Array.isArray(payload.selectedDungeonIds) && payload.selectedDungeonIds.every(x => typeof x === 'string')) {
+        dungeonInitRef.current = true
+        setSelectedDungeonIds(payload.selectedDungeonIds)
+      }
+      if (Array.isArray(payload.dungeonDifficulties) && payload.dungeonDifficulties.every(d => Number.isInteger(d) && d >= 0 && d <= 10)) {
+        setDungeonDifficulties(payload.dungeonDifficulties as number[])
+      }
+      if (isFiniteNumber(payload.dungeonRepeatCount) && payload.dungeonRepeatCount >= 1 && payload.dungeonRepeatCount <= 200) {
+        setDungeonRepeatCount(Math.trunc(payload.dungeonRepeatCount))
+      }
       setSeed(payload.seed)
       setConfigDirty(v => v + 1)
       setError(null)
     } catch (err) {
       if (alive(gen)) setError(err instanceof Error ? err.message : String(err))
     }
-  }, [alive, bridge, t])
+  }, [alive, bridge, dungeonEntryMap, setConfigDirty, setDifficulties, setDungeonDifficulties, setDungeonRepeatCount, setDurationSeconds, setEnvironment, setMembers, setSeed, setSelectedDungeonIds, setSelectedNodeIds, setSimMode, t])
 
   useEffect(() => {
     if (!running) {
@@ -464,17 +611,64 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const disabledReason = useMemo(() => {
     if (!environment) return t('combat.simulator.hintLoadingEnv')
     if (members.length === 0) return t('combat.simulator.hintNeedMembers')
+    if (simMode === 'dungeon') {
+      if (selectedDungeonIds.length === 0) return t('combat.simulator.hintNeedDungeons')
+      if (dungeonDifficulties.length === 0) return t('combat.simulator.hintNeedDifficulties')
+      return null
+    }
     if (selectedNodeIds.length === 0) return t('combat.simulator.hintNeedNodes')
     if (difficulties.length === 0) return t('combat.simulator.hintNeedDifficulties')
     return null
-  }, [difficulties.length, environment, members.length, selectedNodeIds.length, t])
+  }, [difficulties.length, dungeonDifficulties.length, environment, members.length, selectedDungeonIds.length, selectedNodeIds.length, simMode, t])
+
+  const formatDungeonDiffLabel = useCallback((difficulty: number) => {
+    const meta = getDungeonDifficultyMeta(difficulty)
+    return t('combat.dungeon.fullDifficultyLabel', {
+      mode: t(`combat.dungeon.mode.${meta.mode}`),
+      tier: t(`combat.dungeon.difficulty.${meta.key}`),
+    })
+  }, [t])
 
   const runAll = useCallback(async () => {
-    if (!environment || members.length === 0 || selectedNodeIds.length === 0 || difficulties.length === 0 || running) return
+    if (!environment || members.length === 0 || running) return
     if (!parseSeed(seed)) { setError(t('combat.simulator.error.seed')); return }
-    if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 86400) {
-      setError(t('combat.simulator.error.duration')); return
+    const isDungeon = simMode === 'dungeon'
+    if (isDungeon) {
+      if (selectedDungeonIds.length === 0 || dungeonDifficulties.length === 0) return
+      if (!Number.isFinite(dungeonRepeatCount) || dungeonRepeatCount < 1 || dungeonRepeatCount > 200) {
+        setError(t('combat.simulator.error.repeatCount')); return
+      }
+    } else {
+      if (selectedNodeIds.length === 0 || difficulties.length === 0) return
+      if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 86400) {
+        setError(t('combat.simulator.error.duration')); return
+      }
     }
+    const sortedDungeonDiffs = [...dungeonDifficulties].sort((a, b) => a - b)
+    const sortedFieldDiffs = [...difficulties].sort((a, b) => a - b)
+    const combos: Array<{
+      nodeId: string
+      dungeonId?: string
+      targetLabel: string
+      difficulty: number
+    }> = isDungeon
+      ? selectedDungeonIds.flatMap(dungeonId => {
+          const d = dungeonEntryMap.get(dungeonId)
+          if (!d) return []
+          return sortedDungeonDiffs.map(difficulty => ({
+            nodeId: d.nodeId,
+            dungeonId: d.id,
+            targetLabel: d.name,
+            difficulty,
+          }))
+        })
+      : selectedNodeIds.flatMap(nodeId => sortedFieldDiffs.map(difficulty => ({
+          nodeId,
+          targetLabel: nodeName(nodeId),
+          difficulty,
+        })))
+    if (combos.length === 0) return
+
     const runId = ++runIdRef.current
     const gen = openGenRef.current
     previewGenRef.current += 1
@@ -484,18 +678,19 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
     setProgress(t('combat.simulator.initializingKernel'))
     const frozenEnv = JSON.parse(JSON.stringify(environment)) as SimulatorEnvironmentDto
     const frozenMembers = withSimulatedConsumableStock(JSON.parse(JSON.stringify(members)) as SimulatorProfileDto[])
-    const combos = selectedNodeIds.flatMap(nodeId => difficulties.map(difficulty => ({ nodeId, difficulty })))
-    const comboLabel = (combo: { nodeId: string; difficulty: number }) =>
-      `${nodeName(combo.nodeId)} ${combo.difficulty === 0 ? t('combat.simulator.difficultyDefault') : `T${combo.difficulty}`}`
+    const comboLabel = (combo: (typeof combos)[number]) => isDungeon
+      ? `${combo.targetLabel} ${formatDungeonDiffLabel(combo.difficulty)}`
+      : `${combo.targetLabel} ${combo.difficulty === 0 ? t('combat.simulator.difficultyDefault') : `T${combo.difficulty}`}`
     const slots: Array<SimulatorRunResultDto | undefined> = new Array(combos.length)
     const owns = () => runIdRef.current === runId && openGenRef.current === gen
     const concurrency = recommendedSimulatorConcurrency()
+    const batchDurationHint = isDungeon ? Math.max(1200, Math.trunc(dungeonRepeatCount) * 240) : durationSeconds
     let cancelBatch: (() => void) | null = null
     try {
       // 按当前最新配置解析真实气血/灵力上限，以满血满蓝入场推演（避免沿用导入快照残血或防抖延迟的旧上限）
       const resolveReq: SimulatorResolveRequestDto = {
         formatVersion: SIMULATOR_FORMAT_VERSION,
-        nodeId: selectedNodeIds[0],
+        nodeId: combos[0].nodeId,
         members: frozenMembers,
         environment: frozenEnv,
       }
@@ -513,21 +708,33 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
         }
       }
       const requestsJson = combos.map((combo) => {
-        const request: SimulatorRunRequestDto = {
-          formatVersion: SIMULATOR_FORMAT_VERSION,
-          nodeId: combo.nodeId,
-          difficulty: combo.difficulty,
-          durationSeconds,
-          seed,
-          members: frozenMembers,
-          environment: frozenEnv,
-        }
+        const request: SimulatorRunRequestDto = isDungeon
+          ? {
+              formatVersion: SIMULATOR_FORMAT_VERSION,
+              nodeId: combo.nodeId,
+              dungeonId: combo.dungeonId,
+              difficulty: combo.difficulty,
+              repeatCount: Math.trunc(dungeonRepeatCount),
+              durationSeconds: 3600,
+              seed,
+              members: frozenMembers,
+              environment: frozenEnv,
+            }
+          : {
+              formatVersion: SIMULATOR_FORMAT_VERSION,
+              nodeId: combo.nodeId,
+              difficulty: combo.difficulty,
+              durationSeconds,
+              seed,
+              members: frozenMembers,
+              environment: frozenEnv,
+            }
         return JSON.stringify(request)
       })
       const batch = runSimulatorBatch(requestsJson, {
         primaryBridge: bridge(),
         concurrency,
-        durationSeconds,
+        durationSeconds: batchDurationHint,
         onItemStart: (index, startedCount, totalCount, activeConcurrency) => {
           if (!owns()) return
           if (activeConcurrency > 1) {
@@ -553,7 +760,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
       if (!owns()) return
       const finalResults = slots.filter((x): x is SimulatorRunResultDto => x !== undefined)
       setResults(finalResults)
-      setRunStamp({ dirty: configDirty, seed, startedAtUnixSeconds: environment.capturedAtUnixSeconds })
+      setRunStamp({ dirty: configDirty, seed, startedAtUnixSeconds: environment.capturedAtUnixSeconds, mode: simMode })
       if (finalResults.length > 0) setActiveTab('results')
     } catch (err) {
       if (!owns()) return
@@ -563,7 +770,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
         const partial = slots.filter((x): x is SimulatorRunResultDto => x !== undefined)
         if (partial.length > 0) {
           setResults(partial)
-          setRunStamp({ dirty: configDirty, seed, startedAtUnixSeconds: environment.capturedAtUnixSeconds })
+          setRunStamp({ dirty: configDirty, seed, startedAtUnixSeconds: environment.capturedAtUnixSeconds, mode: simMode })
         }
       }
     } finally {
@@ -573,7 +780,28 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
         setProgress('')
       }
     }
-  }, [bridge, configDirty, difficulties, durationSeconds, environment, members, nodeName, running, seed, selectedNodeIds, t])
+  }, [
+    bridge,
+    configDirty,
+    difficulties,
+    dungeonDifficulties,
+    dungeonEntryMap,
+    dungeonRepeatCount,
+    durationSeconds,
+    environment,
+    formatDungeonDiffLabel,
+    members,
+    nodeName,
+    running,
+    seed,
+    selectedDungeonIds,
+    selectedNodeIds,
+    setActiveTab,
+    setResults,
+    setRunStamp,
+    simMode,
+    t,
+  ])
 
   const cancelRun = useCallback(() => {
     runIdRef.current += 1
@@ -586,8 +814,19 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
 
   const staleResults = runStamp !== null && runStamp.dirty !== configDirty
 
+  const previewNodeId = useMemo(() => {
+    if (simMode === 'dungeon') {
+      for (const id of selectedDungeonIds) {
+        const d = dungeonEntryMap.get(id)
+        if (d) return d.nodeId
+      }
+      return dungeonEntries[0]?.nodeId ?? selectedNodeIds[0] ?? environment?.nodes[0]?.nodeId ?? ''
+    }
+    return selectedNodeIds[0] ?? ''
+  }, [dungeonEntries, dungeonEntryMap, environment?.nodes, selectedDungeonIds, selectedNodeIds, simMode])
+
   useEffect(() => {
-    if (!environment || members.length === 0 || selectedNodeIds.length === 0) {
+    if (!environment || members.length === 0 || !previewNodeId) {
       setPreview(null)
       setResolvingPreview(false)
       return
@@ -597,7 +836,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
       return
     }
     const ticket = ++previewGenRef.current
-    const nodeId = selectedNodeIds[0]
+    const nodeId = previewNodeId
     setResolvingPreview(true)
     const timer = setTimeout(() => {
       const request: SimulatorResolveRequestDto = {
@@ -618,7 +857,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
         })
     }, 250)
     return () => { clearTimeout(timer); previewGenRef.current += 1; setResolvingPreview(false) }
-  }, [open, running, environment, members, selectedNodeIds, configDirty, bridge, setPreview])
+  }, [open, running, environment, members, previewNodeId, configDirty, bridge, setPreview])
 
   const randomSeed = useCallback(() => {
     const buf = new BigInt64Array(1)
@@ -648,6 +887,8 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
   const activeMember = members[safeMemberIndex] ?? null
   const selectedNodeSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
   const difficultySet = useMemo(() => new Set(difficulties), [difficulties])
+  const selectedDungeonSet = useMemo(() => new Set(selectedDungeonIds), [selectedDungeonIds])
+  const dungeonDifficultySet = useMemo(() => new Set(dungeonDifficulties), [dungeonDifficulties])
   const allyCandidates = useMemo(() =>
     (party?.members ?? []).filter(m => m.playerId !== playerId
       && !members.some(existing => existing.sourcePlayerId === m.playerId)),
@@ -783,6 +1024,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
                       onClick={() => {
                         setError(null)
                         setLoadError(null)
+                        dungeonInitRef.current = false
                         resetSession()
                       }}>
                       {t('combat.simulator.resetAllConfig')}
@@ -821,214 +1063,479 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
               </div>
             </section>
 
-            {/* 右栏：目标地点、难度、时长与开始推演 */}
+            {/* 右栏：模式切换、目标地点/副本、难度、时长/次数与开始推演 */}
             <section className="sim-right-column">
               <div className="sim-config-panel">
-                <div className="sim-config-section sim-config-section--targets">
-                  <div className="sim-inline-header-bar">
-                    <div className="sim-inline-title-group">
-                      <span className="sim-config-title">{t('combat.simulator.targets')}</span>
-                      <span className="sim-selection-count-badge">
-                        {t('combat.simulator.selectedNodesCount', { count: selectedNodeIds.length })}
-                      </span>
-                    </div>
-                    <div className="sim-inline-toolbar-controls">
-                      <select
-                        className="sim-select sim-select--compact"
-                        aria-label={t('combat.simulator.regionFilterLabel')}
-                        disabled={running}
-                        value={selectedMapId}
-                        onChange={e => setSelectedMapId(e.target.value)}
-                      >
-                        <option value="all">{t('combat.simulator.regionAll')}（{combatNodes.length}）</option>
-                        {regionOptions.map(region => (
-                          <option key={region.mapId} value={region.mapId}>
-                            {region.mapName}（{region.count}）
-                          </option>
-                        ))}
-                      </select>
+                <div className="sim-config-section sim-config-section--inline sim-mode-switcher-section">
+                  <div className="sim-inline-section-row">
+                    <span className="sim-inline-label">{t('combat.simulator.modeLabel')}</span>
+                    <div className="sim-mode-switcher" role="tablist" aria-label={t('combat.simulator.modeLabel')}>
                       <button
                         type="button"
-                        className="sim-batch-btn"
-                        disabled={running || filteredNodes.length === 0}
-                        onClick={() => {
-                          setSelectedNodeIds(prev => {
-                            const merged = new Set(prev)
-                            for (const n of filteredNodes) merged.add(n.id)
-                            return [...merged]
-                          })
-                          setConfigDirty(v => v + 1)
-                        }}
+                        role="tab"
+                        aria-selected={simMode === 'combat'}
+                        disabled={running}
+                        className={`sim-mode-pill ${simMode === 'combat' ? 'is-active' : ''}`}
+                        onClick={() => { if (simMode !== 'combat') { setSimMode('combat'); setConfigDirty(v => v + 1) } }}
                       >
-                        {t('combat.simulator.selectAllNodes')}
+                        {t('combat.simulator.modeCombat')}
                       </button>
                       <button
                         type="button"
-                        className="sim-batch-btn sim-batch-btn--clear"
-                        disabled={running || selectedNodeIds.length === 0}
-                        onClick={() => { setSelectedNodeIds([]); setConfigDirty(v => v + 1) }}
+                        role="tab"
+                        aria-selected={simMode === 'dungeon'}
+                        disabled={running}
+                        className={`sim-mode-pill ${simMode === 'dungeon' ? 'is-active' : ''}`}
+                        onClick={() => { if (simMode !== 'dungeon') { setSimMode('dungeon'); setConfigDirty(v => v + 1) } }}
                       >
-                        {t('combat.simulator.clearSelectedNodes')}
+                        {t('combat.simulator.modeDungeon')}
                       </button>
                     </div>
                   </div>
+                </div>
 
-                  <div className="sim-node-multiselect-container sim-node-multiselect-container--dense">
-                    {filteredNodes.length > 0 ? (
-                      <div className="sim-node-cards-grid sim-node-cards-grid--dense">
-                        {filteredNodes.map(node => {
-                          const checked = selectedNodeSet.has(node.id)
-                          const hpRegen = node.entry.effects.combatHitpointRegen ?? 0
-                          const mpRegen = node.entry.effects.combatManapointRegen ?? 0
-                          const dr = node.entry.effects.combatDamageReductionRatio ?? 0
-                          const weaken = node.entry.effects.monsterWeakenRatio ?? 0
-                          const crowded = node.entry.usages.filter(u => u.efficiency < 1)
-                          const effectTexts: string[] = []
-                          if (hpRegen !== 0) effectTexts.push(t('combat.simulator.nodeHpRegen', { value: hpRegen }))
-                          if (mpRegen !== 0) effectTexts.push(t('combat.simulator.nodeMpRegen', { value: mpRegen }))
-                          if (dr !== 0) effectTexts.push(`${t('combat.simulator.reduction')}${Math.round(dr * 100)}%`)
-                          if (weaken !== 0) effectTexts.push(`${t('combat.simulator.weaken')}${Math.round(weaken * 100)}%`)
-                          for (const u of crowded) {
-                            effectTexts.push(t('combat.simulator.crowdedEff', { pct: Math.round(u.efficiency * 100) }))
-                          }
-                          return (
-                            <FloatingPopover
-                              key={node.id}
-                              trigger="hover"
-                              placement="top"
-                              size="small"
-                              interactive={false}
-                              displayContents
-                              content={() => (
-                                <FloatingInfoCard
-                                  title={node.name}
-                                  subtitle={node.mapName}
-                                  badge={effectTexts.length > 0 ? t('combat.simulator.nodeBonusCount', { count: effectTexts.length }) : undefined}
-                                  badgeTone="gold"
-                                  lines={effectTexts.length > 0 ? effectTexts : [t('combat.simulator.noBuildingBonus')]}
-                                />
-                              )}
-                            >
-                              <label className={`sim-node-card sim-node-card--dense ${checked ? 'is-selected' : ''}`}>
-                                <div className="sim-node-card-header">
-                                  <input
-                                    type="checkbox"
-                                    className="sim-node-checkbox"
-                                    disabled={running}
-                                    checked={checked}
-                                    onChange={e => {
-                                      setSelectedNodeIds(prev =>
-                                        e.target.checked ? [...prev, node.id] : prev.filter(id => id !== node.id))
-                                      setConfigDirty(v => v + 1)
-                                    }}
-                                  />
-                                  <span className="sim-node-name">{node.name}</span>
-                                  {effectTexts.length > 0 && (
-                                    <span className="sim-node-bonus-pill">
-                                      {t('combat.simulator.nodeBonusCount', { count: effectTexts.length })}
-                                    </span>
+                {simMode === 'combat' ? (
+                  <>
+                    <div className="sim-config-section sim-config-section--targets">
+                      <div className="sim-inline-header-bar">
+                        <div className="sim-inline-title-group">
+                          <span className="sim-config-title">{t('combat.simulator.targets')}</span>
+                          <span className="sim-selection-count-badge">
+                            {t('combat.simulator.selectedNodesCount', { count: selectedNodeIds.length })}
+                          </span>
+                        </div>
+                        <div className="sim-inline-toolbar-controls">
+                          <select
+                            className="sim-select sim-select--compact"
+                            aria-label={t('combat.simulator.regionFilterLabel')}
+                            disabled={running}
+                            value={selectedMapId}
+                            onChange={e => setSelectedMapId(e.target.value)}
+                          >
+                            <option value="all">{t('combat.simulator.regionAll')}（{combatNodes.length}）</option>
+                            {regionOptions.map(region => (
+                              <option key={region.mapId} value={region.mapId}>
+                                {region.mapName}（{region.count}）
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running || filteredNodes.length === 0}
+                            onClick={() => {
+                              setSelectedNodeIds(prev => {
+                                const merged = new Set(prev)
+                                for (const n of filteredNodes) merged.add(n.id)
+                                return [...merged]
+                              })
+                              setConfigDirty(v => v + 1)
+                            }}
+                          >
+                            {t('combat.simulator.selectAllNodes')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn sim-batch-btn--clear"
+                            disabled={running || selectedNodeIds.length === 0}
+                            onClick={() => { setSelectedNodeIds([]); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.clearSelectedNodes')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="sim-node-multiselect-container sim-node-multiselect-container--dense">
+                        {filteredNodes.length > 0 ? (
+                          <div className="sim-node-cards-grid sim-node-cards-grid--dense">
+                            {filteredNodes.map(node => {
+                              const checked = selectedNodeSet.has(node.id)
+                              const hpRegen = node.entry.effects.combatHitpointRegen ?? 0
+                              const mpRegen = node.entry.effects.combatManapointRegen ?? 0
+                              const dr = node.entry.effects.combatDamageReductionRatio ?? 0
+                              const weaken = node.entry.effects.monsterWeakenRatio ?? 0
+                              const crowded = node.entry.usages.filter(u => u.efficiency < 1)
+                              const effectTexts: string[] = []
+                              if (hpRegen !== 0) effectTexts.push(t('combat.simulator.nodeHpRegen', { value: hpRegen }))
+                              if (mpRegen !== 0) effectTexts.push(t('combat.simulator.nodeMpRegen', { value: mpRegen }))
+                              if (dr !== 0) effectTexts.push(`${t('combat.simulator.reduction')}${Math.round(dr * 100)}%`)
+                              if (weaken !== 0) effectTexts.push(`${t('combat.simulator.weaken')}${Math.round(weaken * 100)}%`)
+                              for (const u of crowded) {
+                                effectTexts.push(t('combat.simulator.crowdedEff', { pct: Math.round(u.efficiency * 100) }))
+                              }
+                              return (
+                                <FloatingPopover
+                                  key={node.id}
+                                  trigger="hover"
+                                  placement="top"
+                                  size="small"
+                                  interactive={false}
+                                  displayContents
+                                  content={() => (
+                                    <FloatingInfoCard
+                                      title={node.name}
+                                      subtitle={node.mapName}
+                                      badge={effectTexts.length > 0 ? t('combat.simulator.nodeBonusCount', { count: effectTexts.length }) : undefined}
+                                      badgeTone="gold"
+                                      lines={effectTexts.length > 0 ? effectTexts : [t('combat.simulator.noBuildingBonus')]}
+                                    />
                                   )}
-                                </div>
-                                {selectedMapId === 'all' && (
-                                  <div className="sim-node-dense-tags">
-                                    <span className="sim-node-map-tag">{node.mapName}</span>
-                                  </div>
-                                )}
+                                >
+                                  <label className={`sim-node-card sim-node-card--dense ${checked ? 'is-selected' : ''}`}>
+                                    <div className="sim-node-card-header">
+                                      <input
+                                        type="checkbox"
+                                        className="sim-node-checkbox"
+                                        disabled={running}
+                                        checked={checked}
+                                        onChange={e => {
+                                          setSelectedNodeIds(prev =>
+                                            e.target.checked ? [...prev, node.id] : prev.filter(id => id !== node.id))
+                                          setConfigDirty(v => v + 1)
+                                        }}
+                                      />
+                                      <span className="sim-node-name">{node.name}</span>
+                                      {effectTexts.length > 0 && (
+                                        <span className="sim-node-bonus-pill">
+                                          {t('combat.simulator.nodeBonusCount', { count: effectTexts.length })}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {selectedMapId === 'all' && (
+                                      <div className="sim-node-dense-tags">
+                                        <span className="sim-node-map-tag">{node.mapName}</span>
+                                      </div>
+                                    )}
+                                  </label>
+                                </FloatingPopover>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="sim-difficulty-hint">
+                            {environment ? t('combat.simulator.noNodes') : (loadError ?? t('combat.simulator.envLoading'))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="sim-config-section sim-config-section--inline">
+                      <div className="sim-inline-section-row">
+                        <span className="sim-inline-label">{t('combat.simulator.difficultyLabel')}</span>
+                        <div className="sim-difficulty-inline-pills">
+                          {[0, 1, 2, 3, 4, 5].map(d => {
+                            const checked = difficultySet.has(d)
+                            return (
+                              <label key={d} className={`sim-difficulty-checkbox-card sim-difficulty-pill ${checked ? 'is-checked' : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  className="sim-difficulty-checkbox"
+                                  disabled={running}
+                                  checked={checked}
+                                  onChange={e => {
+                                    setDifficulties(prev => e.target.checked ? [...prev, d] : prev.filter(x => x !== d))
+                                    setConfigDirty(v => v + 1)
+                                  }}
+                                />
+                                <span className="sim-difficulty-card-label">
+                                  {d === 0 ? t('combat.simulator.difficultyDefault') : `T${d}`}
+                                </span>
                               </label>
-                            </FloatingPopover>
-                          )
-                        })}
+                            )
+                          })}
+                        </div>
+                        <div className="sim-inline-actions">
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running}
+                            onClick={() => { setDifficulties([0, 1, 2, 3, 4, 5]); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.selectAllDifficulties')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn sim-batch-btn--clear"
+                            disabled={running}
+                            onClick={() => { setDifficulties([0]); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.resetDifficulties')}
+                          </button>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="sim-difficulty-hint">
-                        {environment ? t('combat.simulator.noNodes') : (loadError ?? t('combat.simulator.envLoading'))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="sim-config-section sim-config-section--targets">
+                      <div className="sim-inline-header-bar">
+                        <div className="sim-inline-title-group">
+                          <span className="sim-config-title">{t('combat.simulator.dungeonTargets')}</span>
+                          <span className="sim-selection-count-badge">
+                            {t('combat.simulator.selectedNodesCount', { count: selectedDungeonIds.length })}
+                          </span>
+                        </div>
+                        <div className="sim-inline-toolbar-controls">
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running || dungeonEntries.length === 0}
+                            onClick={() => {
+                              dungeonInitRef.current = true
+                              setSelectedDungeonIds(dungeonEntries.map(d => d.id))
+                              setConfigDirty(v => v + 1)
+                            }}
+                          >
+                            {t('combat.simulator.selectAllNodes')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn sim-batch-btn--clear"
+                            disabled={running || selectedDungeonIds.length === 0}
+                            onClick={() => {
+                              dungeonInitRef.current = true
+                              setSelectedDungeonIds([])
+                              setConfigDirty(v => v + 1)
+                            }}
+                          >
+                            {t('combat.simulator.clearSelectedNodes')}
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
 
-                <div className="sim-config-section sim-config-section--inline">
-                  <div className="sim-inline-section-row">
-                    <span className="sim-inline-label">{t('combat.simulator.difficultyLabel')}</span>
-                    <div className="sim-difficulty-inline-pills">
-                      {[0, 1, 2, 3, 4, 5].map(d => {
-                        const checked = difficultySet.has(d)
-                        return (
-                          <label key={d} className={`sim-difficulty-checkbox-card sim-difficulty-pill ${checked ? 'is-checked' : ''}`}>
-                            <input
-                              type="checkbox"
-                              className="sim-difficulty-checkbox"
-                              disabled={running}
-                              checked={checked}
-                              onChange={e => {
-                                setDifficulties(prev => e.target.checked ? [...prev, d] : prev.filter(x => x !== d))
-                                setConfigDirty(v => v + 1)
-                              }}
-                            />
-                            <span className="sim-difficulty-card-label">
-                              {d === 0 ? t('combat.simulator.difficultyDefault') : `T${d}`}
+                      <div className="sim-node-multiselect-container sim-node-multiselect-container--dense">
+                        {dungeonEntries.length > 0 ? (
+                          <div className="sim-node-cards-grid sim-node-cards-grid--dense sim-dungeon-cards-grid">
+                            {dungeonEntries.map(dungeon => {
+                              const checked = selectedDungeonSet.has(dungeon.id)
+                              const hpRegen = dungeon.entry?.effects.combatHitpointRegen ?? 0
+                              const mpRegen = dungeon.entry?.effects.combatManapointRegen ?? 0
+                              const dr = dungeon.entry?.effects.combatDamageReductionRatio ?? 0
+                              const weaken = dungeon.entry?.effects.monsterWeakenRatio ?? 0
+                              const crowded = dungeon.entry?.usages.filter(u => u.efficiency < 1) ?? []
+                              const effectTexts: string[] = []
+                              if (hpRegen !== 0) effectTexts.push(t('combat.simulator.nodeHpRegen', { value: hpRegen }))
+                              if (mpRegen !== 0) effectTexts.push(t('combat.simulator.nodeMpRegen', { value: mpRegen }))
+                              if (dr !== 0) effectTexts.push(`${t('combat.simulator.reduction')}${Math.round(dr * 100)}%`)
+                              for (const u of crowded) {
+                                effectTexts.push(t('combat.simulator.crowdedEff', { pct: Math.round(u.efficiency * 100) }))
+                              }
+                              const hoverLines = effectTexts.length > 0 ? [...effectTexts] : [t('combat.simulator.noBuildingBonus')]
+                              if (weaken !== 0) hoverLines.push(t('combat.simulator.dungeonIgnoreWeakenNote'))
+                              return (
+                                <FloatingPopover
+                                  key={dungeon.id}
+                                  trigger="hover"
+                                  placement="top"
+                                  size="small"
+                                  interactive={false}
+                                  displayContents
+                                  content={() => (
+                                    <FloatingInfoCard
+                                      title={t('combat.simulator.dungeonCardTitle', { name: dungeon.name, level: dungeon.baseLevel })}
+                                      subtitle={dungeon.mapName ? `${dungeon.nodeName} · ${dungeon.mapName}` : dungeon.nodeName}
+                                      badge={effectTexts.length > 0 ? t('combat.simulator.nodeBonusCount', { count: effectTexts.length }) : undefined}
+                                      badgeTone="gold"
+                                      lines={hoverLines}
+                                    />
+                                  )}
+                                >
+                                  <label className={`sim-node-card sim-node-card--dense sim-dungeon-card ${checked ? 'is-selected' : ''}`}>
+                                    <div className="sim-node-card-header">
+                                      <input
+                                        type="checkbox"
+                                        className="sim-node-checkbox"
+                                        disabled={running}
+                                        checked={checked}
+                                        onChange={e => {
+                                          dungeonInitRef.current = true
+                                          setSelectedDungeonIds(prev =>
+                                            e.target.checked ? [...prev, dungeon.id] : prev.filter(id => id !== dungeon.id))
+                                          setConfigDirty(v => v + 1)
+                                        }}
+                                      />
+                                      <span className="sim-node-name">{dungeon.name}</span>
+                                      <span className="sim-dungeon-lv-badge">
+                                        {t('combat.simulator.dungeonBaseLevelTag', { level: dungeon.baseLevel })}
+                                      </span>
+                                      {effectTexts.length > 0 && (
+                                        <span className="sim-node-bonus-pill">
+                                          {t('combat.simulator.nodeBonusCount', { count: effectTexts.length })}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="sim-node-dense-tags">
+                                      <span className="sim-node-map-tag">{dungeon.nodeName}</span>
+                                      <span className="sim-node-map-tag">· {t('combat.simulator.dungeonWavesTag', { waves: dungeon.totalWaves })}</span>
+                                    </div>
+                                  </label>
+                                </FloatingPopover>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="sim-difficulty-hint">{t('combat.simulator.noDungeons')}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="sim-config-section sim-config-section--inline">
+                      <div className="sim-inline-header-bar">
+                        <div className="sim-inline-title-group">
+                          <span className="sim-inline-label">{t('combat.simulator.difficultyLabel')}</span>
+                          <span className="sim-selection-count-badge">
+                            {t('combat.simulator.selectedDifficultiesCount', { count: dungeonDifficulties.length })}
+                          </span>
+                        </div>
+                        <div className="sim-inline-actions">
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running}
+                            onClick={() => { setDungeonDifficulties(ALL_DUNGEON_DIFFICULTIES); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.selectAllDifficulties')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running}
+                            onClick={() => { setDungeonDifficulties(VIRTUAL_DUNGEON_DIFFICULTIES); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.dungeon.mode.virtual')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn"
+                            disabled={running}
+                            onClick={() => { setDungeonDifficulties(REALITY_DUNGEON_DIFFICULTIES); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.dungeon.mode.reality')}
+                          </button>
+                          <button
+                            type="button"
+                            className="sim-batch-btn sim-batch-btn--clear"
+                            disabled={running}
+                            onClick={() => { setDungeonDifficulties([0]); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.resetDungeonDifficulty')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="sim-dungeon-diff-groups">
+                        {(['virtual', 'reality'] as const).map(mode => (
+                          <div key={mode} className="sim-dungeon-diff-row">
+                            <span className={`sim-dungeon-mode-tag is-${mode}`}>
+                              {t(`combat.dungeon.mode.${mode}`)}
                             </span>
-                          </label>
-                        )
-                      })}
+                            <div className="sim-difficulty-inline-pills">
+                              {DUNGEON_DIFFICULTIES.filter(m => m.mode === mode).map(meta => {
+                                const checked = dungeonDifficultySet.has(meta.level)
+                                const tierName = t(`combat.dungeon.difficulty.${meta.key}`)
+                                const fullLabel = formatDungeonDiffLabel(meta.level)
+                                return (
+                                  <label
+                                    key={meta.level}
+                                    title={t('combat.dungeon.tierOptionWithCost', { name: fullLabel, cost: meta.energyCost })}
+                                    className={`sim-difficulty-checkbox-card sim-difficulty-pill sim-dungeon-diff-pill is-tone-${meta.styleTone} ${checked ? 'is-checked' : ''}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="sim-difficulty-checkbox"
+                                      disabled={running}
+                                      checked={checked}
+                                      onChange={e => {
+                                        setDungeonDifficulties(prev =>
+                                          e.target.checked ? [...prev, meta.level] : prev.filter(x => x !== meta.level))
+                                        setConfigDirty(v => v + 1)
+                                      }}
+                                    />
+                                    <span className="sim-difficulty-card-label">{tierName}</span>
+                                    <span className="sim-difficulty-card-sub">{meta.energyCost}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="sim-inline-actions">
-                      <button
-                        type="button"
-                        className="sim-batch-btn"
-                        disabled={running}
-                        onClick={() => { setDifficulties([0, 1, 2, 3, 4, 5]); setConfigDirty(v => v + 1) }}
-                      >
-                        {t('combat.simulator.selectAllDifficulties')}
-                      </button>
-                      <button
-                        type="button"
-                        className="sim-batch-btn sim-batch-btn--clear"
-                        disabled={running}
-                        onClick={() => { setDifficulties([0]); setConfigDirty(v => v + 1) }}
-                      >
-                        {t('combat.simulator.resetDifficulties')}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  </>
+                )}
 
                 <div className="sim-config-section sim-config-section--inline">
-                  <div className="sim-inline-section-row">
-                    <span className="sim-inline-label">{t('combat.simulator.durationTitle')}</span>
-                    <div className="sim-duration-inline-presets">
-                      {DURATION_PRESETS.map(seconds => (
-                        <button
-                          key={seconds}
-                          type="button"
+                  {simMode === 'combat' ? (
+                    <div className="sim-inline-section-row">
+                      <span className="sim-inline-label">{t('combat.simulator.durationTitle')}</span>
+                      <div className="sim-duration-inline-presets">
+                        {DURATION_PRESETS.map(seconds => (
+                          <button
+                            key={seconds}
+                            type="button"
+                            disabled={running}
+                            className={`sim-preset-btn sim-preset-btn--compact ${durationSeconds === seconds ? 'is-active' : ''}`}
+                            onClick={() => { setDurationSeconds(seconds); setConfigDirty(v => v + 1) }}
+                          >
+                            {seconds >= 3600 ? `${seconds / 3600}h` : `${seconds / 60}m`}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="sim-inline-duration-custom">
+                        <input
+                          type="number"
+                          aria-label={t('combat.simulator.customDuration')}
+                          className="sim-input sim-input--compact"
+                          min={1}
+                          max={86400}
+                          step={1}
                           disabled={running}
-                          className={`sim-preset-btn sim-preset-btn--compact ${durationSeconds === seconds ? 'is-active' : ''}`}
-                          onClick={() => { setDurationSeconds(seconds); setConfigDirty(v => v + 1) }}
-                        >
-                          {seconds >= 3600 ? `${seconds / 3600}h` : `${seconds / 60}m`}
-                        </button>
-                      ))}
+                          value={durationSeconds}
+                          onChange={e => {
+                            const v = Number(e.target.value)
+                            if (Number.isFinite(v)) { setDurationSeconds(v); setConfigDirty(x => x + 1) }
+                          }}
+                        />
+                        <span className="sim-seconds-hint">
+                          {t('combat.simulator.secondsUnit')} ({(durationSeconds / 3600).toFixed(2)}{t('combat.simulator.hoursUnit')})
+                        </span>
+                      </div>
                     </div>
-                    <div className="sim-inline-duration-custom">
-                      <input
-                        type="number"
-                        aria-label={t('combat.simulator.customDuration')}
-                        className="sim-input sim-input--compact"
-                        min={1}
-                        max={86400}
-                        step={1}
-                        disabled={running}
-                        value={durationSeconds}
-                        onChange={e => {
-                          const v = Number(e.target.value)
-                          if (Number.isFinite(v)) { setDurationSeconds(v); setConfigDirty(x => x + 1) }
-                        }}
-                      />
-                      <span className="sim-seconds-hint">
-                        {t('combat.simulator.secondsUnit')} ({(durationSeconds / 3600).toFixed(2)}{t('combat.simulator.hoursUnit')})
-                      </span>
+                  ) : (
+                    <div className="sim-inline-section-row">
+                      <span className="sim-inline-label">{t('combat.simulator.repeatCountTitle')}</span>
+                      <div className="sim-duration-inline-presets">
+                        {DUNGEON_REPEAT_PRESETS.map(count => (
+                          <button
+                            key={count}
+                            type="button"
+                            disabled={running}
+                            className={`sim-preset-btn sim-preset-btn--compact ${dungeonRepeatCount === count ? 'is-active' : ''}`}
+                            onClick={() => { setDungeonRepeatCount(count); setConfigDirty(v => v + 1) }}
+                          >
+                            {t('combat.simulator.runsPresetLabel', { count })}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="sim-inline-duration-custom">
+                        <input
+                          type="number"
+                          aria-label={t('combat.simulator.repeatCountTitle')}
+                          className="sim-input sim-input--compact"
+                          min={1}
+                          max={200}
+                          step={1}
+                          disabled={running}
+                          value={dungeonRepeatCount}
+                          onChange={e => {
+                            const v = Number(e.target.value)
+                            if (Number.isFinite(v)) { setDungeonRepeatCount(Math.trunc(v)); setConfigDirty(x => x + 1) }
+                          }}
+                        />
+                        <span className="sim-seconds-hint">{t('combat.simulator.runsUnitHint')}</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="sim-inline-section-row">
                     <span className="sim-inline-label">{t('combat.simulator.seedTitle')}</span>
                     <div className="wasm-sim-seed sim-inline-seed-group">
@@ -1063,7 +1570,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
                       <button
                         type="button"
                         className="sim-run-button"
-                        disabled={!environment || members.length === 0 || selectedNodeIds.length === 0 || difficulties.length === 0}
+                        disabled={Boolean(disabledReason)}
                         onClick={runAll}
                       >
                         {t('combat.simulator.startSimulation')}
@@ -1099,7 +1606,7 @@ export const CombatSimulatorModal = memo(function CombatSimulatorModal({ open, o
                 <button
                   type="button"
                   className="sim-btn sim-btn--primary"
-                  disabled={running || !environment || members.length === 0 || selectedNodeIds.length === 0 || difficulties.length === 0}
+                  disabled={running || Boolean(disabledReason)}
                   onClick={runAll}
                 >
                   {t('combat.simulator.rerunBtn')}

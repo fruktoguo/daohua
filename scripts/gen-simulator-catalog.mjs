@@ -54,6 +54,7 @@ export function buildSimulatorCatalogPayload() {
   const combatActions = []
   const buildings = {}
   const encounters = []
+  const dungeons = []
   const monsters = {}
   const maps = []
   const rawItems = {}
@@ -94,6 +95,8 @@ export function buildSimulatorCatalogPayload() {
         monsters[id] = entry
       } else if (id.startsWith('encounter.')) {
         encounters.push(entry)
+      } else if (id.startsWith('dungeon.')) {
+        dungeons.push(entry)
       } else if (id.startsWith('map.')) {
         maps.push(entry)
       } else if (id.startsWith('building.')) {
@@ -128,6 +131,7 @@ export function buildSimulatorCatalogPayload() {
     combatActions,
     buildings,
     encounters,
+    dungeons,
     monsters,
     maps,
     rawItems,

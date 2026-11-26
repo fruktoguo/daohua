@@ -1,7 +1,7 @@
 // 单人确定性模拟主循环引擎（资源自然窗口 + 行动分派 + 复用战斗会话 + 事件驱动即时消耗品）
 // 严格对应 DaoHua.Ecs.SimulationEngine
 
-import type { GameDataCatalog } from './catalog.ts'
+import { resolveEncounterOrDungeon, type GameDataCatalog } from './catalog.ts'
 import {
   advanceCombatPreparationCore,
   completeCombatAdvanceCore,
@@ -59,6 +59,7 @@ export function advanceSimulationTo(
   catalog: GameDataCatalog,
   initialAssets: ReadonlyMap<string, number> | null,
   consumableSchedule: ConsumableScheduleMode = ConsumableScheduleMode.EventDriven,
+  stopWhenQueueEmpty = false,
 ): AdvanceSimulationResult {
   const fromTicks = player.lastSimulatedAtTicks
   if (targetTicks < fromTicks) {
@@ -74,6 +75,7 @@ export function advanceSimulationTo(
 
   const computeTargetTicks = targetTicks
   while (player.lastSimulatedAtTicks < computeTargetTicks) {
+    if (stopWhenQueueEmpty && player.actions.length === 0) break
     const nowTicks = player.lastSimulatedAtTicks
     const { plan, instantDeltas } = prepareResourceBoundaryCore(
       player,
@@ -105,6 +107,7 @@ export function advanceSimulationTo(
       wallet,
       live,
       consumableSchedule,
+      stopWhenQueueEmpty,
     )
     for (let i = 0; i < result.sortedDeltas.length; i++) {
       const [k, v] = result.sortedDeltas[i]
@@ -115,15 +118,18 @@ export function advanceSimulationTo(
     actions += result.completedActions
     repeats += result.completedRepeats
     if (result.changed) changed = true
-    if (completeResourceRegeneration(player, catalog, step)) changed = true
+    const regenStep = result.stoppedEarly ? result.actualElapsedSeconds : step
+    if (completeResourceRegeneration(player, catalog, regenStep)) changed = true
+    if (stopWhenQueueEmpty && player.actions.length === 0) break
   }
   live.flush()
 
+  const finalTicks = stopWhenQueueEmpty ? player.lastSimulatedAtTicks : targetTicks
   if (changed) player.stateVersion += 1
   return {
     fromTicks,
-    toTicks: targetTicks,
-    elapsedSeconds: ticksDiffSeconds(fromTicks, targetTicks),
+    toTicks: finalTicks,
+    elapsedSeconds: ticksDiffSeconds(fromTicks, finalTicks),
     completedActions: actions,
     completedRepeats: repeats,
     assetDeltas: buildSortedAssetDeltasDto(deltas),
@@ -141,12 +147,15 @@ function advanceToCore(
   wallet: AssetWallet | null,
   live: LiveCombatBattle | null,
   consumableSchedule: ConsumableScheduleMode,
+  stopWhenQueueEmpty = false,
 ): {
   sortedDeltas: [string, number][]
   events: SimEventTail
   completedActions: number
   completedRepeats: number
   changed: boolean
+  actualElapsedSeconds: number
+  stoppedEarly: boolean
 } {
   const fromTicks = player.lastSimulatedAtTicks
   const totalSec = ticksDiffSeconds(fromTicks, targetTicks)
@@ -211,12 +220,18 @@ function advanceToCore(
     )
   }
 
-  if (stateRef.remainingSeconds > 1e-9 && advanceIdleSkillResources(player, stateRef.remainingSeconds)) {
+  const stoppedEarly = stopWhenQueueEmpty && player.actions.length === 0
+  const actualElapsedSeconds = stoppedEarly
+    ? Math.max(0, totalSec - stateRef.remainingSeconds)
+    : totalSec
+  if (!stoppedEarly && stateRef.remainingSeconds > 1e-9 && advanceIdleSkillResources(player, stateRef.remainingSeconds)) {
     stateRef.idleSkillChanged = true
   }
 
-  player.state.ageSeconds += totalSec
-  player.lastSimulatedAtTicks = targetTicks
+  player.state.ageSeconds += actualElapsedSeconds
+  player.lastSimulatedAtTicks = stoppedEarly
+    ? addSecondsExactTicks(fromTicks, actualElapsedSeconds)
+    : targetTicks
   if (stateRef.remainingSeconds < 0) {
     throw new Error('模拟时间出现负余量。')
   }
@@ -254,6 +269,8 @@ function advanceToCore(
     completedActions: stateRef.completedActions,
     completedRepeats: stateRef.completedRepeats,
     changed: transitions > 0 || headActivated || stateRef.idleSkillChanged,
+    actualElapsedSeconds,
+    stoppedEarly,
   }
 }
 
@@ -294,8 +311,8 @@ function advanceCombatAction(
   }
 
   const expedition = action.expedition
-  const encounter = catalog.encounters.get(expedition.encounterId)
-  if (!encounter) throw new Error(`远征状态引用的遭遇 ${expedition.encounterId} 不存在。`)
+  const encounter = resolveEncounterOrDungeon(catalog, expedition.encounterId)
+  if (!encounter) throw new Error(`远征状态引用的遭遇或追忆副本 ${expedition.encounterId} 不存在。`)
   const waveEnemies = expedition.enemies
   if (!waveEnemies || waveEnemies.length === 0) {
     throw new Error('战斗远征敌人状态无效。')

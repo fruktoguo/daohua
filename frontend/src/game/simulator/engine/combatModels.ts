@@ -910,6 +910,9 @@ export class CombatEncounterState {
   outcome: CombatOutcome = CombatOutcome.Running
   sequence = 0
   readonly playerRespawnSeconds: number
+  readonly wipeEndsBattle: boolean
+  maxBattleSeconds = Number.POSITIVE_INFINITY
+  timedOut = false
   readonly pendingTriggers: PendingCombatTrigger[] = []
   statsBook: CombatUnitStatsBook | null = null
 
@@ -920,6 +923,7 @@ export class CombatEncounterState {
     selfIndex: number,
     enemies: CombatantState[],
     playerRespawnSeconds: number,
+    wipeEndsBattle = false,
   ) {
     this.encounterId = encounterId
     this.seed = seed
@@ -927,6 +931,7 @@ export class CombatEncounterState {
     this.selfIndex = selfIndex
     this.enemies = enemies
     this.playerRespawnSeconds = playerRespawnSeconds
+    this.wipeEndsBattle = wipeEndsBattle
     this.traitListeners = new CombatTraitListeners(this)
   }
 
@@ -1037,6 +1042,7 @@ export class CombatEncounterState {
     player: CombatantTemplate,
     enemies: readonly CombatantTemplate[],
     playerRespawnSeconds = 0,
+    wipeEndsBattle = false,
   ): CombatEncounterState {
     return CombatEncounterState.createAllied(
       encounterId,
@@ -1045,6 +1051,7 @@ export class CombatEncounterState {
       0,
       enemies,
       playerRespawnSeconds,
+      wipeEndsBattle,
     )
   }
 
@@ -1055,6 +1062,7 @@ export class CombatEncounterState {
     selfIndex: number,
     enemies: readonly CombatantTemplate[],
     playerRespawnSeconds = 0,
+    wipeEndsBattle = false,
   ): CombatEncounterState {
     const allyStates: CombatantState[] = new Array(allies.length)
     for (let i = 0; i < allies.length; i++) {
@@ -1083,6 +1091,7 @@ export class CombatEncounterState {
       selfIndex,
       enemyStates,
       playerRespawnSeconds,
+      wipeEndsBattle,
     )
     encounter.initializeTraitListeners()
     return encounter
@@ -1164,6 +1173,7 @@ export class CombatEncounterState {
     sequence = 0,
     playerRespawnSeconds = 0,
     playerRespawnAtSeconds = Number.POSITIVE_INFINITY,
+    wipeEndsBattle = false,
   ): CombatEncounterState {
     const snap: CombatantSnapshot = {
       ...playerSnapshot,
@@ -1181,6 +1191,7 @@ export class CombatEncounterState {
       outcome,
       sequence,
       playerRespawnSeconds,
+      wipeEndsBattle,
     )
   }
 
@@ -1196,6 +1207,7 @@ export class CombatEncounterState {
     outcome: CombatOutcome,
     sequence = 0,
     playerRespawnSeconds = 0,
+    wipeEndsBattle = false,
   ): CombatEncounterState {
     const encounter = CombatEncounterState.createAllied(
       encounterId,
@@ -1204,6 +1216,7 @@ export class CombatEncounterState {
       selfIndex,
       enemies,
       playerRespawnSeconds,
+      wipeEndsBattle,
     )
     for (let i = 0; i < allies.length; i++) {
       CombatEncounterState.applySnapshot(
@@ -1254,6 +1267,8 @@ export function scaleMonsterStats(baseStats: CombatantStats, difficulty: number)
       totalDamageBonusPoints: Math.ceil(baseStats.totalDamageBonusPoints),
       basicAttackBonusPoints: Math.ceil(baseStats.basicAttackBonusPoints),
       skillBonusPoints: Math.ceil(baseStats.skillBonusPoints),
+      talismanDamageBonusPoints: Math.ceil(baseStats.talismanDamageBonusPoints),
+      formationDamageBonusPoints: Math.ceil(baseStats.formationDamageBonusPoints),
       physicalDamageReductionPoints: Math.ceil(baseStats.physicalDamageReductionPoints),
       spellDamageReductionPoints: Math.ceil(baseStats.spellDamageReductionPoints),
       damageAbsorptionPoints: Math.ceil(baseStats.damageAbsorptionPoints),
@@ -1292,6 +1307,8 @@ export function scaleMonsterStats(baseStats: CombatantStats, difficulty: number)
     totalDamageBonusPoints: Math.ceil(baseStats.totalDamageBonusPoints * mult),
     basicAttackBonusPoints: Math.ceil(baseStats.basicAttackBonusPoints * mult),
     skillBonusPoints: Math.ceil(baseStats.skillBonusPoints * mult),
+    talismanDamageBonusPoints: Math.ceil(baseStats.talismanDamageBonusPoints * mult),
+    formationDamageBonusPoints: Math.ceil(baseStats.formationDamageBonusPoints * mult),
     physicalDamageReductionPoints: Math.ceil(baseStats.physicalDamageReductionPoints * mult),
     spellDamageReductionPoints: Math.ceil(baseStats.spellDamageReductionPoints * mult),
     damageAbsorptionPoints: Math.ceil(baseStats.damageAbsorptionPoints * mult),

@@ -311,9 +311,27 @@ public static class DeterministicCombatEngine
     }
 
     /// <summary>
+    /// 计算即时打击消耗品的抗性穿甲前原始威力（总纲 §7.7.1 / §20.1.3 / §20.2）：
+    /// 物品打击非玩家自身技能，不吃技能增幅；归属符箓（<c>talisman</c>）的打击额外乘入
+    /// <see cref="CombatantStats.TalismanDamageBonusPoints"/>（Linear 曲线，符箓技艺每级 +1 点）。
+    /// </summary>
+    internal static double ResolveConsumableStrikePower(
+        Domain.GameData.ItemDefinition item,
+        Domain.GameData.ConsumableStrike strike,
+        CombatantStats casterStats)
+    {
+        var basePower = strike.ManaDamageRatio * casterStats.MaxManapoints
+            + strike.SpellAttackRatio * casterStats.SpellAttack;
+        if (!string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
+            return basePower;
+        return basePower * PercentValue.Multiplier(casterStats.TalismanDamageBonusPoints, PercentCurveMode.Linear);
+    }
+
+    /// <summary>
     /// 雷击符类打击伤害（总纲 §20.2）：无命中/破招/格挡/暴击掷点、不消耗随机通道；
     /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口。
-    /// 物品打击与阵盘反击非玩家自身技能，AttackPower 不并入技能增幅（总纲 §7.7.1 技能增幅作用域）。
+    /// 物品打击与阵盘反击非玩家自身技能，AttackPower 不并入技能增幅（总纲 §7.7.1 技能增幅作用域），
+    /// 由调用方在构造 AttackPower 时按符/阵各自增幅点数并入第一层原始威力基数。
     /// </summary>
     internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
     {

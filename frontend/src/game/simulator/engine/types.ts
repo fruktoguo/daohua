@@ -181,6 +181,33 @@ export interface SimulatorResolveRequestDto {
   environment: SimulatorEnvironmentDto;
 }
 
+export interface SimulatorDungeonCatalogEntryDto {
+  id: string;
+  name: string;
+  description: string;
+  nodeId: string;
+  tier: number;
+  baseLevel: number;
+  minMonsterLevel: number;
+  totalWaves: number;
+  recommendedValuation: number[];
+}
+
+export interface SimulatorDungeonSummaryDto {
+  dungeonId: string;
+  dungeonName: string;
+  totalWaves: number;
+  requestedRuns: number;
+  completedRuns: number;
+  clearedRuns: number;
+  failedRuns: number;
+  timedOutRuns: number;
+  energyPerRun: number;
+  totalEnergySpent: number;
+  bestWaveCleared: number;
+  failedWaves: Record<number, number>;
+}
+
 export interface SimulatorRunRequestDto {
   formatVersion: number;
   nodeId: string;
@@ -189,6 +216,8 @@ export interface SimulatorRunRequestDto {
   seed: string;
   members: SimulatorProfileDto[];
   environment: SimulatorEnvironmentDto;
+  dungeonId?: string | null;
+  repeatCount?: number | null;
 }
 
 export interface SimulatorRootExpDto {
@@ -291,6 +320,8 @@ export interface SimulatorRunResultDto {
   requestedDurationSeconds: number;
   simulatedSeconds: number;
   members: SimulatorMemberResultDto[];
+  dungeonId?: string | null;
+  dungeonSummary?: SimulatorDungeonSummaryDto | null;
 }
 
 export interface PlayerAttributes {
@@ -322,6 +353,8 @@ export interface PlayerAttributes {
   totalDamageBonusPoints: number;
   basicAttackBonusPoints: number;
   skillBonusPoints: number;
+  talismanDamageBonusPoints: number;
+  formationDamageBonusPoints: number;
   physicalDamageReductionPoints: number;
   spellDamageReductionPoints: number;
   metalDamageReductionPoints: number;

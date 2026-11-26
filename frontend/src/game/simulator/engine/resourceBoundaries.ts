@@ -2,10 +2,11 @@
 // 严格对应 DaoHua.Ecs.Systems.ActionExecutionRules.Resources
 
 import { playerAttributesToCombatantStats } from './attributeResolver.ts'
-import type { GameDataCatalog } from './catalog.ts'
+import { resolveDungeonMonster, type GameDataCatalog } from './catalog.ts'
 import {
   applyCombatDamage,
   applyRanhun,
+  resolveConsumableStrikePower,
   resolveStrikeDamage,
 } from './combatEngine.ts'
 import {
@@ -24,6 +25,7 @@ import {
   parseBuffEffects,
   percentMultiplier,
   resolveDamageElement,
+  scaleDungeonMonsterStats,
   weakenMonsterStats,
   type CombatantStats,
 } from './rules.ts'
@@ -591,8 +593,15 @@ function buildConsumableEvalUnits(
   if (battleBuffs) caster.replaceBuffs(battleBuffs)
   const allies = [caster]
   const enemies: CombatantState[] = []
-  const weaken = player.state.nodeBuildingEffects.monsterWeakenRatio
-  const difficulty = head?.participation?.spec?.difficulty ?? head?.difficulty ?? 0
+  const dungeon =
+    head?.expedition?.dungeonId ? catalog.dungeons.get(head.expedition.dungeonId) ?? null : null
+  const weaken = dungeon ? 0 : player.state.nodeBuildingEffects.monsterWeakenRatio
+  const spec = head?.participation?.spec ?? null
+  const difficulty = spec?.difficulty ?? head?.difficulty ?? 0
+  const maxPartyRealmLevel =
+    spec && spec.members.length > 0
+      ? Math.max(...spec.members.map((m) => m.realmLevel))
+      : player.state.realmLevel
   if (
     head?.expedition?.phase === CombatExpeditionPhase.Combat &&
     head.expedition.enemies &&
@@ -601,13 +610,14 @@ function buildConsumableEvalUnits(
     const waveEnemies = head.expedition.enemies
     for (let i = 0; i < waveEnemies.length; i++) {
       const enemy = waveEnemies[i]
-      const monster = catalog.monsters.get(enemy.enemyId)
+      const monster = dungeon
+        ? resolveDungeonMonster(catalog, dungeon, enemy.enemyId, difficulty, maxPartyRealmLevel)
+        : catalog.monsters.get(enemy.enemyId)
       if (!monster) continue
-      const scaledStats = scaleMonsterStats(monster.stats, difficulty)
-      const unit = new CombatantState(
-        `enemy:${i}`,
-        weakenMonsterStats(scaledStats, weaken),
-      )
+      const unitStats = dungeon
+        ? scaleDungeonMonsterStats(monster.stats, difficulty)
+        : weakenMonsterStats(scaleMonsterStats(monster.stats, difficulty), weaken)
+      const unit = new CombatantState(`enemy:${i}`, unitStats)
       unit.hitpoints = enemy.state.hitpoints
       unit.manapoints = enemy.state.manapoints
       unit.threat = enemy.state.threat
@@ -808,10 +818,8 @@ export function activateInstantConsumables(
       const targetIndex = evalEnemies!.indexOf(evalTarget)
       if (targetIndex < 0) continue
 
-      // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
-      const attackPower =
-        strike.manaDamageRatio * evalCaster!.stats.maxManapoints +
-        strike.spellAttackRatio * evalCaster!.stats.spellAttack
+      // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
+      const attackPower = resolveConsumableStrikePower(item, strike, evalCaster!.stats)
       const strikeElement = resolveDamageElement(
         evalCaster!.stats.traits,
         strike.element as CombatElement,

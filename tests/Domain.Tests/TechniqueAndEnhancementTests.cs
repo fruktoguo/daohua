@@ -1668,6 +1668,238 @@ public sealed class TechniqueAndEnhancementTests
         Assert.True(player.Progression.Foundation < 40 + expectedTechExp, $"预期底蕴被打坐消耗，实际 Foundation={player.Progression.Foundation}");
     }
 
+    /// <summary>
+    /// 符箓与阵法技艺每级独立提供 +1 点对应伤害增幅（总纲 §20.1.3）：
+    /// 1) 符/阵点数各自独立互不交叉，其他五项生活技艺不影响这两项点数；
+    /// 2) 通过 GrantTechniqueExperience 升级后，PlayerAggregate 属性缓存修订号自动失效并即时体现最新点数。
+    /// </summary>
+    [Fact]
+    public void TalismanAndFormationTechniqueLevelsGrantIndependentDamageBonusPointsAndInvalidateCache()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var progression = catalog.RealmProgression!;
+        double CumulativeTechExp(int targetLevel)
+            => progression.DiscountedExpToNext.Take(targetLevel).Sum();
+
+        var player = CreatePlayer("符阵双修");
+        var initialAttrs = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(0, initialAttrs.TalismanDamageBonusPoints);
+        Assert.Equal(0, initialAttrs.FormationDamageBonusPoints);
+
+        // 先触发一次属性缓存，再经 GrantTechniqueExperience 升级至 10 级验证缓存自动失效。
+        player.GrantTechniqueExperience(TechniqueCatalog.Talisman, CumulativeTechExp(10), catalog);
+        var afterTalisman10 = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(10, afterTalisman10.TalismanDamageBonusPoints);
+        Assert.Equal(0, afterTalisman10.FormationDamageBonusPoints);
+
+        // 继续提升至 20 级符箓与 15 级阵法（直接写入 VersionedDictionary 同样刷新属性缓存修订号）。
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Talisman] = CumulativeTechExp(20);
+        var afterTalisman = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(20, afterTalisman.TalismanDamageBonusPoints);
+        Assert.Equal(0, afterTalisman.FormationDamageBonusPoints);
+        Assert.Equal(20, afterTalisman.ToCombatant(0).TalismanDamageBonusPoints);
+        Assert.Equal(0, afterTalisman.ToCombatant(0).FormationDamageBonusPoints);
+
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Formation] = CumulativeTechExp(15);
+        var afterFormation = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(20, afterFormation.TalismanDamageBonusPoints);
+        Assert.Equal(15, afterFormation.FormationDamageBonusPoints);
+        Assert.Equal(15, afterFormation.ToCombatant(0).FormationDamageBonusPoints);
+
+        // 其余五技艺升级不得改变符箓或阵法伤害增幅点数。
+        foreach (var other in new[] { TechniqueCatalog.Alchemy, TechniqueCatalog.Forging, TechniqueCatalog.Enhancement, TechniqueCatalog.Gathering, TechniqueCatalog.Mining })
+            player.GrantTechniqueExperience(other, CumulativeTechExp(10), catalog);
+        var afterOthers = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(20, afterOthers.TalismanDamageBonusPoints);
+        Assert.Equal(15, afterOthers.FormationDamageBonusPoints);
+    }
+
+    /// <summary>
+    /// 符箓技艺每级 +1% 符箓伤害（第一层抗性穿甲前并入原始威力，总纲 §7.7.1 / §20.1.3 / §20.2）：
+    /// 1) 雷击符（单人 PVE 与 PVP 斗法）原始威力按 (1 + 符箓等级/100) 放大并同步提升抗性穿透；
+    /// 2) 阵法技艺等级不影响雷击符伤害；符箓技艺等级不影响普攻伤害。
+    /// </summary>
+    [Fact]
+    public void TalismanTechniqueLevelBoostsLeijiStrikeInSingleAndDuelAndIsolatesFormationAndBasicAttack()
+    {
+        var embedded = GameDataCatalog.LoadEmbedded();
+        var progression = embedded.RealmProgression!;
+        double CumulativeTechExp(int targetLevel) => progression.DiscountedExpToNext.Take(targetLevel).Sum();
+
+        // 1) 单人 PVE：怪物带 200 法抗、玩家普攻归零，仅雷击符生效，逐位校验抗性平方穿甲闭式公式。
+        var talismanId = new ItemId("item.leiji-talisman");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("combat.test-talisman"), "测试符击", ActionKind.Combat, 0,
+                new Dictionary<ItemId, double>(), [],
+                ExecutionKind: ActionExecutionKind.CombatEncounter, CombatEncounterId: "encounter.test-talisman")
+        ]);
+        var monster = new CombatMonsterDefinition("enemy.test-talisman", "法抗靶桩", 1, 1, CombatMonsterRank.Minion,
+            CombatantStats.Create(100_000, 0, 0, 100) with { MagicResistance = 200, ResistanceScale = 1 }, [], []);
+        var encounter = new CombatEncounterDefinition("encounter.test-talisman", "靶桩遭遇", 1, 1, 1, 1, 1, 180,
+            [new CombatSpawnDefinition("enemy.test-talisman", 1, 1)], [], [], 0);
+        var catalog = new GameDataCatalog("test-talisman", "test-fp", actions,
+            items: new Dictionary<ItemId, ItemDefinition> { [talismanId] = embedded.Items[talismanId] },
+            rawItems: new Dictionary<string, JsonElement> { [talismanId.Value] = embedded.RawItems[talismanId.Value] },
+            combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
+            baseAttributes: new BaseAttributeCatalog(
+                [new BaseAttributeAnchor(1, 1000, 100, 0, 50, 0, 0, 100, 0, 0, 0, 0, 0, 2, 1)]),
+            realmProgression: progression);
+
+        double RunSoloStrikeDamage(int talismanLevel, int formationLevel)
+        {
+            var player = CreatePlayer("雷符测试");
+            if (talismanLevel > 0)
+                player.Loadout.TechniqueExperiences[TechniqueCatalog.Talisman] = CumulativeTechExp(talismanLevel);
+            if (formationLevel > 0)
+                player.Loadout.TechniqueExperiences[TechniqueCatalog.Formation] = CumulativeTechExp(formationLevel);
+            var wallet = CreateWallet(player, (new AssetKey(talismanId), 1));
+            player.ConfigureAutoUse("combat", 0, talismanId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+            player.Enqueue(new ActionIntent(new ActionId("combat.test-talisman"), -1), Baseline, catalog.Actions);
+            var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet);
+            result.AssetDeltas.ToList().ForEach(wallet.Apply);
+            Assert.Equal(0, wallet.Get(new AssetKey(talismanId)));
+            var enemy = player.Actions[0].Expedition!.Enemies![0].State;
+            return 100_000 - enemy.Hitpoints;
+        }
+
+        var dmgLv0 = RunSoloStrikeDamage(0, 0);
+        var dmgTalisman50 = RunSoloStrikeDamage(50, 0);
+        var dmgFormation50Only = RunSoloStrikeDamage(0, 50);
+
+        // 基准原始威力 = 0.2×100 + 2.0×50 = 120；50 级符箓放大至 180；
+        // 对 200 法抗（K=1）平方穿甲：raw² / (raw + 201)。
+        var expectedLv0 = 120d * 120d / (120d + 201d);
+        var expectedLv50 = 180d * 180d / (180d + 201d);
+        Assert.Equal(expectedLv0, dmgLv0, 6);
+        Assert.Equal(expectedLv50, dmgTalisman50, 6);
+        Assert.True(dmgTalisman50 / dmgLv0 > 1.5, "抗性穿甲前并入原始威力应带来高于 1.5× 的实伤提升（天然穿甲）");
+        Assert.Equal(dmgLv0, dmgFormation50Only, 9);
+
+        // 2) PVP 斗法同口径校验 + 普攻不受符箓伤害增幅影响。
+        var duelBase = CombatantStats.Create(10_000, 100, 0, 10, accuracy: 100) with { MaxManapoints = 100, SpellAttack = 50 };
+        var duelTarget = CombatantStats.Create(10_000, 0, 0, 100) with { MagicResistance = 200, ResistanceScale = 1 };
+        var duelSlot = new DuelConsumableSlotSnapshot(0, AutoUseSlotState.SlotGroupGeneral, talismanId.Value, 0, 0);
+        DuelScript ResolveDuel(double talismanBonusPoints)
+        {
+            var initiator = new DuelCombatant(PlayerId.New(), "符修甲", 100,
+                duelBase with { TalismanDamageBonusPoints = talismanBonusPoints },
+                [], [], [],
+                ConsumableSlots: [duelSlot],
+                ItemBalances: new Dictionary<string, double> { [talismanId.Value] = 1 });
+            var defender = new DuelCombatant(PlayerId.New(), "靶桩乙", 100,
+                duelTarget, [], [], []);
+            return DuelScriptEngine.Resolve(initiator, defender, 7, embedded.Duel, embedded);
+        }
+
+        var duelLv0 = ResolveDuel(0);
+        var duelLv50 = ResolveDuel(50);
+        var duelStrike0 = duelLv0.Events.First(ev => ev.AbilityId == talismanId.Value && ev.Damage > 0).Damage;
+        var duelStrike50 = duelLv50.Events.First(ev => ev.AbilityId == talismanId.Value && ev.Damage > 0).Damage;
+        Assert.Equal(expectedLv0, duelStrike0, 6);
+        Assert.Equal(expectedLv50, duelStrike50, 6);
+
+        var basicAtk0 = duelLv0.Events.First(ev => ev.AbilityId is null && ev.AttackerIsInitiator && ev.Damage > 0).Damage;
+        var basicAtk50 = duelLv50.Events.First(ev => ev.AbilityId is null && ev.AttackerIsInitiator && ev.Damage > 0).Damage;
+        Assert.Equal(basicAtk0, basicAtk50, 9);
+    }
+
+    /// <summary>
+    /// 阵法技艺每级 +1% 阵法伤害（第一层抗性穿甲前并入原始威力，总纲 §7.7.1 / §20.1.3）：
+    /// 1) 精确提升天雷阵（木系术法）与血煞阵（无属性物理）反击伤害，且血煞吸血随实伤自然联动；
+    /// 2) 符箓技艺增幅不影响阵盘反击伤害；
+    /// 3) 天雷阵耗蓝、血煞阵每秒自损气血（维系代价）、聚灵阵回蓝与迷踪阵闪避均不受阵法伤害增幅影响。
+    /// </summary>
+    [Fact]
+    public void FormationTechniqueLevelBoostsTianleiAndXueshaOnlyWithoutScalingUpkeepOrNonDamageFormations()
+    {
+        (CombatEncounterState Encounter, CombatAdvanceResult Result) RunFormationBattle(
+            string buffId, double formationBonusPoints, double talismanBonusPoints)
+        {
+            var playerStats = CombatantStats.Create(10_000, 10, 0, 0.5, accuracy: 1_000_000) with
+            {
+                SpellAttack = 100,
+                MaxManapoints = 10_000,
+                HpRegen = 0,
+                MpRegen = 0,
+                FormationDamageBonusPoints = formationBonusPoints,
+                TalismanDamageBonusPoints = talismanBonusPoints,
+            };
+            var enemyStats = CombatantStats.Create(500_000, 0, 100, 100) with
+            {
+                MagicResistance = 100,
+                ResistanceScale = 1,
+            };
+            var encounter = DeterministicCombatEngine.Start("formation-tech-test", 12345, playerStats, enemyStats);
+            encounter.Player.Hitpoints = 5_000; // 留出掉血空间以便检验血煞吸血与自损
+            encounter.Player.AddBuff(new CombatBuffState(buffId, 999, 1, buffId, ResetOnWave: false));
+            var result = DeterministicCombatEngine.AdvanceTo(encounter, 25);
+            return (encounter, result);
+        }
+
+        // 1) 天雷阵：基础原始威力 = 100×0.5 + 10 = 60；+50% 放大至 90；对 100 法抗（K=1）穿甲。
+        var tianlei0 = RunFormationBattle("formation.tianlei", 0, 0);
+        var tianleiForm50 = RunFormationBattle("formation.tianlei", 50, 0);
+        var tianleiTalisman50 = RunFormationBattle("formation.tianlei", 0, 50);
+
+        var tianleiProc0 = tianlei0.Result.Events.First(ev => ev.AbilityId == "item.tianlei-formation-disk");
+        var tianleiProc50 = tianleiForm50.Result.Events.First(ev => ev.AbilityId == "item.tianlei-formation-disk");
+        var tianleiProcTalisman = tianleiTalisman50.Result.Events.First(ev => ev.AbilityId == "item.tianlei-formation-disk");
+
+        Assert.Equal(60d * 60d / (60d + 101d), tianleiProc0.Damage, 6);
+        Assert.Equal(90d * 90d / (90d + 101d), tianleiProc50.Damage, 6);
+        Assert.Equal(tianleiProc0.Damage, tianleiProcTalisman.Damage, 9);
+        // 天雷阵耗蓝（每秒维系 2% + 触发 1%）严格不变：完全同种子同触发次数下剩余灵力逐位一致。
+        Assert.Equal(tianlei0.Encounter.Player.Manapoints, tianleiForm50.Encounter.Player.Manapoints, 9);
+
+        // 2) 血煞阵：基础原始威力 = 10000×0.10 = 1000；+50% 放大至 1500；对 100 护甲（K=1）穿甲。
+        var xuesha0 = RunFormationBattle("formation.xuesha", 0, 0);
+        var xueshaForm50 = RunFormationBattle("formation.xuesha", 50, 0);
+        var xueshaTalisman50 = RunFormationBattle("formation.xuesha", 0, 50);
+
+        var xueshaProc0 = xuesha0.Result.Events.First(ev => ev.AbilityId == "item.xuesha-formation-disk");
+        var xueshaProc50 = xueshaForm50.Result.Events.First(ev => ev.AbilityId == "item.xuesha-formation-disk");
+        var xueshaProcTalisman = xueshaTalisman50.Result.Events.First(ev => ev.AbilityId == "item.xuesha-formation-disk");
+
+        var expectedXuesha0 = 1000d * 1000d / (1000d + 101d);
+        var expectedXuesha50 = 1500d * 1500d / (1500d + 101d);
+        Assert.Equal(expectedXuesha0, xueshaProc0.Damage, 6);
+        Assert.Equal(expectedXuesha50, xueshaProc50.Damage, 6);
+        Assert.Equal(expectedXuesha0, xueshaProc0.Healing, 6);
+        Assert.Equal(expectedXuesha50, xueshaProc50.Healing, 6);
+        Assert.Equal(xueshaProc0.Damage, xueshaProcTalisman.Damage, 9);
+
+        // 3) 血煞阵每秒 2% 自损维系代价（无敌方受击、零反击场景）不得被阵法伤害增幅放大。
+        double MeasureXueshaPureUpkeepLoss(double formationBonusPoints)
+        {
+            var stats = CombatantStats.Create(10_000, 0, 0, 100) with { FormationDamageBonusPoints = formationBonusPoints };
+            var target = CombatantStats.Create(10_000, 0, 0, 100);
+            var enc = DeterministicCombatEngine.Start("xuesha-upkeep", 1, stats, target);
+            enc.Player.AddBuff(new CombatBuffState("formation.xuesha", 999, 1, "血煞阵", ResetOnWave: false));
+            DeterministicCombatEngine.AdvanceTo(enc, 5);
+            return 10_000 - enc.Player.Hitpoints;
+        }
+        var upkeepLoss0 = MeasureXueshaPureUpkeepLoss(0);
+        var upkeepLoss100 = MeasureXueshaPureUpkeepLoss(100);
+        Assert.True(upkeepLoss0 > 0, "血煞阵维系自损应真实扣血");
+        Assert.Equal(upkeepLoss0, upkeepLoss100, 9);
+
+        // 4) 非伤害阵盘（聚灵回蓝、迷踪闪避）效果不得被阵法伤害增幅放大。
+        var nonDamageBase = CombatantStats.Create(1_000, 10, 0, 2) with { MaxManapoints = 1_000, Evasion = 50, MpRegen = 5 };
+        var unit0 = new CombatantState("p0", nonDamageBase);
+        var unit100 = new CombatantState("p100", nonDamageBase with { FormationDamageBonusPoints = 100 });
+        var julingBuff = new CombatBuffState("formation.juling", 300, 1, "聚灵阵",
+            Effects: [new BuffEffect(BuffEffectChannel.MpRegen, 5), new BuffEffect(BuffEffectChannel.MpRegenPostRatio, 0.3)]);
+        var mizongBuff = new CombatBuffState("formation.mizong", 300, 1, "迷踪阵",
+            Effects: [new BuffEffect(BuffEffectChannel.Evasion, 10), new BuffEffect(BuffEffectChannel.EvasionPostRatio, 0.3)]);
+        unit0.AddBuff(julingBuff);
+        unit0.AddBuff(mizongBuff);
+        unit100.AddBuff(julingBuff);
+        unit100.AddBuff(mizongBuff);
+        Assert.Equal(unit0.EffectiveStats.Evasion, unit100.EffectiveStats.Evasion, 9);
+        Assert.Equal(unit0.EffectiveStats.MpRegen, unit100.EffectiveStats.MpRegen, 9);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

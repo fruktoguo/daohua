@@ -96,8 +96,9 @@ public static class PostgresSchema
     /// v67：秘境副本系统全栈上线（social.parties 与 party_seekers 纳入 activity_kind='dungeon'、social.parties 难度放宽至 0..10 并增 dungeon_id/dungeon_repeat_count、
     /// social.party_members 增 assist_mode 助战标记；progression 分段新增 tiliValue/tiliUpdatedAtUnixSeconds、actionQueue 远征新增秘境字段，均可缺省解码，存档标签推进至 v47）。
     /// v68：战斗统计新增紧凑 PVP 斗法记录（duel 分段行动账本新增 duelRecords、actionQueue 斗法回放新增 viewerRecord，均可缺省解码；存档标签推进至 v48，无 DDL 变更）。
+    /// v69：符箓与阵法技艺每级提升 1% 对应伤害（CombatantStats 新增 talismanDamageBonusPoints/formationDamageBonusPoints，均可缺省解码为 0；存档标签推进至 v49，无 DDL 变更）。
     /// </summary>
-    public const int Version = 68;
+    public const int Version = 69;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -1057,7 +1058,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now()), (69, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

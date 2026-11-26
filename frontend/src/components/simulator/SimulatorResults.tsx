@@ -5,6 +5,7 @@ import { marketStatsKey } from '../../network/apiClient'
 import type {
   SimulatorCombatElementDamageDto,
   SimulatorCombatUnitStatDto,
+  SimulatorDungeonSummaryDto,
   SimulatorEnvironmentDto,
   SimulatorMemberResultDto,
   SimulatorRunResultDto,
@@ -14,6 +15,7 @@ import {
   findCombatantInCatalog, resolveCatalogItemMetadata,
 } from '../../game/ids'
 import { formatNumber } from '../../game/format'
+import { getDungeonDifficultyMeta } from '../../game/dungeonRules'
 import { FloatingInfoCard, FloatingPopover } from '../FloatingPopover'
 import { ItemIcon, ItemReference, ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import { LogTemplateText } from '../LogFeed'
@@ -29,12 +31,37 @@ interface Props {
 
 type GroupView = 'comparison' | 'details'
 type DetailTab = 'overview' | 'combat' | 'yields' | 'logs'
-type SortKey = 'default' | 'repeats' | 'exp' | 'sixDim' | 'value' | 'deaths'
+type SortKey =
+  | 'default'
+  | 'repeats'
+  | 'exp'
+  | 'sixDim'
+  | 'value'
+  | 'deaths'
+  | 'clearRate'
+  | 'avgRunTime'
+  | 'expPerEnergy'
+  | 'valuePerEnergy'
 type SortDir = 'asc' | 'desc'
 type ElementKey = keyof SimulatorCombatElementDamageDto
 
-const LINGSHI = 'item.lingshi'
 const ASSET_SEP = '\u001F'
+
+function isSpiritStoneAsset(itemId: string): boolean {
+  return itemId === 'currency.spirit-stone' || itemId === 'item.lingshi'
+}
+
+function isDungeonResult(result: SimulatorRunResultDto): boolean {
+  return Boolean(result.dungeonSummary || result.dungeonId)
+}
+
+function groupFailedWaves(summary: SimulatorDungeonSummaryDto | null | undefined): Array<{ wave: number; count: number }> {
+  if (!summary || !summary.failedWaves) return []
+  return Object.entries(summary.failedWaves)
+    .map(([w, count]) => ({ wave: Number(w), count: Number(count) }))
+    .filter(x => Number.isFinite(x.wave) && x.count > 0)
+    .sort((a, b) => a.wave - b.wave)
+}
 
 const ROOT_KEYS: readonly (keyof SimulatorMemberResultDto['rootExp'])[] =
   ['stamina', 'meridians', 'attack', 'bone', 'agility', 'consciousness']
@@ -85,7 +112,7 @@ function computeMemberValuation(
     const sepIndex = key.indexOf(ASSET_SEP)
     const itemId = sepIndex >= 0 ? key.slice(0, sepIndex) : key
     const variant = sepIndex >= 0 ? key.slice(sepIndex + 1) : ''
-    if (itemId === LINGSHI) { known += quantity; continue }
+    if (isSpiritStoneAsset(itemId)) { known += quantity; continue }
     const level = variantLevel(variant)
     const ref = level === null ? undefined
       : marketStats?.[marketStatsKey(itemId, level)]?.referencePrice
@@ -107,6 +134,18 @@ function summarizeMember(
   const exp = m?.lifetimeExperience ?? 0
   const sixDim = m ? totalRootExp(m) : 0
   const valuation = m ? computeMemberValuation(m, marketStats) : { known: 0, hasUnknown: false, unknownIds: [] }
+  const ds = result.dungeonSummary
+  const completedRuns = ds?.completedRuns ?? 0
+  const clearedRuns = ds?.clearedRuns ?? 0
+  const failedRuns = ds?.failedRuns ?? 0
+  const clearRate = completedRuns > 0 ? clearedRuns / completedRuns : 0
+  const energyCostPerRun = ds?.energyPerRun ?? 0
+  const totalEnergySpent = ds?.totalEnergySpent ?? 0
+  const avgRunSeconds = completedRuns > 0 ? result.simulatedSeconds / completedRuns : 0
+  const clearedRunsPerHour = hours > 0 ? clearedRuns / hours : 0
+  const expPerEnergy = totalEnergySpent > 0 ? exp / totalEnergySpent : 0
+  const sixDimPerEnergy = totalEnergySpent > 0 ? sixDim / totalEnergySpent : 0
+  const valuePerEnergy = totalEnergySpent > 0 ? valuation.known / totalEnergySpent : 0
   return {
     member: m,
     hours,
@@ -118,6 +157,18 @@ function summarizeMember(
     deaths: m?.deaths ?? 0,
     encounters: m?.encounters ?? 0,
     valuation,
+    completedRuns,
+    clearedRuns,
+    failedRuns,
+    clearRate,
+    energyCostPerRun,
+    totalEnergySpent,
+    avgRunSeconds,
+    clearedRunsPerHour,
+    expPerEnergy,
+    sixDimPerEnergy,
+    valuePerEnergy,
+    failedWaveGroups: groupFailedWaves(ds),
   }
 }
 
@@ -250,6 +301,7 @@ export const SimulatorResults = memo(function SimulatorResults({
   const t = useT()
   const encounters = useGameStore(state => state.encounters)
   const maps = useGameStore(state => state.maps)
+  const dungeons = useGameStore(state => state.dungeons)
   const abilities = useGameStore(state => state.abilities)
   const items = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
@@ -299,35 +351,64 @@ export const SimulatorResults = memo(function SimulatorResults({
     ?? equipmentCatalog.find(e => e.equipmentId === id)?.name
     ?? id, [equipmentCatalog, items])
 
-  const diffLabel = useCallback((difficulty: number) =>
-    difficulty === 0 ? t('combat.simulator.difficultyDefault') : `T${difficulty}`, [t])
+  const isDungeonBatch = useMemo(() =>
+    results.length > 0 && results.every(isDungeonResult), [results])
 
-  const nodeBonusLines = useCallback((nodeId: string): string[] => {
+  const targetTitle = useCallback((result: SimulatorRunResultDto) => {
+    if (result.dungeonSummary?.dungeonName) return result.dungeonSummary.dungeonName
+    if (result.dungeonId) return dungeons.find(d => d.dungeonId === result.dungeonId)?.name ?? result.dungeonId
+    return nodeName(result.nodeId)
+  }, [dungeons, nodeName])
+
+  const resultDiffLabel = useCallback((result: SimulatorRunResultDto) => {
+    if (isDungeonResult(result)) {
+      const meta = getDungeonDifficultyMeta(result.difficulty)
+      return t('combat.dungeon.fullDifficultyLabel', {
+        mode: t(`combat.dungeon.mode.${meta.mode}`),
+        tier: t(`combat.dungeon.difficulty.${meta.key}`),
+      })
+    }
+    return result.difficulty === 0 ? t('combat.simulator.difficultyDefault') : `T${result.difficulty}`
+  }, [t])
+
+  const nodeBonusLines = useCallback((nodeId: string, forDungeon = false): string[] => {
     const env = nodeEnvMap?.get(nodeId)
     if (!env) return []
     const parts: string[] = []
     if (env.effects.combatHitpointRegen) parts.push(t('combat.simulator.nodeHpRegen', { value: env.effects.combatHitpointRegen }))
     if (env.effects.combatManapointRegen) parts.push(t('combat.simulator.nodeMpRegen', { value: env.effects.combatManapointRegen }))
     if (env.effects.combatDamageReductionRatio) parts.push(`${t('combat.simulator.reduction')}${Math.round(env.effects.combatDamageReductionRatio * 100)}%`)
-    if (env.effects.monsterWeakenRatio) parts.push(`${t('combat.simulator.weaken')}${Math.round(env.effects.monsterWeakenRatio * 100)}%`)
+    if (!forDungeon && env.effects.monsterWeakenRatio) parts.push(`${t('combat.simulator.weaken')}${Math.round(env.effects.monsterWeakenRatio * 100)}%`)
     for (const u of env.usages) {
       if (u.efficiency < 1) parts.push(t('combat.simulator.crowdedEff', { pct: Math.round(u.efficiency * 100) }))
     }
     return parts
   }, [nodeEnvMap, t])
 
-  const renderNodeHoverCard = useCallback((nodeId: string) => {
-    const lines = nodeBonusLines(nodeId)
+  const renderTargetHoverCard = useCallback((result: SimulatorRunResultDto) => {
+    const dungeonMode = isDungeonResult(result)
+    const lines = nodeBonusLines(result.nodeId, dungeonMode)
+    const displayLines = lines.length > 0 ? [...lines] : [t('combat.simulator.noBuildingBonus')]
+    if (dungeonMode && result.dungeonSummary) {
+      displayLines.unshift(t('combat.simulator.dungeonEnergyPerRunLine', { cost: result.dungeonSummary.energyPerRun }))
+      if (nodeEnvMap?.get(result.nodeId)?.effects.monsterWeakenRatio) {
+        displayLines.push(t('combat.simulator.dungeonIgnoreWeakenNote'))
+      }
+    }
+    const mapName = nodeMapNameMap.get(result.nodeId)
+    const subtitle = dungeonMode
+      ? (mapName ? `${nodeName(result.nodeId)} · ${mapName}` : nodeName(result.nodeId))
+      : mapName
     return (
       <FloatingInfoCard
-        title={nodeName(nodeId)}
-        subtitle={nodeMapNameMap.get(nodeId)}
+        title={targetTitle(result)}
+        subtitle={subtitle}
         badge={lines.length > 0 ? t('combat.simulator.nodeBonusCount', { count: lines.length }) : undefined}
         badgeTone="gold"
-        lines={lines.length > 0 ? lines : [t('combat.simulator.noBuildingBonus')]}
+        lines={displayLines}
       />
     )
-  }, [nodeBonusLines, nodeMapNameMap, nodeName, t])
+  }, [nodeBonusLines, nodeEnvMap, nodeMapNameMap, nodeName, t, targetTitle])
 
   const rows = useMemo(() =>
     results.map((r, index) => ({
@@ -349,25 +430,57 @@ export const SimulatorResults = memo(function SimulatorResults({
         case 'exp': va = a.summary.expPerHour; vb = b.summary.expPerHour; break
         case 'sixDim': va = a.summary.sixDimPerHour; vb = b.summary.sixDimPerHour; break
         case 'value': va = a.summary.valuePerHour; vb = b.summary.valuePerHour; break
-        case 'deaths': va = a.summary.deaths; vb = b.summary.deaths; break
+        case 'deaths':
+          va = isDungeonBatch ? a.summary.failedRuns * 10000 + a.summary.deaths : a.summary.deaths
+          vb = isDungeonBatch ? b.summary.failedRuns * 10000 + b.summary.deaths : b.summary.deaths
+          break
+        case 'clearRate': va = a.summary.clearRate; vb = b.summary.clearRate; break
+        case 'avgRunTime': va = a.summary.avgRunSeconds; vb = b.summary.avgRunSeconds; break
+        case 'expPerEnergy': va = a.summary.expPerEnergy; vb = b.summary.expPerEnergy; break
+        case 'valuePerEnergy': va = a.summary.valuePerEnergy; vb = b.summary.valuePerEnergy; break
       }
       if (va !== vb) return (va - vb) * sign
       return a.index - b.index
     })
     return list
-  }, [rows, sortDir, sortKey])
+  }, [isDungeonBatch, rows, sortDir, sortKey])
 
   const toggleSort = useCallback((key: Exclude<SortKey, 'default'>) => {
     if (sortKey === key) {
       setSortDir(prev => prev === 'desc' ? 'asc' : 'desc')
     } else {
       setSortKey(key)
-      setSortDir(key === 'deaths' ? 'asc' : 'desc')
+      setSortDir(key === 'deaths' || key === 'avgRunTime' ? 'asc' : 'desc')
     }
   }, [sortKey])
 
   const champions = useMemo(() => {
     if (rows.length === 0) return null
+    if (isDungeonBatch) {
+      let bestRev = rows[0]
+      let bestExp = rows[0]
+      let bestSix = rows[0]
+      let bestSafe = rows[0]
+      for (const row of rows) {
+        if (row.summary.valuePerEnergy > bestRev.summary.valuePerEnergy
+          || (row.summary.valuePerEnergy === bestRev.summary.valuePerEnergy && row.summary.valuePerHour > bestRev.summary.valuePerHour)) {
+          bestRev = row
+        }
+        if (row.summary.expPerEnergy > bestExp.summary.expPerEnergy
+          || (row.summary.expPerEnergy === bestExp.summary.expPerEnergy && row.summary.expPerHour > bestExp.summary.expPerHour)) {
+          bestExp = row
+        }
+        if (row.summary.valuePerHour > bestSix.summary.valuePerHour) {
+          bestSix = row
+        }
+        if (row.summary.clearRate > bestSafe.summary.clearRate
+          || (row.summary.clearRate === bestSafe.summary.clearRate && row.summary.deaths < bestSafe.summary.deaths)
+          || (row.summary.clearRate === bestSafe.summary.clearRate && row.summary.deaths === bestSafe.summary.deaths && row.summary.clearedRunsPerHour > bestSafe.summary.clearedRunsPerHour)) {
+          bestSafe = row
+        }
+      }
+      return { bestRev, bestExp, bestSix, bestSafe }
+    }
     let bestRev = rows[0]
     let bestExp = rows[0]
     let bestSix = rows[0]
@@ -382,23 +495,24 @@ export const SimulatorResults = memo(function SimulatorResults({
       }
     }
     return { bestRev, bestExp, bestSix, bestSafe }
-  }, [rows])
+  }, [isDungeonBatch, rows])
 
   const pickerOptions = useMemo<ResultPickerOption[]>(() =>
     rows.map(({ index, result, summary }) => {
+      const tName = targetTitle(result)
+      const dLabel = resultDiffLabel(result)
       const nName = nodeName(result.nodeId)
-      const dLabel = diffLabel(result.difficulty)
-      const mName = nodeMapNameMap.get(result.nodeId) ?? ''
-      const label = `${nName} · ${dLabel}`
+      const mName = isDungeonResult(result) ? nName : (nodeMapNameMap.get(result.nodeId) ?? '')
+      const label = `${tName} · ${dLabel}`
       return {
         index,
         label,
         mapName: mName,
         valuePerHour: summary.valuePerHour,
-        searchText: `${nName} ${mName} ${dLabel}`.toLowerCase(),
+        searchText: `${tName} ${nName} ${mName} ${dLabel}`.toLowerCase(),
       }
     }),
-  [diffLabel, nodeMapNameMap, nodeName, rows])
+  [nodeMapNameMap, nodeName, resultDiffLabel, rows, targetTitle])
 
   if (results.length === 0 || !current) return null
 
@@ -498,6 +612,64 @@ export const SimulatorResults = memo(function SimulatorResults({
       {groupView === 'comparison' ? (
         <div className="sim-tab-content sim-tab-content--dense">
           {champions && (
+            isDungeonBatch ? (
+              <div className="sim-champions-strip">
+                <button
+                  type="button"
+                  className="sim-champ-row champ-revenue"
+                  onClick={() => { setSelectedIndex(champions.bestRev.index); setGroupView('details') }}
+                >
+                  <span className="sim-champ-badge">{t('combat.simulator.champDungeonValuePerEnergyTitle')}</span>
+                  <span className="sim-champ-title">
+                    {targetTitle(champions.bestRev.result)} · {resultDiffLabel(champions.bestRev.result)}
+                  </span>
+                  <span className="sim-champ-val text-gold">
+                    <UnitNumber value={champions.bestRev.summary.valuePerEnergy} maxDecimals={2} suffix={t('combat.simulator.perEnergyUnit')} tooltipLabel={t('combat.simulator.compare.valuePerEnergy')} />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="sim-champ-row champ-exp"
+                  onClick={() => { setSelectedIndex(champions.bestExp.index); setGroupView('details') }}
+                >
+                  <span className="sim-champ-badge">{t('combat.simulator.champDungeonExpPerEnergyTitle')}</span>
+                  <span className="sim-champ-title">
+                    {targetTitle(champions.bestExp.result)} · {resultDiffLabel(champions.bestExp.result)}
+                  </span>
+                  <span className="sim-champ-val text-cyan">
+                    <UnitNumber value={champions.bestExp.summary.expPerEnergy} maxDecimals={1} suffix={t('combat.simulator.perEnergyUnit')} tooltipLabel={t('combat.simulator.compare.expPerEnergy')} />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="sim-champ-row champ-sixdim"
+                  onClick={() => { setSelectedIndex(champions.bestSix.index); setGroupView('details') }}
+                >
+                  <span className="sim-champ-badge">{t('combat.simulator.champDungeonTimeValueTitle')}</span>
+                  <span className="sim-champ-title">
+                    {targetTitle(champions.bestSix.result)} · {resultDiffLabel(champions.bestSix.result)}
+                  </span>
+                  <span className="sim-champ-val text-emerald">
+                    <UnitNumber value={champions.bestSix.summary.valuePerHour} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="sim-champ-row champ-safe"
+                  onClick={() => { setSelectedIndex(champions.bestSafe.index); setGroupView('details') }}
+                >
+                  <span className="sim-champ-badge">{t('combat.simulator.champDungeonClearTitle')}</span>
+                  <span className="sim-champ-title">
+                    {targetTitle(champions.bestSafe.result)} · {resultDiffLabel(champions.bestSafe.result)}
+                  </span>
+                  <span className="sim-champ-val">
+                    {Math.round(champions.bestSafe.summary.clearRate * 100)}%
+                    <span className="sim-champ-inline-sep">·</span>
+                    {champions.bestSafe.summary.clearedRuns}/{champions.bestSafe.summary.completedRuns}
+                  </span>
+                </button>
+              </div>
+            ) : (
             <div className="sim-champions-strip">
               <button
                 type="button"
@@ -506,7 +678,7 @@ export const SimulatorResults = memo(function SimulatorResults({
               >
                 <span className="sim-champ-badge">{t('combat.simulator.champRevenueTitle')}</span>
                 <span className="sim-champ-title">
-                  {nodeName(champions.bestRev.result.nodeId)} · {diffLabel(champions.bestRev.result.difficulty)}
+                  {targetTitle(champions.bestRev.result)} · {resultDiffLabel(champions.bestRev.result)}
                 </span>
                 <span className="sim-champ-val text-gold">
                   <UnitNumber value={champions.bestRev.summary.valuePerHour} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />
@@ -519,7 +691,7 @@ export const SimulatorResults = memo(function SimulatorResults({
               >
                 <span className="sim-champ-badge">{t('combat.simulator.champExpTitle')}</span>
                 <span className="sim-champ-title">
-                  {nodeName(champions.bestExp.result.nodeId)} · {diffLabel(champions.bestExp.result.difficulty)}
+                  {targetTitle(champions.bestExp.result)} · {resultDiffLabel(champions.bestExp.result)}
                 </span>
                 <span className="sim-champ-val text-cyan">
                   <UnitNumber value={champions.bestExp.summary.expPerHour} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.result.expPerHour')} />
@@ -532,7 +704,7 @@ export const SimulatorResults = memo(function SimulatorResults({
               >
                 <span className="sim-champ-badge">{t('combat.simulator.champSixDimTitle')}</span>
                 <span className="sim-champ-title">
-                  {nodeName(champions.bestSix.result.nodeId)} · {diffLabel(champions.bestSix.result.difficulty)}
+                  {targetTitle(champions.bestSix.result)} · {resultDiffLabel(champions.bestSix.result)}
                 </span>
                 <span className="sim-champ-val text-emerald">
                   <UnitNumber value={champions.bestSix.summary.sixDimPerHour} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.compare.sixDimPerHour')} />
@@ -545,7 +717,7 @@ export const SimulatorResults = memo(function SimulatorResults({
               >
                 <span className="sim-champ-badge">{t('combat.simulator.champSafeTitle')}</span>
                 <span className="sim-champ-title">
-                  {nodeName(champions.bestSafe.result.nodeId)} · {diffLabel(champions.bestSafe.result.difficulty)}
+                  {targetTitle(champions.bestSafe.result)} · {resultDiffLabel(champions.bestSafe.result)}
                 </span>
                 <span className="sim-champ-val">
                   {t('combat.simulator.result.deaths')} <UnitNumber value={champions.bestSafe.summary.deaths} maxDecimals={0} disableTooltip />
@@ -554,6 +726,7 @@ export const SimulatorResults = memo(function SimulatorResults({
                 </span>
               </button>
             </div>
+            )
           )}
 
           <div className="sim-card sim-card--dense">
@@ -564,83 +737,186 @@ export const SimulatorResults = memo(function SimulatorResults({
               </span>
             </div>
             <div className="sim-data-table-wrap">
-              <table className="sim-data-table sim-data-table--dense">
-                <thead>
-                  <tr>
-                    <th>{t('combat.simulator.compare.node')}</th>
-                    <th>{t('combat.simulator.difficultyLabel')}</th>
-                    <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('repeats')}>
-                      <span>{t('combat.simulator.result.repeatsPerHour')}{renderSortArrow('repeats')}</span>
-                    </th>
-                    <th className="th-highlight-cyan sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('exp')}>
-                      <span>{t('combat.simulator.result.expPerHour')}{renderSortArrow('exp')}</span>
-                    </th>
-                    <th className="th-highlight-emerald sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('sixDim')}>
-                      <span>{t('combat.simulator.compare.sixDimPerHour')}{renderSortArrow('sixDim')}</span>
-                    </th>
-                    <th className="th-highlight-gold sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('value')}>
-                      <span>{t('combat.simulator.compare.valuePerHour')}{renderSortArrow('value')}</span>
-                    </th>
-                    <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('deaths')}>
-                      <span>{t('combat.simulator.result.deaths')}{renderSortArrow('deaths')}</span>
-                    </th>
-                    <th>{t('combat.simulator.compare.action')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRows.map(({ index, result, summary }) => {
-                    const isRev = champions?.bestRev.index === index && rows.length > 1
-                    const isExp = champions?.bestExp.index === index && rows.length > 1
-                    return (
-                      <tr key={index}>
-                        <td>
-                          <FloatingPopover
-                            trigger="hover"
-                            placement="top"
-                            size="small"
-                            interactive={false}
-                            content={() => renderNodeHoverCard(result.nodeId)}
-                          >
-                            <span className="sim-node-hover-target">
-                              <strong>{nodeName(result.nodeId)}</strong>
+              {isDungeonBatch ? (
+                <table className="sim-data-table sim-data-table--dense">
+                  <thead>
+                    <tr>
+                      <th>{t('combat.simulator.compare.dungeon')}</th>
+                      <th>{t('combat.simulator.difficultyLabel')}</th>
+                      <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('clearRate')}>
+                        <span>{t('combat.simulator.compare.clearRate')}{renderSortArrow('clearRate')}</span>
+                      </th>
+                      <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('avgRunTime')}>
+                        <span>{t('combat.simulator.compare.avgRunTime')}{renderSortArrow('avgRunTime')}</span>
+                      </th>
+                      <th className="th-highlight-cyan sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('expPerEnergy')}>
+                        <span>{t('combat.simulator.compare.expPerEnergy')}{renderSortArrow('expPerEnergy')}</span>
+                      </th>
+                      <th className="th-highlight-gold sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('valuePerEnergy')}>
+                        <span>{t('combat.simulator.compare.valuePerEnergy')}{renderSortArrow('valuePerEnergy')}</span>
+                      </th>
+                      <th className="th-highlight-emerald sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('value')}>
+                        <span>{t('combat.simulator.compare.valuePerHour')}{renderSortArrow('value')}</span>
+                      </th>
+                      <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('deaths')}>
+                        <span>{t('combat.simulator.compare.wipesAndDeaths')}{renderSortArrow('deaths')}</span>
+                      </th>
+                      <th>{t('combat.simulator.compare.action')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map(({ index, result, summary }) => {
+                      const isRev = champions?.bestRev.index === index && rows.length > 1
+                      const isExp = champions?.bestExp.index === index && rows.length > 1
+                      const diffMeta = getDungeonDifficultyMeta(result.difficulty)
+                      const failedWaveTooltip = summary.failedWaveGroups
+                        .map(g => t('combat.simulator.dungeonFailedWaveTag', { wave: g.wave, count: g.count }))
+                        .join(' · ')
+                      return (
+                        <tr key={index}>
+                          <td>
+                            <FloatingPopover
+                              trigger="hover"
+                              placement="top"
+                              size="small"
+                              interactive={false}
+                              content={() => renderTargetHoverCard(result)}
+                            >
+                              <span className="sim-node-hover-target">
+                                <strong>{targetTitle(result)}</strong>
+                              </span>
+                            </FloatingPopover>
+                            {isRev && <span className="sim-tag-champ champ-tag-rev">{t('combat.simulator.champTagRev')}</span>}
+                            {isExp && <span className="sim-tag-champ champ-tag-exp">{t('combat.simulator.champTagExp')}</span>}
+                          </td>
+                          <td>
+                            <span className={`sim-difficulty-tag sim-dungeon-diff-tag is-tone-${diffMeta.styleTone}`}>
+                              {resultDiffLabel(result)}
                             </span>
-                          </FloatingPopover>
-                          {isRev && <span className="sim-tag-champ champ-tag-rev">{t('combat.simulator.champTagRev')}</span>}
-                          {isExp && <span className="sim-tag-champ champ-tag-exp">{t('combat.simulator.champTagExp')}</span>}
-                        </td>
-                        <td><span className="sim-difficulty-tag">{diffLabel(result.difficulty)}</span></td>
-                        <td className="sim-num-cell">
-                          <UnitNumber value={summary.repeatsPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
-                        </td>
-                        <td className="td-highlight-cyan sim-num-cell">
-                          <UnitNumber value={summary.expPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.expPerHour')} />
-                        </td>
-                        <td className="td-highlight-emerald sim-num-cell">
-                          <UnitNumber value={summary.sixDimPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.sixDimPerHour')} />
-                        </td>
-                        <td className="td-highlight-gold sim-num-cell">
-                          <UnitNumber value={summary.valuePerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />
-                        </td>
-                        <td className={`sim-num-cell ${summary.deaths > 0 ? 'text-crimson' : 'text-emerald'}`}>
-                          <UnitNumber value={summary.deaths} maxDecimals={0} tooltipLabel={t('combat.simulator.result.deaths')} />
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="sim-table-action-btn"
-                            onClick={() => {
-                              setSelectedIndex(index)
-                              setGroupView('details')
-                            }}
+                            {summary.energyCostPerRun > 0 && (
+                              <span className="sim-dungeon-cost-inline">
+                                {t('combat.simulator.dungeonCostBadge', { cost: summary.energyCostPerRun })}
+                              </span>
+                            )}
+                          </td>
+                          <td className={`sim-num-cell ${summary.failedRuns > 0 ? (summary.clearedRuns > 0 ? 'text-gold' : 'text-crimson') : 'text-emerald'}`}>
+                            <strong>{Math.round(summary.clearRate * 100)}%</strong>
+                            <span className="sim-cell-sub-inline">({summary.clearedRuns}/{summary.completedRuns})</span>
+                          </td>
+                          <td className="sim-num-cell">
+                            <span>{summary.avgRunSeconds.toFixed(1)}s</span>
+                          </td>
+                          <td className="td-highlight-cyan sim-num-cell">
+                            <UnitNumber value={summary.expPerEnergy} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.expPerEnergy')} />
+                          </td>
+                          <td className="td-highlight-gold sim-num-cell">
+                            <UnitNumber value={summary.valuePerEnergy} maxDecimals={2} tooltipLabel={t('combat.simulator.compare.valuePerEnergy')} />
+                          </td>
+                          <td className="td-highlight-emerald sim-num-cell">
+                            <UnitNumber value={summary.valuePerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />
+                          </td>
+                          <td
+                            className={`sim-num-cell ${summary.failedRuns > 0 || summary.deaths > 0 ? 'text-crimson' : 'text-emerald'}`}
+                            title={failedWaveTooltip || undefined}
                           >
-                            {t('combat.simulator.viewDetails')}
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                            {t('combat.simulator.dungeonWipesInline', { wipes: summary.failedRuns, deaths: summary.deaths })}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="sim-table-action-btn"
+                              onClick={() => {
+                                setSelectedIndex(index)
+                                setGroupView('details')
+                              }}
+                            >
+                              {t('combat.simulator.viewDetails')}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="sim-data-table sim-data-table--dense">
+                  <thead>
+                    <tr>
+                      <th>{t('combat.simulator.compare.node')}</th>
+                      <th>{t('combat.simulator.difficultyLabel')}</th>
+                      <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('repeats')}>
+                        <span>{t('combat.simulator.result.repeatsPerHour')}{renderSortArrow('repeats')}</span>
+                      </th>
+                      <th className="th-highlight-cyan sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('exp')}>
+                        <span>{t('combat.simulator.result.expPerHour')}{renderSortArrow('exp')}</span>
+                      </th>
+                      <th className="th-highlight-emerald sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('sixDim')}>
+                        <span>{t('combat.simulator.compare.sixDimPerHour')}{renderSortArrow('sixDim')}</span>
+                      </th>
+                      <th className="th-highlight-gold sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('value')}>
+                        <span>{t('combat.simulator.compare.valuePerHour')}{renderSortArrow('value')}</span>
+                      </th>
+                      <th className="sim-th-sortable" title={t('combat.simulator.sortHint')} onClick={() => toggleSort('deaths')}>
+                        <span>{t('combat.simulator.result.deaths')}{renderSortArrow('deaths')}</span>
+                      </th>
+                      <th>{t('combat.simulator.compare.action')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map(({ index, result, summary }) => {
+                      const isRev = champions?.bestRev.index === index && rows.length > 1
+                      const isExp = champions?.bestExp.index === index && rows.length > 1
+                      return (
+                        <tr key={index}>
+                          <td>
+                            <FloatingPopover
+                              trigger="hover"
+                              placement="top"
+                              size="small"
+                              interactive={false}
+                              content={() => renderTargetHoverCard(result)}
+                            >
+                              <span className="sim-node-hover-target">
+                                <strong>{targetTitle(result)}</strong>
+                              </span>
+                            </FloatingPopover>
+                            {isRev && <span className="sim-tag-champ champ-tag-rev">{t('combat.simulator.champTagRev')}</span>}
+                            {isExp && <span className="sim-tag-champ champ-tag-exp">{t('combat.simulator.champTagExp')}</span>}
+                          </td>
+                          <td><span className="sim-difficulty-tag">{resultDiffLabel(result)}</span></td>
+                          <td className="sim-num-cell">
+                            <UnitNumber value={summary.repeatsPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
+                          </td>
+                          <td className="td-highlight-cyan sim-num-cell">
+                            <UnitNumber value={summary.expPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.result.expPerHour')} />
+                          </td>
+                          <td className="td-highlight-emerald sim-num-cell">
+                            <UnitNumber value={summary.sixDimPerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.sixDimPerHour')} />
+                          </td>
+                          <td className="td-highlight-gold sim-num-cell">
+                            <UnitNumber value={summary.valuePerHour} maxDecimals={1} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />
+                          </td>
+                          <td className={`sim-num-cell ${summary.deaths > 0 ? 'text-crimson' : 'text-emerald'}`}>
+                            <UnitNumber value={summary.deaths} maxDecimals={0} tooltipLabel={t('combat.simulator.result.deaths')} />
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="sim-table-action-btn"
+                              onClick={() => {
+                                setSelectedIndex(index)
+                                setGroupView('details')
+                              }}
+                            >
+                              {t('combat.simulator.viewDetails')}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -650,7 +926,9 @@ export const SimulatorResults = memo(function SimulatorResults({
           <div className="sim-details-topbar">
             {results.length > 1 ? (
               <div className="sim-details-picker-group">
-                <span className="sim-picker-label">{t('combat.simulator.targets')}</span>
+                <span className="sim-picker-label">
+                  {isDungeonResult(current) ? t('combat.simulator.dungeonTargets') : t('combat.simulator.targets')}
+                </span>
                 <SearchableResultSelect
                   options={pickerOptions}
                   selectedIndex={safeIndex}
@@ -661,7 +939,7 @@ export const SimulatorResults = memo(function SimulatorResults({
                   placement="top"
                   size="small"
                   interactive={false}
-                  content={() => renderNodeHoverCard(current.nodeId)}
+                  content={() => renderTargetHoverCard(current)}
                 >
                   <span className="sim-node-bonus-hint">ⓘ</span>
                 </FloatingPopover>
@@ -673,10 +951,10 @@ export const SimulatorResults = memo(function SimulatorResults({
                   placement="top"
                   size="small"
                   interactive={false}
-                  content={() => renderNodeHoverCard(current.nodeId)}
+                  content={() => renderTargetHoverCard(current)}
                 >
                   <span className="sim-node-hover-target">
-                    <strong>{nodeName(current.nodeId)} · {diffLabel(current.difficulty)}</strong>
+                    <strong>{targetTitle(current)} · {resultDiffLabel(current)}</strong>
                   </span>
                 </FloatingPopover>
               </div>
@@ -724,36 +1002,105 @@ export const SimulatorResults = memo(function SimulatorResults({
                       placement="top"
                       size="small"
                       interactive={false}
-                      content={() => renderNodeHoverCard(current.nodeId)}
+                      content={() => renderTargetHoverCard(current)}
                     >
-                      <span className="sim-node-hover-target">{nodeName(current.nodeId)}</span>
+                      <span className="sim-node-hover-target">{targetTitle(current)}</span>
                     </FloatingPopover>
-                    {' · '}{diffLabel(current.difficulty)}{' · '}{currentMember.displayName}
+                    {' · '}{resultDiffLabel(current)}{' · '}{currentMember.displayName}
                   </span>
                   <span className="sim-card-sub">
                     {t('combat.simulator.seedTitle')} {current.seed ?? runSeed}
                   </span>
                 </div>
                 <div className="sim-kpi-grid sim-kpi-grid--dense">
-                  <div className="sim-kpi-row-item">
-                    <span className="sim-kpi-label">{t('combat.simulator.result.encounters')}</span>
-                    <span className="sim-kpi-val-inline">
-                      <UnitNumber value={currentMember.encounters} maxDecimals={0} tooltipLabel={t('combat.simulator.result.encounters')} />
-                      <small>{t('combat.simulator.result.cycles')} <UnitNumber value={currentMember.cycles} maxDecimals={0} disableTooltip /></small>
-                    </span>
-                  </div>
-                  <div className="sim-kpi-row-item">
-                    <span className="sim-kpi-label">{t('combat.simulator.result.repeatsPerHour')}</span>
-                    <span className="sim-kpi-val-inline">
-                      {currentHours > 0
-                        ? <UnitNumber value={currentMember.completedRepeats / currentHours} maxDecimals={1} suffix={t('combat.report.encountersPerHour')} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
-                        : '—'}
-                      <small>
-                        {t('combat.simulator.result.repeats')}{' '}
-                        <UnitNumber value={currentMember.completedRepeats} maxDecimals={0} suffix={t('combat.simulator.encountersUnit')} disableTooltip />
-                      </small>
-                    </span>
-                  </div>
+                  {current.dungeonSummary ? (
+                    <>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.dungeonKpiClearRate')}</span>
+                        <span className={`sim-kpi-val-inline ${current.dungeonSummary.failedRuns > 0 ? (current.dungeonSummary.clearedRuns > 0 ? 'text-gold' : 'text-crimson') : 'text-emerald'}`}>
+                          {Math.round((current.dungeonSummary.completedRuns > 0
+                            ? current.dungeonSummary.clearedRuns / current.dungeonSummary.completedRuns
+                            : 0) * 100)}%
+                          <small>
+                            {current.dungeonSummary.clearedRuns}/{current.dungeonSummary.completedRuns} {t('combat.simulator.runsUnit')}
+                          </small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.dungeonKpiAvgTime')}</span>
+                        <span className="sim-kpi-val-inline">
+                          {(current.dungeonSummary.completedRuns > 0
+                            ? current.simulatedSeconds / current.dungeonSummary.completedRuns
+                            : 0).toFixed(1)}s
+                          <small>{t('combat.simulator.simulatedSeconds', { s: Math.round(current.simulatedSeconds) })}</small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.dungeonKpiEnergy')}</span>
+                        <span className="sim-kpi-val-inline">
+                          <UnitNumber value={current.dungeonSummary.totalEnergySpent} maxDecimals={0} tooltipLabel={t('combat.simulator.dungeonKpiEnergy')} />
+                          <small>{t('combat.simulator.dungeonCostBadge', { cost: current.dungeonSummary.energyPerRun })}/{t('combat.simulator.runsUnit')}</small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.dungeonKpiExpPerEnergy')}</span>
+                        <span className="sim-kpi-val-inline text-cyan">
+                          {current.dungeonSummary.totalEnergySpent > 0
+                            ? <UnitNumber value={currentMember.lifetimeExperience / current.dungeonSummary.totalEnergySpent} maxDecimals={1} suffix={t('combat.simulator.perEnergyUnit')} tooltipLabel={t('combat.simulator.dungeonKpiExpPerEnergy')} />
+                            : '—'}
+                          <small>
+                            {currentHours > 0
+                              ? <UnitNumber value={currentMember.lifetimeExperience / currentHours} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} disableTooltip />
+                              : '—'}
+                          </small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.dungeonKpiValuePerEnergy')}</span>
+                        <span className="sim-kpi-val-inline text-gold">
+                          {current.dungeonSummary.totalEnergySpent > 0 && currentValuation
+                            ? <UnitNumber value={currentValuation.known / current.dungeonSummary.totalEnergySpent} maxDecimals={2} suffix={t('combat.simulator.perEnergyUnit')} tooltipLabel={t('combat.simulator.dungeonKpiValuePerEnergy')} />
+                            : '—'}
+                          <small>
+                            {currentHours > 0 && currentValuation
+                              ? <UnitNumber value={currentValuation.known / currentHours} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} disableTooltip />
+                              : '—'}
+                          </small>
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.result.encounters')}</span>
+                        <span className="sim-kpi-val-inline">
+                          <UnitNumber value={currentMember.encounters} maxDecimals={0} tooltipLabel={t('combat.simulator.result.encounters')} />
+                          <small>{t('combat.simulator.result.cycles')} <UnitNumber value={currentMember.cycles} maxDecimals={0} disableTooltip /></small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item">
+                        <span className="sim-kpi-label">{t('combat.simulator.result.repeatsPerHour')}</span>
+                        <span className="sim-kpi-val-inline">
+                          {currentHours > 0
+                            ? <UnitNumber value={currentMember.completedRepeats / currentHours} maxDecimals={1} suffix={t('combat.report.encountersPerHour')} tooltipLabel={t('combat.simulator.result.repeatsPerHour')} />
+                            : '—'}
+                          <small>
+                            {t('combat.simulator.result.repeats')}{' '}
+                            <UnitNumber value={currentMember.completedRepeats} maxDecimals={0} suffix={t('combat.simulator.encountersUnit')} disableTooltip />
+                          </small>
+                        </span>
+                      </div>
+                      <div className="sim-kpi-row-item" title={t('combat.simulator.realExpHint')}>
+                        <span className="sim-kpi-label">{t('combat.simulator.realExpPerHourLabel')}</span>
+                        <span className="sim-kpi-val-inline text-gold">
+                          {currentHours > 0
+                            ? <UnitNumber value={currentMember.lifetimeExperience / currentHours} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.realExpPerHourLabel')} />
+                            : '—'}
+                          <small>{t('combat.simulator.realExpTotalLabel')} <UnitNumber value={currentMember.lifetimeExperience} maxDecimals={1} tooltipLabel={t('combat.simulator.realExpTotalLabel')} /></small>
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="sim-kpi-row-item">
                     <span className="sim-kpi-label">{t('combat.simulator.result.kills')}</span>
                     <span className="sim-kpi-val-inline">
@@ -765,15 +1112,6 @@ export const SimulatorResults = memo(function SimulatorResults({
                     <span className="sim-kpi-label">{t('combat.simulator.result.deaths')}</span>
                     <span className={`sim-kpi-val-inline ${currentMember.deaths > 0 ? 'text-crimson' : 'text-emerald'}`}>
                       <UnitNumber value={currentMember.deaths} maxDecimals={0} disableTooltip />
-                    </span>
-                  </div>
-                  <div className="sim-kpi-row-item" title={t('combat.simulator.realExpHint')}>
-                    <span className="sim-kpi-label">{t('combat.simulator.realExpPerHourLabel')}</span>
-                    <span className="sim-kpi-val-inline text-gold">
-                      {currentHours > 0
-                        ? <UnitNumber value={currentMember.lifetimeExperience / currentHours} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.realExpPerHourLabel')} />
-                        : '—'}
-                      <small>{t('combat.simulator.realExpTotalLabel')} <UnitNumber value={currentMember.lifetimeExperience} maxDecimals={1} tooltipLabel={t('combat.simulator.realExpTotalLabel')} /></small>
                     </span>
                   </div>
                   <div className="sim-kpi-row-item">
@@ -808,6 +1146,19 @@ export const SimulatorResults = memo(function SimulatorResults({
                     </span>
                   </div>
                 </div>
+
+                {current.dungeonSummary && Object.keys(current.dungeonSummary.failedWaves).length > 0 && (
+                  <div className="sim-inline-strip-section sim-failed-waves-strip">
+                    <span className="wasm-sim-strip-label">{t('combat.simulator.dungeonFailedWavesLabel')}</span>
+                    <div className="wasm-sim-root-values">
+                      {groupFailedWaves(current.dungeonSummary).map(entry => (
+                        <span key={entry.wave} className="wasm-sim-tag sim-failed-wave-pill">
+                          {t('combat.simulator.dungeonFailedWaveTag', { wave: entry.wave, count: entry.count })}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="sim-inline-strip-section">
                   <span className="wasm-sim-strip-label">{t('combat.simulator.result.rootExp')}</span>
@@ -1031,6 +1382,11 @@ export const SimulatorResults = memo(function SimulatorResults({
                   <span>
                     {currentValuation.hasUnknown ? t('combat.simulator.partialValue') : t('combat.simulator.netValue')}:{' '}
                     <strong><UnitNumber value={currentValuation.known} maxDecimals={1} tooltipLabel={t('combat.simulator.netValue')} /></strong>
+                    {current.dungeonSummary && current.dungeonSummary.totalEnergySpent > 0 && (
+                      <span className="text-gold sim-valuation-rate">
+                        {' · '}<UnitNumber value={currentValuation.known / current.dungeonSummary.totalEnergySpent} maxDecimals={2} suffix={t('combat.simulator.perEnergyUnit')} tooltipLabel={t('combat.simulator.compare.valuePerEnergy')} />
+                      </span>
+                    )}
                     {currentHours > 0 && (
                       <span className="text-gold sim-valuation-rate">
                         {' · '}<UnitNumber value={currentValuation.known / currentHours} maxDecimals={1} suffix={t('combat.simulator.result.perHour')} tooltipLabel={t('combat.simulator.compare.valuePerHour')} />

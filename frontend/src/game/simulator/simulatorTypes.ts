@@ -46,7 +46,19 @@ export interface SimulatorBuildingEffectsDto {
 }
 export interface SimulatorEnvironmentNodeDto { nodeId: string; buildings: SimulatorNodeBuildingDto[]; effects: SimulatorBuildingEffectsDto; usages: SimulatorNodeBuildingUsageDto[] }
 export interface SimulatorEnvironmentDto { formatVersion: number; gameDataFingerprint: string; capturedAtUnixSeconds: number; nodes: SimulatorEnvironmentNodeDto[] }
-export interface SimulatorRunRequestDto { formatVersion: number; nodeId: string; difficulty: number; durationSeconds: number; seed: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto }
+export type SimulatorMode = 'combat' | 'dungeon'
+export interface SimulatorDungeonCatalogEntryDto {
+  id: string; name: string; description: string; nodeId: string
+  tier: number; baseLevel: number; minMonsterLevel: number; totalWaves: number
+  recommendedValuation: number[]
+}
+export interface SimulatorDungeonSummaryDto {
+  dungeonId: string; dungeonName: string; totalWaves: number
+  requestedRuns: number; completedRuns: number; clearedRuns: number; failedRuns: number; timedOutRuns: number
+  energyPerRun: number; totalEnergySpent: number; bestWaveCleared: number
+  failedWaves: Record<number, number>
+}
+export interface SimulatorRunRequestDto { formatVersion: number; nodeId: string; difficulty: number; durationSeconds: number; seed: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto; dungeonId?: string | null; repeatCount?: number | null }
 export interface SimulatorRootExpDto { stamina: number; meridians: number; attack: number; bone: number; agility: number; consciousness: number }
 export interface SimulatorReportItemDto { itemId: string; variant: string; quantity: number }
 export interface SimulatorCombatElementDamageDto { none: number; metal: number; wood: number; water: number; fire: number; earth: number }
@@ -68,7 +80,7 @@ export interface SimulatorMemberResultDto {
   enemies: SimulatorExpeditionEnemyDto[]
   events: SimulatorEventDto[]; droppedEventCount: number
 }
-export interface SimulatorRunResultDto { formatVersion: number; nodeId: string; difficulty: number; seed: string; requestedDurationSeconds: number; simulatedSeconds: number; members: SimulatorMemberResultDto[] }
+export interface SimulatorRunResultDto { formatVersion: number; nodeId: string; difficulty: number; seed: string; requestedDurationSeconds: number; simulatedSeconds: number; members: SimulatorMemberResultDto[]; dungeonId?: string | null; dungeonSummary?: SimulatorDungeonSummaryDto | null }
 export interface SimulatorResolvedProfileDto { memberIndex: number; playerId: string; displayName: string; attributes: Record<string, unknown>; combatantStats: Record<string, unknown> }
 export interface SimulatorResolveRequestDto { formatVersion: number; nodeId: string; members: SimulatorProfileDto[]; environment: SimulatorEnvironmentDto }
 export interface SimulatorResolveResultDto { formatVersion: number; nodeId: string; members: SimulatorResolvedProfileDto[] }

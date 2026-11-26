@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type {
+  SimulatorDungeonCatalogEntryDto,
   SimulatorEnvironmentDto,
+  SimulatorMode,
   SimulatorProfileDto,
   SimulatorResolveResultDto,
   SimulatorRunResultDto,
@@ -21,6 +23,7 @@ export interface SimulatorRunStamp {
   dirty: number
   seed: string
   startedAtUnixSeconds: number
+  mode: SimulatorMode
 }
 
 export function generateSimulatorSeed(): string {
@@ -47,10 +50,15 @@ export interface SimulatorSessionState {
   members: SimulatorProfileDto[]
   environment: SimulatorEnvironmentDto | null
   combatNodeIds: string[] | null
+  dungeonCatalog: SimulatorDungeonCatalogEntryDto[] | null
+  simMode: SimulatorMode
   selectedMapId: string
   selectedNodeIds: string[]
   difficulties: number[]
   durationSeconds: number
+  selectedDungeonIds: string[]
+  dungeonDifficulties: number[]
+  dungeonRepeatCount: number
   seed: string
   results: SimulatorRunResultDto[] | null
   runStamp: SimulatorRunStamp | null
@@ -64,10 +72,15 @@ export interface SimulatorSessionState {
   setMembers: (members: Updater<SimulatorProfileDto[]>) => void
   setEnvironment: (env: Updater<SimulatorEnvironmentDto | null>) => void
   setCombatNodeIds: (nodeIds: Updater<string[] | null>) => void
+  setDungeonCatalog: (entries: Updater<SimulatorDungeonCatalogEntryDto[] | null>) => void
+  setSimMode: (mode: Updater<SimulatorMode>) => void
   setSelectedMapId: (mapId: Updater<string>) => void
   setSelectedNodeIds: (nodeIds: Updater<string[]>) => void
   setDifficulties: (difficulties: Updater<number[]>) => void
   setDurationSeconds: (seconds: Updater<number>) => void
+  setSelectedDungeonIds: (ids: Updater<string[]>) => void
+  setDungeonDifficulties: (difficulties: Updater<number[]>) => void
+  setDungeonRepeatCount: (count: Updater<number>) => void
   setSeed: (seed: Updater<string>) => void
   setResults: (results: Updater<SimulatorRunResultDto[] | null>) => void
   setRunStamp: (stamp: Updater<SimulatorRunStamp | null>) => void
@@ -90,10 +103,15 @@ export const useSimulatorStore = create<SimulatorSessionState>((set) => ({
   members: [],
   environment: null,
   combatNodeIds: null,
+  dungeonCatalog: null,
+  simMode: 'combat',
   selectedMapId: 'all',
   selectedNodeIds: [],
   difficulties: [0],
   durationSeconds: 3600,
+  selectedDungeonIds: [],
+  dungeonDifficulties: [0],
+  dungeonRepeatCount: 10,
   seed: generateSimulatorSeed(),
   results: null,
   runStamp: null,
@@ -107,10 +125,15 @@ export const useSimulatorStore = create<SimulatorSessionState>((set) => ({
   setMembers: (next) => set((s) => ({ members: resolveUpdater(next, s.members) })),
   setEnvironment: (next) => set((s) => ({ environment: resolveUpdater(next, s.environment) })),
   setCombatNodeIds: (next) => set((s) => ({ combatNodeIds: resolveUpdater(next, s.combatNodeIds) })),
+  setDungeonCatalog: (next) => set((s) => ({ dungeonCatalog: resolveUpdater(next, s.dungeonCatalog) })),
+  setSimMode: (next) => set((s) => ({ simMode: resolveUpdater(next, s.simMode) })),
   setSelectedMapId: (next) => set((s) => ({ selectedMapId: resolveUpdater(next, s.selectedMapId) })),
   setSelectedNodeIds: (next) => set((s) => ({ selectedNodeIds: resolveUpdater(next, s.selectedNodeIds) })),
   setDifficulties: (next) => set((s) => ({ difficulties: resolveUpdater(next, s.difficulties) })),
   setDurationSeconds: (next) => set((s) => ({ durationSeconds: resolveUpdater(next, s.durationSeconds) })),
+  setSelectedDungeonIds: (next) => set((s) => ({ selectedDungeonIds: resolveUpdater(next, s.selectedDungeonIds) })),
+  setDungeonDifficulties: (next) => set((s) => ({ dungeonDifficulties: resolveUpdater(next, s.dungeonDifficulties) })),
+  setDungeonRepeatCount: (next) => set((s) => ({ dungeonRepeatCount: resolveUpdater(next, s.dungeonRepeatCount) })),
   setSeed: (next) => set((s) => ({ seed: resolveUpdater(next, s.seed) })),
   setResults: (next) => set((s) => ({ results: resolveUpdater(next, s.results) })),
   setRunStamp: (next) => set((s) => ({ runStamp: resolveUpdater(next, s.runStamp) })),
@@ -125,10 +148,15 @@ export const useSimulatorStore = create<SimulatorSessionState>((set) => ({
       members: [],
       environment: null,
       combatNodeIds: null,
+      dungeonCatalog: null,
+      simMode: 'combat',
       selectedMapId: 'all',
       selectedNodeIds: [],
       difficulties: [0],
       durationSeconds: 3600,
+      selectedDungeonIds: [],
+      dungeonDifficulties: [0],
+      dungeonRepeatCount: 10,
       seed: generateSimulatorSeed(),
       results: null,
       runStamp: null,

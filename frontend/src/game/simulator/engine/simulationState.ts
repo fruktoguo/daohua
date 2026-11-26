@@ -437,6 +437,8 @@ export interface SimCombatExpeditionState {
   selfIndex: number
   allies: ExpeditionAllyState[] | null
   duelSeekFailed: boolean
+  dungeonId?: string | null
+  dungeonTotalWaves?: number | null
 }
 
 export interface ActionSustainedBuff {
@@ -496,6 +498,7 @@ export interface SimActionParticipationSpec {
   totalDropBonusPoints: number
   levelMaluses: number[]
   assignmentWeights: number[]
+  dungeonId?: string | null
 }
 
 export interface SimActionParticipationBinding {
@@ -516,6 +519,12 @@ export interface SimActionState {
   status: ActionQueueStatus
   expedition: SimCombatExpeditionState | null
   participation: SimActionParticipationBinding | null
+  dungeonRestartOnWipe?: boolean
+  dungeonClearedRuns?: number
+  dungeonFailedRuns?: number
+  dungeonTimedOutRuns?: number
+  dungeonBestWaveCleared?: number
+  dungeonFailedWaves?: Record<number, number>
 }
 
 export interface PlayerStatsDelta {

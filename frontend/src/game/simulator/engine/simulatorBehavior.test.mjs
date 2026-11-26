@@ -9,7 +9,7 @@ import { CombatEncounterState, CombatantState } from './combatModels.ts'
 import { advanceCombatTo, decideInitialActions } from './combatEngine.ts'
 import { evaluateTriggers } from './triggerEvaluator.ts'
 import { CombatFactTracker, UnitChannel, resolveTriggerListWakeMask } from './triggerWake.ts'
-import { listCombatNodeIds, runSimulation } from './simulatorRunner.ts'
+import { createDefaultProfile, listCombatNodeIds, listDungeonEntries, runSimulation } from './simulatorRunner.ts'
 import {
   BATTLE_LIFETIME_SECONDS,
   BuffEffectChannel,
@@ -1006,4 +1006,374 @@ test('雾梦泽 20 级五技能在 TS 模拟器中与服务端语义 1:1 一致�
   assert.equal(pojunEnc.player.buffStacks('buff.shibukedang'), 4)
   advanceCombatTo(pojunEnc, 6.1)
   assert.equal(pojunEnc.player.buffStacks('buff.shibukedang'), 0)
+})
+
+test('追忆副本模拟：目录解析、单人/组队十波通关、现世动态等级重算与封魔阵免疫', () => {
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+  const dungeons = listDungeonEntries(liveCatalog)
+  assert.equal(dungeons.length, 4)
+  assert.deepEqual(
+    dungeons.map(d => d.id).sort(),
+    [
+      'dungeon.qingyun-secret-gorge',
+      'dungeon.starfall-ancient-ruin',
+      'dungeon.trail-boundary-rift',
+      'dungeon.wumeng-sword-tomb',
+    ],
+  )
+  for (const d of dungeons) {
+    assert.equal(d.totalWaves, 10)
+    assert.ok(d.baseLevel >= 1 && d.minMonsterLevel >= 1)
+    assert.ok(liveCatalog.worldNodes.has(d.nodeId), `副本 ${d.id} 绑定的世界节点 ${d.nodeId} 应存在于世界目录`)
+  }
+  const qingyunEntry = dungeons.find(d => d.id === 'dungeon.qingyun-secret-gorge')
+  const qingyunDef = liveCatalog.dungeons.get('dungeon.qingyun-secret-gorge')
+  assert.ok(qingyunEntry && qingyunDef)
+  const guaranteedLoot = qingyunDef.clearLootTable.find(e => e.kind === 'guaranteed')
+  assert.ok(guaranteedLoot, '青云秘峡应配置至少 1 项通关保底材料')
+
+  // 构造一名配装齐全的修士（Lv.25 + 强化 +15 成套武修装备与技能），稳定速通青云秘峡虚境与现世凡阶
+  const makeStrongMember = (name, realmLevel = 25) => {
+    const p = createDefaultProfile(liveCatalog)
+    p.displayName = name
+    p.realmLevel = realmLevel
+    const fullExp = getRootCumulativeExpForLevel(ROOT_LEVEL_CAP)
+    p.coreAttributes = {
+      staminaExp: fullExp,
+      meridiansExp: fullExp,
+      attackExp: fullExp,
+      boneExp: fullExp,
+      agilityExp: fullExp,
+      consciousnessExp: fullExp,
+    }
+    p.equipment = [
+      { itemId: 'equipment.pogang-sword', enhancementLevel: 15 },
+      { itemId: 'equipment.xuanjia-guard', enhancementLevel: 15 },
+      { itemId: 'equipment.chijin-helmet', enhancementLevel: 15 },
+      { itemId: 'equipment.liegang-armor', enhancementLevel: 15 },
+      { itemId: 'equipment.tafeng-pants', enhancementLevel: 15 },
+      { itemId: 'equipment.shouya-pendant', enhancementLevel: 15 },
+    ]
+    p.abilitySlots = [
+      { abilityId: null, level: 1 },
+      { abilityId: 'ability.pojun', level: 30 },
+      { abilityId: 'ability.shunshan', level: 30 },
+      { abilityId: null, level: 1 },
+      { abilityId: null, level: 1 },
+    ]
+    p.maxHitpoints = 50_000
+    p.hitpoints = 50_000
+    p.maxManapoints = 10_000
+    p.manapoints = 10_000
+    return p
+  }
+
+  const baseEnv = {
+    formatVersion: 1,
+    gameDataFingerprint: liveCatalog.fingerprint,
+    capturedAtUnixSeconds: 1_700_000_000,
+    nodes: [
+      {
+        nodeId: qingyunEntry.nodeId,
+        buildings: [],
+        effects: {
+          combatHitpointRegen: 5,
+          combatManapointRegen: 5,
+          combatDamageReductionRatio: 0,
+          monsterWeakenRatio: 0,
+        },
+        usages: [],
+      },
+    ],
+  }
+
+  // 1. 单人虚境·普通（d=0）连续挑战 2 次：精确完工停表、发放 2 次通关保底材料与通关灵石
+  const soloClearRes = runSimulation({
+    formatVersion: 1,
+    nodeId: qingyunEntry.nodeId,
+    dungeonId: 'dungeon.qingyun-secret-gorge',
+    difficulty: 0,
+    repeatCount: 2,
+    durationSeconds: 3600,
+    seed: '20261126',
+    members: [makeStrongMember('青云剑修', 25)],
+    environment: baseEnv,
+  }, liveCatalog)
+
+  assert.ok(soloClearRes.dungeonSummary)
+  assert.equal(soloClearRes.dungeonSummary.dungeonId, 'dungeon.qingyun-secret-gorge')
+  assert.equal(soloClearRes.dungeonSummary.requestedRuns, 2)
+  assert.equal(soloClearRes.dungeonSummary.completedRuns, 2)
+  assert.equal(soloClearRes.dungeonSummary.clearedRuns, 2)
+  assert.equal(soloClearRes.dungeonSummary.failedRuns, 0)
+  assert.deepEqual(soloClearRes.dungeonSummary.failedWaves, {})
+  assert.equal(soloClearRes.dungeonSummary.energyPerRun, 30)
+  assert.equal(soloClearRes.dungeonSummary.totalEnergySpent, 60)
+  assert.ok(soloClearRes.simulatedSeconds > 80 && soloClearRes.simulatedSeconds < 600, '完成全部挑战次数后应立即停表')
+  assert.equal(soloClearRes.members[0].encounters, 20, '2 次十波通关应累计 20 波遭遇')
+  const soloStones = soloClearRes.members[0].items.find(i => i.itemId === 'currency.spirit-stone')?.quantity ?? 0
+  const soloGuaranteedQty = soloClearRes.members[0].items.find(i => i.itemId === guaranteedLoot.itemId)?.quantity ?? 0
+  assert.ok(soloStones >= qingyunDef.baseRewards.spiritStones * 2, '2 次虚境普通通关应发放至少 2 倍基准通关灵石')
+  assert.ok(soloGuaranteedQty >= guaranteedLoot.minQuantity * 2, '2 次虚境普通通关应发放至少 2 倍保底材料')
+
+  // 2. 追忆副本完全免疫节点封魔阵怪物削弱（monsterWeakenRatio = 0.5 与 0 结果逐字段严格一致）
+  const weakenEnv = structuredClone(baseEnv)
+  weakenEnv.nodes[0].effects.monsterWeakenRatio = 0.5
+  const soloWithWeakenRes = runSimulation({
+    formatVersion: 1,
+    nodeId: qingyunEntry.nodeId,
+    dungeonId: 'dungeon.qingyun-secret-gorge',
+    difficulty: 0,
+    repeatCount: 2,
+    durationSeconds: 3600,
+    seed: '20261126',
+    members: [makeStrongMember('青云剑修', 25)],
+    environment: weakenEnv,
+  }, liveCatalog)
+  assert.equal(soloWithWeakenRes.simulatedSeconds, soloClearRes.simulatedSeconds)
+  assert.equal(soloWithWeakenRes.members[0].lifetimeExperience, soloClearRes.members[0].lifetimeExperience)
+  assert.deepEqual(soloWithWeakenRes.members[0].combatStats, soloClearRes.members[0].combatStats)
+
+  // 3. 现世·凡阶（d=3）动态等级重算 + 2 人组队独立结算：Lv.25 队伍在现世模式修为远高于虚境地狱（d=2）
+  const virtualHellRes = runSimulation({
+    formatVersion: 1,
+    nodeId: qingyunEntry.nodeId,
+    dungeonId: 'dungeon.qingyun-secret-gorge',
+    difficulty: 2,
+    repeatCount: 1,
+    durationSeconds: 3600,
+    seed: '99',
+    members: [makeStrongMember('队长', 25), makeStrongMember('队员', 22)],
+    environment: baseEnv,
+  }, liveCatalog)
+  const realityMundaneRes = runSimulation({
+    formatVersion: 1,
+    nodeId: qingyunEntry.nodeId,
+    dungeonId: 'dungeon.qingyun-secret-gorge',
+    difficulty: 3,
+    repeatCount: 1,
+    durationSeconds: 3600,
+    seed: '99',
+    members: [makeStrongMember('队长', 25), makeStrongMember('队员', 22)],
+    environment: baseEnv,
+  }, liveCatalog)
+  assert.equal(realityMundaneRes.dungeonSummary?.clearedRuns, 1)
+  assert.equal(realityMundaneRes.dungeonSummary?.energyPerRun, 60)
+  assert.ok(
+    realityMundaneRes.members[0].lifetimeExperience > virtualHellRes.members[0].lifetimeExperience * 2,
+    'Lv.25 队伍在现世凡阶（动态对齐 Lv.25）获得的真实修为应显著高于固定低等级的虚境地狱',
+  )
+  assert.ok(realityMundaneRes.members[1].items.some(i => i.itemId === guaranteedLoot.itemId))
+})
+
+test('追忆副本模拟：团灭满状态重开统计通关率、全灭立判失败与单波 600s 超时保护', async () => {
+  const { CombatOutcome } = await import('./combatModels.ts')
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+  const wumengDef = liveCatalog.dungeons.get('dungeon.wumeng-sword-tomb')
+  assert.ok(wumengDef)
+  const wumengGuaranteed = wumengDef.clearLootTable.find(e => e.kind === 'guaranteed')
+  assert.ok(wumengGuaranteed)
+
+  // 1. 战力不足角色连续挑战 3 次：每次团灭后自动满状态重开跑满 3 次，准确统计失败波次且不发第 10 波通关保底
+  const weakMember = createDefaultProfile(liveCatalog)
+  weakMember.realmLevel = 1
+  weakMember.maxHitpoints = 40
+  weakMember.hitpoints = 40
+  const wipeRes = runSimulation({
+    formatVersion: 1,
+    nodeId: wumengDef.nodeId,
+    dungeonId: 'dungeon.wumeng-sword-tomb',
+    difficulty: 0,
+    repeatCount: 3,
+    durationSeconds: 3600,
+    seed: '777',
+    members: [weakMember],
+    environment: {
+      formatVersion: 1,
+      gameDataFingerprint: liveCatalog.fingerprint,
+      capturedAtUnixSeconds: 1_700_000_000,
+      nodes: [{ nodeId: wumengDef.nodeId, buildings: [], effects: {}, usages: [] }],
+    },
+  }, liveCatalog)
+
+  assert.ok(wipeRes.dungeonSummary)
+  assert.equal(wipeRes.dungeonSummary.requestedRuns, 3)
+  assert.equal(wipeRes.dungeonSummary.completedRuns, 3)
+  assert.equal(wipeRes.dungeonSummary.clearedRuns, 0)
+  assert.equal(wipeRes.dungeonSummary.failedRuns, 3)
+  assert.deepEqual(wipeRes.dungeonSummary.failedWaves, { 1: 3 })
+  assert.equal(wipeRes.dungeonSummary.totalEnergySpent, 90)
+  assert.equal(wipeRes.members[0].deaths, 3)
+  assert.equal(wipeRes.members[0].hitpoints, 1, '末次挑战团灭后按服务端 TerminateAtOneHp 保留 1 点气血')
+  const playerStat = wipeRes.members[0].combatStats.find(s => s.unitKey === 'player')
+  assert.ok(playerStat)
+  const totalTaken = playerStat.damageTakenPhysical + playerStat.damageTakenSpell + playerStat.damageTakenTrue
+  assert.ok(
+    totalTaken >= wipeRes.members[0].maxHitpoints * 3,
+    '第 1、2 次团灭重开时必须将角色恢复至满气血，累计承伤至少达到 3 倍生命上限',
+  )
+  assert.equal(
+    wipeRes.members[0].items.some(i => i.itemId === wumengGuaranteed.itemId),
+    false,
+    '未通关第 10 波不得发放通关保底特殊材料',
+  )
+
+  // 2. 组队副本全员同时无存活单位时立即判负（不等候战内 15s 复活倒计时）
+  const fastKillEnemy = createCombatantStats(10_000, 500, 0, 1.0, 1_000_000, 0, CombatDamageKind.Physical, {
+    accuracy: 1_000_000,
+  })
+  const fragileAlly = createCombatantStats(50, 5, 0, 10.0, 1_000_000, 0, CombatDamageKind.Physical)
+  const wipeEnc = CombatEncounterState.createAllied(
+    'dungeon-wipe-immediate',
+    1n,
+    [{ stats: fragileAlly, skills: [] }, { stats: fragileAlly, skills: [] }],
+    15.0,
+    [{ stats: fastKillEnemy, skills: [] }],
+  )
+  wipeEnc.wipeEndsBattle = true
+  decideInitialActions(wipeEnc)
+  const wipeStep = advanceCombatTo(wipeEnc, 20.0)
+  assert.equal(wipeStep.outcome, CombatOutcome.EnemyWon)
+  assert.ok(wipeEnc.elapsedSeconds <= 2.5, '最后一名存活队友倒下瞬间应立即结束战斗，不得空等 15s 复活计时')
+
+  // 3. 单波 600s 超时熔断保护：纯肉盾死锁对局在 600s 精确判负退出
+  const immortalTank = createCombatantStats(1_000_000, 1, 500, 2.0, 1_000_000, 0, CombatDamageKind.Physical)
+  const timeoutEnc = CombatEncounterState.create(
+    'dungeon-wave-timeout',
+    2n,
+    { stats: immortalTank, skills: [] },
+    [{ stats: immortalTank, skills: [] }],
+  )
+  timeoutEnc.maxBattleSeconds = 600
+  decideInitialActions(timeoutEnc)
+  const timeoutStep = advanceCombatTo(timeoutEnc, 1200)
+  assert.equal(timeoutStep.outcome, CombatOutcome.EnemyWon)
+  assert.equal(timeoutEnc.timedOut, true)
+  assert.ok(Math.abs(timeoutEnc.elapsedSeconds - 600) <= 1e-6)
+})
+
+test('符箓与阵法技艺每级独立 +1% 伤害增幅在 TS 模拟器与服务端 1:1 一致（抗性穿甲前生效且不放大维持代价）', async () => {
+  const { resolveAttributesCore, playerAttributesToCombatantStats } = await import('./attributeResolver.ts')
+  const { resolveConsumableStrikePower } = await import('./combatEngine.ts')
+  const { buildSimulatorCatalogPayload } = await import('../../../../../scripts/gen-simulator-catalog.mjs')
+  const liveCatalog = buildGameDataCatalog(buildSimulatorCatalogPayload())
+
+  const cumulativeTechExp = (targetLevel) =>
+    liveCatalog.realmProgression.discountedExpToNext.slice(0, targetLevel).reduce((acc, v) => acc + v, 0)
+
+  const zeroCore = {
+    staminaExp: 0,
+    meridiansExp: 0,
+    attackExp: 0,
+    boneExp: 0,
+    agilityExp: 0,
+    consciousnessExp: 0,
+  }
+  const attrs = resolveAttributesCore(
+    1,
+    [],
+    [],
+    [],
+    null,
+    zeroCore,
+    [],
+    liveCatalog,
+    null,
+    null,
+    null,
+    { metal: 0, wood: 0, water: 0, fire: 0, earth: 0 },
+    0,
+    {
+      talisman: cumulativeTechExp(25),
+      formation: cumulativeTechExp(40),
+      alchemy: cumulativeTechExp(10),
+    },
+  )
+  assert.equal(attrs.talismanDamageBonusPoints, 25)
+  assert.equal(attrs.formationDamageBonusPoints, 40)
+  const combatStats = playerAttributesToCombatantStats(attrs, 0)
+  assert.equal(combatStats.talismanDamageBonusPoints, 25)
+  assert.equal(combatStats.formationDamageBonusPoints, 40)
+
+  // 雷击符原始威力按 talismanDamageBonusPoints 放大，不受 formationDamageBonusPoints 影响
+  const leijiItem = liveCatalog.items.get('item.leiji-talisman')
+  assert.ok(leijiItem && leijiItem.consumable?.strike)
+  const baseCaster = createCombatantStats(1_000, 10, 0, 2, 100, 0, CombatDamageKind.Physical, {
+    maxManapoints: 100,
+    spellAttack: 50,
+  })
+  const power0 = resolveConsumableStrikePower(leijiItem, leijiItem.consumable.strike, baseCaster)
+  const powerTalisman50 = resolveConsumableStrikePower(leijiItem, leijiItem.consumable.strike, {
+    ...baseCaster,
+    talismanDamageBonusPoints: 50,
+  })
+  const powerFormation50 = resolveConsumableStrikePower(leijiItem, leijiItem.consumable.strike, {
+    ...baseCaster,
+    formationDamageBonusPoints: 50,
+  })
+  assert.equal(power0, 120)
+  assert.equal(powerTalisman50, 180)
+  assert.equal(powerFormation50, 120)
+
+  // 天雷阵与血煞阵反击伤害在抗性穿甲前按 formationDamageBonusPoints 放大，不放大耗蓝与自损代价
+  const runDiskBattle = (buffId, formationBonusPoints, talismanBonusPoints) => {
+    const pStats = createCombatantStats(10_000, 10, 0, 0.5, 1_000_000, 0, CombatDamageKind.Physical, {
+      spellAttack: 100,
+      maxManapoints: 10_000,
+      hpRegen: 0,
+      mpRegen: 0,
+      formationDamageBonusPoints: formationBonusPoints,
+      talismanDamageBonusPoints: talismanBonusPoints,
+    })
+    const eStats = createCombatantStats(500_000, 0, 100, 100, 1, 0, CombatDamageKind.Physical, {
+      magicResistance: 100,
+      resistanceScale: 1,
+    })
+    const enc = CombatEncounterState.create('ts-formation-tech', 12345n, { stats: pStats, skills: [] }, [{ stats: eStats, skills: [] }])
+    enc.player.hitpoints = 5_000
+    enc.player.addBuff({
+      buffId,
+      expiresAtSeconds: 999,
+      stacks: 1,
+      name: buffId,
+      resetOnWave: false,
+      missingHitpointsPerStack: 0,
+      effects: null,
+      statRatios: null,
+      sourceUnitId: null,
+    })
+    decideInitialActions(enc)
+    const res = advanceCombatTo(enc, 25)
+    return { enc, res }
+  }
+
+  const t0 = runDiskBattle('formation.tianlei', 0, 0)
+  const tForm50 = runDiskBattle('formation.tianlei', 50, 0)
+  const tTalisman50 = runDiskBattle('formation.tianlei', 0, 50)
+  const tHit0 = t0.res.events.find(e => e.abilityId === 'item.tianlei-formation-disk')
+  const tHit50 = tForm50.res.events.find(e => e.abilityId === 'item.tianlei-formation-disk')
+  const tHitTalisman = tTalisman50.res.events.find(e => e.abilityId === 'item.tianlei-formation-disk')
+  assert.ok(tHit0 && tHit50 && tHitTalisman)
+  assert.ok(Math.abs(tHit0.damage - (60 * 60) / 161) < 1e-6)
+  assert.ok(Math.abs(tHit50.damage - (90 * 90) / 191) < 1e-6)
+  assert.ok(Math.abs(tHit0.damage - tHitTalisman.damage) < 1e-9)
+  assert.ok(Math.abs(t0.enc.player.manapoints - tForm50.enc.player.manapoints) < 1e-9, '天雷阵耗蓝不得被阵法增伤放大')
+
+  const x0 = runDiskBattle('formation.xuesha', 0, 0)
+  const xForm50 = runDiskBattle('formation.xuesha', 50, 0)
+  const xTalisman50 = runDiskBattle('formation.xuesha', 0, 50)
+  const xHit0 = x0.res.events.find(e => e.abilityId === 'item.xuesha-formation-disk')
+  const xHit50 = xForm50.res.events.find(e => e.abilityId === 'item.xuesha-formation-disk')
+  const xHitTalisman = xTalisman50.res.events.find(e => e.abilityId === 'item.xuesha-formation-disk')
+  assert.ok(xHit0 && xHit50 && xHitTalisman)
+  assert.ok(Math.abs(xHit0.damage - (1000 * 1000) / 1101) < 1e-6)
+  assert.ok(Math.abs(xHit50.damage - (1500 * 1500) / 1601) < 1e-6)
+  assert.ok(Math.abs(xHit50.healing - xHit50.damage) < 1e-6)
+  assert.ok(Math.abs(xHit0.damage - xHitTalisman.damage) < 1e-9)
 })

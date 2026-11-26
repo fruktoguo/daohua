@@ -1,9 +1,12 @@
-import { roundAwayFromZero } from './math.ts';
+import { roundAwayFromZero, roundToEven } from './math.ts';
 import {
   AutoUseBar,
   BuffIds,
   CombatDamageKind,
   CombatMonsterRank,
+  DUNGEON_IN_BATTLE_RESPAWN_SECONDS,
+  DUNGEON_INITIAL_SEARCH_SECONDS,
+  DUNGEON_MAX_MONSTER_LEVEL,
   createCombatantStats,
   ceilCombatantStats,
   growthSpeedPoints,
@@ -11,8 +14,11 @@ import {
   growthCooldownReductionPoints,
   growthCriticalDamagePoints,
   growthSkillBonusPoints,
+  isDungeonReality,
   parseCombatElement,
   PartyWipeRule,
+  resolveDungeonDynamicMonsterLevel,
+  resolveDungeonTargetBaseLevel,
   TraitIds,
   type CombatantStats,
   type CombatEffectProfile,
@@ -337,6 +343,21 @@ export class RealmProgressionCatalog {
     return this.rootPointCost[idx + 1];
   }
 
+  /** 累计技艺经验换算技艺等级（0 级起），与服务端 TechniqueCatalog.LevelFor 同口径。 */
+  techniqueLevelFor(exp: number): number {
+    if (!Number.isFinite(exp) || exp <= 0) return 0;
+    let level = 0;
+    let remaining = exp;
+    const segments = this.discountedExpToNext;
+    while (level < segments.length) {
+      const need = segments[level];
+      if (need <= 0 || remaining + 1e-9 < need) break;
+      remaining -= need;
+      level += 1;
+    }
+    return level;
+  }
+
   baseExperienceForLevel(level: number): number {
     const capLevel = Math.min(Math.max(level, 1), Math.max(1, this.expToNext.length - 1));
     return (this.expCapFor(capLevel) / 1000) * Math.pow(0.9, Math.max(1, level) - 1);
@@ -410,12 +431,50 @@ export interface CombatActionDefinition {
   combatEncounterId: string | null;
   allowedNodeIds: Set<string> | null;
   excludedNodeIds: Set<string> | null;
+  executionKind?: 'combatEncounter' | 'dungeon';
+}
+
+export interface DungeonWaveDefinition {
+  waveIndex: number;
+  kind: 'normal' | 'elite' | 'boss';
+  enemyIds: string[];
+}
+
+export interface DungeonBaseRewards {
+  experience: number;
+  spiritStones: number;
+}
+
+export interface DungeonLootEntry {
+  itemId: string;
+  kind: 'guaranteed' | 'rare';
+  minQuantity: number;
+  maxQuantity: number;
+  dropChance: number;
+  minDifficulty: number;
+}
+
+export interface DungeonDefinition {
+  id: string;
+  name: string;
+  description: string;
+  nodeId: string;
+  tier: number;
+  baseLevel: number;
+  recommendedValuation: number[];
+  waveRestSeconds: number;
+  waves: DungeonWaveDefinition[];
+  totalWaves: number;
+  baseRewards: DungeonBaseRewards;
+  clearLootTable: DungeonLootEntry[];
+  minMonsterLevel: number;
 }
 
 export interface WorldNodeDefinition {
   id: string;
   name: string;
   encounterIds: string[];
+  dungeonIds: string[];
 }
 
 export interface DuelSettings {
@@ -445,6 +504,7 @@ export interface CatalogJsonShape {
   combatActions: Record<string, unknown>[];
   buildings: Record<string, Record<string, unknown>>;
   encounters: Record<string, unknown>[];
+  dungeons?: Record<string, unknown>[];
   monsters: Record<string, Record<string, unknown>>;
   maps: Record<string, unknown>[];
   rawItems: Record<string, Record<string, unknown>>;
@@ -463,11 +523,13 @@ export interface GameDataCatalog {
   items: Map<string, ItemDefinition>;
   rawItems: Map<string, Record<string, unknown>>;
   rawEquipments: Map<string, Record<string, unknown>>;
+  rawMonsters: Map<string, Record<string, unknown>>;
   buildings: Map<string, Record<string, unknown>>;
   combatMonsters: Map<string, CombatMonsterDefinition>;
   combatEncounters: Map<string, CombatEncounterDefinition>;
+  dungeons: Map<string, DungeonDefinition>;
   combatActions: CombatActionDefinition[];
-  /** 方便引擎按行动 ID O(1) 查表，与 combatActions 同源 */
+  /** 方便引擎按行动 ID O(1) 查表，包含常规讨伐与追忆副本行动 */
   actions: Map<string, CombatActionDefinition>;
   /** 与 combatEncounters 同引用的便民别名 */
   encounters: Map<string, CombatEncounterDefinition>;
@@ -546,6 +608,184 @@ function parseItem(entry: Record<string, unknown>, id: string): ItemDefinition {
   };
 }
 
+function buildMonsterDefinition(
+  id: string,
+  value: Record<string, unknown>,
+  playerBaseline: BaseAttributeCatalog,
+  tierBoundaries: BaseAttributeCatalog,
+  abilities: Map<string, AbilityJson>,
+  realmProgression: RealmProgressionCatalog,
+  overrideLevel?: number,
+): CombatMonsterDefinition {
+  const budgetCost = num(value, 'budgetCost', 1);
+  const weights = (value.weights as Record<string, unknown> | undefined) ?? {};
+  const weight = (k: string) => num(weights, k, 1);
+  const originalLevel = Math.trunc(num(value, 'level', 1));
+  const level =
+    overrideLevel !== undefined
+      ? Math.max(1, Math.min(DUNGEON_MAX_MONSTER_LEVEL, Math.trunc(overrideLevel)))
+      : originalLevel;
+  const anchor = playerBaseline.at(level);
+  const rankStr = text(value, 'rank', 'minion').toLowerCase();
+  const rank =
+    rankStr === 'elite'
+      ? CombatMonsterRank.Elite
+      : rankStr === 'boss'
+        ? CombatMonsterRank.Boss
+        : CombatMonsterRank.Minion;
+  const attrMultiplier =
+    rank === CombatMonsterRank.Elite ? 1.2 : rank === CombatMonsterRank.Boss ? 1.5 : 0.8;
+  const hpMultiplier =
+    rank === CombatMonsterRank.Elite ? 5.0 : rank === CombatMonsterRank.Boss ? 20.0 : 3.0;
+  // 18 级后线性全属性增幅（与服务端 GameDataCatalog 严格同口径：普通/精英每级 +2%，妖王每级 +3%）
+  const post18Step = rank === CombatMonsterRank.Boss ? 0.03 : 0.02;
+  const post18Multiplier = 1.0 + post18Step * Math.max(0, level - 18);
+  const rawInterval = num(value, 'attackIntervalMilliseconds', 0) / 1000;
+  const interval = rawInterval > 0 ? rawInterval : 1;
+  const attackMultiplier =
+    level <= 1 ? 0.6 : level >= 24 ? 0.8 : 0.6 + (0.2 * (level - 1.0)) / 23.0;
+  const ad = anchor.ad * attrMultiplier * weight('ad') * attackMultiplier * post18Multiplier;
+  const ap = anchor.ap * attrMultiplier * weight('ap') * attackMultiplier * post18Multiplier;
+  const tier = tierBoundaries.tierAt(level);
+
+  const dropTable: CombatDropDefinition[] = [];
+  if (Array.isArray(value.dropTable)) {
+    for (const d of value.dropTable as Record<string, unknown>[]) {
+      dropTable.push({
+        itemId: text(d, 'itemId', ''),
+        dropChance: num(d, 'dropChance', 0),
+        minQuantity: num(d, 'minQuantity', 0),
+        maxQuantity: num(d, 'maxQuantity', 0),
+      });
+    }
+  }
+
+  const skills: SkillSlotDefinition[] = [];
+  if (Array.isArray(value.skills)) {
+    for (const skill of value.skills as Record<string, unknown>[]) {
+      const abilityId = text(skill, 'abilityId', '');
+      const ability = abilities.get(abilityId);
+      if (!ability) {
+        throw new Error(`怪物 ${id} 引用了不存在的技能 ${abilityId}。`);
+      }
+      let triggers: TriggerConditionJson[];
+      if (Array.isArray(skill.triggers)) {
+        triggers = skill.triggers as TriggerConditionJson[];
+      } else if (typeof skill.triggerHpRatio === 'number') {
+        triggers = [
+          {
+            dependency: 'self',
+            condition: 'current-hp-percentage',
+            comparator: 'less-than-equal',
+            value: skill.triggerHpRatio * 100,
+          },
+        ];
+      } else if (Array.isArray(ability.defaultTriggers)) {
+        triggers = ability.defaultTriggers;
+      } else {
+        triggers = [];
+      }
+      skills.push({
+        ability,
+        abilityId,
+        level: num(skill, 'level', 1),
+        triggers,
+      });
+    }
+  }
+
+  const modifiers = (value.modifiers as Record<string, unknown> | undefined) ?? {};
+  const modifier = (k: string) => num(modifiers, k, 0);
+  const effects: CombatEffectProfile = {
+    hpDrainPoints: num(value, 'hpDrainPoints', 0) || modifier('hpDrainPoints'),
+    mpDrainPoints: num(value, 'mpDrainPoints', 0) || modifier('mpDrainPoints'),
+    damageReflectPoints: num(value, 'damageReflectPoints', 0) || modifier('damageReflectPoints'),
+    healingBonusPoints: num(value, 'healingBonusPoints', 0) || modifier('healingBonusPoints'),
+    threatOnTakenPoints: num(value, 'threatOnTakenPoints', 0) || modifier('threatOnTakenPoints'),
+  };
+
+  const rawStats = createCombatantStats(
+    anchor.hp * hpMultiplier * weight('hp') * post18Multiplier,
+    ad,
+    anchor.armor * attrMultiplier * weight('armor') * post18Multiplier,
+    interval,
+    anchor.acc * attrMultiplier * weight('hit') * post18Multiplier,
+    anchor.eva * attrMultiplier * weight('eva') * 0.5 * post18Multiplier,
+    CombatDamageKind.Physical,
+    {
+      spellAttack: ap,
+      maxManapoints: anchor.mp * attrMultiplier * weight('mp') * post18Multiplier,
+      magicResistance: anchor.mr * attrMultiplier * weight('mres') * post18Multiplier,
+      resistanceScale: tier,
+      critical: anchor.crit * attrMultiplier * weight('crit') * post18Multiplier,
+      criticalResistance: anchor.cavoid * attrMultiplier * weight('cavoid') * 0.5 * post18Multiplier,
+      criticalDamagePoints: growthCriticalDamagePoints(level) + modifier('criticalDamageBonusPoints'),
+      breakPower: anchor.breakPt * attrMultiplier * weight('break') * post18Multiplier,
+      parryResolve: anchor.parry * attrMultiplier * weight('parry') * post18Multiplier,
+      element: parseCombatElement(text(value, 'element', 'none')),
+      physicalDamageBonusPoints: modifier('physicalDamageBonusPoints'),
+      spellDamageBonusPoints: modifier('spellDamageBonusPoints'),
+      metalDamageBonusPoints: modifier('metalDamageBonusPoints'),
+      woodDamageBonusPoints: modifier('woodDamageBonusPoints'),
+      waterDamageBonusPoints: modifier('waterDamageBonusPoints'),
+      fireDamageBonusPoints: modifier('fireDamageBonusPoints'),
+      earthDamageBonusPoints: modifier('earthDamageBonusPoints'),
+      totalDamageBonusPoints: modifier('totalDamageBonusPoints'),
+      basicAttackBonusPoints:
+        modifier('basicAttackBonusPoints') + growthBasicAttackBonusPoints(level),
+      skillBonusPoints: modifier('skillBonusPoints') + growthSkillBonusPoints(tier),
+      talismanDamageBonusPoints: modifier('talismanDamageBonusPoints'),
+      formationDamageBonusPoints: modifier('formationDamageBonusPoints'),
+      physicalDamageReductionPoints: modifier('physicalDamageReductionPoints'),
+      spellDamageReductionPoints: modifier('spellDamageReductionPoints'),
+      metalDamageReductionPoints: modifier('metalDamageReductionPoints'),
+      woodDamageReductionPoints: modifier('woodDamageReductionPoints'),
+      waterDamageReductionPoints: modifier('waterDamageReductionPoints'),
+      fireDamageReductionPoints: modifier('fireDamageReductionPoints'),
+      earthDamageReductionPoints: modifier('earthDamageReductionPoints'),
+      damageAbsorptionPoints: modifier('damageAbsorptionPoints'),
+      fixedDamageBonus: modifier('fixedDamageBonus'),
+      fixedDamageReduction: modifier('fixedDamageReduction'),
+      fixedPhysicalDamageBonus: modifier('fixedPhysicalDamageBonus'),
+      fixedPhysicalDamageReduction: modifier('fixedPhysicalDamageReduction'),
+      fixedSpellDamageBonus: modifier('fixedSpellDamageBonus'),
+      fixedSpellDamageReduction: modifier('fixedSpellDamageReduction'),
+      attackSpeedPoints: modifier('attackSpeedPoints') + growthSpeedPoints(level),
+      actionSpeedPoints: modifier('actionSpeedPoints') + growthSpeedPoints(level),
+      cooldownReductionPoints:
+        modifier('cooldownReductionPoints') + growthCooldownReductionPoints(level),
+      threatBonusPoints: modifier('threatBonusPoints'),
+      effects,
+      combatExperience: realmProgression.cumulativeExpFor(level),
+    },
+  );
+  const stats = ceilCombatantStats(rawStats);
+  let experience: number;
+  if (value.experience !== undefined) {
+    const rawExp = num(value, 'experience', 0);
+    if (level !== originalLevel) {
+      const origCurve = realmProgression.monsterKillExperience(originalLevel, rank);
+      const dynCurve = realmProgression.monsterKillExperience(level, rank);
+      experience = origCurve > 0 ? rawExp * (dynCurve / origCurve) : dynCurve;
+    } else {
+      experience = rawExp;
+    }
+  } else {
+    experience = realmProgression.monsterKillExperience(level, rank);
+  }
+  return {
+    id,
+    name: text(value, 'name', id),
+    budgetCost,
+    level,
+    rank,
+    stats,
+    dropTable,
+    skills,
+    experience,
+  };
+}
+
 function parseMonsters(
   rawMonsters: Record<string, Record<string, unknown>>,
   playerBaseline: BaseAttributeCatalog,
@@ -555,160 +795,202 @@ function parseMonsters(
 ): Map<string, CombatMonsterDefinition> {
   const result = new Map<string, CombatMonsterDefinition>();
   for (const [id, value] of Object.entries(rawMonsters)) {
-    const budgetCost = num(value, 'budgetCost', 1);
-    const weights = (value.weights as Record<string, unknown> | undefined) ?? {};
-    const weight = (k: string) => num(weights, k, 1);
-    const level = Math.trunc(num(value, 'level', 1));
-    const anchor = playerBaseline.at(level);
-    const rankStr = text(value, 'rank', 'minion').toLowerCase();
-    const rank =
-      rankStr === 'elite'
-        ? CombatMonsterRank.Elite
-        : rankStr === 'boss'
-          ? CombatMonsterRank.Boss
-          : CombatMonsterRank.Minion;
-    const attrMultiplier =
-      rank === CombatMonsterRank.Elite ? 1.2 : rank === CombatMonsterRank.Boss ? 1.5 : 0.8;
-    const hpMultiplier =
-      rank === CombatMonsterRank.Elite ? 5.0 : rank === CombatMonsterRank.Boss ? 20.0 : 3.0;
-    // 18 级后线性全属性增幅（与服务端 GameDataCatalog 严格同口径：普通/精英每级 +2%，妖王每级 +3%）
-    const post18Step = rank === CombatMonsterRank.Boss ? 0.03 : 0.02;
-    const post18Multiplier = 1.0 + post18Step * Math.max(0, level - 18);
-    const rawInterval = num(value, 'attackIntervalMilliseconds', 0) / 1000;
-    const interval = rawInterval > 0 ? rawInterval : 1;
-    const attackMultiplier =
-      level <= 1 ? 0.6 : level >= 24 ? 0.8 : 0.6 + (0.2 * (level - 1.0)) / 23.0;
-    const ad = anchor.ad * attrMultiplier * weight('ad') * attackMultiplier * post18Multiplier;
-    const ap = anchor.ap * attrMultiplier * weight('ap') * attackMultiplier * post18Multiplier;
-    const tier = tierBoundaries.tierAt(level);
+    result.set(
+      id,
+      buildMonsterDefinition(id, value, playerBaseline, tierBoundaries, abilities, realmProgression),
+    );
+  }
+  return result;
+}
 
-    const dropTable: CombatDropDefinition[] = [];
-    if (Array.isArray(value.dropTable)) {
-      for (const d of value.dropTable as Record<string, unknown>[]) {
-        dropTable.push({
-          itemId: text(d, 'itemId', ''),
-          dropChance: num(d, 'dropChance', 0),
-          minQuantity: num(d, 'minQuantity', 0),
-          maxQuantity: num(d, 'maxQuantity', 0),
-        });
+function parseDungeons(
+  rawDungeons: Record<string, unknown>[] | undefined,
+  monsters: Map<string, CombatMonsterDefinition>,
+): Map<string, DungeonDefinition> {
+  const result = new Map<string, DungeonDefinition>();
+  if (!Array.isArray(rawDungeons)) return result;
+  for (const value of rawDungeons) {
+    if (!value || typeof value !== 'object') continue;
+    const id = text(value, 'id', '');
+    if (!id || !id.startsWith('dungeon.')) continue;
+    const name = text(value, 'name', id);
+    const description = text(value, 'description', '');
+    const nodeId = text(value, 'nodeId', '');
+    const tier = Math.max(1, Math.trunc(num(value, 'tier', 1)));
+    const baseLevel = Math.max(1, Math.trunc(num(value, 'baseLevel', 1)));
+    const waveRestSeconds = Math.max(1, num(value, 'waveRestSeconds', 5));
+    const recommendedValuation: number[] = Array.isArray(value.recommendedValuation)
+      ? (value.recommendedValuation as unknown[])
+          .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+      : [];
+    const waves: DungeonWaveDefinition[] = [];
+    if (Array.isArray(value.waves)) {
+      let idx = 0;
+      for (const w of value.waves as Record<string, unknown>[]) {
+        idx++;
+        const waveIndex = Math.trunc(num(w, 'waveIndex', idx));
+        const kindRaw = text(w, 'kind', 'normal').toLowerCase();
+        const kind: 'normal' | 'elite' | 'boss' =
+          kindRaw === 'elite' ? 'elite' : kindRaw === 'boss' ? 'boss' : 'normal';
+        const enemyIds = Array.isArray(w.enemyIds)
+          ? (w.enemyIds as unknown[]).filter((e): e is string => typeof e === 'string' && e.length > 0)
+          : [];
+        if (enemyIds.length === 0) continue;
+        waves.push({ waveIndex, kind, enemyIds });
       }
     }
+    if (waves.length === 0) continue;
+    waves.sort((a, b) => a.waveIndex - b.waveIndex);
 
-    const skills: SkillSlotDefinition[] = [];
-    if (Array.isArray(value.skills)) {
-      for (const skill of value.skills as Record<string, unknown>[]) {
-        const abilityId = text(skill, 'abilityId', '');
-        const ability = abilities.get(abilityId);
-        if (!ability) {
-          throw new Error(`怪物 ${id} 引用了不存在的技能 ${abilityId}。`);
-        }
-        let triggers: TriggerConditionJson[];
-        if (Array.isArray(skill.triggers)) {
-          triggers = skill.triggers as TriggerConditionJson[];
-        } else if (typeof skill.triggerHpRatio === 'number') {
-          triggers = [
-            {
-              dependency: 'self',
-              condition: 'current-hp-percentage',
-              comparator: 'less-than-equal',
-              value: skill.triggerHpRatio * 100,
-            },
-          ];
-        } else if (Array.isArray(ability.defaultTriggers)) {
-          triggers = ability.defaultTriggers;
-        } else {
-          triggers = [];
-        }
-        skills.push({
-          ability,
-          abilityId,
-          level: num(skill, 'level', 1),
-          triggers,
-        });
-      }
-    }
-
-    const modifiers = (value.modifiers as Record<string, unknown> | undefined) ?? {};
-    const modifier = (k: string) => num(modifiers, k, 0);
-    const effects: CombatEffectProfile = {
-      hpDrainPoints: num(value, 'hpDrainPoints', 0),
-      mpDrainPoints: num(value, 'mpDrainPoints', 0),
-      damageReflectPoints: num(value, 'damageReflectPoints', 0),
-      healingBonusPoints: num(value, 'healingBonusPoints', 0),
-      threatOnTakenPoints: num(value, 'threatOnTakenPoints', 0),
+    const rawRewards = (value.baseRewards as Record<string, unknown> | undefined) ?? {};
+    const baseRewards: DungeonBaseRewards = {
+      experience: Math.max(0, num(rawRewards, 'experience', 0)),
+      spiritStones: Math.max(0, num(rawRewards, 'spiritStones', 0)),
     };
 
-    const rawStats = createCombatantStats(
-      anchor.hp * hpMultiplier * weight('hp') * post18Multiplier,
-      ad,
-      anchor.armor * attrMultiplier * weight('armor') * post18Multiplier,
-      interval,
-      anchor.acc * attrMultiplier * weight('hit') * post18Multiplier,
-      anchor.eva * attrMultiplier * weight('eva') * 0.5 * post18Multiplier,
-      CombatDamageKind.Physical,
-      {
-        spellAttack: ap,
-        maxManapoints: anchor.mp * attrMultiplier * weight('mp') * post18Multiplier,
-        magicResistance: anchor.mr * attrMultiplier * weight('mres') * post18Multiplier,
-        resistanceScale: tier,
-        critical: anchor.crit * attrMultiplier * weight('crit') * post18Multiplier,
-        criticalResistance: anchor.cavoid * attrMultiplier * weight('cavoid') * 0.5 * post18Multiplier,
-        criticalDamagePoints: growthCriticalDamagePoints(level) + modifier('criticalDamageBonusPoints'),
-        breakPower: anchor.breakPt * attrMultiplier * weight('break') * post18Multiplier,
-        parryResolve: anchor.parry * attrMultiplier * weight('parry') * post18Multiplier,
-        element: parseCombatElement(text(value, 'element', 'none')),
-        physicalDamageBonusPoints: modifier('physicalDamageBonusPoints'),
-        spellDamageBonusPoints: modifier('spellDamageBonusPoints'),
-        metalDamageBonusPoints: modifier('metalDamageBonusPoints'),
-        woodDamageBonusPoints: modifier('woodDamageBonusPoints'),
-        waterDamageBonusPoints: modifier('waterDamageBonusPoints'),
-        fireDamageBonusPoints: modifier('fireDamageBonusPoints'),
-        earthDamageBonusPoints: modifier('earthDamageBonusPoints'),
-        totalDamageBonusPoints: modifier('totalDamageBonusPoints'),
-        basicAttackBonusPoints:
-          modifier('basicAttackBonusPoints') + growthBasicAttackBonusPoints(level),
-        skillBonusPoints: modifier('skillBonusPoints') + growthSkillBonusPoints(tier),
-        physicalDamageReductionPoints: modifier('physicalDamageReductionPoints'),
-        spellDamageReductionPoints: modifier('spellDamageReductionPoints'),
-        metalDamageReductionPoints: modifier('metalDamageReductionPoints'),
-        woodDamageReductionPoints: modifier('woodDamageReductionPoints'),
-        waterDamageReductionPoints: modifier('waterDamageReductionPoints'),
-        fireDamageReductionPoints: modifier('fireDamageReductionPoints'),
-        earthDamageReductionPoints: modifier('earthDamageReductionPoints'),
-        damageAbsorptionPoints: modifier('damageAbsorptionPoints'),
-        fixedDamageBonus: modifier('fixedDamageBonus'),
-        fixedDamageReduction: modifier('fixedDamageReduction'),
-        fixedPhysicalDamageBonus: modifier('fixedPhysicalDamageBonus'),
-        fixedPhysicalDamageReduction: modifier('fixedPhysicalDamageReduction'),
-        fixedSpellDamageBonus: modifier('fixedSpellDamageBonus'),
-        fixedSpellDamageReduction: modifier('fixedSpellDamageReduction'),
-        attackSpeedPoints: modifier('attackSpeedPoints') + growthSpeedPoints(level),
-        actionSpeedPoints: modifier('actionSpeedPoints') + growthSpeedPoints(level),
-        cooldownReductionPoints:
-          modifier('cooldownReductionPoints') + growthCooldownReductionPoints(level),
-        threatBonusPoints: modifier('threatBonusPoints'),
-        effects,
-        combatExperience: realmProgression.cumulativeExpFor(level),
-      },
-    );
-    const stats = ceilCombatantStats(rawStats);
-    const experience =
-      value.experience !== undefined
-        ? num(value, 'experience', 0)
-        : realmProgression.monsterKillExperience(level, rank);
+    const clearLootTable: DungeonLootEntry[] = [];
+    if (Array.isArray(value.clearLootTable)) {
+      for (const entry of value.clearLootTable as Record<string, unknown>[]) {
+        const itemId = text(entry, 'itemId', '');
+        if (!itemId) continue;
+        const kindRaw = text(entry, 'kind', 'guaranteed').toLowerCase();
+        const kind: 'guaranteed' | 'rare' = kindRaw === 'rare' ? 'rare' : 'guaranteed';
+        const minQuantity = Math.max(1, num(entry, 'minQuantity', 1));
+        const maxQuantity = Math.max(minQuantity, num(entry, 'maxQuantity', minQuantity));
+        const dropChance = num(entry, 'dropChance', 1);
+        const minDifficulty = Math.trunc(num(entry, 'minDifficulty', 0));
+        clearLootTable.push({
+          itemId,
+          kind,
+          minQuantity,
+          maxQuantity,
+          dropChance,
+          minDifficulty,
+        });
+      }
+    }
+
+    let minMonsterLevel = Number.POSITIVE_INFINITY;
+    for (const w of waves) {
+      for (const eid of w.enemyIds) {
+        const m = monsters.get(eid);
+        if (m && m.level < minMonsterLevel) minMonsterLevel = m.level;
+      }
+    }
+    if (!Number.isFinite(minMonsterLevel)) minMonsterLevel = baseLevel;
+
     result.set(id, {
       id,
-      name: text(value, 'name', id),
-      budgetCost,
-      level,
-      rank,
-      stats,
-      dropTable,
-      skills,
-      experience,
+      name,
+      description,
+      nodeId,
+      tier,
+      baseLevel,
+      recommendedValuation,
+      waveRestSeconds,
+      waves,
+      totalWaves: waves.length,
+      baseRewards,
+      clearLootTable,
+      minMonsterLevel: Math.max(1, minMonsterLevel),
     });
   }
   return result;
+}
+
+const dungeonEncounterShellCache = new WeakMap<DungeonDefinition, CombatEncounterDefinition>();
+
+/** 严格对应 `CombatActionRules.ResolveEncounter`：野外遭遇直查，追忆副本按定义派生遭遇壳。 */
+export function resolveEncounterOrDungeon(
+  catalog: GameDataCatalog,
+  encounterId: string,
+): CombatEncounterDefinition | undefined {
+  const encounter = catalog.encounters.get(encounterId);
+  if (encounter) return encounter;
+  const dungeon = catalog.dungeons.get(encounterId);
+  if (!dungeon) return undefined;
+  let shell = dungeonEncounterShellCache.get(dungeon);
+  if (!shell) {
+    shell = {
+      id: dungeon.id,
+      name: dungeon.name,
+      minBudget: 1,
+      maxBudget: 1,
+      maxTotalStrength: 1,
+      searchSeconds: DUNGEON_INITIAL_SEARCH_SECONDS,
+      respawnSeconds: Math.max(1, dungeon.waveRestSeconds),
+      playerRespawnSeconds: DUNGEON_IN_BATTLE_RESPAWN_SECONDS,
+      randomSpawns: [],
+      eliteEnemyIds: [],
+      bossEnemyIds: [],
+      battlesPerBoss: dungeon.totalWaves,
+      battlesPerElite: 3,
+      onPartyWipe: PartyWipeRule.Abort,
+    };
+    dungeonEncounterShellCache.set(dungeon, shell);
+  }
+  return shell;
+}
+
+/** 严格对应 `GameDataCatalog.ResolveDungeonMonster`（总纲 §30.3.2）。 */
+export function resolveDungeonMonster(
+  catalog: GameDataCatalog,
+  dungeon: DungeonDefinition,
+  monsterId: string,
+  difficulty: number,
+  maxPartyRealmLevel: number,
+): CombatMonsterDefinition {
+  const baseMonster = catalog.combatMonsters.get(monsterId);
+  if (!baseMonster) {
+    throw new Error(`追忆副本 ${dungeon.id} 引用的怪物不存在：${monsterId}。`);
+  }
+  const dynamicLevel = resolveDungeonDynamicMonsterLevel(
+    baseMonster.level,
+    dungeon.minMonsterLevel,
+    maxPartyRealmLevel,
+    difficulty,
+  );
+  const rawMonster = catalog.rawMonsters.get(monsterId);
+  if (dynamicLevel === baseMonster.level || !rawMonster) {
+    return baseMonster;
+  }
+  return buildMonsterDefinition(
+    monsterId,
+    rawMonster,
+    catalog.expectedAttributes,
+    catalog.baseAttributes,
+    catalog.abilities,
+    catalog.realmProgression,
+    dynamicLevel,
+  );
+}
+
+/** 严格对应 `GameDataCatalog.ResolveDungeonClearRewards`（总纲 §30.3.2）。 */
+export function resolveDungeonClearRewards(
+  catalog: GameDataCatalog,
+  dungeon: DungeonDefinition,
+  difficulty: number,
+  maxPartyRealmLevel: number,
+): DungeonBaseRewards {
+  if (!isDungeonReality(difficulty)) return dungeon.baseRewards;
+  const minLevel = Math.max(1, dungeon.minMonsterLevel);
+  const targetLevel = resolveDungeonTargetBaseLevel(minLevel, maxPartyRealmLevel, difficulty);
+  if (targetLevel <= minLevel) return dungeon.baseRewards;
+
+  let expScale = 1.0;
+  const baseExpCurve = catalog.realmProgression.monsterKillExperience(minLevel, CombatMonsterRank.Boss);
+  const targetExpCurve = catalog.realmProgression.monsterKillExperience(targetLevel, CombatMonsterRank.Boss);
+  if (baseExpCurve > 0) expScale = targetExpCurve / baseExpCurve;
+
+  let stoneScale = 1.0;
+  const baseHp = catalog.expectedAttributes.at(minLevel).hp;
+  const targetHp = catalog.expectedAttributes.at(targetLevel).hp;
+  if (baseHp > 0) stoneScale = targetHp / baseHp;
+
+  return {
+    experience: roundToEven(dungeon.baseRewards.experience * expScale),
+    spiritStones: roundToEven(dungeon.baseRewards.spiritStones * stoneScale),
+  };
 }
 
 function parseEncounters(rawEncounters: Record<string, unknown>[]): Map<string, CombatEncounterDefinition> {
@@ -820,6 +1102,7 @@ export function buildGameDataCatalog(raw: CatalogJsonShape): GameDataCatalog {
   const rawEquipments = new Map<string, Record<string, unknown>>(
     Object.entries(raw.rawEquipments),
   );
+  const rawMonsters = new Map<string, Record<string, unknown>>(Object.entries(raw.monsters));
   const buildings = new Map<string, Record<string, unknown>>(Object.entries(raw.buildings));
 
   const combatMonsters = parseMonsters(
@@ -830,6 +1113,7 @@ export function buildGameDataCatalog(raw: CatalogJsonShape): GameDataCatalog {
     realmProgression,
   );
   const combatEncounters = parseEncounters(raw.encounters);
+  const dungeons = parseDungeons(raw.dungeons, combatMonsters);
 
   const combatActions: CombatActionDefinition[] = raw.combatActions.map((entry) => ({
     id: text(entry, 'id', ''),
@@ -842,6 +1126,7 @@ export function buildGameDataCatalog(raw: CatalogJsonShape): GameDataCatalog {
     excludedNodeIds: Array.isArray(entry.excludedNodeIds)
       ? new Set((entry.excludedNodeIds as string[]).filter((v) => v.length > 0))
       : null,
+    executionKind: 'combatEncounter',
   }));
 
   const worldNodes = new Map<string, WorldNodeDefinition>();
@@ -856,12 +1141,29 @@ export function buildGameDataCatalog(raw: CatalogJsonShape): GameDataCatalog {
             .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
             .map((e) => e.trim())
         : [];
-      worldNodes.set(id, { id, name, encounterIds });
+      const dungeonIds = Array.isArray(node.dungeonIds)
+        ? (node.dungeonIds as unknown[])
+            .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+            .map((d) => d.trim())
+        : [];
+      worldNodes.set(id, { id, name, encounterIds, dungeonIds });
     }
   }
 
   const triggerBuffIds = deriveTriggerBuffIds(rawItems, abilities, raw.actionYieldBuffs);
   const actions = new Map<string, CombatActionDefinition>(combatActions.map((a) => [a.id, a]));
+  for (const dungeon of dungeons.values()) {
+    if (actions.has(dungeon.id)) continue;
+    actions.set(dungeon.id, {
+      id: dungeon.id,
+      name: dungeon.name,
+      durationSeconds: Math.max(1, dungeon.waveRestSeconds),
+      combatEncounterId: null,
+      allowedNodeIds: dungeon.nodeId ? new Set([dungeon.nodeId]) : null,
+      excludedNodeIds: null,
+      executionKind: 'dungeon',
+    });
+  }
   void AutoUseBar;
 
   return {
@@ -875,9 +1177,11 @@ export function buildGameDataCatalog(raw: CatalogJsonShape): GameDataCatalog {
     items,
     rawItems,
     rawEquipments,
+    rawMonsters,
     buildings,
     combatMonsters,
     combatEncounters,
+    dungeons,
     combatActions,
     actions,
     encounters: combatEncounters,

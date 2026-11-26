@@ -383,6 +383,24 @@ export function resolveHit(context: CombatHitContext): void {
   context.damage = Math.max(0, damage)
 }
 
+/**
+ * 计算即时打击消耗品的抗性穿甲前原始威力（与服务端 DeterministicCombatEngine.ResolveConsumableStrikePower 1:1 镜像）：
+ * 归属符箓（talisman）时并入 talismanDamageBonusPoints（Linear 曲线，符箓技艺每级 +1 点）。
+ */
+export function resolveConsumableStrikePower(
+  item: { displaySubCategory: string },
+  strike: { manaDamageRatio: number; spellAttackRatio: number },
+  casterStats: CombatantStats,
+): number {
+  const basePower =
+    strike.manaDamageRatio * casterStats.maxManapoints +
+    strike.spellAttackRatio * casterStats.spellAttack
+  if (item.displaySubCategory !== 'talisman') return basePower
+  return (
+    basePower * percentMultiplier(casterStats.talismanDamageBonusPoints, PercentCurveMode.Linear)
+  )
+}
+
 export function resolveStrikeDamage(attack: CombatantStats, target: CombatantState): number {
   const defense = target.effectiveStats
   const resistance =
@@ -775,7 +793,10 @@ function triggerFormationReactiveStrike(
       ) {
         ally.manapoints = Math.max(0, ally.manapoints - manaCost)
         ally.lastTianleiTriggerAtSeconds = context.atSeconds
-        const rawDamage = ally.effectiveStats.spellAttack * 0.5 + 10
+        // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（阵法技艺每级 +1 点）；不放大耗蓝代价。
+        const rawDamage =
+          (ally.effectiveStats.spellAttack * 0.5 + 10) *
+          percentMultiplier(ally.stats.formationDamageBonusPoints, PercentCurveMode.Linear)
         const strikeElement = resolveDamageElement(ally.stats.traits, CombatElement.Wood)
         const strikeStats: CombatantStats = {
           ...ally.effectiveStats,
@@ -828,7 +849,11 @@ function triggerFormationReactiveStrike(
         context.atSeconds - ally.lastXueshaTriggerAtSeconds >= 1.0 - 1e-9
       if (canTrigger && roll(encounter.seed, context.side, context.count, rollState.ch++) < 0.2) {
         ally.lastXueshaTriggerAtSeconds = context.atSeconds
-        const rawDamage = ally.stats.maxHitpoints * 0.1
+        // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（阵法技艺每级 +1 点）；不放大自损代价，吸血随实伤自然联动。
+        const rawDamage =
+          ally.stats.maxHitpoints *
+          0.1 *
+          percentMultiplier(ally.stats.formationDamageBonusPoints, PercentCurveMode.Linear)
         const strikeElement = resolveDamageElement(ally.stats.traits, CombatElement.None)
         const strikeStats: CombatantStats = {
           ...ally.effectiveStats,
@@ -1686,7 +1711,7 @@ function anyAliveUnits(units: readonly CombatantState[]): boolean {
 function applyOutcomePhase(encounter: CombatEncounterState): void {
   const alliesAlive = anyAliveUnits(encounter.playerAllies)
   const enemiesAlive = anyAliveUnits(encounter.enemies)
-  if (!alliesAlive && Number.isFinite(encounter.nextAllyRespawnAtSeconds)) {
+  if (!alliesAlive && !encounter.wipeEndsBattle && Number.isFinite(encounter.nextAllyRespawnAtSeconds)) {
     encounter.outcome = CombatOutcome.Running
   } else if (alliesAlive && enemiesAlive) {
     encounter.outcome = CombatOutcome.Running
@@ -1955,10 +1980,11 @@ export function advanceCombatTo(
     hook?.onOutcome(encounter, false)
   }
 
+  const cappedTarget = Math.min(targetSeconds, encounter.maxBattleSeconds)
   let eventCount = 0
   while (
     encounter.outcome === CombatOutcome.Running &&
-    encounter.elapsedSeconds < targetSeconds - 1e-12
+    encounter.elapsedSeconds < cappedTarget - 1e-12
   ) {
     if (++eventCount > MAX_EVENTS_PER_ADVANCE) {
       throw new Error('战斗推进超过最大事件数。')
@@ -1966,7 +1992,7 @@ export function advanceCombatTo(
     if (
       !advanceCombatBoundary(
         encounter,
-        targetSeconds,
+        cappedTarget,
         events,
         playerDeaths,
         playerRespawns,
@@ -1977,6 +2003,15 @@ export function advanceCombatTo(
     ) {
       break
     }
+  }
+
+  if (
+    encounter.outcome === CombatOutcome.Running &&
+    Number.isFinite(encounter.maxBattleSeconds) &&
+    encounter.elapsedSeconds >= encounter.maxBattleSeconds - 1e-12
+  ) {
+    encounter.outcome = CombatOutcome.EnemyWon
+    encounter.timedOut = true
   }
 
   return {

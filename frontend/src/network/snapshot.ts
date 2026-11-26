@@ -169,6 +169,7 @@ function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
     'metalDamageBonusPoints', 'woodDamageBonusPoints', 'waterDamageBonusPoints',
     'fireDamageBonusPoints', 'earthDamageBonusPoints',
     'totalDamageBonusPoints', 'basicAttackBonusPoints', 'skillBonusPoints',
+    'talismanDamageBonusPoints', 'formationDamageBonusPoints',
     'physicalDamageReductionPoints', 'spellDamageReductionPoints',
     'metalDamageReductionPoints', 'woodDamageReductionPoints', 'waterDamageReductionPoints',
     'fireDamageReductionPoints', 'earthDamageReductionPoints',

@@ -1,6 +1,6 @@
 // 组队协同推演会话容器与个人结算引擎（严格对应 DaoHua.Ecs.ActionParticipationSessionEngine 与 PlayerAggregate.Participation）
 
-import type { GameDataCatalog } from './catalog.ts'
+import { resolveEncounterOrDungeon, type GameDataCatalog } from './catalog.ts'
 import {
   advanceCombatPreparationCore,
   completeCombatAdvanceCore,
@@ -13,6 +13,7 @@ import {
   advanceCombatTo,
   applyRanhun,
   applyCombatDamage,
+  resolveConsumableStrikePower,
   resolveStrikeDamage,
 } from './combatEngine.ts'
 import {
@@ -316,6 +317,7 @@ export function createActionParticipationSpec(
   actionId: string,
   monsterWeakenRatio: number,
   difficulty: number,
+  dungeonId: string | null = null,
 ): SimActionParticipationSpec {
   let highest = 0
   let sumSearchSpeed = 0
@@ -354,6 +356,7 @@ export function createActionParticipationSpec(
     totalDropBonusPoints,
     levelMaluses,
     assignmentWeights,
+    dungeonId,
   }
 }
 
@@ -409,6 +412,28 @@ export class ActionParticipationSessionEngine {
   private _advancedAtTicks: bigint
   private _sequence = 0
   private _endsAt: number | null = null
+  private _naturalEndReason: string | null = null
+
+  get advancedAtTicks(): bigint {
+    return this._advancedAtTicks
+  }
+
+  get canonicalAction(): SimActionState {
+    return this.action
+  }
+
+  configureDungeonRepeatMode(repeatCount: number, restartOnWipe: boolean): void {
+    for (let i = 0; i < this._members.length; i++) {
+      const act = this._members[i].actions[0]
+      act.remainingRepeats = repeatCount
+      act.dungeonRestartOnWipe = restartOnWipe
+      act.dungeonClearedRuns = 0
+      act.dungeonFailedRuns = 0
+      act.dungeonTimedOutRuns = 0
+      act.dungeonBestWaveCleared = 0
+      act.dungeonFailedWaves = {}
+    }
+  }
 
   private get canonical(): SimPlayerRuntime {
     return this._members[0]
@@ -600,14 +625,20 @@ export class ActionParticipationSessionEngine {
     return out
   }
 
-  advanceTo(targetTicks: bigint): ActionParticipationMemberSettlement[] {
+  advanceTo(
+    targetTicks: bigint,
+    options?: { ignoreOfflineLimit?: boolean },
+  ): ActionParticipationMemberSettlement[] {
     const fromTicks = this._advancedAtTicks
     if (targetTicks < fromTicks || this._endsAt !== null) {
       throw new Error('会话目标时间倒退或已经结束。')
     }
-    const maxCapTicks = fromTicks + BigInt(OFFLINE_IDLE_LIMIT_SECONDS) * 10_000_000n
+    const maxCapTicks = options?.ignoreOfflineLimit
+      ? targetTicks
+      : fromTicks + BigInt(OFFLINE_IDLE_LIMIT_SECONDS) * 10_000_000n
     const cappedTargetTicks = targetTicks > maxCapTicks ? maxCapTicks : targetTicks
     let cursorTicks = fromTicks
+    let actualEndTicks = targetTicks
 
     while (cursorTicks < cappedTargetTicks) {
       const cursorUnix = ticksToUnixSeconds(cursorTicks)
@@ -625,7 +656,7 @@ export class ActionParticipationSessionEngine {
       let remaining = ticksDiffSeconds(cursorTicks, windowEndTicks)
       let transitions = 0
 
-      while (remaining > 1e-9) {
+      while (remaining > 1e-9 && this._naturalEndReason === null) {
         if (++transitions > MAX_TRANSITIONS_PER_ADVANCE) {
           throw new Error('队伍会话超过单窗口转换上限。')
         }
@@ -634,6 +665,36 @@ export class ActionParticipationSessionEngine {
         } else {
           remaining = this.advancePreparation(cursorTicks, windowEndTicks, remaining)
         }
+      }
+
+      if (this._naturalEndReason !== null) {
+        const stoppedAtTicks = addSecondsExactTicks(windowEndTicks, -Math.max(0, remaining))
+        cursorTicks = stoppedAtTicks < cursorTicks ? cursorTicks : stoppedAtTicks
+        this._advancedAtTicks = cursorTicks
+        actualEndTicks = cursorTicks
+        this.flushBattle()
+        for (let i = 0; i < this._members.length; i++) {
+          if (this._members[i].state.hitpoints <= 0) {
+            this._members[i].state.hitpoints = 1
+          }
+        }
+        if (this.action.expedition) {
+          this.action.expedition = {
+            ...this.action.expedition,
+            playerHitpoints: Math.max(1, this.canonical.state.hitpoints),
+            playerRespawnAtSeconds: null,
+            allies: this.action.expedition.allies
+              ? this.action.expedition.allies.map((ally) =>
+                  ally.state.hitpoints > 0
+                    ? ally
+                    : { ...ally, state: { ...ally.state, hitpoints: 1, respawnAtSeconds: null } },
+                )
+              : null,
+          }
+        }
+        this.synchronizeViews()
+        this._endsAt = ticksToUnixSeconds(cursorTicks)
+        break
       }
 
       cursorTicks = windowEndTicks
@@ -651,15 +712,15 @@ export class ActionParticipationSessionEngine {
       this.synchronizeViews()
     }
 
-    this._advancedAtTicks = targetTicks
-    const targetUnix = ticksToUnixSeconds(targetTicks)
+    this._advancedAtTicks = actualEndTicks
+    const targetUnix = ticksToUnixSeconds(actualEndTicks)
     if (this._scheduleMode === ConsumableScheduleMode.PeriodicTick) {
       while (this._nextConsumableEvaluation <= targetUnix) this._nextConsumableEvaluation += 5
     } else {
       this._nextConsumableEvaluation = Math.max(this._nextConsumableEvaluation, targetUnix + 5)
     }
 
-    if (targetTicks > cappedTargetTicks) {
+    if (this._naturalEndReason === null && targetTicks > cappedTargetTicks) {
       for (const collector of this._collectors) {
         collector.events.add({
           atTicks: targetTicks,
@@ -705,7 +766,7 @@ export class ActionParticipationSessionEngine {
         sequence: this._sequence,
         playerId: member.playerId,
         fromTicks,
-        toTicks: targetTicks,
+        toTicks: actualEndTicks,
         hitpoints: member.state.hitpoints,
         manapoints: member.state.manapoints,
         regenCarrySeconds: member.state.regenCarrySeconds,
@@ -993,12 +1054,11 @@ export class ActionParticipationSessionEngine {
         caster.stats.traits,
         strike.element as CombatElement,
       )
-      // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
+      // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
+      const strikeItem = this._catalog.items.get(itemId)!
       const strikeStats = {
         ...caster.stats,
-        attackPower:
-          strike.manaDamageRatio * caster.stats.maxManapoints +
-          strike.spellAttackRatio * caster.stats.spellAttack,
+        attackPower: resolveConsumableStrikePower(strikeItem, strike, caster.stats),
         damageKind: CombatDamageKind.Spell,
         element: strikeElement,
         totalDamageBonusPoints: totalDmgBonus,
@@ -1474,7 +1534,10 @@ export class ActionParticipationSessionEngine {
   }
 
   private advanceBattle(fromTicks: bigint, targetTicks: bigint, remaining: number): number {
-    const encounter = this._catalog.encounters.get(this.action.expedition!.encounterId)!
+    const encounter = resolveEncounterOrDungeon(
+      this._catalog,
+      this.action.expedition!.encounterId,
+    )!
     if (this._battle === null) {
       this._battle = restoreCombatBattle(this.canonical, this.action, encounter, this._catalog)
     }
@@ -1553,7 +1616,18 @@ export class ActionParticipationSessionEngine {
         m.state.regenCarrySeconds = 0
       }
     }
-    if (this._battle.outcome !== CombatOutcome.Running) this._battle = null
+    const battleOutcome = this._battle.outcome
+    if (battleOutcome !== CombatOutcome.Running) this._battle = null
+    if (
+      this._spec.dungeonId &&
+      battleOutcome !== CombatOutcome.Running &&
+      this.action.remainingRepeats === 0
+    ) {
+      this._naturalEndReason =
+        battleOutcome === CombatOutcome.PlayerWon || this.action.dungeonRestartOnWipe
+          ? 'dungeon-completed'
+          : 'dungeon-wiped'
+    }
     this.flushBattle()
     this.synchronizeViews()
     return next
@@ -1627,7 +1701,10 @@ export class ActionParticipationSessionEngine {
       canonical.outcome,
       canonical.sequence,
       canonical.playerRespawnSeconds,
+      canonical.wipeEndsBattle,
     )
+    view.maxBattleSeconds = canonical.maxBattleSeconds
+    view.timedOut = canonical.timedOut
     for (let i = 0; i < view.enemies.length; i++) {
       view.enemies[i].definitionId = canonical.enemies[i].definitionId
     }
@@ -1729,7 +1806,11 @@ function projectExpedition(
     playerThreat: projectedSelfState.threat,
     playerState: canonical.phase === CombatExpeditionPhase.Combat ? projectedSelfState : null,
     playerRespawnAtSeconds:
-      canonical.phase === CombatExpeditionPhase.Combat ? projectedSelfState.respawnAtSeconds : null,
+      canonical.phase === CombatExpeditionPhase.Combat ||
+      canonical.phase === CombatExpeditionPhase.InitialSearch ||
+      canonical.phase === CombatExpeditionPhase.Search
+        ? projectedSelfState.respawnAtSeconds
+        : null,
     allies: others,
     enemies: projectedEnemies,
   }
