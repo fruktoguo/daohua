@@ -42,7 +42,7 @@ import {
   WireMessageType,
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
-import { fetchMarketStats, getCatalogFingerprint } from './apiClient'
+import { fetchMarketStatsIfModified, getCatalogFingerprint, resetMarketStatsHttpCache } from './apiClient'
 import { getApiUrl } from './apiUrl'
 import { getSessionAccount, getSessionGeneration } from './sessionState'
 import { SnapshotUpgradeRequiredError } from './snapshotSchemaGate'
@@ -219,14 +219,15 @@ export class GameClient {
    */
   private startMarketStatsSync(socket: WebSocket, generation: number, playerId: string): void {
     this.stopMarketStatsSync()
+    resetMarketStatsHttpCache()
     let inFlight = false
     const isCurrent = () => this.isCurrentSession(socket, generation, playerId)
     const tick = async () => {
       if (!isCurrent() || inFlight || document.visibilityState !== 'visible') return
       inFlight = true
       try {
-        const stats = await fetchMarketStats()
-        if (isCurrent()) useGameStore.getState().setMarketStats(stats)
+        const stats = await fetchMarketStatsIfModified()
+        if (stats !== null && isCurrent()) useGameStore.getState().setMarketStats(stats)
       } catch {
         // 行情为只读背景数据：单轮失败静默等待下一周期，不产生用户态噪音。
       } finally {

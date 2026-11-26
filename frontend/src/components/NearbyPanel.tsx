@@ -690,7 +690,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     <span className="building-load-item-value">
                       <strong>{formatInteger(detailBuilding.activeUsers)}</strong>
                       <span className="building-load-sep">/</span>
-                      <span>{formatInteger(detailBuilding.capacity)} 人</span>
+                      <span>{t('combat.nearby.peopleCount', { count: formatInteger(detailBuilding.capacity) })}</span>
                     </span>
                   </div>
                   <div className="building-load-item">

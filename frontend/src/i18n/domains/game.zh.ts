@@ -686,6 +686,8 @@ export const gameZh = {
       categoryGathering: '天地采集',
       categoryPacks: '福袋开启',
       craftingAction: '制造',
+      chanceExtra10: '10% 额外',
+      chanceCrit1: '1% 暴击',
       unitMonster: '只妖兽',
       moreMonsters: '...等 {count} 只妖兽亦有掉落',
       spiritStoneMonsterTitle: '妖兽讨伐普遍掉落',

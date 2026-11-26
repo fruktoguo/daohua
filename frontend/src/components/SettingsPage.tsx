@@ -227,13 +227,14 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
     setRemainingCooldown(renameCooldownSeconds)
   }, [renameCooldownSeconds])
 
+  const hasRenameCooldown = remainingCooldown > 0
   useEffect(() => {
-    if (remainingCooldown <= 0) return undefined
+    if (!hasRenameCooldown) return undefined
     const timer = window.setInterval(() => {
       setRemainingCooldown(prev => Math.max(0, prev - 1))
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [remainingCooldown])
+  }, [hasRenameCooldown])
 
   const cooldownStr = formatCooldown(remainingCooldown, t)
   const accountValue = `${account || name}${sequenceId > 0 ? `#${sequenceId}` : ''}`
@@ -279,7 +280,26 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
       setRedeemResult(response)
       useGameStore.getState().setNotice(t('app.settings.redeemSuccessNotice', { title: response.title }))
     } catch (error) {
-      setRedeemError(error instanceof Error && error.message ? error.message : t('app.settings.redeemFailedFallback'))
+      const code = typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+        ? (error as { code: string }).code
+        : undefined
+      const codeKeyMap: Record<string, string> = {
+        REDEEM_INVALID_CODE: 'app.settings.redeemErrorInvalidCode',
+        REDEEM_INVALID_ARGUMENT: 'app.settings.redeemErrorInvalidCode',
+        REDEEM_NOT_FOUND: 'app.settings.redeemErrorNotFound',
+        REDEEM_DISABLED: 'app.settings.redeemErrorDisabled',
+        REDEEM_EXPIRED: 'app.settings.redeemErrorExpired',
+        REDEEM_EXHAUSTED: 'app.settings.redeemErrorExhausted',
+        REDEEM_CODE_USED: 'app.settings.redeemErrorCodeUsed',
+        REDEEM_ALREADY_CLAIMED: 'app.settings.redeemErrorAlreadyClaimed',
+        REDEEM_BOT_RESTRICTED: 'app.settings.redeemErrorBotRestricted',
+      }
+      const mappedKey = code ? codeKeyMap[code] : undefined
+      setRedeemError(
+        mappedKey
+          ? t(mappedKey)
+          : (error instanceof Error && error.message ? error.message : t('app.settings.redeemFailedFallback')),
+      )
     } finally {
       setRedeeming(false)
     }

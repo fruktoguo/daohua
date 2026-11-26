@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import type { ChangelogEntry } from '../data/changelog'
 import { useT } from '../i18n'
-import { ChangelogEntrySections } from './ChangelogPage'
+import { ChangelogEntrySections } from './ChangelogEntrySections'
 import { Icon } from './Icon'
 import { Modal } from './Modal'
 

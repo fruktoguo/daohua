@@ -1,3 +1,4 @@
+import { getT } from '../i18n/index.ts'
 import type { ItemDefinition, InventoryItem } from './types'
 import { resolveCodexMaterialSubTab } from './codexFilters.ts'
 
@@ -21,9 +22,10 @@ export function resolveMaterialTechnique(item: ItemDefinition): 'gathering' | 'm
  * - 其余等级：境界达到 lv{level}[{realmName}] 解锁
  */
 export function formatRealmUnlockCondition(level: number, realmName?: string | null): string {
-  if (level <= 1) return '默认解锁'
-  const tag = realmName ? `[${realmName}]` : (level === 18 ? '[叩天门]' : '')
-  return `境界达到 lv${level}${tag} 解锁`
+  const t = getT()
+  if (level <= 1) return t('app.codex.unlockDefault')
+  const tag = realmName ? `[${realmName}]` : (level === 18 ? t('app.codex.unlockHeavenGateTag') : '')
+  return t('app.codex.unlockByRealm', { level, tag })
 }
 
 /**
@@ -33,10 +35,11 @@ export function formatRealmUnlockCondition(level: number, realmName?: string | n
  * - 无关联技艺：退化为境界解锁文案
  */
 export function formatDualUnlockCondition(level: number, techniqueName?: string | null, realmName?: string | null): string {
-  if (level <= 1) return '默认解锁'
+  const t = getT()
+  if (level <= 1) return t('app.codex.unlockDefault')
   if (!techniqueName) return formatRealmUnlockCondition(level, realmName)
-  const tag = realmName ? `[${realmName}]` : (level === 18 ? '[叩天门]' : '')
-  return `境界达到 lv${level}${tag} 或 ${techniqueName}达到 ${level} 级解锁`
+  const tag = realmName ? `[${realmName}]` : (level === 18 ? t('app.codex.unlockHeavenGateTag') : '')
+  return t('app.codex.unlockByDual', { level, tag, technique: techniqueName })
 }
 
 /**

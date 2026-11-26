@@ -176,11 +176,12 @@ export function extractSingleBuffSpecBonusItems(
 
 /** 渲染单条技能基础属性行（冷却/吟唱/施法/消耗/灵力/等级），自动匹配属性图标与数值高亮。 */
 function renderAbilityLineNode(line: string): React.JSX.Element {
+  const lower = line.toLowerCase()
   let glyphName: string | null = null
-  if (line.includes('冷却')) glyphName = 'cooldown-reduction'
-  else if (line.includes('吟唱') || line.includes('施法')) glyphName = 'action-speed'
-  else if (line.includes('消耗') || line.includes('灵力')) glyphName = 'mp'
-  else if (line.includes('等级')) glyphName = 'realm'
+  if (line.includes('冷却') || lower.includes('cooldown')) glyphName = 'cooldown-reduction'
+  else if (line.includes('吟唱') || line.includes('施法') || lower.includes('cast')) glyphName = 'action-speed'
+  else if (line.includes('消耗') || line.includes('灵力') || lower.includes('mp') || lower.includes('mana')) glyphName = 'mp'
+  else if (line.includes('等级') || lower.includes('level') || lower.includes('lv.')) glyphName = 'realm'
   return (
     <span key={line}>
       {glyphName && (

@@ -576,6 +576,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 if (!hasInMemory)
                     throw new DomainException(DomainErrorCode.InvalidTransition, "订单已处于终态。");
             }
+            if (book is null)
+                throw new DomainException(DomainErrorCode.InvalidTransition, "订单已处于终态。");
             cancellationToken.ThrowIfCancellationRequested();
             // 就地撤单：撤销日志兜底，事务失败即回放，消除整簿双向克隆。
             var journal = new OrderBookJournal();
@@ -584,7 +586,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             {
                 lock (_booksGate)
                 {
-                    result = book!.Cancel(orderId, ownerId, journal);
+                    result = book.Cancel(orderId, ownerId, journal);
                     bookMutated = true;
                 }
                 using var participationScope = _participationAssets is null ? null

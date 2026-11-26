@@ -85,6 +85,8 @@ export const socialZh = {
       "presenceIdle": "挂机中",
       "presenceOffline": "离线",
       "presenceOfflineDuration": "离线 {duration}",
+      "scaleFraction": "{count} / {max} 人",
+      "capacityPeople": "{count} 人",
       "myRoleLabel": "我的职位",
       "hallBuildingName": "宗门大殿"
     },

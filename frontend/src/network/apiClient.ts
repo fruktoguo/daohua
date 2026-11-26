@@ -20,7 +20,9 @@ import {
   type TipGuidePostResponseDto,
   type UnlockPlayerLoadoutResponseDto,
 } from './protocol'
+import { getT } from '../i18n'
 import { getApiUrl, getHttpBase } from './apiUrl'
+import { getSessionGeneration } from './sessionState'
 
 export { getApiUrl, getHttpBase }
 
@@ -146,8 +148,8 @@ async function parseError(response: Response): Promise<ApiResponseError> {
     code = typeof body.code === 'string' ? body.code : typeof body.title === 'string' ? body.title : undefined
   } catch {
     // 非 JSON 错误只保留状态码或明确网关提示，避免把服务端 HTML 泄漏到 UI。
-    if (response.status === 503) detail = '服务器正在维护或恢复中，请稍候重试。'
-    else if (response.status === 502 || response.status === 504) detail = '服务器当前响应异常或正在重启恢复，请稍候重试。'
+    if (response.status === 503) detail = getT()('common.net.serverUpdating')
+    else if (response.status === 502 || response.status === 504) detail = getT()('common.net.serverUnavailable')
   }
   return new ApiResponseError(detail, code)
 }
@@ -192,7 +194,7 @@ async function requestJsonDetailed<T>(path: string, init: RequestInit = {}): Pro
     if (response.status === 204) return { data: undefined as T, fingerprint }
     return { data: await response.json() as T, fingerprint }
   } catch (error) {
-    if (timedOut) throw new Error('网络请求超时，请稍后重试。')
+    if (timedOut) throw new Error(getT()('common.net.requestTimeout'))
     throw error
   } finally {
     window.clearTimeout(timeoutId)
@@ -297,8 +299,18 @@ export function marketStatsKey(itemId: string, enhancementLevel: number): string
  * 拉取全部品种行情统计（服务端 market.item_stats 小表全量读）。
  * 按 `itemId|level` 键入缓存，悬浮「市场价格」副卡渲染时 O(1) 查表、不再产生逐项请求。
  */
-export async function fetchMarketStats(signal?: AbortSignal): Promise<Record<string, MarketItemStats>> {
-  const rows = await requestJson<MarketItemStatsDto[]>('/api/v1/market/stats', { signal })
+let cachedMarketStatsETag: string | null = null
+let cachedMarketStatsMap: Record<string, MarketItemStats> | null = null
+let cachedMarketStatsGeneration = -1
+
+/** 重置客户端行情 ETag 协商快照（新会话建链或切号时确保首轮必回写 store）。 */
+export function resetMarketStatsHttpCache(): void {
+  cachedMarketStatsETag = null
+  cachedMarketStatsMap = null
+  cachedMarketStatsGeneration = getSessionGeneration()
+}
+
+function mapMarketStatsRows(rows: readonly MarketItemStatsDto[]): Record<string, MarketItemStats> {
   const map: Record<string, MarketItemStats> = {}
   for (const row of rows) {
     const enhancementLevel = parseNumericVariant(row.variant, 0)
@@ -315,6 +327,68 @@ export async function fetchMarketStats(signal?: AbortSignal): Promise<Record<str
     }
   }
   return map
+}
+
+/**
+ * 带 If-None-Match 协商拉取全表行情：服务端返回 304 Not Modified 时直接返回 null，
+ * 免除重复下载 JSON 正文与无变化的 Zustand 引用更新。
+ */
+export async function fetchMarketStatsIfModified(signal?: AbortSignal): Promise<Record<string, MarketItemStats> | null> {
+  const generation = getSessionGeneration()
+  if (generation !== cachedMarketStatsGeneration) {
+    cachedMarketStatsGeneration = generation
+    cachedMarketStatsETag = null
+    cachedMarketStatsMap = null
+  }
+  const headers = new Headers({ Accept: 'application/json' })
+  if (cachedMarketStatsETag && cachedMarketStatsMap !== null) {
+    headers.set('If-None-Match', cachedMarketStatsETag)
+  }
+  const controller = new AbortController()
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+  const forwardAbort = () => controller.abort()
+  if (signal) {
+    if (signal.aborted) controller.abort()
+    else signal.addEventListener('abort', forwardAbort, { once: true })
+  }
+  try {
+    const response = await fetch(getApiUrl('/api/v1/market/stats'), {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+      cache: 'no-cache',
+      signal: controller.signal,
+    })
+    if (response.status === 304 && cachedMarketStatsMap !== null) {
+      return null
+    }
+    if (!response.ok) throw await parseError(response)
+    const rows = (await response.json()) as MarketItemStatsDto[]
+    const map = mapMarketStatsRows(rows)
+    const etag = response.headers.get('ETag')
+    if (generation === getSessionGeneration()) {
+      cachedMarketStatsGeneration = generation
+      cachedMarketStatsETag = etag
+      cachedMarketStatsMap = map
+    }
+    return map
+  } catch (error) {
+    if (timedOut) throw new Error(getT()('common.net.requestTimeout'))
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', forwardAbort)
+  }
+}
+
+export async function fetchMarketStats(signal?: AbortSignal): Promise<Record<string, MarketItemStats>> {
+  const updated = await fetchMarketStatsIfModified(signal)
+  if (updated !== null) return updated
+  return cachedMarketStatsMap ?? {}
 }
 
 /** wire 下发的挂单状态枚举（snake_case，经 mapMarketOrderStatus 归一化为前端 kebab-case） */
@@ -476,7 +550,7 @@ async function fetchLeaderboardWithEtag<T>(
     }
     return data
   } catch (error) {
-    if (timedOut) throw new Error('网络请求超时，请稍后重试。')
+    if (timedOut) throw new Error(getT()('common.net.requestTimeout'))
     throw error
   } finally {
     window.clearTimeout(timeoutId)

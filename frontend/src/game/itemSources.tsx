@@ -101,6 +101,7 @@ interface StaticPackRule {
   targetItemId: string
   chance: number
   chanceText: string
+  chanceTextKey?: string
   quantityText: string
 }
 
@@ -118,6 +119,7 @@ const STATIC_PACK_RULES: readonly StaticPackRule[] = [
     targetItemId: 'currency.spirit-stone',
     chance: 0.1,
     chanceText: '10% 额外',
+    chanceTextKey: 'game.itemSources.chanceExtra10',
     quantityText: '1 ~ 10,000',
   },
   {
@@ -132,6 +134,7 @@ const STATIC_PACK_RULES: readonly StaticPackRule[] = [
     targetItemId: 'item.gongde',
     chance: 0.01,
     chanceText: '1% 暴击',
+    chanceTextKey: 'game.itemSources.chanceCrit1',
     quantityText: '100 - 300',
   },
   {
@@ -361,6 +364,7 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
 
   // 礼包/储物袋开包反查
   const packs: ItemPackSource[] = []
+  const t = getT()
   for (const rule of STATIC_PACK_RULES) {
     if (rule.targetItemId === itemId) {
       const packDef = store.items.find(i => i.itemId === rule.packItemId)
@@ -369,14 +373,13 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
         packItemId: rule.packItemId,
         packName,
         chance: rule.chance,
-        chanceText: rule.chanceText,
+        chanceText: rule.chanceTextKey ? t(rule.chanceTextKey) : rule.chanceText,
         quantityText: rule.quantityText,
       })
     }
   }
 
   const generals: ItemGeneralSource[] = []
-  const t = getT()
 
   // 特殊资源处理：灵石与功德
   if (isSpiritStone) {

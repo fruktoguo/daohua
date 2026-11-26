@@ -1,3 +1,4 @@
+import { getT } from '../i18n/index.ts'
 import type { BuildingModifiers, BuildingDefinition, MapNodeBuilding, NodeBuildingEffectSet } from './types'
 import type { PillTone } from '../components/PillLabel'
 
@@ -11,6 +12,7 @@ export interface BuildingBonusDescriptor {
   glyph: string
   isRatio: boolean
   unit?: string
+  unitKey?: string
 }
 
 /** 建筑修饰项配置表 */
@@ -95,6 +97,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     glyph: 'hp-regen',
     isRatio: false,
     unit: '/5秒',
+    unitKey: 'combat.nearby.unitPerFiveSecCompact',
   },
   {
     key: 'combatManapointRegen',
@@ -104,6 +107,7 @@ export const BUILDING_BONUS_DESCRIPTORS: readonly BuildingBonusDescriptor[] = [
     glyph: 'mp-regen',
     isRatio: false,
     unit: '/5秒',
+    unitKey: 'combat.nearby.unitPerFiveSecCompact',
   },
   {
     key: 'explorationSpeedRatio',
@@ -207,7 +211,8 @@ export function formatBuildingModifierValue(
   if (Math.abs(rawValue) < 0.0001) return isDelta ? '+0' : '0'
   const clean = formatCleanNumber(Math.abs(rawValue))
   const sign = rawValue >= 0 ? '+' : '-'
-  return `${sign}${clean}${descriptor.unit ?? ''}`
+  const unit = descriptor.unitKey ? (getT()(descriptor.unitKey) || descriptor.unit || '') : (descriptor.unit ?? '')
+  return `${sign}${clean}${unit}`
 }
 
 /**
@@ -378,7 +383,7 @@ export function getBuildingSummaryBonusText(
   if (bonuses.length === 0) return ''
   const joined = bonuses.join(' · ')
   if (effectiveLevel <= 0) {
-    return `建成生效: ${joined}`
+    return getT()('combat.nearby.buildingEffectiveWhenBuilt', { bonuses: joined })
   }
   return joined
 }
