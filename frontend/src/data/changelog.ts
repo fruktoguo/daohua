@@ -35,14 +35,15 @@ export const CHANGELOG_DISMISSED_STORAGE_KEY = 'daohua.changelog.dismissedNotice
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
     date: '2026-11-26',
-    versionLabel: 'v0.3.16 ~ v0.3.22',
-    title: '追忆副本、礼包兑换码、道友攻略打赏上线与剑杖攻防大平衡',
-    summary: '上线追忆副本十波闯关、紧凑斗法记录、礼包兑换码（附公开码 dhtc，更多福利见官方 QQ 群 940886387）、道友攻略与灵石打赏、配装付费查看、筑基根基体系及全服剑杖攻防特质大平衡。',
+    versionLabel: 'v0.3.16 ~ v0.3.23',
+    title: '追忆副本与模拟器推演、符阵技艺伤害、大地图移速与攻防强化平衡',
+    summary: '上线追忆副本十波闯关及模拟器追忆副本推演、符箓与阵法技艺每级伤害增幅、境界大地图移速加成、强化高阶成功率收敛与互斥消耗品、紧凑斗法记录、礼包兑换码（附公开码 dhtc，更多福利见官方 QQ 群 940886387）、道友攻略与灵石打赏、配装付费查看及剑杖攻防平衡。',
     noticeId: 'notice-20261126-v0.3.22',
     sections: [
       {
         category: 'feature',
         items: [
+          '战斗模拟器新增「追忆副本」推演模式：与野外讨伐共享 1~5 人配置，支持多选追忆副本及虚境三档、现世八阶共 11 档难度，按挑战次数推演并统计通关率、止步波次、等效耗体及每点体力与每小时修为、净产值对比。',
           '新增「历练 → 追忆副本」十波闯关玩法：驻留青云古涧、古道断界、星陨古墟、雾梦剑冢所在地点即可单人或组队挑战（支持助战模式，不耗体力不计收益）；开放虚境三档与现世八阶共 11 档难度（现世难度怪物等级随队伍最高境界动态跃升），通关必掉 {{item:item.qingyun-secret-crystal|青云秘晶}}、{{item:item.boundary-spirit-shard|断界灵魄晶}}、{{item:item.starfall-astral-core|星陨玄核}}、{{item:item.wumeng-sword-soul|剑冢凝魄石}}，用于炼器锻造 {{item:equipment.changhu-pendant|伥虎镇魂佩}}、{{item:equipment.golden-ape-cloak|金背撼岳甲}}、{{item:equipment.starfall-crown|星陨镇灵冠}}、{{item:equipment.wuyin-spirit-sword|雾隐青冥剑}}（现世各阶亦有概率直接掉落成品）。',
           '新增「战斗统计 → 斗法记录」明细回看：完整记录当前行动内最近 20 场同道斗法的逐次出手（单场上限 1000 次行动），涵盖普攻、功法、丹药符箓、阵盘反击、先天特质触发与气血灵力周期回复，清晰标注物理、术法、真实伤害与五行属性及暴击、闪避、破招、化解状态。',
           '新增「礼包兑换」功能（「设置 → 账号 → 礼包兑换」）：输入兑换口令即可直接领取对应道途好礼。本次附赠公开兑换码 dhtc（不区分大小写），其余活动与隐藏兑换码请道友前往官方 QQ 群 940886387（也可于顶栏或「设置 → 关于」快捷复制群号）获取！',
@@ -55,6 +56,8 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       {
         category: 'balance',
         items: [
+          '符箓与阵法技艺新增对应伤害成长：每级符箓技艺提供 +1% 符箓伤害增幅（作用于 {{item:item.leiji-talisman|雷击符}} 等伤害型符箓），每级阵法技艺提供 +1% 阵法伤害增幅（作用于 {{item:item.tianlei-formation-disk|天雷阵盘}}、{{item:item.xuesha-formation-disk|血煞阵盘}} 等伤害型阵盘反击，不影响非伤害效果与维系代价），于内视技艺与战斗面板同步展示。',
+          '收敛装备高阶强化成功率并启用辅助消耗品互斥：秘法技艺等级高于强化目标等级时，仅对超出部分每级乘算提升 0.5% 成功率，且 +11 及以上单次强化成功率封顶 45%；同类强化成功率辅助消耗品（如 {{item:item.cuiling-powder|淬灵粉}} 与 {{item:item.guling-sand|固灵砂}}）改为互斥不可叠加，配置新物品将自动顶替旧槽位，已同时装载的自动保留高阶物品。',
           '校准剑修与杖修输出平衡：上调 {{ability:ability.heavy-slash|重斩}}、{{ability:ability.chain-strike|连环}}、{{ability:ability.heavy-clouds|重云}}、{{ability:ability.star-piercer|贯星}}、{{ability:ability.zhanyu|斩玉}}、{{ability:ability.shunshan|瞬闪}}、{{ability:ability.pojun|破军}} 七门物理伤害功法的倍率与基础伤害；同时将全部法系武器、防具与副手附带的技能增幅点数调整为同装备法术增伤点数的一半，使同境界剑修与杖修清怪效率回归均衡。',
           '全服攻防与特质平衡：玩家境界基础护甲、法抗及体魄、经脉提供的固定双抗翻倍，装备生命等防御属性强化（装备固定回血按穿戴者中境界分段阶梯成长）；同步重调特质品阶阶梯与双刃剑负面补偿，修复高品阶倒挂并将含双攻词条的特质一级数值减半。',
           '调整输出装备百分比主攻与固定主攻权衡，将部分主攻预算挪入既有防御词条；逐级妖兽共享属性基准同步装备攻防配平，整体历练攻防节奏更稳健。',
@@ -64,6 +67,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       {
         category: 'optimize',
         items: [
+          '新增大地图境界移速加成：每晋升一次中境界大地图移动速度提升 +5%，每突破一次大境界提升 +30%（大境界入口不重复计入中境界，线性叠加），大地图面板与启程确认弹窗同步展示当前移速倍率与折算耗时。',
           '传音社交体验升级：支持消息引用回复与便捷分享，改为点击气泡本体展开操作弹层并将复读与点赞胶囊行内并排，浏览更紧凑顺手。',
           '组队讨伐默认锁定功法与装备切换防止战斗中误操作；坊市挂单缺少档位时默认填入参考价，战斗详情页窄屏效率条独立成行，更新日志页新增固定页头并支持列表内滚动。',
         ],
@@ -71,6 +75,7 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
       {
         category: 'fix',
         items: [
+          '修复并发点击未读传书时红点偶发滞后、宗门驻地与历史战报多语言文本漏译及英文界面属性提示高亮问题。',
           '实装斗地主开局底注托管担保，加固坊市盘口报价刻度校验与过期卖单挂单放行；修复装配栏文字裁切、战斗面板上限收缩卡滞、断线重连日志恢复与登录错误提示多语言显示等稳定性问题。',
         ],
       },
