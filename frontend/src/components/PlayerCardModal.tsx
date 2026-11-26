@@ -1,4 +1,5 @@
-import { memo, useMemo, useState } from 'react'
+import '../styles/guide.css'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { resolveEntityName } from '../game/entityNames'
 import { calculateRealmInfo, getRootCumulativeExpForLevel, resolveEquippedTraitViews } from '../game/combatConstants'
 import { resolveGenjiBonusPoints } from '../game/genjiCalculations'
@@ -6,15 +7,17 @@ import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
 import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { ConditionedTile } from './ConditionedTile'
+import { ConfirmDialog } from './ConfirmDialog'
 import { resolveAbilityAsideCards } from './EffectTooltip'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEquipmentInCatalog, findItemInCatalog, resolveCatalogItemMetadata } from '../game/ids'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
+import { unlockPlayerCardLoadout } from '../network/apiClient'
 import type { PlayerCardAutoUseSlotDto, PlayerCardDto } from '../network/protocol'
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { CharacterAvatar } from './CharacterAvatar'
-import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { ItemIcon, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { FloatingTooltip } from './FloatingPopover'
 import { Icon } from './Icon'
 import { Modal } from './Modal'
@@ -207,9 +210,39 @@ const PlayerCardConsumableTile = memo(function PlayerCardConsumableTile({ slot }
 const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCardDto }): React.JSX.Element {
   const t = useT()
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const inventory = useGameStore(state => state.inventory)
+  const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const [activeTab, setActiveTab] = useState<'base' | 'special' | 'loadout' | 'dimensions' | 'techniques'>('base')
+  const [unlockConfirmOpen, setUnlockConfirmOpen] = useState(false)
+  const [unlockingLoadout, setUnlockingLoadout] = useState(false)
   const myPlayerId = useGameStore(state => state.playerId)
   const isSelf = myPlayerId !== null && myPlayerId === card.playerId
+
+  const mySpiritStones = useMemo(
+    () => Math.floor(inventory.find(entry => entry.itemId === 'currency.spirit-stone' && !entry.variant)?.amount ?? 0),
+    [inventory],
+  )
+
+  const inspectPrice = typeof card.loadoutInspectPrice === 'number' && card.loadoutInspectPrice > 0
+    ? Math.floor(card.loadoutInspectPrice)
+    : 0
+
+  const handleConfirmUnlockLoadout = useCallback(async () => {
+    if (unlockingLoadout || inspectPrice <= 0) return
+    setUnlockingLoadout(true)
+    try {
+      await unlockPlayerCardLoadout(card.playerId, inspectPrice)
+      setUnlockConfirmOpen(false)
+      useGameStore.getState().setNotice(t('social.card.unlockSuccessNotice'))
+      requestPlayerCard(card.playerId)
+    } catch (err) {
+      setUnlockConfirmOpen(false)
+      useGameStore.getState().setNotice(err instanceof Error ? err.message : t('social.card.errorGeneric'))
+      requestPlayerCard(card.playerId)
+    } finally {
+      setUnlockingLoadout(false)
+    }
+  }, [card.playerId, inspectPrice, requestPlayerCard, t, unlockingLoadout])
 
   // 名片瓶颈由服务端按灵根乘区下发（experienceToNext），徽章进度沿用同一口径，
   // 否则入天门玩家名片会在裸瓶颈处显示圆满（总纲 §7.7.5.1）。
@@ -355,13 +388,59 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
               <Icon name="lock" size={18} />
               <strong>{t('social.card.loadoutHiddenTitle')}</strong>
             </div>
-            <p className="player-card-empty">{t('social.card.loadoutHiddenDesc')}</p>
+            <p className="player-card-empty">
+              {inspectPrice > 0 ? t('social.card.loadoutPaidDesc') : t('social.card.loadoutHiddenDesc')}
+            </p>
+            {inspectPrice > 0 && (
+              <div className="player-card-inspect-paybox">
+                <div className="guide-paywall-cost-row">
+                  <span>{t('social.card.inspectCostLabel')}</span>
+                  <strong className="tone-gold guide-stone-inline">
+                    <ItemIcon itemId="currency.spirit-stone" />
+                    <span>{formatNumber(inspectPrice)}</span>
+                  </strong>
+                  <span className="guide-wallet-hint">
+                    ({t('social.guide.myStonesLabel', { count: formatNumber(mySpiritStones) })})
+                  </span>
+                </div>
+                <button
+                  className="primary-btn guide-unlock-btn"
+                  disabled={unlockingLoadout || mySpiritStones < inspectPrice}
+                  onClick={() => setUnlockConfirmOpen(true)}
+                  type="button"
+                >
+                  <ItemIcon itemId="currency.spirit-stone" />
+                  <span>
+                    {mySpiritStones < inspectPrice
+                      ? t('social.guide.insufficientStones')
+                      : t('social.card.payInspectBtn', { price: formatNumber(inspectPrice) })}
+                  </span>
+                </button>
+              </div>
+            )}
           </section>
+          <ConfirmDialog
+            confirmLabel={t('social.card.confirmInspectBtn')}
+            description={t('social.card.confirmInspectDesc', {
+              price: formatNumber(inspectPrice),
+              name: card.displayName ?? '',
+            })}
+            onClose={() => setUnlockConfirmOpen(false)}
+            onConfirm={() => { void handleConfirmUnlockLoadout() }}
+            open={unlockConfirmOpen}
+            title={t('social.card.confirmInspectTitle')}
+          />
         </div>
       )}
 
       {activeTab === 'loadout' && !card.loadoutHidden && (
         <div className="player-card-tab-content">
+          {(card.loadoutUnlockedUntilUnixSeconds ?? 0) > 0 && (
+            <div className="player-card-unlocked-banner">
+              <Icon name="lock" size={13} />
+              <span>{t('social.card.unlockedTodayBanner')}</span>
+            </div>
+          )}
           <section className="player-card-section">
             <h4 className="player-card-section-title">{t('social.card.abilities')}</h4>
             {(card.abilitySlots ?? []).length === 0 ? (

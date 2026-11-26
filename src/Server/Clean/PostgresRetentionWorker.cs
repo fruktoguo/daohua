@@ -40,6 +40,9 @@ public sealed class PostgresRetentionRepository(
         ExpiredPlayerMails,
         ExpiredBroadcastMails,
         StickerTombstones,
+        ExpiredLoadoutInspectGrants,
+        ExpiredGuideDailyQuotas,
+        DeletedGuidePosts,
         Count
     }
 
@@ -174,7 +177,7 @@ public sealed class PostgresRetentionRepository(
                 FROM economy.transactions t
                 WHERE t.created_at <= $1
                   AND NOT (
-                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'system-grant')
+                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
                       OR t.transaction_type LIKE 'market.%'
                       OR t.transaction_type LIKE 'invitation.%'
                       OR t.transaction_type LIKE 'zongmen.%'
@@ -192,7 +195,7 @@ public sealed class PostgresRetentionRepository(
                 FROM economy.transactions t
                 WHERE t.created_at < $1
                   AND (
-                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'system-grant')
+                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
                       OR t.transaction_type LIKE 'market.%'
                       OR t.transaction_type LIKE 'invitation.%'
                       OR t.transaction_type LIKE 'zongmen.%'
@@ -287,6 +290,39 @@ public sealed class PostgresRetentionRepository(
                 USING ({0}) doomed
                 WHERE s.player_id = doomed.player_id AND s.sticker_id = doomed.sticker_id
                 """),
+
+            // 10. 过期超过 7 天的配装付费查阅当日授权、攻略每日额度记录及软删除超过 30 天的攻略帖子（级联清理子表）。
+            new(CleanupStepKind.ExpiredLoadoutInspectGrants, deadBefore, normalBatch, """
+                SELECT viewer_id, target_id, access_date
+                FROM social.loadout_inspect_grants
+                WHERE expires_at < $1
+                ORDER BY expires_at
+                LIMIT $2
+                """, """
+                DELETE FROM social.loadout_inspect_grants g
+                USING ({0}) doomed
+                WHERE g.viewer_id = doomed.viewer_id AND g.target_id = doomed.target_id AND g.access_date = doomed.access_date
+                """),
+
+            new(CleanupStepKind.ExpiredGuideDailyQuotas, deadBefore, normalBatch, """
+                SELECT player_id, post_date
+                FROM social.guide_daily_quotas
+                WHERE updated_at < $1
+                ORDER BY updated_at
+                LIMIT $2
+                """, """
+                DELETE FROM social.guide_daily_quotas q
+                USING ({0}) doomed
+                WHERE q.player_id = doomed.player_id AND q.post_date = doomed.post_date
+                """),
+
+            new(CleanupStepKind.DeletedGuidePosts, ledgerBefore, normalBatch, """
+                SELECT post_id
+                FROM social.guide_posts
+                WHERE deleted_at IS NOT NULL AND deleted_at < $1
+                ORDER BY deleted_at
+                LIMIT $2
+                """, "DELETE FROM social.guide_posts p USING ({0}) doomed WHERE p.post_id = doomed.post_id"),
         ];
 
         var totals = new int[(int)CleanupStepKind.Count];
@@ -341,7 +377,10 @@ public sealed class PostgresRetentionRepository(
             totals[(int)CleanupStepKind.StaleRuntimeLeases],
             totals[(int)CleanupStepKind.DeadFlushQueue],
             totals[(int)CleanupStepKind.DeadOutbox],
-            totals[(int)CleanupStepKind.StickerTombstones]);
+            totals[(int)CleanupStepKind.StickerTombstones],
+            totals[(int)CleanupStepKind.ExpiredLoadoutInspectGrants]
+                + totals[(int)CleanupStepKind.ExpiredGuideDailyQuotas]
+                + totals[(int)CleanupStepKind.DeletedGuidePosts]);
 
         if (result.Total > 0)
             logger.LogInformation(
@@ -460,13 +499,14 @@ public sealed record RetentionResult(
     int StaleRuntimeLeases = 0,
     int DeadQueueRows = 0,
     int DeadOutboxRows = 0,
-    int StickerTombstones = 0)
+    int StickerTombstones = 0,
+    int GuideAndPrivacyPruned = 0)
 {
     /// <summary>本轮删除总行数。</summary>
     public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims
         + AccountRiskEvents + ParticipationInboxes + EmptyTransactions + TransientIdempotency + ExpiredMails
         + DuelLogs + MarketTrades + TerminalOrders + TerminalReservations + ShopDailyPurchases
-        + StaleRuntimeLeases + DeadQueueRows + DeadOutboxRows + StickerTombstones;
+        + StaleRuntimeLeases + DeadQueueRows + DeadOutboxRows + StickerTombstones + GuideAndPrivacyPruned;
 }
 
 /// <summary>定期清理后台任务：启动 5 分钟后首次执行，之后按配置周期（默认 5 分钟）多批排空超期流水与日志。</summary>

@@ -34,6 +34,23 @@ public sealed class LeaderboardAndPrivacyTests
         var writes = SectionCodec.EncodeAggregateFull(player.ExportState(), Baseline);
         var restoredState = SectionCodec.DecodeAggregate(ToBundle(player, writes, Baseline));
         Assert.False(restoredState.Settings.PublicLoadoutVisible);
+        Assert.Equal(0d, restoredState.Settings.LoadoutInspectPrice);
+
+        // 开启付费查阅模式（如 88 灵石），随 SectionCodec v46 往返保留；切回公开时自动清零价格。
+        player.SetLoadoutPrivacy(publicLoadoutVisible: false, loadoutInspectPrice: 88d);
+        var paidWrites = SectionCodec.EncodeAggregateFull(player.ExportState(), Baseline);
+        var restoredPaid = SectionCodec.DecodeAggregate(ToBundle(player, paidWrites, Baseline));
+        Assert.False(restoredPaid.Settings.PublicLoadoutVisible);
+        Assert.Equal(88d, restoredPaid.Settings.LoadoutInspectPrice);
+
+        player.SetLoadoutPrivacy(publicLoadoutVisible: true, loadoutInspectPrice: 88d);
+        Assert.True(player.Settings.PublicLoadoutVisible);
+        Assert.Equal(0d, player.Settings.LoadoutInspectPrice);
+
+        // 非整数、负数或超上限价格必须抛出 DomainException。
+        Assert.Throws<Domain.Common.DomainException>(() => player.SetLoadoutPrivacy(false, -1d));
+        Assert.Throws<Domain.Common.DomainException>(() => player.SetLoadoutPrivacy(false, 12.5d));
+        Assert.Throws<Domain.Common.DomainException>(() => player.SetLoadoutPrivacy(false, PlayerSettingsState.MaxLoadoutInspectPrice + 1d));
     }
 
     /// <summary>不含 publicLoadoutVisible 与 duelWins/duelLosses 的 v42 旧分段载荷必须缺省恢复为 true 与 0。</summary>
@@ -45,10 +62,11 @@ public sealed class LeaderboardAndPrivacyTests
         player.Progression.Experience = 340;
         var writes = SectionCodec.EncodeAggregateFull(player.ExportState(), Baseline).ToList();
 
-        // 从 Settings 分段剥离 publicLoadoutVisible 模拟经 SQL 升版但尚缺新字段的旧载荷。
+        // 从 Settings 分段剥离 publicLoadoutVisible 与 loadoutInspectPrice 模拟经 SQL 升版但尚缺新字段的旧载荷。
         var settingsWrite = writes.Single(w => w.SectionKind == PlayerSectionKinds.Settings);
         var settingsJson = JsonNode.Parse(SectionCodec.Decode<JsonElement>(ToStored(settingsWrite)).GetRawText())!.AsObject();
         Assert.True(settingsJson.Remove("publicLoadoutVisible"));
+        settingsJson.Remove("loadoutInspectPrice");
         var legacySettingsWrite = SectionCodec.Encode(
             player.PlayerId.Value,
             PlayerSectionKinds.Settings,
@@ -76,6 +94,7 @@ public sealed class LeaderboardAndPrivacyTests
 
         var restored = SectionCodec.DecodeAggregate(ToBundle(player, legacyWrites, Baseline));
         Assert.True(restored.Settings.PublicLoadoutVisible);
+        Assert.Equal(0d, restored.Settings.LoadoutInspectPrice);
         Assert.Equal(0d, restored.Progression.DuelWins);
         Assert.Equal(0d, restored.Progression.DuelLosses);
 

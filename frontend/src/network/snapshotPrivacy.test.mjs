@@ -30,10 +30,12 @@ test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配�
     ...seedSnapshot,
     version: 2,
     publicLoadoutVisible: false,
+    loadoutInspectPrice: 120,
   })
   assert.equal(useGameStore.getState().publicLoadoutVisible, false)
+  assert.equal(useGameStore.getState().loadoutInspectPrice, 120)
 
-  // 通过协议增量解码 decodePlayerSnapshotDeltaDto 将 settings.publicLoadoutVisible 切回 true 并合并到 store。
+  // 通过协议增量解码 decodePlayerSnapshotDeltaDto 将 settings.publicLoadoutVisible 切回 false 且设 loadoutInspectPrice=66 并合并到 store。
   const currentView = useGameStore.getState().toSnapshotView()
   const settingsData = {
     presence: 'online',
@@ -49,7 +51,8 @@ test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配�
       tutorialStep: 0,
       tutorialRewardsStep: 0,
       hasCompletedFirstAction: false,
-      publicLoadoutVisible: true,
+      publicLoadoutVisible: false,
+      loadoutInspectPrice: 66,
     },
   }
   const settingsChecksum = createHash('sha256')
@@ -63,7 +66,7 @@ test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配�
       {
         section: 'settings',
         sectionVersion: 2,
-        schemaVersion: 43,
+        schemaVersion: SNAPSHOT_SCHEMA_VERSION,
         minReaderSchemaVersion: 41,
         checksum: settingsChecksum,
         updatedAt: '2026-11-14T12:00:05Z',
@@ -73,10 +76,13 @@ test('名片隐私与快照 Schema：版本对齐且 gameStore 默认公开配�
   }
   const deltaBytes = new TextEncoder().encode(JSON.stringify(deltaDto))
   const deltaPatch = await decodePlayerSnapshotDeltaDto(deltaDto, currentView, deltaBytes, ['changedSections'])
-  assert.equal(deltaPatch.publicLoadoutVisible, true)
+  assert.equal(deltaPatch.publicLoadoutVisible, false)
+  assert.equal(deltaPatch.loadoutInspectPrice, 66)
   useGameStore.getState().applyPatch(deltaPatch)
-  assert.equal(useGameStore.getState().publicLoadoutVisible, true)
+  assert.equal(useGameStore.getState().publicLoadoutVisible, false)
+  assert.equal(useGameStore.getState().loadoutInspectPrice, 66)
 
   useGameStore.getState().resetGameStore()
   assert.equal(useGameStore.getState().publicLoadoutVisible, true)
+  assert.equal(useGameStore.getState().loadoutInspectPrice, 0)
 })

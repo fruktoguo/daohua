@@ -29,6 +29,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     social.party_sessions, social.party_session_inbox, social.party_invitations, social.party_seekers, social.doudizhu_games,
     social.player_invitations, social.chat_messages,
     social.broadcast_mails, social.player_mail_states, social.player_mails, social.player_stickers,
+    social.guide_posts, social.guide_daily_quotas, social.guide_post_views, social.guide_post_likes,
+    social.guide_post_unlocks, social.guide_post_tips, social.loadout_inspect_grants,
     social.zongmen, social.zongmen_members, social.zongmen_requests, social.zongmen_departures TO daohua_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections, game.player_action_queue,
     game.player_projection, game.duel_logs, game.player_daily_checkins, platform.section_flush_queue, platform.integration_outbox,

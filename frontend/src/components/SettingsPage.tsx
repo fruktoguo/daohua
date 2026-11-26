@@ -1,8 +1,9 @@
+import '../styles/guide.css'
 import { copyTextToClipboard } from '../utils/clipboard'
 import { memo, useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icon'
-import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
+import { ItemIcon, ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RenameModal } from './RenameModal'
 import { ChangePasswordModal } from './ChangePasswordModal'
 import { formatNumber } from '../game/format'
@@ -197,6 +198,14 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const setLocale = useI18nStore(state => state.setLocale)
   const localeError = useI18nStore(state => state.error)
   const publicLoadoutVisible = useGameStore(state => state.publicLoadoutVisible)
+  const loadoutInspectPrice = useGameStore(state => state.loadoutInspectPrice)
+  const [inspectPriceInput, setInspectPriceInput] = useState<string>(() => String(loadoutInspectPrice > 0 ? loadoutInspectPrice : 50))
+
+  useEffect(() => {
+    if (loadoutInspectPrice > 0) {
+      setInspectPriceInput(String(Math.floor(loadoutInspectPrice)))
+    }
+  }, [loadoutInspectPrice])
 
   const theme = useThemeStore(state => state.theme)
   const setTheme = useThemeStore(state => state.setTheme)
@@ -484,34 +493,118 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
             </>
           )}
 
-          {activeTab === 'privacy' && (
-            <section className="settings-group" aria-label={t('app.settings.privacyHeading')}>
-              <h3 className="settings-group-title">{t('app.settings.privacyHeading')}</h3>
-              <div className="setting-row">
-                <span className="setting-label">{t('app.settings.privacyPublicLoadoutLabel')}</span>
-                <div className="presence-options" role="group" aria-label={t('app.settings.privacyPublicLoadoutLabel')}>
-                  {([
-                    { value: true, labelKey: 'app.settings.privacyPublic' },
-                    { value: false, labelKey: 'app.settings.privacyHidden' },
-                  ] as const).map(opt => (
-                    <button
-                      key={String(opt.value)}
-                      aria-pressed={publicLoadoutVisible === opt.value}
-                      className={publicLoadoutVisible === opt.value ? 'active' : ''}
-                      onClick={() => {
-                        if (publicLoadoutVisible === opt.value) return
-                        gameClient.sendCommand('player.set_privacy', { publicLoadoutVisible: opt.value })
-                      }}
-                      type="button"
-                    >
-                      {t(opt.labelKey)}
-                    </button>
-                  ))}
+          {activeTab === 'privacy' && (() => {
+            const privacyMode: 'public' | 'paid' | 'hidden' = publicLoadoutVisible
+              ? 'public'
+              : loadoutInspectPrice > 0
+                ? 'paid'
+                : 'hidden'
+            const applyInspectPrice = (raw: string): void => {
+              const parsed = Number(raw)
+              if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 100_000) {
+                useGameStore.getState().setNotice(t('app.settings.privacyPriceInvalid'))
+                return
+              }
+              gameClient.sendCommand('player.set_privacy', {
+                publicLoadoutVisible: false,
+                loadoutInspectPrice: parsed,
+              })
+              useGameStore.getState().setNotice(t('app.settings.privacyPriceSaved', { price: parsed }))
+            }
+            return (
+              <section className="settings-group" aria-label={t('app.settings.privacyHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.privacyHeading')}</h3>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.privacyPublicLoadoutLabel')}</span>
+                  <div className="presence-options" role="group" aria-label={t('app.settings.privacyPublicLoadoutLabel')}>
+                    {([
+                      { mode: 'public', labelKey: 'app.settings.privacyPublic' },
+                      { mode: 'paid', labelKey: 'app.settings.privacyPaid' },
+                      { mode: 'hidden', labelKey: 'app.settings.privacyHidden' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.mode}
+                        aria-pressed={privacyMode === opt.mode}
+                        className={privacyMode === opt.mode ? 'active' : ''}
+                        onClick={() => {
+                          if (privacyMode === opt.mode) return
+                          if (opt.mode === 'public') {
+                            gameClient.sendCommand('player.set_privacy', { publicLoadoutVisible: true, loadoutInspectPrice: 0 })
+                          } else if (opt.mode === 'hidden') {
+                            gameClient.sendCommand('player.set_privacy', { publicLoadoutVisible: false, loadoutInspectPrice: 0 })
+                          } else {
+                            const fallback = Number(inspectPriceInput)
+                            const validPrice = Number.isFinite(fallback) && Number.isInteger(fallback) && fallback >= 1 && fallback <= 100_000
+                              ? fallback
+                              : 50
+                            setInspectPriceInput(String(validPrice))
+                            gameClient.sendCommand('player.set_privacy', {
+                              publicLoadoutVisible: false,
+                              loadoutInspectPrice: validPrice,
+                            })
+                          }
+                        }}
+                        type="button"
+                      >
+                        {t(opt.labelKey)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <p className="setting-desc">{t('app.settings.privacyPublicLoadoutDesc')}</p>
-            </section>
-          )}
+
+                {privacyMode === 'paid' && (
+                  <div className="privacy-paid-config-row">
+                    <span className="setting-label">{t('app.settings.privacyPriceLabel')}</span>
+                    <div className="privacy-paid-controls">
+                      <div className="guide-price-presets">
+                        {[10, 50, 100, 500, 1000].map(preset => (
+                          <button
+                            className={loadoutInspectPrice === preset ? 'active' : ''}
+                            key={preset}
+                            onClick={() => {
+                              setInspectPriceInput(String(preset))
+                              gameClient.sendCommand('player.set_privacy', {
+                                publicLoadoutVisible: false,
+                                loadoutInspectPrice: preset,
+                              })
+                            }}
+                            type="button"
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                      <ItemIcon itemId="currency.spirit-stone" />
+                      <input
+                        aria-label={t('app.settings.privacyPriceLabel')}
+                        max={100000}
+                        min={1}
+                        onChange={e => setInspectPriceInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            applyInspectPrice(inspectPriceInput)
+                          }
+                        }}
+                        step={1}
+                        type="number"
+                        value={inspectPriceInput}
+                      />
+                      <button
+                        className="inline-modify-btn"
+                        onClick={() => applyInspectPrice(inspectPriceInput)}
+                        type="button"
+                      >
+                        {t('app.settings.privacyPriceSaveBtn')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <p className="setting-desc">{t('app.settings.privacyPublicLoadoutDesc')}</p>
+              </section>
+            )
+          })()}
 
           {activeTab === 'tutorial' && (
             <section className="settings-group" aria-label={t('app.settings.tutorialHeading')}>
