@@ -1,6 +1,6 @@
 # odin 安卓辅助计算节点运维手册
 
-odin 是一台 AYN Odin 2 安卓掌机（aarch64、8 核、约 14GB 内存），局域网地址 `192.168.1.144`，通过 Termux + PRoot Ubuntu 提供 Linux 环境，定位为《道化太初》的**高延迟冷挂机辅助计算节点**（ComputeNode）。
+odin 是一台 AYN Odin 2 安卓掌机（aarch64、8 核、约 14GB 内存），局域网地址 `192.168.31.99`（小米路由器 DHCP 静态绑定 MAC `E8:8D:A6:B3:56:6B`），通过 Termux + PRoot Ubuntu 提供 Linux 环境，定位为《道化太初》的**高延迟冷挂机辅助计算节点**（ComputeNode）。
 
 本目录：
 
@@ -11,7 +11,7 @@ odin 是一台 AYN Odin 2 安卓掌机（aarch64、8 核、约 14GB 内存），
 ## 连接与拓扑
 
 ```bash
-ssh odin    # ~/.ssh/config: HostName 192.168.1.144, Port 8022, User u0_a118
+ssh odin    # ~/.ssh/config: HostName 192.168.31.99, Port 8022, User u0_a118
 ```
 
 SSHD 由 Termux 层（bionic）提供，`ForceCommand = ~/ssh_ubuntu_wrapper.sh`：**每条 SSH 连接都会新建一个 `proot --kill-on-exit` 实例**进入 Ubuntu rootfs。
@@ -57,8 +57,8 @@ Termux 层常驻: sshd / postgres:15432 / ddns-go:9876 / frpc / cloudflared / �
 ```bash
 # 状态：进程 + 端口 + 健康（Mac 侧直接可用）
 ssh odin 'pgrep -fa "daohua_compute_watchdog"; ss -tln | grep 8090'
-curl -s http://192.168.1.144:8090/healthz
-curl -s http://192.168.1.144:8090/readyz
+curl -s http://192.168.31.99:8090/healthz
+curl -s http://192.168.31.99:8090/readyz
 
 # 看日志
 ssh odin 'tail -50 /data/data/com.termux/files/home/daohua_compute.log'
