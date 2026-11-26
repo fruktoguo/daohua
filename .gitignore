@@ -43,6 +43,7 @@ Thumbs.db
 *.tmp
 *.pid
 temp/
+tmp/
 output/
 **/.wrangler/
 
