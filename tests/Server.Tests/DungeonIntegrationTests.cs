@@ -96,6 +96,38 @@ public sealed class DungeonServerContractTests
     }
 
     [Fact]
+    public void LegacyZeroTiliAnchor_ProjectsNormalizedAnchorInSnapshotAndParticipantCapture()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-00000000d302");
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "旧档道友", Now, catalog.Fingerprint);
+        var baseExported = aggregate.ExportState();
+        var legacyState = baseExported with
+        {
+            Progression = baseExported.Progression with { TiliValue = 0, TiliUpdatedAtUnixSeconds = 0 }
+        };
+        var expectedAnchorUnix = Now.ToUnixTimeMilliseconds() / 1000.0;
+
+        // 1. 协议快照投影应自动透传规范化后的有效锚点，避免前端收到 0 锚点死锁倒计时
+        var runtimeSnap = new PlayerRuntimeSnapshot(
+            playerId, legacyState.DisplayName, catalog.Fingerprint, legacyState.StateVersion, Now, legacyState, 0, []);
+        var dto = ProtocolSnapshotMapper.ToSnapshot(runtimeSnap, catalog.Fingerprint, catalog);
+        var progSection = Assert.Single(dto.Sections, s => s.Section == "progression");
+        using (var progDoc = JsonDocument.Parse(JsonSerializer.Serialize(progSection.Data, ProtocolJson.Options)))
+        {
+            var root = progDoc.RootElement;
+            Assert.Equal(DungeonEnergyRules.InitialEnergy, root.GetProperty("tiliValue").GetInt32());
+            Assert.Equal(expectedAnchorUnix, root.GetProperty("tiliUpdatedAtUnixSeconds").GetDouble(), precision: 6);
+            Assert.Equal(DungeonEnergyRules.InitialEnergy, root.GetProperty("tiliCurrent").GetInt32());
+        }
+
+        // 2. 离线组队快照采集应同样按 LastSimulatedAt 补锚，保证离线成员体力恢复与上线一致
+        var participant = ActionParticipantSnapshot.FromState(legacyState, catalog);
+        Assert.Equal(DungeonEnergyRules.InitialEnergy, participant.InitialTiliValue);
+        Assert.Equal(expectedAnchorUnix, participant.InitialTiliUpdatedAtUnixSeconds, precision: 6);
+    }
+
+    [Fact]
     public void SchemaVersionAndMigrationScript_AreAlignedAtV67()
     {
         Assert.True(PostgresSchema.Version >= 67);

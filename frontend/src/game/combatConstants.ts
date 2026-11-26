@@ -774,8 +774,8 @@ export const ENHANCE_DURATION_BASE = 5
 export const ENHANCE_MIN_PROTECT_LEVEL = 2
 
 
-/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：L≥t 仅超出部分 ×(1+0.005×(L-t))，t≤10 clamp [0,0.99]，t≥11 clamp [0,0.45]） */
-export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, consumableBonus = 0): number {
+/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：L≥t 仅超出部分 ×(1+0.005×(L-t))，叠加消耗品与强化工具固定加成后 t≤10 clamp [0,0.99]、t≥11 clamp [0,0.45]） */
+export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, successBonus = 0): number {
   const t = Math.max(1, Math.floor(targetLevel))
   const base = t <= ENHANCE_BASE_SUCCESS_RATES.length
     ? ENHANCE_BASE_SUCCESS_RATES[t - 1]
@@ -783,7 +783,7 @@ export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, 
   const clampedBase = Math.max(0.01, Math.min(0.5, base))
   const L = Math.max(0, techniqueLevel)
   const rate = L >= t ? clampedBase * (1 + ENHANCE_OVERLEVEL_SUCCESS_RATIO * (L - t)) : clampedBase * Math.pow(0.9, t - L)
-  const bonus = Number.isFinite(consumableBonus) && consumableBonus > 0 ? consumableBonus : 0
+  const bonus = Number.isFinite(successBonus) && successBonus > 0 ? successBonus : 0
   const maxRate = t >= ENHANCE_HIGH_TIER_CAP_LEVEL ? ENHANCE_HIGH_TIER_MAX_SUCCESS_RATE : 0.99
   return Math.max(0, Math.min(maxRate, rate + bonus))
 }

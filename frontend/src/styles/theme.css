@@ -2038,6 +2038,120 @@
   color: #9a3412;
 }
 
+:root[data-theme="light"] .chat-rank-capsule {
+  color: #855a14;
+  background: rgba(154, 109, 32, 0.1);
+  border-color: rgba(154, 109, 32, 0.38);
+}
+
+:root[data-theme="light"] .chat-rank-capsule:hover {
+  background: rgba(154, 109, 32, 0.18);
+  border-color: rgba(154, 109, 32, 0.68);
+}
+
+:root[data-theme="light"] .chat-rank-capsule.is-top1 {
+  color: #9a5d00;
+  background: rgba(245, 196, 81, 0.24);
+  border-color: rgba(180, 118, 12, 0.58);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .chat-rank-capsule.is-top2 {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(100, 116, 139, 0.52);
+}
+
+:root[data-theme="light"] .chat-rank-capsule.is-top3 {
+  color: #9a3412;
+  background: rgba(234, 152, 92, 0.2);
+  border-color: rgba(180, 92, 42, 0.52);
+}
+
+:root[data-theme="light"] .guide-rank-pill {
+  color: #855a14;
+  background: rgba(154, 109, 32, 0.11);
+  border-color: rgba(154, 109, 32, 0.36);
+}
+
+:root[data-theme="light"] .guide-rank-pill.is-top1 {
+  color: #9a5d00;
+  background: rgba(245, 196, 81, 0.24);
+  border-color: rgba(180, 118, 12, 0.55);
+}
+
+:root[data-theme="light"] .guide-rank-pill.is-top2 {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(100, 116, 139, 0.48);
+}
+
+:root[data-theme="light"] .guide-rank-pill.is-top3 {
+  color: #9a3412;
+  background: rgba(234, 152, 92, 0.2);
+  border-color: rgba(180, 92, 42, 0.48);
+}
+
+:root[data-theme="light"] .guide-author-avatar-box {
+  background: rgba(125, 82, 26, 0.06);
+  border-color: rgba(125, 82, 26, 0.28);
+}
+
+:root[data-theme="light"] .guide-share-btn {
+  color: #855a14;
+  background: rgba(154, 109, 32, 0.09);
+  border-color: rgba(154, 109, 32, 0.36);
+}
+
+:root[data-theme="light"] .guide-share-btn:hover:not(:disabled),
+:root[data-theme="light"] .guide-share-btn:focus-visible:not(:disabled) {
+  color: #6b450c;
+  background: rgba(154, 109, 32, 0.17);
+  border-color: rgba(154, 109, 32, 0.65);
+}
+
+:root[data-theme="light"] .guide-item-option {
+  color: var(--text-bright);
+  background: rgba(125, 82, 26, 0.04);
+  border-color: rgba(125, 82, 26, 0.2);
+}
+
+:root[data-theme="light"] .guide-item-option:hover,
+:root[data-theme="light"] .guide-item-option:focus-visible {
+  color: #7a4f10;
+  background: rgba(154, 109, 32, 0.14);
+  border-color: rgba(154, 109, 32, 0.55);
+}
+
+:root[data-theme="light"] .chat-guide-link {
+  background: rgba(154, 109, 32, 0.08);
+  border-color: rgba(154, 109, 32, 0.38);
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-guide-link:hover,
+:root[data-theme="light"] .chat-guide-link:focus-visible {
+  background: rgba(154, 109, 32, 0.16);
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(154, 109, 32, 0.22);
+  color: var(--text-bright);
+}
+
+:root[data-theme="light"] .chat-guide-badge {
+  background: rgba(154, 109, 32, 0.14);
+  border-color: rgba(154, 109, 32, 0.42);
+  color: #855a14;
+}
+
+:root[data-theme="light"] .chat-guide-free {
+  background: rgba(23, 96, 67, 0.12);
+  color: #176043;
+}
+
+:root[data-theme="light"] .chat-guide-price {
+  color: #855a14;
+}
+
 :root[data-theme="light"] .combat-detail-expand-btn {
   background: rgba(125, 82, 26, 0.06);
 }

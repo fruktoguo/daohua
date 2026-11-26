@@ -117,7 +117,10 @@ public sealed partial class PlayerAggregate
         Resources.Hitpoints = settlement.Hitpoints;
         Resources.Manapoints = settlement.Manapoints;
         Resources.RegenCarrySeconds = settlement.RegenCarrySeconds;
-        if (settlement.TiliValue is { } tiliValue && settlement.TiliUpdatedAtUnixSeconds is { } tiliUpdatedAt)
+        if (settlement.TiliValue is { } tiliValue
+            && settlement.TiliUpdatedAtUnixSeconds is { } tiliUpdatedAt
+            && double.IsFinite(tiliUpdatedAt)
+            && tiliUpdatedAt > 0)
         {
             Progression.TiliValue = Math.Clamp(tiliValue, 0, DungeonEnergyRules.MaxEnergy);
             Progression.TiliUpdatedAtUnixSeconds = tiliUpdatedAt;
@@ -242,6 +245,10 @@ public sealed partial class PlayerAggregate
         var externalBuffs = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var buff in Buffs.Active)
             externalBuffs[buff.BuffId] = externalBuffs.GetValueOrDefault(buff.BuffId) + buff.Stacks;
+        var (resolvedTiliValue, resolvedTiliUpdatedAt) = DungeonEnergyRules.ResolveAnchor(
+            Progression.TiliValue,
+            Progression.TiliUpdatedAtUnixSeconds,
+            LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
         return new ActionParticipantSnapshot(
             PlayerId.Value.ToString("D"),
             DisplayName,
@@ -268,8 +275,8 @@ public sealed partial class PlayerAggregate
                     pair => pair.Key,
                     pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(),
                     StringComparer.Ordinal),
-            InitialTiliValue: Progression.TiliValue,
-            InitialTiliUpdatedAtUnixSeconds: Progression.TiliUpdatedAtUnixSeconds);
+            InitialTiliValue: resolvedTiliValue,
+            InitialTiliUpdatedAtUnixSeconds: resolvedTiliUpdatedAt);
     }
 
     /// <summary>
@@ -381,6 +388,10 @@ public sealed partial record ActionParticipantSnapshot
         if (state.Buffs is not null)
             foreach (var buff in state.Buffs)
                 externalBuffs[buff.BuffId] = externalBuffs.GetValueOrDefault(buff.BuffId) + buff.Stacks;
+        var (resolvedTiliValue, resolvedTiliUpdatedAt) = DungeonEnergyRules.ResolveAnchor(
+            state.Progression.TiliValue,
+            state.Progression.TiliUpdatedAtUnixSeconds,
+            state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
         return new ActionParticipantSnapshot(
             state.PlayerId.Value.ToString("D"),
             state.DisplayName,
@@ -403,7 +414,7 @@ public sealed partial record ActionParticipantSnapshot
             RespawnPolicy: state.Settings.RespawnPolicy,
             RespawnTargetPlayerId: state.Settings.RespawnTargetPlayerId?.ToString("D"),
             ConsumableTriggers: loadout.ConsumableTriggers,
-            InitialTiliValue: state.Progression.TiliValue,
-            InitialTiliUpdatedAtUnixSeconds: state.Progression.TiliUpdatedAtUnixSeconds);
+            InitialTiliValue: resolvedTiliValue,
+            InitialTiliUpdatedAtUnixSeconds: resolvedTiliUpdatedAt);
     }
 }

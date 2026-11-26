@@ -268,72 +268,7 @@ public static class ProtocolSnapshotMapper
     /// <summary>单段协议载荷投影：全量快照逐段遍历与增量候选编码共用同一构造，保证两边编码内容逐位一致。</summary>
     private static object SectionPayload(PlayerAggregateState state, PlayerSectionKind section, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null) => section switch
     {
-        PlayerSectionKind.Progression => new
-        {
-            state.Progression.RealmLevel, state.Progression.Experience,
-            state.Progression.Foundation, state.Progression.CombatExperience, state.Progression.LifetimeExperience,
-            state.Progression.CompletedActions, state.Progression.SimulationCarrySeconds,
-            state.Progression.NormalKills, state.Progression.EliteKills, state.Progression.BossKills,
-            state.Progression.TotalDefeats, state.Progression.CultivationSeconds, ageSeconds = Math.Floor(state.Progression.AgeSeconds),
-            traitIds = state.Progression.TraitIds ?? (IReadOnlyList<string>)[],
-            unlockedTraits = state.Progression.UnlockedTraits ?? (IReadOnlyList<Domain.Combat.TraitProgressState>)[],
-            defeatedMonsterIds = state.Progression.DefeatedMonsterIds ?? (IReadOnlyList<string>)[],
-            // 开天门与五行灵根：叩天门满修后的必经流程，缺这段投影会让客户端永远看不到抽取结果。
-            heavenGateRolled = state.Progression.HeavenGateRolled,
-            heavenGateConfirmed = state.Progression.HeavenGateConfirmed,
-            heavenGateEntered = state.Progression.HeavenGateEntered,
-            heavenGateRerollCount = state.Progression.HeavenGateRerollCount,
-            // 灵根破镜乘区与乘区后权威修为瓶颈（总纲 §7.7.5.1）：前端显示与本地曲线预判同源。
-            linggenMultiplier = Domain.Player.HeavenGateRules.ResolveCultivationMultiplier(
-                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
-                state.Progression.HeavenGateEntered),
-            expToNextLinggen = Domain.Player.HeavenGateRules.ResolveExpCapWithLinggen(
-                state.Progression.RealmLevel,
-                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
-                state.Progression.HeavenGateEntered,
-                gameData?.RealmProgression),
-            // 筑基期根基常驻养成投影（总纲 §3.2.4）：点数、解锁态、当前境界上限与下一点权威修为消耗。
-            genjiPoints = state.Progression.GenjiPoints,
-            genjiUnlocked = Domain.Player.GenjiRules.IsUnlocked(
-                state.Progression.RealmLevel,
-                state.Progression.GenjiUnlocked,
-                state.Progression.GenjiPoints,
-                state.Progression.Experience,
-                Domain.Player.GenjiRules.ResolveEffectiveExpCap(
-                    state.Progression.RealmLevel,
-                    state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
-                    state.Progression.HeavenGateEntered,
-                    gameData?.RealmProgression)),
-            genjiCap = Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel),
-            genjiNextCost = Domain.Player.GenjiRules.ResolveCondenseExpCost(
-                Domain.Player.GenjiRules.ResolveEffectiveExpCap(
-                    state.Progression.RealmLevel,
-                    state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
-                    state.Progression.HeavenGateEntered,
-                    gameData?.RealmProgression),
-                state.Progression.GenjiPoints,
-                Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel)),
-            lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
-                ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
-                : 0,
-            stagedEnhancements = state.Progression.StagedEnhancements ?? [],
-            // 秘境体力（总纲 §30.3）：同时下发持久化锚点与按 LastSimulatedAt 推算的当前有效值，供前端本地倒计时。
-            tiliValue = state.Progression.TiliValue,
-            tiliUpdatedAtUnixSeconds = state.Progression.TiliUpdatedAtUnixSeconds,
-            tiliCurrent = Domain.Combat.DungeonEnergyRules.Compute(
-                state.Progression.TiliValue,
-                state.Progression.TiliUpdatedAtUnixSeconds,
-                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).Current,
-            tiliMax = Domain.Combat.DungeonEnergyRules.MaxEnergy,
-            tiliNextRecoverySeconds = Domain.Combat.DungeonEnergyRules.Compute(
-                state.Progression.TiliValue,
-                state.Progression.TiliUpdatedAtUnixSeconds,
-                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).NextRecoverySeconds,
-            tiliFullRecoverySeconds = Domain.Combat.DungeonEnergyRules.Compute(
-                state.Progression.TiliValue,
-                state.Progression.TiliUpdatedAtUnixSeconds,
-                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).FullRecoverySeconds
-        },
+        PlayerSectionKind.Progression => ToProgressionSection(state, gameData),
         PlayerSectionKind.World => ToWorldSection(state.World, gameData),
         PlayerSectionKind.Combat => ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")),
         // Buff 通道唯一形状（总纲 §7.9.5.3）：效果通道载荷数组 + 通用属性比率字典（statRatios），
@@ -369,6 +304,78 @@ public static class ProtocolSnapshotMapper
         },
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
     };
+
+    /// <summary>
+    /// 境界与养成（progression）分段协议投影：单次计算追忆副本周清体力快照并透传规范化后的有效锚点，
+    /// 避免重复推导或向前端下发未初始化的零时刻锚点导致倒计时停滞。
+    /// </summary>
+    private static object ToProgressionSection(PlayerAggregateState state, GameDataCatalog? gameData)
+    {
+        var simulatedAtUnix = state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
+        var (tiliValue, tiliUpdatedAtUnixSeconds) = Domain.Combat.DungeonEnergyRules.ResolveAnchor(
+            state.Progression.TiliValue,
+            state.Progression.TiliUpdatedAtUnixSeconds,
+            simulatedAtUnix);
+        var tiliSnapshot = Domain.Combat.DungeonEnergyRules.Compute(
+            tiliValue,
+            tiliUpdatedAtUnixSeconds,
+            simulatedAtUnix);
+        var effectiveExpCap = Domain.Player.GenjiRules.ResolveEffectiveExpCap(
+            state.Progression.RealmLevel,
+            state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+            state.Progression.HeavenGateEntered,
+            gameData?.RealmProgression);
+        var genjiCap = Domain.Player.GenjiRules.CalculateCap(state.Progression.RealmLevel);
+        return new
+        {
+            state.Progression.RealmLevel, state.Progression.Experience,
+            state.Progression.Foundation, state.Progression.CombatExperience, state.Progression.LifetimeExperience,
+            state.Progression.CompletedActions, state.Progression.SimulationCarrySeconds,
+            state.Progression.NormalKills, state.Progression.EliteKills, state.Progression.BossKills,
+            state.Progression.TotalDefeats, state.Progression.CultivationSeconds, ageSeconds = Math.Floor(state.Progression.AgeSeconds),
+            traitIds = state.Progression.TraitIds ?? (IReadOnlyList<string>)[],
+            unlockedTraits = state.Progression.UnlockedTraits ?? (IReadOnlyList<Domain.Combat.TraitProgressState>)[],
+            defeatedMonsterIds = state.Progression.DefeatedMonsterIds ?? (IReadOnlyList<string>)[],
+            // 开天门与五行灵根：叩天门满修后的必经流程，缺这段投影会让客户端永远看不到抽取结果。
+            heavenGateRolled = state.Progression.HeavenGateRolled,
+            heavenGateConfirmed = state.Progression.HeavenGateConfirmed,
+            heavenGateEntered = state.Progression.HeavenGateEntered,
+            heavenGateRerollCount = state.Progression.HeavenGateRerollCount,
+            // 灵根破镜乘区与乘区后权威修为瓶颈（总纲 §7.7.5.1）：前端显示与本地曲线预判同源。
+            linggenMultiplier = Domain.Player.HeavenGateRules.ResolveCultivationMultiplier(
+                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                state.Progression.HeavenGateEntered),
+            expToNextLinggen = Domain.Player.HeavenGateRules.ResolveExpCapWithLinggen(
+                state.Progression.RealmLevel,
+                state.Progression.HeavenGateConfirmed ?? Domain.Player.LinggenValues.Empty,
+                state.Progression.HeavenGateEntered,
+                gameData?.RealmProgression),
+            // 筑基期根基常驻养成投影（总纲 §3.2.4）：点数、解锁态、当前境界上限与下一点权威修为消耗。
+            genjiPoints = state.Progression.GenjiPoints,
+            genjiUnlocked = Domain.Player.GenjiRules.IsUnlocked(
+                state.Progression.RealmLevel,
+                state.Progression.GenjiUnlocked,
+                state.Progression.GenjiPoints,
+                state.Progression.Experience,
+                effectiveExpCap),
+            genjiCap,
+            genjiNextCost = Domain.Player.GenjiRules.ResolveCondenseExpCost(
+                effectiveExpCap,
+                state.Progression.GenjiPoints,
+                genjiCap),
+            lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
+                ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
+                : 0,
+            stagedEnhancements = state.Progression.StagedEnhancements ?? [],
+            // 秘境体力（总纲 §30.2）：同时下发规范化锚点与按 LastSimulatedAt 推算的当前有效值，供前端本地倒计时。
+            tiliValue,
+            tiliUpdatedAtUnixSeconds,
+            tiliCurrent = tiliSnapshot.Current,
+            tiliMax = tiliSnapshot.Max,
+            tiliNextRecoverySeconds = tiliSnapshot.NextRecoverySeconds,
+            tiliFullRecoverySeconds = tiliSnapshot.FullRecoverySeconds
+        };
+    }
 
     /// <summary>
     /// 战报线协议投影：剥离重型 DuelRecords 行动流数组，仅保留轻量 duelRecordCount 供界面徽标与按需拉取感知。
@@ -724,7 +731,7 @@ public static class ProtocolSnapshotMapper
             // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。
             playerBuffs = playerBuffsDto,
             enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken, effectiveDifficulty, isDungeon, expedition.DungeonId, maxPartyRealmLevel)).ToArray(),
-            duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
+            duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex, inspectedAllyIndex, onAttributesProjected),
             recentEvents = expedition.RecentEvents is null || expedition.RecentEvents.Count == 0 ? null : expedition.RecentEvents.Select(e => new
             {
                 at = e.AtSeconds,
@@ -1001,11 +1008,66 @@ public static class ProtocolSnapshotMapper
         return list is null || list.Count == 0 ? null : list.ToArray();
     }
 
-    /// <summary>斗法回放白名单投影：对手资源与事件级 MP 快照常驻下发；属性面板仅在观察目标命中镜像位（enemy:0）时投影。</summary>
-    private static object ToDuelPlaybackDto(DuelPlaybackState duel, bool includeOpponentAttributes, Action? onAttributesProjected = null)
+    /// <summary>斗法回放白名单投影（原生支持 1v1 与 1~5v1~5）：对手资源与事件级 MP 快照常驻下发；属性面板与装配仅在观察目标命中对应下标时按需投影。</summary>
+    private static object ToDuelPlaybackDto(DuelPlaybackState duel, int? inspectedEnemyIndex, int? inspectedAllyIndex, Action? onAttributesProjected = null)
     {
-        var opponentAttributes = includeOpponentAttributes ? ToAttributesDto(duel.OpponentStats) : null;
-        if (opponentAttributes is not null) onAttributesProjected?.Invoke();
+        var includeLeadOpponentAttributes = inspectedEnemyIndex == 0;
+        var opponentAttributes = includeLeadOpponentAttributes ? ToAttributesDto(duel.OpponentStats) : null;
+        var projected = opponentAttributes is not null;
+
+        object[]? selfUnitsDto = null;
+        if (duel.SelfUnits is { Count: > 0 } selfUnits)
+        {
+            selfUnitsDto = new object[selfUnits.Count];
+            for (var i = 0; i < selfUnits.Count; i++)
+            {
+                var u = selfUnits[i];
+                var inspectThis = inspectedAllyIndex == i;
+                var attrs = inspectThis ? ToAttributesDto(u.Stats) : null;
+                if (attrs is not null) projected = true;
+                selfUnitsDto[i] = new
+                {
+                    u.PlayerId,
+                    u.DisplayName,
+                    u.Avatar,
+                    u.Hitpoints,
+                    u.Manapoints,
+                    maxHitpoints = u.Stats.MaxHitpoints,
+                    maxManapoints = u.Stats.MaxManapoints,
+                    attributes = attrs,
+                    skills = inspectThis ? u.Skills : null,
+                    equipment = inspectThis ? u.Equipment : null
+                };
+            }
+        }
+
+        object[]? opponentUnitsDto = null;
+        if (duel.OpponentUnits is { Count: > 0 } opponentUnits)
+        {
+            opponentUnitsDto = new object[opponentUnits.Count];
+            for (var i = 0; i < opponentUnits.Count; i++)
+            {
+                var u = opponentUnits[i];
+                var inspectThis = inspectedEnemyIndex == i;
+                var attrs = inspectThis ? ToAttributesDto(u.Stats) : null;
+                if (attrs is not null) projected = true;
+                opponentUnitsDto[i] = new
+                {
+                    u.PlayerId,
+                    u.DisplayName,
+                    u.Avatar,
+                    u.Hitpoints,
+                    u.Manapoints,
+                    maxHitpoints = u.Stats.MaxHitpoints,
+                    maxManapoints = u.Stats.MaxManapoints,
+                    attributes = attrs,
+                    skills = inspectThis ? u.Skills : null,
+                    equipment = inspectThis ? u.Equipment : null
+                };
+            }
+        }
+
+        if (projected) onAttributesProjected?.Invoke();
         return new
         {
             duel.DuelId,
@@ -1021,21 +1083,27 @@ public static class ProtocolSnapshotMapper
             opponentMaxManapoints = duel.OpponentStats.MaxManapoints,
             opponentAttributes,
             // 镜像功法槽与已穿戴装备与属性同帧一次性交付（撮合时冻结），前端按 duel:{对手名} 缓存。
-            opponentSkills = includeOpponentAttributes ? duel.OpponentSkills : null,
-            opponentEquipment = includeOpponentAttributes ? duel.OpponentEquipment : null,
+            opponentSkills = includeLeadOpponentAttributes ? duel.OpponentSkills : null,
+            opponentEquipment = includeLeadOpponentAttributes ? duel.OpponentEquipment : null,
             viewerIsInitiator = duel.ViewerIsInitiator,
+            selfUnitIndex = duel.SelfUnitIndex,
+            selfUnits = selfUnitsDto,
+            opponentUnits = opponentUnitsDto,
             duel.Resolved,
             duel.Forfeited,
             events = duel.Events
                 .Where(duelEvent => duelEvent.AbilityNameOverride != DuelScriptEvent.SustainedActivateMarker
                     && !(duelEvent.AbilityId is null
                         && duelEvent.AttackerIsInitiator == duelEvent.TargetIsInitiator
+                        && duelEvent.AttackerUnitIndex == duelEvent.TargetUnitIndex
                         && duelEvent.Damage == 0))
                 .Select(duelEvent => new
             {
                 duelEvent.AtSeconds,
                 duelEvent.AttackerIsInitiator,
                 duelEvent.TargetIsInitiator,
+                duelEvent.AttackerUnitIndex,
+                duelEvent.TargetUnitIndex,
                 duelEvent.Damage,
                 duelEvent.Hit,
                 duelEvent.Critical,

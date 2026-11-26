@@ -24,6 +24,34 @@
   background: rgba(201, 180, 109, 0.16);
 }
 
+.topbar-tili-btn--panel {
+  display: none;
+  flex-shrink: 0;
+}
+
+.topbar-tili-btn--panel:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.panel-header.exploration-header {
+  align-items: center;
+}
+
+.exploration-header-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.exploration-header-main .location-sub-badge {
+  margin-left: 0;
+  max-width: 100%;
+}
+
 .topbar-tili-btn.is-full {
   border-color: rgba(114, 169, 140, 0.52);
   color: var(--jade);
@@ -600,12 +628,24 @@
   color: var(--qi);
 }
 
-/* ==================== 7. 窄屏响应 ==================== */
+/* ==================== 7. 窄屏与竖屏响应 ==================== */
 @media (max-width: 720px) {
   .dungeon-wave-browser {
     grid-template-columns: 1fr;
   }
   .dungeon-two-col {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (orientation: portrait) {
+  .topbar-actions .topbar-tili-btn--topbar {
+    display: none;
+  }
+
+  .topbar-tili-btn--panel {
+    display: inline-flex;
+    height: 28px;
+    padding: 0 9px;
   }
 }

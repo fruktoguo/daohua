@@ -887,6 +887,7 @@ public sealed record PartyLinkDto(
 /// <param name="LikeCount">当前点赞总数</param>
 /// <param name="LikedByMe">接收者本人是否点赞</param>
 /// <param name="LikeVersion">消息点赞状态版本</param>
+/// <param name="SenderTopRank">发送者当前在全服个人排行榜（除宗门榜外 11 榜）Top 50 中的最高名次徽标；未上榜或尚未物化时为 null</param>
 public sealed record ChatMessageDto(
     string MessageId,
     string Channel,
@@ -900,7 +901,8 @@ public sealed record ChatMessageDto(
     ChatQuoteDto? Quote = null,
     double LikeCount = 0,
     bool LikedByMe = false,
-    long LikeVersion = 0);
+    long LikeVersion = 0,
+    GuideRankBadgeDto? SenderTopRank = null);
 
 /// <summary>频道历史回放载荷：某作用域最近 100 条传音，按时间正序。</summary>
 /// <param name="Channel">频道标识</param>
@@ -989,14 +991,12 @@ public static class SocialActions
     public const string PartySlots = "party.slots";
     /// <summary>切换秘境助战模式（成员本人；AssistMode 必填；助战免耗体力且无收益）</summary>
     public const string PartyAssist = "party.assist";
-    /// <summary>队长设置斗地主底注。</summary>
-    public const string DouDiZhuStake = "doudizhu.stake";
-    /// <summary>成员本人切换斗地主准备状态。</summary>
-    public const string DouDiZhuReady = "doudizhu.ready";
-    /// <summary>成员本人取消斗地主准备状态。</summary>
-    public const string DouDiZhuUnready = "doudizhu.unready";
-    /// <summary>队长开始斗地主。</summary>
-    public const string DouDiZhuStart = "doudizhu.start";
+    /// <summary>加入指定阶位的斗地主全局匹配队列（DouDiZhuTier 必填 1~8）。</summary>
+    public const string DouDiZhuMatchJoin = "doudizhu.match.join";
+    /// <summary>取消本人当前的斗地主全局匹配登记。</summary>
+    public const string DouDiZhuMatchCancel = "doudizhu.match.cancel";
+    /// <summary>离开并关闭本人已结束的斗地主赛后牌桌视图。</summary>
+    public const string DouDiZhuLeave = "doudizhu.leave";
     /// <summary>叫地主或抢地主。</summary>
     public const string DouDiZhuBid = "doudizhu.bid";
     /// <summary>出牌。</summary>
@@ -1018,8 +1018,8 @@ public static class SocialActions
         PartyInvite or PartyAccept or PartyDecline or PartyLeave or
         PartyCreate or PartyUpdate or PartyDisband or PartyKick or PartyJoin or
         PartyMatchSet or PartyMatchClear or PartyShare or
-        PartyReady or PartyUnready or PartySlots or PartyAssist or DouDiZhuStake or DouDiZhuReady or DouDiZhuUnready
-        or DouDiZhuStart or DouDiZhuBid or DouDiZhuPlay or DouDiZhuPass or DouDiZhuHost or DouDiZhuUnhost or DouDiZhuInteract;
+        PartyReady or PartyUnready or PartySlots or PartyAssist or DouDiZhuMatchJoin or DouDiZhuMatchCancel
+        or DouDiZhuLeave or DouDiZhuBid or DouDiZhuPlay or DouDiZhuPass or DouDiZhuHost or DouDiZhuUnhost or DouDiZhuInteract;
 }
 
 /// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/nodeId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
@@ -1032,7 +1032,6 @@ public static class SocialActions
 /// 仅 activityKind='combat' 可为 true、仅队长经 <c>party.update</c> 修改，会话存续期间修改触发散场重建</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；仅 <c>party.slots</c> 消费，create/update/match.set 忽略</param>
 /// <param name="Difficulty">讨伐/秘境难度等级（野外 0~5，秘境 0~11）</param>
-/// <param name="DouDiZhuStake">斗地主底注</param>
 /// <param name="DungeonId">秘境配置 ID（仅 activityKind='dungeon' 有效）</param>
 /// <param name="DungeonRepeatCount">秘境连刷次数（-1 表示刷至付费成员体力耗尽，1~99 表示指定把数）</param>
 public sealed record PartyProfileDto(
@@ -1044,7 +1043,6 @@ public sealed record PartyProfileDto(
     bool? PvpEnabled = null,
     int? OpenSlots = null,
     int? Difficulty = null,
-    double? DouDiZhuStake = null,
     string? DungeonId = null,
     int? DungeonRepeatCount = null);
 
@@ -1057,6 +1055,7 @@ public sealed record PartyProfileDto(
 /// <param name="Channel">目标传音频道；仅 <c>party.share</c> 使用</param>
 /// <param name="Party">队伍档案补丁；<c>party.create</c>/<c>party.update</c>/<c>party.match.set</c>/<c>party.slots</c> 使用</param>
 /// <param name="AssistMode">秘境助战模式开关；仅 <c>party.assist</c> 使用</param>
+/// <param name="DouDiZhuTier">斗地主匹配阶位（1~8）；仅 <c>doudizhu.match.join</c> 使用</param>
 public sealed record SocialActionDto(
     string RequestId,
     string Action,
@@ -1070,7 +1069,8 @@ public sealed record SocialActionDto(
     string? BidAction = null,
     IReadOnlyList<int>? Cards = null,
     string? Interaction = null,
-    bool? AssistMode = null);
+    bool? AssistMode = null,
+    int? DouDiZhuTier = null);
 
 /// <summary>好友条目。</summary>
 /// <param name="PlayerId">好友玩家 ID</param>
@@ -1112,11 +1112,20 @@ public sealed record PartyMemberDto(
     double LevelMalus = 0,
     string Avatar = "player",
     ValuationBreakdownDto? ValuationBreakdown = null,
-    bool DouDiZhuReady = false,
-    double SpiritStones = 0,
     bool AssistMode = false,
     int TiliCurrent = 0,
     int TiliMax = 1680);
+
+/// <summary>斗地主牌桌座位玩家信息投影。</summary>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="DisplayName">道号（含宗门前缀）</param>
+/// <param name="Avatar">角色立绘标识</param>
+/// <param name="SpiritStones">当前可用灵石余额</param>
+public sealed record DouDiZhuSeatDto(
+    string PlayerId,
+    string DisplayName,
+    string Avatar = "player",
+    double SpiritStones = 0);
 
 /// <summary>斗地主牌桌中一手公开出牌/过牌记录。</summary>
 public sealed record DouDiZhuPlayDto(int Seat, IReadOnlyList<int> Cards, bool IsPass, long Version);
@@ -1128,9 +1137,10 @@ public sealed record DouDiZhuBidDto(int Seat, string Action, long Version);
 public sealed record DouDiZhuInteractionDto(string Id, string GameId, string SenderId, string TargetId,
     string Kind, long CreatedAtUnixMilliseconds);
 
-/// <summary>面向单名队伍成员投影的斗地主牌局状态；Hand 与 BottomCards 按观者权限裁剪。</summary>
+/// <summary>面向单名座位玩家投影的斗地主牌局状态；Hand 与 BottomCards 按观者权限裁剪。</summary>
 public sealed record DouDiZhuGameDto(
     string GameId,
+    int Tier,
     IReadOnlyList<string> PlayerIds,
     double BaseStake,
     string Phase,
@@ -1159,7 +1169,8 @@ public sealed record DouDiZhuGameDto(
     long? LandlordConfirmedAtUnixMilliseconds = null,
     IReadOnlyList<int>? DealHand = null,
     IReadOnlyList<DouDiZhuBidDto>? Bids = null,
-    long ServerNowUnixMilliseconds = 0);
+    long ServerNowUnixMilliseconds = 0,
+    IReadOnlyList<DouDiZhuSeatDto>? Seats = null);
 
 /// <summary>组队讨伐活跃会话（总纲 §21.13：会话持有唯一权威战斗状态，成员读取个人结算投影）。</summary>
 /// <param name="SessionId">会话唯一标识</param>
@@ -1188,8 +1199,6 @@ public sealed record PartySessionDto(
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；成员数达到槽位且全员就绪位于目标节点时自动开战</param>
 /// <param name="ActiveSession">进行中的组队讨伐会话；无会话为 null（散场即随下次状态推送消失）</param>
 /// <param name="Difficulty">队伍设定的讨伐/秘境难度等级（野外 0~5，秘境 0~11）</param>
-/// <param name="DouDiZhuStake">斗地主底注</param>
-/// <param name="DouDiZhuGame">当前斗地主牌局投影</param>
 /// <param name="DungeonId">秘境配置 ID（仅 activityKind='dungeon' 有效）</param>
 /// <param name="DungeonRepeatCount">秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数）</param>
 public sealed record PartyDto(
@@ -1205,8 +1214,6 @@ public sealed record PartyDto(
     int OpenSlots,
     PartySessionDto? ActiveSession = null,
     int Difficulty = 0,
-    double DouDiZhuStake = 10,
-    DouDiZhuGameDto? DouDiZhuGame = null,
     string DungeonId = "",
     int DungeonRepeatCount = 1);
 
@@ -1240,6 +1247,10 @@ public sealed record PartySeekerDto(string ActivityKind, string NodeId, double M
 /// <param name="PartyInvitation">待处理的队伍邀请；无邀请时为 null</param>
 /// <param name="NearbyPlayers">同节点在线修士（含自己）</param>
 /// <param name="Seeking">本人匹配中登记；未登记为 null</param>
+/// <param name="DouDiZhuInteractions">当前牌桌短暂互动广播</param>
+/// <param name="DouDiZhuGame">当前活跃或待本人关闭的斗地主牌局投影</param>
+/// <param name="DouDiZhuMatchingTier">本人正在排队匹配的斗地主阶位（1~8）；未匹配为 null</param>
+/// <param name="DouDiZhuQueueCounts">八阶（1~8）当前匹配人数列表（长度 8）</param>
 public sealed record SocialStateDto(
     string? RequestId,
     IReadOnlyList<FriendDto> Friends,
@@ -1249,7 +1260,10 @@ public sealed record SocialStateDto(
     PartyInvitationDto? PartyInvitation,
     IReadOnlyList<NearbyPlayerDto> NearbyPlayers,
     PartySeekerDto? Seeking = null,
-    IReadOnlyList<DouDiZhuInteractionDto>? DouDiZhuInteractions = null);
+    IReadOnlyList<DouDiZhuInteractionDto>? DouDiZhuInteractions = null,
+    DouDiZhuGameDto? DouDiZhuGame = null,
+    int? DouDiZhuMatchingTier = null,
+    IReadOnlyList<int>? DouDiZhuQueueCounts = null);
 
 /// <summary>组队大厅筛选请求。</summary>
 /// <param name="RequestId">请求唯一标识，回执配对键</param>

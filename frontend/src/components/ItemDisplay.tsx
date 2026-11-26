@@ -1879,7 +1879,7 @@ export function extractEquipmentBonusItems(
   }
 
   if (equipment.techniqueBonus) {
-    const { technique, speedRatio } = equipment.techniqueBonus
+    const { technique, speedRatio, enhancementSuccessBonus } = equipment.techniqueBonus
     if (speedRatio > 0) {
       const scaled = speedRatio * enhanceScale
       const percent = +(scaled * 100).toFixed(1)
@@ -1891,6 +1891,15 @@ export function extractEquipmentBonusItems(
         label,
         tone: 'emerald',
         value: `+${percent}%`,
+      })
+    }
+    // 强化技艺工具附加的固定强化成功率加成（不随工具自身强化等级缩放，总纲 §20.7.2）
+    if (enhancementSuccessBonus && enhancementSuccessBonus > 0) {
+      items.push({
+        glyph: 'threat-bonus',
+        label: t('market.aside.badgeEnhancementSuccess'),
+        tone: 'gold',
+        value: `+${formatNumber(enhancementSuccessBonus * 100, { maxDecimals: 1 })}%`,
       })
     }
   }

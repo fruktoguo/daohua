@@ -72,6 +72,7 @@ test('静态代码契约：攻略渲染器与名片付费查阅所有物品/灵�
   for (const relPath of [
     '../components/GuidePage.tsx',
     '../components/GuideEditorModal.tsx',
+    '../components/ChatMessageContent.tsx',
     '../components/PlayerCardModal.tsx',
     '../components/SettingsPage.tsx',
   ]) {
@@ -82,4 +83,32 @@ test('静态代码契约：攻略渲染器与名片付费查阅所有物品/灵�
       assert.match(tag, /\bitemId=/, `${relPath} 中的 ${tag} 必须显式传入 itemId`)
     }
   }
+})
+
+test('静态代码契约：FloatingPopover button 触发器显式 type="button" 防表单误提交，物品列表与攻略头像锁定尺寸', async () => {
+  const popoverSrc = await readFile(new URL('../components/FloatingPopover.tsx', import.meta.url), 'utf8')
+  assert.match(
+    popoverSrc,
+    /<button\b[^>]*type="button"/,
+    'FloatingPopover triggerAs="button" 必须显式设置 type="button"，防止置于表单内触发误提交',
+  )
+
+  const emojiPickerSrc = await readFile(new URL('../components/ChatEmojiPicker.tsx', import.meta.url), 'utf8')
+  assert.match(
+    emojiPickerSrc,
+    /handleAddStickerSubmit[\s\S]*?e\.stopPropagation\(\)/,
+    'ChatEmojiPicker 内部表单提交必须 stopPropagation，避免经 Portal 冒泡触发外层表单提交',
+  )
+
+  const guideCss = await readFile(new URL('../styles/guide.css', import.meta.url), 'utf8')
+  assert.match(
+    guideCss,
+    /\.guide-item-option\s*\{[\s\S]*?flex-shrink:\s*0;/,
+    '.guide-item-option 必须设置 flex-shrink: 0，防止多物品在限高列表内纵向挤压塌缩',
+  )
+  assert.match(
+    guideCss,
+    /\.guide-author-avatar-box\s+\.character-avatar[\s\S]*?max-width:\s*100%;/,
+    '攻略作者头像必须通过外框容器与高权重选择器约束尺寸，防止被 .character-avatar 撑大',
+  )
 })

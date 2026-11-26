@@ -29,7 +29,7 @@ export interface GuideEditorModalProps {
   editingPost: GuidePostDetailDto | null
   submitting: boolean
   onClose: () => void
-  onSubmit: (payload: GuidePostUpsertPayload) => Promise<void>
+  onSubmit: (payload: GuidePostUpsertPayload, options?: { shareAfterSave?: boolean }) => Promise<void>
 }
 
 interface GuideLocalDraft {
@@ -313,8 +313,7 @@ export const GuideEditorModal = memo(function GuideEditorModal({
     if (!editingPost) clearGuideLocalDraft(playerId)
   }
 
-  const handleFormSubmit = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault()
+  const submitEditorPayload = async (shareAfterSave: boolean): Promise<void> => {
     setFormError(null)
 
     if (titleCount < 1 || titleCount > GUIDE_MAX_TITLE_RUNES) {
@@ -341,15 +340,25 @@ export const GuideEditorModal = memo(function GuideEditorModal({
     }
 
     try {
-      await onSubmit({
-        title: title.trim(),
-        summary: summary.trim(),
-        body: body.trim(),
-        unlockPrice,
-      })
+      await onSubmit(
+        {
+          title: title.trim(),
+          summary: summary.trim(),
+          body: body.trim(),
+          unlockPrice,
+        },
+        shareAfterSave ? { shareAfterSave: true } : undefined,
+      )
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('social.guide.submitFailed'))
     }
+  }
+
+  const handleFormSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault()
+    // 仅处理当前编辑表单自身提交，防止 Portal 内的子表单（如表情包添加表单）冒泡误触提交
+    if (e.target !== e.currentTarget) return
+    await submitEditorPayload(false)
   }
 
   const activeKaomojiGroup = GUIDE_KAOMOJI_CATEGORIES.find(c => c.id === kaomojiTab) ?? GUIDE_KAOMOJI_CATEGORIES[0]
@@ -649,13 +658,14 @@ export const GuideEditorModal = memo(function GuideEditorModal({
             content={({ close }) => (
               <div className="guide-item-popover">
                 <input
+                  autoComplete="off"
                   className="guide-item-search"
                   onChange={e => setItemFilter(e.target.value)}
                   placeholder={t('social.guide.searchItemPlaceholder')}
                   type="search"
                   value={itemFilter}
                 />
-                <div className="guide-item-list">
+                <div className="guide-item-list" role="listbox">
                   {candidateItems.length === 0 ? (
                     <p className="guide-item-empty">{t('social.guide.noCandidateItems')}</p>
                   ) : (
@@ -667,10 +677,12 @@ export const GuideEditorModal = memo(function GuideEditorModal({
                           insertAtCursor({ prefix: buildItemChatMarkup(entry.itemId, entry.enhancementLevel) })
                           close()
                         }}
+                        role="option"
+                        title={entry.label}
                         type="button"
                       >
                         <ItemIcon itemId={entry.itemId} />
-                        <span>{entry.label}</span>
+                        <span className="guide-item-option-name">{entry.label}</span>
                       </button>
                     ))
                   )}
@@ -767,6 +779,17 @@ export const GuideEditorModal = memo(function GuideEditorModal({
               type="button"
             >
               {t('social.zongmen.cancel')}
+            </button>
+            <button
+              className="guide-share-btn"
+              disabled={submitting || titleCount < 1 || bodyCount < 1 || bodyCount > GUIDE_MAX_BODY_RUNES}
+              onClick={() => { void submitEditorPayload(true) }}
+              type="button"
+            >
+              <Icon name="chat" size={13} />
+              <span>
+                {editingPost ? t('social.guide.saveAndShareBtn') : t('social.guide.publishAndShareBtn')}
+              </span>
             </button>
             <button
               className="primary-btn guide-publish-btn"

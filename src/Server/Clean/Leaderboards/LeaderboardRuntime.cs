@@ -59,8 +59,9 @@ public sealed class LeaderboardRuntime
     public DateTimeOffset? ComputedAt => _state?.ComputedAt;
 
     /// <summary>
-    /// 查询单个修士在除宗门榜外全部个人排行榜中位列 Top N（默认 Top 50）的名次徽标列表（按名次升序，并列按规范榜序）；
-    /// 内存快照已就绪时 O(1) 零分配直读，冷启动尚未驻留内存时回退查询 game.leaderboard_ranks。
+    /// 查询单个修士在除宗门榜外全部个人排行榜中位列 Top N（默认 Top 50）的名次徽标列表
+    /// （按名次升序，并列按 <see cref="LeaderboardAssembler.PersonalHonorBoards"/> 荣誉优先序：境界 &gt; 斗法 &gt; 身家 &gt; 灵石 &gt; 七技艺）；
+    /// 内存快照已就绪时 O(1) 零库直读，冷启动尚未驻留内存时回退查询 game.leaderboard_ranks。
     /// </summary>
     public async ValueTask<IReadOnlyList<GuideRankBadgeDto>> GetPersonalTopRanksAsync(
         Guid playerId,
@@ -72,25 +73,30 @@ public sealed class LeaderboardRuntime
         var state = _state;
         if (state is not null)
         {
-            var list = new List<GuideRankBadgeDto>();
-            foreach (var desc in LeaderboardAssembler.CanonicalBoards)
+            var ranked = new List<(int Order, GuideRankBadgeDto Badge)>();
+            var honorBoards = LeaderboardAssembler.PersonalHonorBoards;
+            for (var i = 0; i < honorBoards.Count; i++)
             {
-                if (desc.BoardId == LeaderboardBoardIds.Zongmen) continue;
+                var desc = honorBoards[i];
                 if (state.Boards.TryGetValue(desc.BoardId, out var board)
                     && board.MyRanks.TryGetValue(playerId, out var rankDto)
                     && rankDto.Rank >= 1 && rankDto.Rank <= maxRank)
                 {
-                    list.Add(new GuideRankBadgeDto(desc.BoardId, desc.Kind, desc.TechniqueId, rankDto.Rank));
+                    ranked.Add((i, new GuideRankBadgeDto(desc.BoardId, desc.Kind, desc.TechniqueId, rankDto.Rank)));
                 }
             }
-            list.Sort(static (a, b) => a.Rank.CompareTo(b.Rank));
+            ranked.Sort(static (a, b) =>
+            {
+                var cmp = a.Badge.Rank.CompareTo(b.Badge.Rank);
+                return cmp != 0 ? cmp : a.Order.CompareTo(b.Order);
+            });
+            var list = new GuideRankBadgeDto[ranked.Count];
+            for (var i = 0; i < ranked.Count; i++)
+                list[i] = ranked[i].Badge;
             return list;
         }
 
-        var descriptorById = LeaderboardAssembler.CanonicalBoards
-            .Where(d => d.BoardId != LeaderboardBoardIds.Zongmen)
-            .Select((d, index) => (d, index))
-            .ToDictionary(x => x.d.BoardId, x => x, StringComparer.Ordinal);
+        var descriptorById = BuildPersonalHonorLookup();
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = new NpgsqlCommand("""
@@ -109,7 +115,7 @@ public sealed class LeaderboardRuntime
             var boardId = reader.GetString(0);
             var rank = reader.GetInt32(1);
             if (descriptorById.TryGetValue(boardId, out var entry))
-                fallback.Add((entry.index, new GuideRankBadgeDto(boardId, entry.d.Kind, entry.d.TechniqueId, rank)));
+                fallback.Add((entry.Order, new GuideRankBadgeDto(boardId, entry.Descriptor.Kind, entry.Descriptor.TechniqueId, rank)));
         }
         fallback.Sort(static (a, b) =>
         {
@@ -119,7 +125,29 @@ public sealed class LeaderboardRuntime
         return fallback.Select(x => x.Badge).ToArray();
     }
 
-    /// <summary>批量获取一组修士在个人榜 Top N 中的最优单榜名次徽标，供攻略列表与详情展示作者头衔。</summary>
+    /// <summary>
+    /// 获取单个修士在个人榜 Top N 中的最优单榜名次徽标（供传音发言等单人高频热路径使用）：
+    /// 内存快照就绪时同步 O(1) 零集合分配返回，冷启动尚未驻留内存时回退查询 game.leaderboard_ranks。
+    /// </summary>
+    public async ValueTask<GuideRankBadgeDto?> GetBestPersonalRankAsync(
+        Guid playerId,
+        int maxRank = LeaderboardAssembler.TopN,
+        CancellationToken cancellationToken = default)
+    {
+        if (playerId == Guid.Empty || maxRank <= 0) return null;
+
+        var state = _state;
+        if (state is not null)
+            return SelectBestPersonalRank(state, playerId, maxRank);
+
+        var batch = await GetBestPersonalRanksAsync([playerId], maxRank, cancellationToken).ConfigureAwait(false);
+        return batch.GetValueOrDefault(playerId);
+    }
+
+    /// <summary>
+    /// 批量获取一组修士在个人榜 Top N 中的最优单榜名次徽标（并列按 境界 &gt; 斗法 &gt; 身家 &gt; 灵石 &gt; 七技艺 优先），
+    /// 供传音历史回放与道友攻略列表展示头衔。
+    /// </summary>
     public async ValueTask<IReadOnlyDictionary<Guid, GuideRankBadgeDto>> GetBestPersonalRanksAsync(
         IReadOnlyCollection<Guid> playerIds,
         int maxRank = LeaderboardAssembler.TopN,
@@ -134,29 +162,19 @@ public sealed class LeaderboardRuntime
             var bestByPlayer = new Dictionary<Guid, GuideRankBadgeDto>(playerIds.Count);
             foreach (var pid in playerIds)
             {
-                if (pid == Guid.Empty) continue;
-                GuideRankBadgeDto? best = null;
-                foreach (var desc in LeaderboardAssembler.CanonicalBoards)
-                {
-                    if (desc.BoardId == LeaderboardBoardIds.Zongmen) continue;
-                    if (!state.Boards.TryGetValue(desc.BoardId, out var board)
-                        || !board.MyRanks.TryGetValue(pid, out var rankDto)
-                        || rankDto.Rank < 1 || rankDto.Rank > maxRank)
-                        continue;
-
-                    if (best is null || rankDto.Rank < best.Rank)
-                        best = new GuideRankBadgeDto(desc.BoardId, desc.Kind, desc.TechniqueId, rankDto.Rank);
-                }
+                if (pid == Guid.Empty || bestByPlayer.ContainsKey(pid)) continue;
+                var best = SelectBestPersonalRank(state, pid, maxRank);
                 if (best is not null)
                     bestByPlayer[pid] = best;
             }
             return bestByPlayer;
         }
 
-        var descriptorById = LeaderboardAssembler.CanonicalBoards
-            .Where(d => d.BoardId != LeaderboardBoardIds.Zongmen)
-            .Select((d, index) => (d, index))
-            .ToDictionary(x => x.d.BoardId, x => x, StringComparer.Ordinal);
+        var uniqueIds = playerIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (uniqueIds.Length == 0)
+            return FrozenDictionary<Guid, GuideRankBadgeDto>.Empty;
+
+        var descriptorById = BuildPersonalHonorLookup();
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = new NpgsqlCommand("""
@@ -164,7 +182,7 @@ public sealed class LeaderboardRuntime
             FROM game.leaderboard_ranks
             WHERE player_id = ANY($1) AND board_id <> $2 AND rank >= 1 AND rank <= $3
             """, connection);
-        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid, Value = playerIds.Where(id => id != Guid.Empty).Distinct().ToArray() });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid, Value = uniqueIds });
         cmd.Parameters.Add(new NpgsqlParameter { Value = LeaderboardBoardIds.Zongmen });
         cmd.Parameters.Add(new NpgsqlParameter { Value = maxRank });
 
@@ -176,15 +194,43 @@ public sealed class LeaderboardRuntime
             var boardId = reader.GetString(1);
             var rank = reader.GetInt32(2);
             if (!descriptorById.TryGetValue(boardId, out var entry)) continue;
-            var candidate = new GuideRankBadgeDto(boardId, entry.d.Kind, entry.d.TechniqueId, rank);
+            var candidate = new GuideRankBadgeDto(boardId, entry.Descriptor.Kind, entry.Descriptor.TechniqueId, rank);
             if (!bestFallback.TryGetValue(pid, out var current)
                 || rank < current.Badge.Rank
-                || (rank == current.Badge.Rank && entry.index < current.Order))
+                || (rank == current.Badge.Rank && entry.Order < current.Order))
             {
-                bestFallback[pid] = (entry.index, candidate);
+                bestFallback[pid] = (entry.Order, candidate);
             }
         }
         return bestFallback.ToDictionary(kv => kv.Key, kv => kv.Value.Badge);
+    }
+
+    private static GuideRankBadgeDto? SelectBestPersonalRank(CachedLeaderboardState state, Guid playerId, int maxRank)
+    {
+        GuideRankBadgeDto? best = null;
+        var honorBoards = LeaderboardAssembler.PersonalHonorBoards;
+        for (var i = 0; i < honorBoards.Count; i++)
+        {
+            var desc = honorBoards[i];
+            if (!state.Boards.TryGetValue(desc.BoardId, out var board)
+                || !board.MyRanks.TryGetValue(playerId, out var rankDto)
+                || rankDto.Rank < 1 || rankDto.Rank > maxRank)
+                continue;
+
+            // 严格小于才覆盖：同排名并列时先遍历到的高优先级榜单胜出。
+            if (best is null || rankDto.Rank < best.Rank)
+                best = new GuideRankBadgeDto(desc.BoardId, desc.Kind, desc.TechniqueId, rankDto.Rank);
+        }
+        return best;
+    }
+
+    private static Dictionary<string, (LeaderboardBoardDescriptor Descriptor, int Order)> BuildPersonalHonorLookup()
+    {
+        var honorBoards = LeaderboardAssembler.PersonalHonorBoards;
+        var map = new Dictionary<string, (LeaderboardBoardDescriptor Descriptor, int Order)>(honorBoards.Count, StringComparer.Ordinal);
+        for (var i = 0; i < honorBoards.Count; i++)
+            map[honorBoards[i].BoardId] = (honorBoards[i], i);
+        return map;
     }
 
     /// <summary>直接判断总览元数据的 If-None-Match 命中与返回（未就绪返回 StatusCode=503）。</summary>

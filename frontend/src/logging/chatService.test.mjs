@@ -118,3 +118,23 @@ test('私聊历史尚未返回时也只读选中好友的作用域', () => {
   chatService.appendMessage(message('b', 'friend', 'friend-b:me', '只给乙', 1001))
   assert.deepEqual(selectFriendMessages(chatService.getSnapshot(), 'friend-b').map(entry => entry.body), ['只给乙'])
 })
+
+test('chatService：实时消息与历史回放完整透传发送者最高排名徽标（缺省归 null）', () => {
+  chatService.reset()
+  chatService.activate('me')
+  const badge = { boardId: 'duel', kind: 'duel', techniqueId: null, rank: 1 }
+  chatService.appendMessage({ ...message('r1', 'world', '', '带榜发言', 1000), senderTopRank: badge })
+  chatService.appendMessage(message('r2', 'world', '', '未上榜发言', 1001))
+
+  const live = selectChannelMessages(chatService.getSnapshot(), 'world')
+  assert.deepEqual(live[0].senderTopRank, badge)
+  assert.equal(live[1].senderTopRank, null)
+
+  chatService.applyHistory({
+    channel: 'world',
+    scopeKey: '',
+    messages: [{ ...message('r3', 'world', '', '历史带榜', 1002), senderTopRank: { boardId: 'technique.alchemy', kind: 'technique', techniqueId: 'alchemy', rank: 3 } }],
+  })
+  const history = selectChannelMessages(chatService.getSnapshot(), 'world')
+  assert.deepEqual(history[0].senderTopRank, { boardId: 'technique.alchemy', kind: 'technique', techniqueId: 'alchemy', rank: 3 })
+})

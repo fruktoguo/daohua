@@ -99,7 +99,8 @@ public sealed class WireEnvelopeTests
         Assert.Equal(send, RoundTrip(WireMessageType.ChatSend, send));
 
         var message = new ChatMessageDto(id, ChatChannels.Friend, "pair", actor, "回帖者", "回复", 123L,
-            Quote: new(sourceId, "原发言者", "{{item:item.qi-gathering-pill|聚气丹}}"), LikeCount: 2, LikedByMe: true, LikeVersion: 4);
+            Quote: new(sourceId, "原发言者", "{{item:item.qi-gathering-pill|聚气丹}}"), LikeCount: 2, LikedByMe: true, LikeVersion: 4,
+            SenderTopRank: new GuideRankBadgeDto(LeaderboardBoardIds.Duel, "duel", null, 2));
         var history = RoundTrip(WireMessageType.ChatHistory, new ChatHistoryDto(ChatChannels.Friend, "pair", target, [message]));
         Assert.Equal(message, Assert.Single(history.Messages));
         Assert.Equal(message, RoundTrip(WireMessageType.ChatMessage, message));

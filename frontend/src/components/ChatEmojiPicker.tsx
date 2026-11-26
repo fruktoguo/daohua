@@ -224,6 +224,8 @@ function SessionChatEmojiPicker({
 
   const handleAddStickerSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
+    // 阻止 React 合成 submit 经 Portal 冒泡到外层承载表单（如攻略编辑器 <form>）引发误提交
+    e.stopPropagation()
     if (!isCurrentSession() || isAddingUrl) return
     const trimmed = newStickerUrl.trim()
     if (!trimmed) return

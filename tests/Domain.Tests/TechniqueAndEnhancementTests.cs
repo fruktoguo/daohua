@@ -1900,6 +1900,99 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(unit0.EffectiveStats.MpRegen, unit100.EffectiveStats.MpRegen, 9);
     }
 
+    /// <summary>
+    /// 强化技艺工具额外成功率加成（总纲 §20.4.2 / §20.7.2）：
+    /// Lv.1 (+3%) / Lv.18 (+5%) / Lv.30 (+7%) 固定按白板值生效（不随工具强化缩放），
+    /// 与强化消耗品加算，且在 t≥11 时仍受 45% 硬封顶约束；真实配表全三套 21 件工具及升阶配方闭环有效。
+    /// </summary>
+    [Fact]
+    public void EnhancementToolSuccessBonusAppliesFixedAdditiveAndRespectsHighTierCap()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        // 1. 校验真实配表三套 21 件技艺工具的 level/tier/speedRatio 与三件强化锤的固定成功率加成
+        var expectedByTier = new (int Level, int Tier, double Speed, double HammerSuccess, string[] Ids)[]
+        {
+            (1, 1, 0.1, 0.03, [
+                "equipment.tool-herb-hoe", "equipment.tool-prospect-compass", "equipment.tool-flame-ding",
+                "equipment.tool-forge-hammer", "equipment.tool-talisman-brush", "equipment.tool-formation-flag",
+                "equipment.tool-quench-anvil"
+            ]),
+            (18, 2, 0.2, 0.05, [
+                "equipment.tool-pine-hoe", "equipment.tool-copper-pick", "equipment.tool-copper-ding",
+                "equipment.tool-copper-tongs", "equipment.tool-pine-brush", "equipment.tool-pine-flag",
+                "equipment.tool-copper-hammer"
+            ]),
+            (30, 3, 0.3, 0.07, [
+                "equipment.tool-jade-spade", "equipment.tool-xuanjing-pick", "equipment.tool-xuanyan-furnace",
+                "equipment.tool-zhenyue-tongs", "equipment.tool-zihao-brush", "equipment.tool-jiugong-flag",
+                "equipment.tool-zhenling-hammer"
+            ]),
+        };
+
+        foreach (var (level, tier, speed, hammerSuccess, ids) in expectedByTier)
+        {
+            foreach (var id in ids)
+            {
+                Assert.True(catalog.RawEquipments.TryGetValue(id, out var eq), $"缺失技艺装备 {id}");
+                Assert.Equal(level, eq.GetProperty("level").GetInt32());
+                Assert.Equal(tier, eq.GetProperty("tier").GetInt32());
+                var tb = eq.GetProperty("techniqueBonus");
+                Assert.Equal(speed, tb.GetProperty("speedRatio").GetDouble(), 6);
+                // 所有技艺工具必须有合法锻造配方与正数白板回收价
+                var sellPrice = EnhancementRules.ComputeEquipmentBaseSellPrice(catalog, id);
+                Assert.True(sellPrice is > 0, $"技艺装备 {id} 缺少有效锻造配方或回收价");
+                if (tb.GetProperty("technique").GetString() == TechniqueCatalog.Enhancement)
+                {
+                    Assert.Equal(hammerSuccess, tb.GetProperty("enhancementSuccessBonus").GetDouble(), 6);
+                }
+            }
+        }
+
+        // 2. 穿戴三档强化锤：固定加成不随工具自身强化等级缩放，与消耗品加算且在 t>=11 封顶 45%
+        var target = new ItemId("equipment.qingfeng-sword");
+        var intent = new ActionIntent(new ActionId(EnhancementRules.ActionId), 1, TargetItemId: target.Value);
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(target)] = 1,
+            [new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 10_000,
+        };
+
+        var loadoutLv1 = new PlayerLoadoutState();
+        loadoutLv1.Equipment.Add(new PlayerEquipmentSlot("equipment.tool-quench-anvil", 10)); // +10 锤成功率仍固定 +3%
+        Assert.Equal(0.03, TechniqueCatalog.EquippedToolEnhancementSuccessBonus(loadoutLv1, catalog), 12);
+        Assert.Equal(0.1 * Math.Pow(1.05, 10), TechniqueCatalog.EquippedToolSpeedRatio(loadoutLv1, TechniqueCatalog.Enhancement, catalog), 12);
+        var prepLv1 = EnhancementRules.Resolve(loadoutLv1, intent, holdings, catalog, 1, out _, out _);
+        Assert.NotNull(prepLv1);
+        Assert.Equal(0.50 + 0.03, prepLv1.SuccessRate, 12);
+
+        var loadoutLv18 = new PlayerLoadoutState();
+        loadoutLv18.Equipment.Add(new PlayerEquipmentSlot("equipment.tool-copper-hammer", 0));
+        var prepLv18WithConsumable = EnhancementRules.Resolve(loadoutLv18, intent, holdings, catalog, 1, out _, out _, consumableBonus: 0.05);
+        Assert.NotNull(prepLv18WithConsumable);
+        Assert.Equal(0.50 + 0.05 + 0.05, prepLv18WithConsumable.SuccessRate, 12);
+
+        // Lv.30 锤 (+7%) + 固灵砂 (+5%)，在 +10→+11（基础 30%，秘法 Lv.21 超出 10 级 +5% 乘算 -> 31.5% + 12% = 43.5% < 45%）
+        var holdingsPlus10 = new Dictionary<AssetKey, double>
+        {
+            [EnhancementRules.KeyFor(target, 10)] = 1,
+            [new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 10_000,
+        };
+        var loadoutLv30 = new PlayerLoadoutState();
+        loadoutLv30.Equipment.Add(new PlayerEquipmentSlot("equipment.tool-zhenling-hammer", 20));
+        Assert.Equal(0.07, TechniqueCatalog.EquippedToolEnhancementSuccessBonus(loadoutLv30, catalog), 12);
+        var prepLv30LowCap = EnhancementRules.Resolve(loadoutLv30, intent, holdingsPlus10, catalog, 21, out _, out _,
+            currentTrackedLevel: 10, consumableBonus: 0.05);
+        Assert.NotNull(prepLv30LowCap);
+        Assert.Equal(0.30 * (1 + 0.005 * 10) + 0.07 + 0.05, prepLv30LowCap.SuccessRate, 12);
+
+        // 秘法 Lv.60 时超过 45% 硬上限，依然钳位在 0.45
+        var prepLv30Capped = EnhancementRules.Resolve(loadoutLv30, intent, holdingsPlus10, catalog, 60, out _, out _,
+            currentTrackedLevel: 10, consumableBonus: 0.05);
+        Assert.NotNull(prepLv30Capped);
+        Assert.Equal(EnhancementRules.HighTierMaxSuccessRate, prepLv30Capped.SuccessRate, 12);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

@@ -260,9 +260,9 @@ public static class EnhancementRules
     }
 
     /// <summary>
-    /// 技艺与辅助消耗品修正后成功率（总纲 §20.4.2）：
+    /// 技艺、辅助消耗品与强化工具修正后成功率（总纲 §20.4.2 / §20.7.2）：
     /// L≥t 仅对超出目标等级部分线性乘算 ×(1+0.005×(L-t))，L&lt;t 乘性衰减 ×0.9^(t-L)；
-    /// 叠加消耗品加成后分段封顶：t≤10 clamp [0, 0.99]，t≥11 clamp [0, 0.45]。
+    /// 叠加消耗品与已穿戴强化工具固定加成后分段封顶：t≤10 clamp [0, 0.99]，t≥11 clamp [0, 0.45]。
     /// </summary>
     public static double SuccessRate(int targetLevel, double techniqueLevel, double consumableBonus = 0)
     {
@@ -412,8 +412,9 @@ public static class EnhancementRules
         }
         check = Check.Ready;
         reason = string.Empty;
+        var toolSuccessBonus = TechniqueCatalog.EquippedToolEnhancementSuccessBonus(loadout, gameData);
         return new Preparation(itemId, current, target, spiritStoneCost,
-            effectiveProtectionItemId, SuccessRate(target, techniqueLevel, consumableBonus));
+            effectiveProtectionItemId, SuccessRate(target, techniqueLevel, consumableBonus + toolSuccessBonus));
     }
 
     /// <summary>

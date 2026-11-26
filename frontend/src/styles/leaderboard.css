@@ -140,6 +140,14 @@
   gap: 8px;
 }
 
+.leaderboard-my-rank-glyph {
+  color: var(--gold-bright);
+}
+
+.leaderboard-my-rank.is-unranked .leaderboard-my-rank-glyph {
+  color: var(--text-dim);
+}
+
 .leaderboard-my-rank-label {
   font-size: 12px;
   color: var(--text-dim);

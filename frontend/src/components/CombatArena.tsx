@@ -2148,13 +2148,16 @@ function duelActionState(
   fallbackIntervalMilliseconds: number,
   serverNowUnixMilliseconds: number,
   abilities: readonly CombatAbilityDefinition[],
+  attackerUnitIndex = 0,
 ): CombatActionState | null {
   if (!duel || duel.resolved || duel.events.length === 0) return null
   let previousAt = -1
   for (const duelEvent of duel.events) {
     if (duelEvent.attackerIsInitiator !== attackerIsInitiatorSide) continue
+    if ((duelEvent.attackerUnitIndex ?? 0) !== attackerUnitIndex) continue
     if (duelEvent.abilityId?.startsWith('item.') || duelEvent.abilityId?.startsWith('trait.')) continue
-    if (!duelEvent.abilityId && duelEvent.attackerIsInitiator === duelEvent.targetIsInitiator) continue
+    if (!duelEvent.abilityId && duelEvent.attackerIsInitiator === duelEvent.targetIsInitiator
+      && (duelEvent.attackerUnitIndex ?? 0) === (duelEvent.targetUnitIndex ?? 0)) continue
     if (duelEvent.atSeconds > battleElapsedSeconds + 1e-9) {
       const durationSeconds = previousAt >= 0
         ? Math.max(0.1, duelEvent.atSeconds - previousAt)
@@ -2402,7 +2405,7 @@ export const CombatArena = memo(function CombatArena({
     if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName) {
       cache.set(`duel:${expedition.duel.opponentName}`, expedition.duel.opponentAttributes)
       setInspectedSnapshot(prev => {
-        if (prev && prev.role === 'enemy' && prev.enemyId === null && !prev.attributes) {
+        if (prev && prev.role === 'enemy' && prev.targetKey === `enemy:duel:${expedition.duel?.opponentName ?? 'opponent'}` && !prev.attributes) {
           return { ...prev, attributes: expedition.duel?.opponentAttributes ?? null }
         }
         return prev
@@ -2414,6 +2417,48 @@ export const CombatArena = memo(function CombatArena({
         skills: expedition.duel.opponentSkills,
         equipment: expedition.duel.opponentEquipment,
       })
+    for (const [idx, unit] of (expedition?.duel?.opponentUnits ?? []).entries()) {
+      const key = `duel:${unit.displayName}`
+      if (unit.attributes) {
+        cache.set(key, unit.attributes)
+        setInspectedSnapshot(prev => {
+          if (prev && prev.role === 'enemy' && prev.targetKey === `enemy:duel:${idx}:${unit.displayName}` && !prev.attributes) {
+            return {
+              ...prev,
+              attributes: unit.attributes ?? null,
+              loadout: (unit.skills || unit.equipment)
+                ? { skills: unit.skills ?? prev.loadout?.skills ?? [], equipment: unit.equipment ?? prev.loadout?.equipment ?? null }
+                : prev.loadout,
+            }
+          }
+          return prev
+        })
+      }
+      if (unit.skills || unit.equipment) {
+        loadoutCache.set(key, { skills: unit.skills, equipment: unit.equipment })
+      }
+    }
+    for (const [idx, unit] of (expedition?.duel?.selfUnits ?? []).entries()) {
+      const key = `ally:${unit.playerId}`
+      if (unit.attributes) {
+        cache.set(key, unit.attributes)
+        setInspectedSnapshot(prev => {
+          if (prev && prev.role === 'player' && prev.targetKey === `ally:${idx}:${unit.displayName}` && !prev.attributes) {
+            return {
+              ...prev,
+              attributes: unit.attributes ?? null,
+              loadout: (unit.skills || unit.equipment)
+                ? { skills: unit.skills ?? prev.loadout?.skills ?? [], equipment: unit.equipment ?? prev.loadout?.equipment ?? null }
+                : prev.loadout,
+            }
+          }
+          return prev
+        })
+      }
+      if (unit.skills || unit.equipment) {
+        loadoutCache.set(key, { skills: unit.skills, equipment: unit.equipment })
+      }
+    }
   }, [expedition, encounters, maps])
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
@@ -2452,6 +2497,32 @@ export const CombatArena = memo(function CombatArena({
     const battleElapsed = expedition?.battleElapsedSeconds ?? 0
     const serverNow = estimateServerNowUnixMilliseconds()
     if (expedition?.phase === 'duel') {
+      const opponentUnits = expedition.duel?.opponentUnits
+      if (opponentUnits && opponentUnits.length > 1) {
+        return opponentUnits.map((unit, idx) => {
+          const name = t('combat.duel.opponent', { name: unit.displayName || t('combat.duel.unknownOpponent') })
+          const maxHp = Math.max(1, unit.maxHitpoints ?? unit.attributes?.maxHitpoints ?? 1)
+          const maxMp = Math.max(1, unit.maxManapoints ?? unit.attributes?.maxManapoints ?? 1)
+          const hp = Math.max(0, Math.min(maxHp, unit.hitpoints))
+          const mp = Math.max(0, Math.min(maxMp, unit.manapoints))
+          return {
+            actorKey: `enemy:duel:${idx}:${unit.displayName}`,
+            enemyId: resolvePlayerActorId(unit.avatar),
+            name,
+            seal: name.slice(0, 1),
+            hp,
+            maxHp,
+            mp,
+            maxMp,
+            threat: null,
+            action: hp > 0
+              ? duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities, idx)
+              : null,
+            visual: null,
+            attributes: unit.attributes ?? null,
+          }
+        })
+      }
       const name = t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
       // 斗法对手气血/灵力与属性上限由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）。
       const opponentAttributes = expedition.duel?.opponentAttributes ?? null
@@ -2470,7 +2541,7 @@ export const CombatArena = memo(function CombatArena({
         mp,
         maxMp,
         threat: null,
-        action: duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
+        action: duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities, 0),
         visual: null,
         attributes: opponentAttributes,
       }]
@@ -2502,13 +2573,37 @@ export const CombatArena = memo(function CombatArena({
     })
   }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
-  // 组队讨伐盟友阵列（§21.13）：allies 按 memberIndex 序铺九宫格，memberIndex === selfIndex
-  // 的格子复用完整玩家展示态；其余盟友可点详情，属性面板走 UnitInspect side:ally 按需投影。
+  // 组队讨伐 / 多人斗法己方阵列（§21.13 / §7.10.4）：
+  // 斗法相位若 selfUnits 超过 1 人，按成员序铺己方阵型；其余相位走 expedition.allies。
   const allyEntries = useMemo<AllyDisplayState[]>(() => {
-    const allies = expedition?.allies
-    if (!allies || allies.length === 0) return EMPTY_ALLY_ENTRIES
     const battleElapsed = expedition?.battleElapsedSeconds ?? 0
     const serverNow = estimateServerNowUnixMilliseconds()
+    if (expedition?.phase === 'duel' && expedition.duel?.selfUnits && expedition.duel.selfUnits.length > 1) {
+      const selfIdx = expedition.duel.selfUnitIndex ?? 0
+      return expedition.duel.selfUnits.slice(0, ALLY_DEPTH_SLOTS.length).map((unit, idx) => ({
+        memberIndex: idx,
+        playerId: unit.playerId,
+        name: unit.displayName,
+        avatar: unit.avatar ?? 'player',
+        actorKey: `ally:${idx}:${unit.displayName}`,
+        seal: unit.displayName.slice(0, 1) || '?',
+        hp: unit.hitpoints,
+        maxHp: Math.max(1, unit.maxHitpoints ?? unit.attributes?.maxHitpoints ?? unit.hitpoints),
+        mp: unit.manapoints,
+        maxMp: Math.max(1, unit.maxManapoints ?? unit.attributes?.maxManapoints ?? unit.manapoints),
+        isSelf: idx === selfIdx,
+        threat: 0,
+        action: unit.hitpoints > 0
+          ? duelActionState(expedition.duel, battleElapsed, expedition.duel?.isInitiator ?? true, 2000, serverNow, abilities, idx)
+          : null,
+        attributes: unit.attributes ?? null,
+        skills: unit.skills ?? null,
+        equipment: unit.equipment ?? null,
+        buffs: undefined,
+      }))
+    }
+    const allies = expedition?.allies
+    if (!allies || allies.length === 0) return EMPTY_ALLY_ENTRIES
     const selfIndex = expedition?.selfIndex ?? -1
     // 盟友复活读条总时长：优先服务端本次下发的权威秒数，其次遭遇配表复活毫秒数。
     const respawnMs = Math.max(1,
@@ -2539,7 +2634,7 @@ export const CombatArena = memo(function CombatArena({
         equipment: ally.equipment ?? null,
         buffs: ally.buffs?.map(buff => combatBuffToBuff(buff, battleElapsed, serverNow)),
       }))
-  }, [expedition?.allies, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
+  }, [expedition?.allies, expedition?.duel, expedition?.selfIndex, expedition?.battleElapsedSeconds, expedition?.phase, expedition?.encounterId, expedition?.playerRespawnDurationSeconds, encounters, abilities, t])
 
   // 尸体缓存生命周期：combat 相位逐帧刷新缓存；combat→search（服务端语义=波次清空，
   // 团灭走 respawn、斗法走 duel-pending/duel 均不经过此迁移）时固化为尸体阵容
@@ -2691,7 +2786,7 @@ export const CombatArena = memo(function CombatArena({
         return attackActionState(expedition.playerNextAttackAtSeconds ?? 0, battleElapsed, attackInterval, serverNow)
       }
       if (expedition?.phase === 'duel') {
-        return duelActionState(expedition.duel, battleElapsed, expedition.duel?.isInitiator ?? true, attackInterval, serverNow, abilities)
+        return duelActionState(expedition.duel, battleElapsed, expedition.duel?.isInitiator ?? true, attackInterval, serverNow, abilities, expedition.duel?.selfUnitIndex ?? 0)
       }
       return null
     }
@@ -2761,6 +2856,33 @@ export const CombatArena = memo(function CombatArena({
 
   const handleInspectEnemy = useCallback((entry: EnemyDisplayState, index: number) => {
     gameClient.sendUnitInspect({ side: 'enemy', index })
+    const isDuelEnemy = expedition?.phase === 'duel'
+    if (isDuelEnemy) {
+      const duelUnit = expedition?.duel?.opponentUnits?.[index] ?? null
+      const duelName = duelUnit?.displayName ?? expedition?.duel?.opponentName ?? 'opponent'
+      const duelKey = `duel:${duelName}`
+      const cachedAttr = inspectedAttributesCacheRef.current.get(duelKey)
+      const cachedLoadout = inspectedLoadoutCacheRef.current.get(duelKey)
+      const initialAttributes = entry.attributes ?? duelUnit?.attributes ?? cachedAttr ?? null
+      const loadout: UnitLoadoutView = {
+        skills: duelUnit?.skills ?? (index === 0 ? expedition?.duel?.opponentSkills : undefined) ?? cachedLoadout?.skills ?? [],
+        equipment: duelUnit?.equipment ?? (index === 0 ? expedition?.duel?.opponentEquipment : undefined) ?? cachedLoadout?.equipment ?? null,
+      }
+      setInspectedSnapshot({
+        targetKey: entry.actorKey,
+        actorId: entry.enemyId ?? activeEncounterId ?? null,
+        name: entry.name,
+        role: 'enemy',
+        title: entry.name,
+        visual: entry.visual ?? null,
+        attributes: initialAttributes,
+        buffs: [...(entry.buffs ?? [])],
+        loadout,
+        drops: undefined,
+        enemyId: null,
+      })
+      return
+    }
     const staticCombatant = entry.enemyId ? findCombatantInCatalog(encounters, maps, entry.enemyId) : undefined
     const dungeonEnemyDef = activeDungeon && entry.enemyId
       ? activeDungeon.waves.flatMap(w => w.enemies).find(e => e.enemyId === entry.enemyId)
@@ -2792,16 +2914,7 @@ export const CombatArena = memo(function CombatArena({
           ? scaleDungeonMonsterDrops(staticCombatant.drops, currentDifficulty)
           : scaleMonsterDrops(staticCombatant.drops, currentDifficulty))
         : [])
-    let loadout: UnitLoadoutView | null = null
-    if (entry.enemyId !== null) {
-      loadout = { skills: staticCombatant?.skills ?? [] }
-    } else {
-      const cachedLoadout = inspectedLoadoutCacheRef.current.get(`duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
-      loadout = {
-        skills: expedition?.duel?.opponentSkills ?? cachedLoadout?.skills ?? [],
-        equipment: expedition?.duel?.opponentEquipment ?? cachedLoadout?.equipment ?? null,
-      }
-    }
+    const loadout: UnitLoadoutView = { skills: staticCombatant?.skills ?? [] }
 
     setInspectedSnapshot({
       targetKey: entry.actorKey,
@@ -2816,7 +2929,7 @@ export const CombatArena = memo(function CombatArena({
       drops,
       enemyId: entry.enemyId ?? null,
     })
-  }, [encounters, maps, expedition?.duel, activeEncounterId, currentDifficulty, activeDungeonId, activeDungeon, maxPartyRealmLevel, dungeonLevelAnchors, dungeonCachePrefix])
+  }, [encounters, maps, expedition?.phase, expedition?.duel, activeEncounterId, currentDifficulty, activeDungeonId, activeDungeon, maxPartyRealmLevel, dungeonLevelAnchors, dungeonCachePrefix])
 
   const handleCloseInspect = useCallback(() => {
     setInspectedSnapshot(null)
@@ -2830,15 +2943,22 @@ export const CombatArena = memo(function CombatArena({
       const duel = expedition.duel
       const battleElapsed = expedition.battleElapsedSeconds ?? 0
       const isInitiator = duel.isInitiator
+      const selfIdx = duel.selfUnitIndex ?? 0
+      const toActorId = (sideIsInitiator: boolean, unitIdx: number): string => {
+        if (sideIsInitiator === isInitiator) return unitIdx === selfIdx ? 'player' : `ally:${unitIdx}`
+        return `enemy:${unitIdx}`
+      }
       return (duel.events ?? [])
         .filter(e =>
           e.atSeconds <= battleElapsed + 1e-6
           && e.atSeconds >= Math.max(0, battleElapsed - 6)
-          && !(e.attackerIsInitiator === e.targetIsInitiator && (e.damage ?? 0) <= 0 && !e.abilityId))
+          && !(e.attackerIsInitiator === e.targetIsInitiator
+            && (e.attackerUnitIndex ?? 0) === (e.targetUnitIndex ?? 0)
+            && (e.damage ?? 0) <= 0 && !e.abilityId))
         .map(e => ({
           at: e.atSeconds,
-          attackerId: e.attackerIsInitiator === isInitiator ? 'player' : 'enemy:0',
-          targetId: (e.targetIsInitiator === isInitiator) ? 'player' : 'enemy:0',
+          attackerId: toActorId(e.attackerIsInitiator, e.attackerUnitIndex ?? 0),
+          targetId: toActorId(e.targetIsInitiator, e.targetUnitIndex ?? 0),
           damage: e.damage ?? 0,
           hit: e.hit !== false,
           critical: e.critical,

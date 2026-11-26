@@ -63,7 +63,7 @@ export const CombatStatsPanel = memo(function CombatStatsPanel(): React.JSX.Elem
   const headPhase = useGameStore(state => state.queue.entries[0]?.expedition?.phase)
   const abilities = useGameStore(state => state.abilities)
   const items = useGameStore(state => state.items)
-  const buffs = useGameStore(state => state.buffs)
+  const buffs = useGameStore(state => state.triggerBuffs)
 
   const [panelTab, setPanelTab] = useState<PanelTabKey>('stats')
   const [side, setSide] = useState<SideKey>('ally')

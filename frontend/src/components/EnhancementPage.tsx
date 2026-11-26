@@ -13,7 +13,10 @@ import {
   enhanceSuccessRate,
 } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
-import { resolveEffectiveEnhancementSuccessBonuses } from '../game/sustainedConsumables'
+import {
+  resolveEffectiveEnhancementSuccessBonuses,
+  resolveEquippedEnhancementToolBonuses,
+} from '../game/sustainedConsumables'
 import { useEnhancementStats } from '../game/enhancementRecordStore'
 import { useGameStore } from '../game/gameStore'
 import { useUiStore } from '../uiStore'
@@ -251,15 +254,23 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
     () => resolveEffectiveEnhancementSuccessBonuses(enhancementAutoUseSlots, items, inventory),
     [enhancementAutoUseSlots, items, inventory],
   )
+  const toolSuccessBonuses = useMemo(
+    () => resolveEquippedEnhancementToolBonuses(combat?.equipment, equipmentCatalog),
+    [combat?.equipment, equipmentCatalog],
+  )
+  const successBonusSummary = useMemo(() => ({
+    totalBonus: toolSuccessBonuses.totalBonus + consumableBonuses.totalBonus,
+    items: [...toolSuccessBonuses.items, ...consumableBonuses.items],
+  }), [toolSuccessBonuses, consumableBonuses])
   const preview = useMemo(() => {
-    const successRate = enhanceSuccessRate(nextLevel, techniqueLevel, consumableBonuses.totalBonus)
+    const successRate = enhanceSuccessRate(nextLevel, techniqueLevel, successBonusSummary.totalBonus)
     const spiritCost = enhanceSpiritStoneCost(nextLevel)
     const buildingSpeed = world?.buildingEffects?.enhancementSpeedRatio ?? 0
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
     const durationAfterBuilding = buildingSpeed > 0 ? baseDuration / (1 + buildingSpeed) : baseDuration
     const actualDuration = durationAfterBuilding / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio + linggenSpeedRatio)
     return { successRate, spiritCost, baseDuration, actualDuration }
-  }, [nextLevel, techniqueLevel, consumableBonuses.totalBonus, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
+  }, [nextLevel, techniqueLevel, successBonusSummary.totalBonus, toolSpeedRatio, linggenSpeedRatio, world?.buildingEffects?.enhancementSpeedRatio])
 
   const enhancementStats = useEnhancementStats(playerId, selected?.itemId)
   const historyRows = useMemo(() => {
@@ -479,11 +490,11 @@ const EquipmentEnhancementPanel = memo(function EquipmentEnhancementPanel(): Rea
                     {`(${formatNumber(preview.successRate * 100, { maxDecimals: 1 })}%)`}
                   </strong>
                 </div>
-                {consumableBonuses.items.length > 0 && (
+                {successBonusSummary.items.length > 0 && (
                   <span className="enhancement-duration-note">
-                    {t('app.enhancement.consumableSuccessNote', {
-                      percent: formatNumber(consumableBonuses.totalBonus * 100, { maxDecimals: 1 }),
-                      sources: consumableBonuses.items
+                    {t('app.enhancement.successBonusNote', {
+                      percent: formatNumber(successBonusSummary.totalBonus * 100, { maxDecimals: 1 }),
+                      sources: successBonusSummary.items
                         .map(item => `${item.name} +${formatNumber(item.bonus * 100, { maxDecimals: 1 })}%`)
                         .join(' / '),
                     })}

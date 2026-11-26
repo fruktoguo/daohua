@@ -5,6 +5,7 @@ import { deterministicRollNext } from './deterministicRoll.ts'
 import {
   CombatEncounterState,
   CombatOutcome,
+  CombatSide,
   CombatantState,
   CombatUnitStatsBook,
   type AllyMark,
@@ -42,16 +43,41 @@ import {
   type CombatFactDelta,
   type SlotWakeMask,
 } from './triggerWake.ts'
+import {
+  SimultaneousCombatWave,
+  limitDamageForHaste,
+} from './simultaneousWave.ts'
 import type { AbilityBuffJson, AbilityJson } from './types.ts'
 
 export const MAX_EVENTS_PER_ADVANCE = 100_000
 const SKILL_SIDE_OFFSET = 0x1000n
 const ALLY_SIDE_BASE = 0x400n
+const SYMMETRIC_SIDE_A_OFFSET = 0x2000n
+const SYMMETRIC_SIDE_B_OFFSET = 0x3000n
+const SYMMETRIC_RESOLVE_TARGET_CHANNEL = 18n
+const SYMMETRIC_DECIDE_TARGET_CHANNEL = 19n
 const BUFF_TICK_SECONDS = 5
 const THREAT_TICK_SECONDS = 1
 
 export function allySide(memberIndex: number): bigint {
   return memberIndex === 0 ? 0n : ALLY_SIDE_BASE + BigInt(memberIndex)
+}
+
+/** 对称模式随机流分组标识：按 seed 最低位在 SideA/SideB 间公平翻转，消除固定侧位偏移。 */
+export function symmetricUnitSide(seed: bigint, side: CombatSide, sideIndex: number): bigint {
+  const flipped = (seed & 1n) !== 0n
+  const effectiveSide = flipped ? CombatEncounterState.opposite(side) : side
+  const base = effectiveSide === CombatSide.SideA ? SYMMETRIC_SIDE_A_OFFSET : SYMMETRIC_SIDE_B_OFFSET
+  return base + BigInt(sideIndex)
+}
+
+function getActiveWave(encounter: CombatEncounterState | null): SimultaneousCombatWave | null {
+  return encounter?.activeWave instanceof SimultaneousCombatWave ? encounter.activeWave : null
+}
+
+function isTargetAlive(encounter: CombatEncounterState | null, target: CombatantState): boolean {
+  const wave = getActiveWave(encounter)
+  return wave ? wave.isLocallyAlive(target) : target.isAlive
 }
 
 function abilityText(obj: Record<string, unknown>, key: string): string | null {
@@ -453,13 +479,6 @@ export function resolveStrikeDamage(attack: CombatantStats, target: CombatantSta
 
 // ---------- 伤害扣血裁决与蓄意/燃魂 ----------
 
-function limitDamage(attacker: CombatantState, hitpoints: number, damage: number): number {
-  if (hitpoints > 1 && damage >= hitpoints && containsTrait(attacker.stats.traits, TraitIds.Haste)) {
-    return hitpoints - 1
-  }
-  return damage
-}
-
 export function applyCombatDamage(
   encounter: CombatEncounterState | null,
   attacker: CombatantState,
@@ -467,8 +486,12 @@ export function applyCombatDamage(
   damage: number,
   accumulateXuyi = true,
 ): { damage: number; actual: number } {
+  const wave = getActiveWave(encounter)
+  if (wave) {
+    return wave.recordDamage(attacker, target, damage, accumulateXuyi)
+  }
   if (!target.isAlive) return { damage: 0, actual: 0 }
-  const limited = limitDamage(attacker, target.hitpoints, Math.max(0, damage))
+  const limited = limitDamageForHaste(attacker, target.hitpoints, Math.max(0, damage))
   const before = target.hitpoints
   target.hitpoints = Math.max(0, before - limited)
   const actual = before - target.hitpoints
@@ -518,20 +541,27 @@ export function addRanhunStacks(
   target: CombatantState,
   stacks: number,
   at: number,
+  encounter: CombatEncounterState | null = null,
 ): void {
-  if (stacks <= 0 || !target.isAlive) return
-  const existing = target.buffs.find((b) => b.buffId === BuffIds.Ranhun)
-  target.setBuff({
-    buffId: BuffIds.Ranhun,
-    expiresAtSeconds: at + 5,
-    stacks: stacks + (existing ? existing.stacks : 0),
-    name: '燃烧',
-    resetOnWave: true,
-    missingHitpointsPerStack: 0,
-    effects: [{ channel: BuffEffectChannel.FireSpellDamagePerSecond, value: 1 }],
-    statRatios: null,
-    sourceUnitId: attacker.id,
-  })
+  if (stacks <= 0 || !isTargetAlive(encounter, target)) return
+  const wave = getActiveWave(encounter)
+  const apply = () => {
+    if (!target.isAlive) return
+    const existing = target.buffs.find((b) => b.buffId === BuffIds.Ranhun)
+    target.setBuff({
+      buffId: BuffIds.Ranhun,
+      expiresAtSeconds: at + 5,
+      stacks: stacks + (existing ? existing.stacks : 0),
+      name: '燃烧',
+      resetOnWave: true,
+      missingHitpointsPerStack: 0,
+      effects: [{ channel: BuffEffectChannel.FireSpellDamagePerSecond, value: 1 }],
+      statRatios: null,
+      sourceUnitId: attacker.id,
+    })
+  }
+  if (wave) wave.deferBuffOp(apply)
+  else apply()
 }
 
 export function applyRanhun(
@@ -540,10 +570,11 @@ export function applyRanhun(
   element: CombatElement,
   actual: number,
   at: number,
+  encounter: CombatEncounterState | null = null,
 ): void {
   if (
     actual <= 0 ||
-    !target.isAlive ||
+    !isTargetAlive(encounter, target) ||
     element !== CombatElement.Fire ||
     !containsTrait(attacker.stats.traits, TraitIds.Ranhun)
   ) {
@@ -553,7 +584,7 @@ export function applyRanhun(
     1,
     Math.floor(actual * 0.02 * traitLevelScale(attacker.stats.traitLevels, TraitIds.Ranhun)),
   )
-  addRanhunStacks(attacker, target, stacks, at)
+  addRanhunStacks(attacker, target, stacks, at, encounter)
 }
 
 function emitTraitOnHit(
@@ -561,21 +592,26 @@ function emitTraitOnHit(
   derivedEvents: CombatEvent[],
 ): void {
   if (!context.hit || !context.attacker.isAlive) return
+  const wave = getActiveWave(context.encounter)
   applyRanhun(
     context.attacker,
     context.target,
     context.attackStats.element,
     context.actualDamage,
     context.atSeconds,
+    context.encounter,
   )
   const attacker = context.attacker
   if (!containsTrait(attacker.stats.traits, TraitIds.Xuyi)) return
   const buff = attacker.buffs.find((b) => b.buffId === BuffIds.Xuyi)
   if (!buff || buff.stacks <= attacker.stats.maxHitpoints) return
-  attacker.removeBuffsWhere((b) => b.buffId === BuffIds.Xuyi)
-  const opponents = context.encounter.playerAllies.includes(attacker)
-    ? context.encounter.enemies
-    : context.encounter.playerAllies
+  if (wave && !wave.tryConsumeXuyi(attacker)) return
+  if (wave) {
+    wave.deferBuffOp(() => attacker.removeBuffsWhere((b) => b.buffId === BuffIds.Xuyi))
+  } else {
+    attacker.removeBuffsWhere((b) => b.buffId === BuffIds.Xuyi)
+  }
+  const opponents = context.encounter.opponentsOf(attacker)
 
   const burst = (target: CombatantState, primary: boolean) => {
     const burstElement = resolveDamageElement(attacker.stats.traits, CombatElement.None)
@@ -586,7 +622,8 @@ function emitTraitOnHit(
           target,
         )
     const settled = applyCombatDamage(context.encounter, attacker, target, rawDamage, false)
-    attacker.threat += settled.damage
+    if (wave) wave.addThreatDelta(attacker, settled.damage)
+    else attacker.threat += settled.damage
     context.encounter.statsBook?.recordHitUnit(
       attacker,
       target,
@@ -613,10 +650,10 @@ function emitTraitOnHit(
     })
   }
 
-  if (context.target.isAlive) burst(context.target, true)
+  if (isTargetAlive(context.encounter, context.target)) burst(context.target, true)
   for (let i = 0; i < opponents.length; i++) {
     const opp = opponents[i]
-    if (opp.isAlive && opp !== context.target) burst(opp, false)
+    if (isTargetAlive(context.encounter, opp) && opp !== context.target) burst(opp, false)
   }
 }
 
@@ -641,10 +678,7 @@ function tickRanhun(
     }
     const power = dotValue * buff.stacks
     if (power <= 0 || buff.expiresAtSeconds + 1e-9 < at) continue
-    let source: CombatantState | undefined = encounter.playerAllies.find(
-      (u) => u.id === buff.sourceUnitId,
-    )
-    if (!source) source = encounter.enemies.find((u) => u.id === buff.sourceUnitId)
+    const source = encounter.findUnit(buff.sourceUnitId)
     if (!source) {
       throw new Error(`持续伤害缺少战斗来源: ${buff.sourceUnitId ?? 'null'}`)
     }
@@ -685,11 +719,32 @@ function tickRanhun(
 function triggerHpDrain(context: CombatHitContext, points: number, derivedEvents: CombatEvent[]): void {
   if (!context.hit || context.damage <= 0 || !context.attacker.isAlive) return
   if (points <= 0) return
-  const healing = Math.min(
-    context.attacker.stats.maxHitpoints - context.attacker.hitpoints,
+  const rawHeal =
     ((context.damage * points) / 100) *
-      percentMultiplier(context.attacker.effectiveStats.effects.healingBonusPoints, PercentCurveMode.Linear),
-  )
+    percentMultiplier(context.attacker.effectiveStats.effects.healingBonusPoints, PercentCurveMode.Linear)
+  if (rawHeal <= 0) return
+  const wave = getActiveWave(context.encounter)
+  if (wave) {
+    wave.recordHeal(context.attacker, context.attacker, rawHeal)
+    derivedEvents.push({
+      atSeconds: context.atSeconds,
+      attackerId: context.attacker.id,
+      targetId: context.attacker.id,
+      damage: 0,
+      hit: true,
+      damageKind: context.attackStats.damageKind,
+      targetHitpointsAfter: context.attacker.hitpoints,
+      critical: false,
+      break: false,
+      parried: false,
+      abilityId: context.abilityId,
+      healing: rawHeal,
+      attackerManapointsAfter: null,
+      targetManapointsAfter: null,
+    })
+    return
+  }
+  const healing = Math.min(context.attacker.stats.maxHitpoints - context.attacker.hitpoints, rawHeal)
   if (healing <= 0) return
   context.attacker.hitpoints += healing
   context.encounter.statsBook?.recordHealingUnit(context.attacker, false, healing)
@@ -714,6 +769,14 @@ function triggerHpDrain(context: CombatHitContext, points: number, derivedEvents
 function triggerManaDrain(context: CombatHitContext, points: number): void {
   if (!context.hit || context.damage <= 0 || !context.attacker.isAlive) return
   if (points <= 0) return
+  const wave = getActiveWave(context.encounter)
+  if (wave) {
+    const drainedWave = Math.min(wave.getEffectiveMana(context.target), (context.damage * points) / 100)
+    if (drainedWave <= 0) return
+    wave.addManaDelta(context.target, -drainedWave)
+    wave.addManaDelta(context.attacker, drainedWave)
+    return
+  }
   const drained = Math.min(context.target.manapoints, (context.damage * points) / 100)
   if (drained <= 0) return
   context.target.manapoints -= drained
@@ -733,7 +796,9 @@ function triggerDamageReflect(
   let reflected = (context.damage * points) / 100
   if (reflected <= 0) return
   reflected = applyCombatDamage(context.encounter, context.target, context.attacker, reflected).damage
-  context.target.threat += reflected
+  const wave = getActiveWave(context.encounter)
+  if (wave) wave.addThreatDelta(context.target, reflected)
+  else context.target.threat += reflected
   context.encounter.statsBook?.recordHitUnit(
     context.target,
     context.attacker,
@@ -764,7 +829,9 @@ function triggerThreatOnTaken(context: CombatHitContext, points: number): void {
   if (!context.hit || points <= 0) return
   const gained = (context.rawDamage * points) / 100
   if (gained <= 0) return
-  context.target.threat += gained
+  const wave = getActiveWave(context.encounter)
+  if (wave) wave.addThreatDelta(context.target, gained)
+  else context.target.threat += gained
 }
 
 function triggerFormationReactiveStrike(
@@ -772,26 +839,27 @@ function triggerFormationReactiveStrike(
   derivedEvents: CombatEvent[],
   rollState: { ch: bigint },
 ): void {
-  if (!context.hit || context.damage <= 0 || !context.target.isAlive) return
   const encounter = context.encounter
-  if (encounter.playerAllies.includes(context.target)) return
-
-  const allies = encounter.playerAllies
+  if (!context.hit || context.damage <= 0 || !isTargetAlive(encounter, context.target)) return
+  const wave = getActiveWave(encounter)
+  const allies = encounter.opponentsOf(context.target)
   for (let i = 0; i < allies.length; i++) {
     const ally = allies[i]
-    if (!ally.isAlive || !context.target.isAlive) continue
+    if (!ally.isAlive || !isTargetAlive(encounter, context.target)) continue
 
     if (ally.buffStacks('formation.tianlei') > 0) {
       const canTrigger =
         ally.lastTianleiTriggerAtSeconds < 0 ||
         context.atSeconds - ally.lastTianleiTriggerAtSeconds >= 1.0 - 1e-9
       const manaCost = ally.stats.maxManapoints * 0.01
+      const availMana = wave ? wave.getEffectiveMana(ally) : ally.manapoints
       if (
         canTrigger &&
-        ally.manapoints >= manaCost &&
+        availMana >= manaCost &&
         roll(encounter.seed, context.side, context.count, rollState.ch++) < 0.2
       ) {
-        ally.manapoints = Math.max(0, ally.manapoints - manaCost)
+        if (wave) wave.addManaDelta(ally, -manaCost)
+        else ally.manapoints = Math.max(0, ally.manapoints - manaCost)
         ally.lastTianleiTriggerAtSeconds = context.atSeconds
         // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（阵法技艺每级 +1 点）；不放大耗蓝代价。
         const rawDamage =
@@ -808,11 +876,11 @@ function triggerFormationReactiveStrike(
         }
         const rawDmg = Math.max(0, resolveStrikeDamage(strikeStats, context.target))
         if (rawDmg > 0) {
-          const hpBefore = context.target.hitpoints
-          applyCombatDamage(encounter, ally, context.target, rawDmg)
-          const actualDamage = hpBefore - context.target.hitpoints
-          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds)
-          ally.threat += actualDamage
+          const settled = applyCombatDamage(encounter, ally, context.target, rawDmg)
+          const actualDamage = settled.actual
+          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds, encounter)
+          if (wave) wave.addThreatDelta(ally, actualDamage)
+          else ally.threat += actualDamage
           encounter.statsBook?.recordHitUnit(
             ally,
             context.target,
@@ -841,7 +909,7 @@ function triggerFormationReactiveStrike(
       }
     }
 
-    if (!context.target.isAlive) break
+    if (!isTargetAlive(encounter, context.target)) break
 
     if (ally.buffStacks('formation.xuesha') > 0) {
       const canTrigger =
@@ -865,23 +933,28 @@ function triggerFormationReactiveStrike(
         }
         const rawDmg = Math.max(0, resolveStrikeDamage(strikeStats, context.target))
         if (rawDmg > 0) {
-          const hpBefore = context.target.hitpoints
-          applyCombatDamage(encounter, ally, context.target, rawDmg)
-          const actualDamage = hpBefore - context.target.hitpoints
-          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds)
-          const heal = Math.min(
-            ally.stats.maxHitpoints - ally.hitpoints,
+          const settled = applyCombatDamage(encounter, ally, context.target, rawDmg)
+          const actualDamage = settled.actual
+          applyRanhun(ally, context.target, strikeElement, actualDamage, context.atSeconds, encounter)
+          const rawHeal =
             actualDamage *
-              percentMultiplier(
-                ally.effectiveStats.effects.healingBonusPoints,
-                PercentCurveMode.Linear,
-              ),
-          )
-          if (heal > 0) {
-            ally.hitpoints += heal
-            encounter.statsBook?.recordHealingUnit(ally, false, heal)
+            percentMultiplier(
+              ally.effectiveStats.effects.healingBonusPoints,
+              PercentCurveMode.Linear,
+            )
+          let heal: number
+          if (wave) {
+            heal = rawHeal
+            wave.recordHeal(ally, ally, rawHeal, 'item.xuesha-formation-disk')
+          } else {
+            heal = Math.min(ally.stats.maxHitpoints - ally.hitpoints, rawHeal)
+            if (heal > 0) {
+              ally.hitpoints += heal
+              encounter.statsBook?.recordHealingUnit(ally, false, heal)
+            }
           }
-          ally.threat += actualDamage
+          if (wave) wave.addThreatDelta(ally, actualDamage)
+          else ally.threat += actualDamage
           encounter.statsBook?.recordHitUnit(
             ally,
             context.target,
@@ -1010,53 +1083,60 @@ function grantAbilityBuff(
   grantedAtSeconds: number,
   levelGrowth: number,
   abilityId: string,
+  encounter: CombatEncounterState | null = null,
 ): void {
-  const baseBuffId = abilityText(buff, 'buffId') ?? `ability-buff:${abilityId}`
-  const policy = abilityText(buff, 'stackPolicy') ?? 'capped'
-  const buffId = policy === 'perCaster' ? `${baseBuffId}:${caster.id}` : baseBuffId
-  const missingPerStack = abilityNumber(buff, 'missingHitpointsPerStack')
-  const spellStackPercent = abilityNumber(buff, 'spellAttackStackPercent')
-  const resistancePerStack = abilityNumber(buff, 'resistancePerStack')
-  const hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0
-  const effectiveLevelGrowth = abilityFlag(buff, 'noLevelGrowth') ? 1.0 : levelGrowth
+  const wave = getActiveWave(encounter)
+  const apply = () => {
+    if (!target.isAlive) return
+    const baseBuffId = abilityText(buff, 'buffId') ?? `ability-buff:${abilityId}`
+    const policy = abilityText(buff, 'stackPolicy') ?? 'capped'
+    const buffId = policy === 'perCaster' ? `${baseBuffId}:${caster.id}` : baseBuffId
+    const missingPerStack = abilityNumber(buff, 'missingHitpointsPerStack')
+    const spellStackPercent = abilityNumber(buff, 'spellAttackStackPercent')
+    const resistancePerStack = abilityNumber(buff, 'resistancePerStack')
+    const hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0
+    const effectiveLevelGrowth = abilityFlag(buff, 'noLevelGrowth') ? 1.0 : levelGrowth
 
-  const growth =
-    effectiveLevelGrowth * percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
-  const effectGrowth = hasStackDerivation ? 1.0 : effectiveLevelGrowth
-  const initialStacks = initialBuffStacks(buff, caster, target, growth)
+    const growth =
+      effectiveLevelGrowth * percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
+    const effectGrowth = hasStackDerivation ? 1.0 : effectiveLevelGrowth
+    const initialStacks = initialBuffStacks(buff, caster, target, growth)
 
-  const grant: CombatBuffState = {
-    buffId,
-    expiresAtSeconds: grantedAtSeconds + Math.max(0, abilityNumber(buff, 'durationSeconds')),
-    stacks: initialStacks,
-    name: abilityText(buff, 'name') ?? baseBuffId,
-    resetOnWave: buff.resetOnWave === true,
-    missingHitpointsPerStack: missingPerStack > 0 ? missingPerStack / growth : 0,
-    effects: parseBuffEffects(buff, effectGrowth),
-    statRatios: null,
-    sourceUnitId: caster.id,
-  }
-  const stackCap = Math.max(1, abilityNumber(buff, 'maxStacks'))
-  const existing = target.buffs.find((b) => b.buffId === buffId)
-  let nextStacks = initialStacks
-  if (existing) {
-    nextStacks =
-      policy === 'maxKeep'
-        ? Math.max(existing.stacks, initialStacks)
-        : Math.min(stackCap, existing.stacks + initialStacks)
-  }
-  target.setBuff({ ...grant, stacks: nextStacks })
-  if (caster !== target && caster.skillWakePending) {
-    for (let i = 0; i < caster.skillWakePending.length; i++) {
-      const cur = caster.skillWakePending[i]
-      caster.skillWakePending[i] = {
-        ...cur,
-        allySide: cur.allySide | UnitChannel.Buff,
-        enemySide: cur.enemySide | UnitChannel.Buff,
+    const grant: CombatBuffState = {
+      buffId,
+      expiresAtSeconds: grantedAtSeconds + Math.max(0, abilityNumber(buff, 'durationSeconds')),
+      stacks: initialStacks,
+      name: abilityText(buff, 'name') ?? baseBuffId,
+      resetOnWave: buff.resetOnWave === true,
+      missingHitpointsPerStack: missingPerStack > 0 ? missingPerStack / growth : 0,
+      effects: parseBuffEffects(buff, effectGrowth),
+      statRatios: null,
+      sourceUnitId: caster.id,
+    }
+    const stackCap = Math.max(1, abilityNumber(buff, 'maxStacks'))
+    const existing = target.buffs.find((b) => b.buffId === buffId)
+    let nextStacks = initialStacks
+    if (existing) {
+      nextStacks =
+        policy === 'maxKeep'
+          ? Math.max(existing.stacks, initialStacks)
+          : Math.min(stackCap, existing.stacks + initialStacks)
+    }
+    target.setBuff({ ...grant, stacks: nextStacks })
+    if (caster !== target && caster.skillWakePending) {
+      for (let i = 0; i < caster.skillWakePending.length; i++) {
+        const cur = caster.skillWakePending[i]
+        caster.skillWakePending[i] = {
+          ...cur,
+          allySide: cur.allySide | UnitChannel.Buff,
+          enemySide: cur.enemySide | UnitChannel.Buff,
+        }
       }
     }
+    target.syncDerivedStacks()
   }
-  target.syncDerivedStacks()
+  if (wave) wave.deferBuffOp(apply)
+  else apply()
 }
 
 function resolveAttack(
@@ -1076,7 +1156,8 @@ function resolveAttack(
   onHitBuffs: readonly AbilityBuffJson[] | null = null,
   levelGrowth = 1,
 ): void {
-  if (!attacker.isAlive || !target.isAlive) return
+  if (!attacker.isAlive || !isTargetAlive(encounter, target)) return
+  const wave = getActiveWave(encounter)
   const rawAttackStats = statsOverride ?? attacker.stats
   const resolvedElement = resolveDamageElement(attacker.stats.traits, rawAttackStats.element)
   const attackStats =
@@ -1115,7 +1196,8 @@ function resolveAttack(
     context.attackStats.element,
   )
   attacker.attackCount += 1
-  attacker.threat += context.damage
+  if (wave) wave.addThreatDelta(attacker, context.damage)
+  else attacker.threat += context.damage
   const mainEventIndex = events.length
   events.push({
     atSeconds: at,
@@ -1140,11 +1222,11 @@ function resolveAttack(
   )
   drainPendingTriggers(encounter)
   if (context.hit && extraRanhunStacks > 0) {
-    addRanhunStacks(attacker, target, extraRanhunStacks, at)
+    addRanhunStacks(attacker, target, extraRanhunStacks, at, encounter)
   }
-  if (context.hit && target.isAlive && onHitBuffs && onHitBuffs.length > 0) {
+  if (context.hit && isTargetAlive(encounter, target) && onHitBuffs && onHitBuffs.length > 0) {
     for (let i = 0; i < onHitBuffs.length; i++) {
-      grantAbilityBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? '')
+      grantAbilityBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? '', encounter)
     }
   }
 }
@@ -1160,6 +1242,7 @@ function castSkill(
   side: bigint,
   events: CombatEvent[],
 ): void {
+  const wave = getActiveWave(encounter)
   const ability = slot.ability
   const spell = abilityText(ability, 'category') === 'spell'
   const attackBase = spell ? caster.stats.spellAttack : caster.stats.attackPower
@@ -1167,8 +1250,13 @@ function castSkill(
   const levelGrowth = 1 + 0.02 * (Math.max(1, slot.level) - 1)
   const targetType = abilityText(ability, 'targetType')
 
-  caster.threat += abilityNumber(ability, 'threatGain') * levelGrowth
-  caster.threatBonusPoints += abilityNumber(ability, 'threatPoints') * levelGrowth
+  if (wave) {
+    wave.addThreatDelta(caster, abilityNumber(ability, 'threatGain') * levelGrowth)
+    wave.addThreatBonusDelta(caster, abilityNumber(ability, 'threatPoints') * levelGrowth)
+  } else {
+    caster.threat += abilityNumber(ability, 'threatGain') * levelGrowth
+    caster.threatBonusPoints += abilityNumber(ability, 'threatPoints') * levelGrowth
+  }
 
   const healOutput =
     attackBase *
@@ -1182,6 +1270,28 @@ function castSkill(
       healOutput *
       percentMultiplier(caster.effectiveStats.effects.healingBonusPoints, PercentCurveMode.Linear)
     const applyHeal = (ally: CombatantState) => {
+      if (wave) {
+        const eventIdx = events.length
+        const rawHeal = Math.max(0, output)
+        wave.recordHeal(caster, ally, rawHeal, id, eventIdx)
+        events.push({
+          atSeconds: encounter.elapsedSeconds,
+          attackerId: caster.id,
+          targetId: ally.id,
+          damage: 0,
+          hit: true,
+          damageKind: spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
+          targetHitpointsAfter: ally.hitpoints,
+          critical: false,
+          break: false,
+          parried: false,
+          abilityId: id,
+          healing: rawHeal,
+          attackerManapointsAfter: caster.manapoints,
+          targetManapointsAfter: ally.manapoints,
+        })
+        return
+      }
       const healed = Math.min(ally.stats.maxHitpoints - ally.hitpoints, Math.max(0, output))
       ally.hitpoints += healed
       if (healed > 0) encounter.statsBook?.recordHealingUnit(caster, false, healed)
@@ -1229,7 +1339,7 @@ function castSkill(
         const weakest = lowestHitpointsRatioAlly(allies)
         if (weakest) {
           for (let b = 0; b < buffSpecs.length; b++) {
-            grantAbilityBuff(buffSpecs[b], caster, weakest, encounter.elapsedSeconds, levelGrowth, id)
+            grantAbilityBuff(buffSpecs[b], caster, weakest, encounter.elapsedSeconds, levelGrowth, id, encounter)
           }
         }
       } else if (targetType === 'allAllies') {
@@ -1243,13 +1353,14 @@ function castSkill(
                 encounter.elapsedSeconds,
                 levelGrowth,
                 id,
+                encounter,
               )
             }
           }
         }
       } else {
         for (let b = 0; b < buffSpecs.length; b++) {
-          grantAbilityBuff(buffSpecs[b], caster, caster, encounter.elapsedSeconds, levelGrowth, id)
+          grantAbilityBuff(buffSpecs[b], caster, caster, encounter.elapsedSeconds, levelGrowth, id, encounter)
         }
       }
     }
@@ -1314,7 +1425,7 @@ function castSkill(
   const zeroDirectDamage = !hasDamage
   let killedAnyTarget = false
   const strike = (foe: CombatantState, rollCountOverride: number | null) => {
-    const wasAlive = foe.isAlive
+    const wasAlive = isTargetAlive(encounter, foe)
     resolveAttack(
       encounter,
       caster,
@@ -1332,7 +1443,7 @@ function castSkill(
       onHitBuffSpecs,
       levelGrowth,
     )
-    if (wasAlive && !foe.isAlive) killedAnyTarget = true
+    if (wasAlive && !isTargetAlive(encounter, foe)) killedAnyTarget = true
   }
 
   if (effectiveTargetType === 'allEnemies') {
@@ -1351,19 +1462,19 @@ function castSkill(
     }
   } else {
     let single =
-      !ignorePrimaryThreat && target && target.isAlive
+      !ignorePrimaryThreat && target && isTargetAlive(encounter, target)
         ? target
         : selectTarget(opponents, encounter.seed, side, count, 16n, ignorePrimaryThreat)
     if (single === null) return
     strike(single, count)
 
     const hitCount = Math.max(1, Math.trunc(abilityNumber(ability, 'hitCount')))
-    for (let hitIndex = 1; hitIndex < hitCount && single.isAlive; hitIndex++) {
+    for (let hitIndex = 1; hitIndex < hitCount && isTargetAlive(encounter, single); hitIndex++) {
       strike(single, null)
     }
 
     const chainMax = Math.trunc(abilityNumber(ability, 'chainOnKillCount'))
-    for (let chainIndex = 0; chainIndex < chainMax && !single.isAlive; chainIndex++) {
+    for (let chainIndex = 0; chainIndex < chainMax && !isTargetAlive(encounter, single); chainIndex++) {
       single = selectTarget(
         opponents,
         encounter.seed,
@@ -1376,7 +1487,8 @@ function castSkill(
     }
   }
   if (hasYixing) {
-    caster.consumeOneBuffStack(BuffIds.Yixing)
+    if (wave) wave.deferBuffOp(() => caster.consumeOneBuffStack(BuffIds.Yixing))
+    else caster.consumeOneBuffStack(BuffIds.Yixing)
   }
   if (
     hasYixing &&
@@ -1392,7 +1504,7 @@ function castSkill(
     for (let i = 0; i < selfBuffSpecs.length; i++) {
       const spec = selfBuffSpecs[i]
       if (abilityFlag(spec, 'skipIfHasYixing') && hasYixing) continue
-      grantAbilityBuff(spec, caster, caster, encounter.elapsedSeconds, levelGrowth, id)
+      grantAbilityBuff(spec, caster, caster, encounter.elapsedSeconds, levelGrowth, id, encounter)
     }
   }
 }
@@ -1540,7 +1652,80 @@ export function decideNextAction(
       percentMultiplier(unit.effectiveStats.actionSpeedPoints, PercentCurveMode.NonLinear)
 }
 
+function decideNextActionsSimultaneously(
+  encounter: CombatEncounterState,
+  units: readonly CombatantState[],
+): void {
+  const plans: Array<{
+    unit: CombatantState
+    skillIndex: number
+    manaCost: number
+    nextAttackAt: number
+    cdUntil: number
+  }> = []
+  for (let i = 0; i < units.length; i++) {
+    const unit = units[i]
+    if (!unit.isAlive) continue
+    const allies = encounter.alliesOf(unit)
+    const opponents = encounter.opponentsOf(unit)
+    const side = symmetricUnitSide(encounter.seed, unit.side, unit.sideIndex)
+    const target = selectTarget(
+      opponents,
+      encounter.seed,
+      side,
+      unit.attackCount,
+      SYMMETRIC_DECIDE_TARGET_CHANNEL,
+    )
+    const savedMana = unit.manapoints
+    const savedPending = unit.pendingSkillIndex
+    const savedNext = unit.nextAttackAtSeconds
+    const savedCd = unit.skillCooldownUntil ? [...unit.skillCooldownUntil] : null
+    decideNextAction(encounter, unit, allies, opponents, target)
+    const chosenSkill = unit.pendingSkillIndex
+    const spentMana = savedMana - unit.manapoints
+    const chosenNext = unit.nextAttackAtSeconds
+    const chosenCd = chosenSkill >= 0 && unit.skillCooldownUntil ? unit.skillCooldownUntil[chosenSkill] : 0
+    unit.manapoints = savedMana
+    unit.pendingSkillIndex = savedPending
+    unit.nextAttackAtSeconds = savedNext
+    if (savedCd) unit.skillCooldownUntil = savedCd
+    plans.push({
+      unit,
+      skillIndex: chosenSkill,
+      manaCost: spentMana,
+      nextAttackAt: chosenNext,
+      cdUntil: chosenCd,
+    })
+  }
+  for (let i = 0; i < plans.length; i++) {
+    const p = plans[i]
+    if (p.skillIndex >= 0) {
+      p.unit.manapoints -= p.manaCost
+      p.unit.pendingSkillIndex = p.skillIndex
+      p.unit.nextAttackAtSeconds = p.nextAttackAt
+      if (!p.unit.skillCooldownUntil) {
+        p.unit.skillCooldownUntil = new Array<number>(p.unit.skills.length).fill(0)
+      }
+      p.unit.skillCooldownUntil[p.skillIndex] = p.cdUntil
+    } else {
+      p.unit.pendingSkillIndex = -1
+      p.unit.nextAttackAtSeconds = p.nextAttackAt
+    }
+  }
+}
+
 export function decideInitialActions(encounter: CombatEncounterState): void {
+  if (encounter.isSymmetric) {
+    const units: CombatantState[] = []
+    for (let i = 0; i < encounter.sideA.length; i++) {
+      if (encounter.sideA[i].isAlive && encounter.sideA[i].pendingSkillIndex < 0) units.push(encounter.sideA[i])
+    }
+    for (let i = 0; i < encounter.sideB.length; i++) {
+      if (encounter.sideB[i].isAlive && encounter.sideB[i].pendingSkillIndex < 0) units.push(encounter.sideB[i])
+    }
+    decideNextActionsSimultaneously(encounter, units)
+    return
+  }
   for (let i = 0; i < encounter.enemies.length; i++) {
     const enemy = encounter.enemies[i]
     if (enemy.isAlive && enemy.pendingSkillIndex < 0) {
@@ -1646,40 +1831,45 @@ function applyBuffTickPhase(encounter: CombatEncounterState, effectAt: number, e
   const regenTick = Math.abs(effectAt / BUFF_TICK_SECONDS - Math.round(effectAt / BUFF_TICK_SECONDS)) <= 1e-9
   const secondTick =
     Math.abs(effectAt / THREAT_TICK_SECONDS - Math.round(effectAt / THREAT_TICK_SECONDS)) <= 1e-9
-  if (regenTick || secondTick) {
-    const statsBook = encounter.statsBook
+  if (encounter.isSymmetric) encounter.deferAliveCountNotifications = true
+  try {
+    if (regenTick || secondTick) {
+      const statsBook = encounter.statsBook
+      for (let i = 0; i < encounter.playerAllies.length; i++) {
+        const unit = encounter.playerAllies[i]
+        const aliveBefore = unit.isAlive
+        tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
+        if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
+        if (secondTick) {
+          tickRanhun(encounter, unit, effectAt, events)
+          if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+        }
+      }
+      for (let i = 0; i < encounter.enemies.length; i++) {
+        const unit = encounter.enemies[i]
+        const aliveBefore = unit.isAlive
+        tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
+        if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
+        if (secondTick) {
+          tickRanhun(encounter, unit, effectAt, events)
+          if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+        }
+      }
+    }
     for (let i = 0; i < encounter.playerAllies.length; i++) {
-      const unit = encounter.playerAllies[i]
-      const aliveBefore = unit.isAlive
-      tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
-      if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
-      if (secondTick) {
-        tickRanhun(encounter, unit, effectAt, events)
-        if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+      const ally = encounter.playerAllies[i]
+      if (ally.buffs.length > 0) {
+        ally.removeBuffsWhere((b) => b.expiresAtSeconds <= effectAt + 1e-9)
       }
     }
     for (let i = 0; i < encounter.enemies.length; i++) {
-      const unit = encounter.enemies[i]
-      const aliveBefore = unit.isAlive
-      tickUnitBuffEffects(unit, statsBook, regenTick, secondTick)
-      if (aliveBefore !== unit.isAlive) encounter.notifyAliveCountsChanged()
-      if (secondTick) {
-        tickRanhun(encounter, unit, effectAt, events)
-        if (effectAt > 1e-9) unit.decayBuffStacksPerSecond()
+      const enemy = encounter.enemies[i]
+      if (enemy.buffs.length > 0) {
+        enemy.removeBuffsWhere((b) => b.expiresAtSeconds <= effectAt + 1e-9)
       }
     }
-  }
-  for (let i = 0; i < encounter.playerAllies.length; i++) {
-    const ally = encounter.playerAllies[i]
-    if (ally.buffs.length > 0) {
-      ally.removeBuffsWhere((b) => b.expiresAtSeconds <= effectAt + 1e-9)
-    }
-  }
-  for (let i = 0; i < encounter.enemies.length; i++) {
-    const enemy = encounter.enemies[i]
-    if (enemy.buffs.length > 0) {
-      enemy.removeBuffsWhere((b) => b.expiresAtSeconds <= effectAt + 1e-9)
-    }
+  } finally {
+    if (encounter.isSymmetric) encounter.flushAliveCountNotifications()
   }
 }
 
@@ -1883,7 +2073,73 @@ function advanceCombatBoundary(
   }
 
   // 出手与倒地
-  if (!encounter.isAllAlliesDowned) {
+  if (encounter.isSymmetric) {
+    const dueUnits: CombatantState[] = []
+    const flip = (encounter.seed & 1n) !== 0n
+    const firstSide = flip ? encounter.sideB : encounter.sideA
+    const secondSide = flip ? encounter.sideA : encounter.sideB
+    for (let i = 0; i < firstSide.length; i++) {
+      if (firstSide[i].isAlive && firstSide[i].nextAttackAtSeconds <= encounter.elapsedSeconds + 1e-12) {
+        dueUnits.push(firstSide[i])
+      }
+    }
+    for (let i = 0; i < secondSide.length; i++) {
+      if (secondSide[i].isAlive && secondSide[i].nextAttackAtSeconds <= encounter.elapsedSeconds + 1e-12) {
+        dueUnits.push(secondSide[i])
+      }
+    }
+    if (dueUnits.length === 1) {
+      const u = dueUnits[0]
+      const allies = encounter.alliesOf(u)
+      const opponents = encounter.opponentsOf(u)
+      const side = symmetricUnitSide(encounter.seed, u.side, u.sideIndex)
+      const target = selectTarget(
+        opponents,
+        encounter.seed,
+        side,
+        u.attackCount,
+        SYMMETRIC_RESOLVE_TARGET_CHANNEL,
+      )
+      resolvePending(encounter, u, allies, opponents, target, side, events)
+      if (u.isAlive) {
+        decideNextAction(
+          encounter,
+          u,
+          allies,
+          opponents,
+          selectTarget(opponents, encounter.seed, side, u.attackCount, SYMMETRIC_DECIDE_TARGET_CHANNEL),
+        )
+      }
+      acted = true
+    } else if (dueUnits.length > 1) {
+      const wave = new SimultaneousCombatWave(events.length)
+      encounter.activeWave = wave
+      encounter.deferAliveCountNotifications = true
+      try {
+        for (let i = 0; i < dueUnits.length; i++) {
+          wave.beginActor()
+          const u = dueUnits[i]
+          const allies = encounter.alliesOf(u)
+          const opponents = encounter.opponentsOf(u)
+          const side = symmetricUnitSide(encounter.seed, u.side, u.sideIndex)
+          const target = selectTarget(
+            opponents,
+            encounter.seed,
+            side,
+            u.attackCount,
+            SYMMETRIC_RESOLVE_TARGET_CHANNEL,
+          )
+          resolvePending(encounter, u, allies, opponents, target, side, events)
+        }
+      } finally {
+        encounter.activeWave = null
+        wave.commit(encounter, events)
+        encounter.flushAliveCountNotifications()
+      }
+      decideNextActionsSimultaneously(encounter, dueUnits)
+      acted = true
+    }
+  } else if (!encounter.isAllAlliesDowned) {
     for (let i = 0; i < encounter.playerAllies.length; i++) {
       const ally = encounter.playerAllies[i]
       if (ally.isAlive && ally.nextAttackAtSeconds <= encounter.elapsedSeconds + 1e-12) {

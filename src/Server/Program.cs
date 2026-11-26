@@ -849,6 +849,18 @@ if (processRole == ServerProcessRole.Api)
     Server.Clean.Redeem.RedeemEndpoints.Map(app);
     Server.Clean.Social.StickerEndpoints.Map(app);
 
+    // 对弈八阶匹配池实时人数快照：纯内存零锁读取，供前端对弈大厅刷新各阶人数与本人排队阶位。
+    app.MapGet("/api/v1/doudizhu/queues", (ClaimsPrincipal user, Server.Clean.Social.SocialRuntime social) =>
+    {
+        if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue("player_id"), out var playerId))
+            return Results.Unauthorized();
+        return Results.Ok(new
+        {
+            matchingTier = social.GetDouDiZhuMatchingTier(playerId),
+            queueCounts = social.GetDouDiZhuQueueCounts()
+        });
+    }).RequireAuthorization().RequireRateLimiting("command");
+
 
 
     var players = app.MapGroup("/api/v1/players").RequireAuthorization();

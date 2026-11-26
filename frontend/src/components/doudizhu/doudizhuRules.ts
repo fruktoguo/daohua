@@ -2,6 +2,35 @@
 export type PatternKind = 'single' | 'pair' | 'triple' | 'tripleSingle' | 'triplePair' | 'straight' | 'pairRun' | 'plane' | 'planeSingle' | 'planePair' | 'fourSingle' | 'fourPair' | 'bomb' | 'rocket'
 export interface Pattern { kind: PatternKind; primary: number; count: number; length: number }
 export interface Move { cards: number[]; pattern: Pattern }
+
+/** 对弈八阶场次标识（凡~帝八品品质色对齐） */
+export type DouDiZhuTierKey = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
+
+export interface DouDiZhuTierMeta {
+  readonly tier: number
+  readonly key: DouDiZhuTierKey
+  readonly baseStake: number
+  readonly requiredStones: number
+}
+
+/** 八阶固定底注（每阶 ×100）与十倍底注验资门槛（与服务端 DouDiZhuRules 严格同源） */
+export const DOUDIZHU_ESCROW_MULTIPLIER = 10
+
+export const DOUDIZHU_TIERS: readonly DouDiZhuTierMeta[] = [
+  { tier: 1, key: 'mundane', baseStake: 1, requiredStones: 10 },
+  { tier: 2, key: 'yellow', baseStake: 100, requiredStones: 1_000 },
+  { tier: 3, key: 'mystic', baseStake: 10_000, requiredStones: 100_000 },
+  { tier: 4, key: 'earth', baseStake: 1_000_000, requiredStones: 10_000_000 },
+  { tier: 5, key: 'heaven', baseStake: 100_000_000, requiredStones: 1_000_000_000 },
+  { tier: 6, key: 'spirit', baseStake: 10_000_000_000, requiredStones: 100_000_000_000 },
+  { tier: 7, key: 'saint', baseStake: 1_000_000_000_000, requiredStones: 10_000_000_000_000 },
+  { tier: 8, key: 'emperor', baseStake: 100_000_000_000_000, requiredStones: 1_000_000_000_000_000 },
+]
+
+export function getDouDiZhuTierMeta(tier: number): DouDiZhuTierMeta {
+  const clamped = Number.isFinite(tier) ? Math.max(1, Math.min(8, Math.trunc(tier))) : 1
+  return DOUDIZHU_TIERS[clamped - 1]
+}
 export const rank = (card: number): number => card < 52 ? Math.floor(card / 4) + 3 : card - 36
 export const sortCards = (cards: readonly number[]): number[] => [...cards].sort((a, b) => rank(b) - rank(a) || a - b)
   function groups(cards: readonly number[]): Map<number, number[]> {

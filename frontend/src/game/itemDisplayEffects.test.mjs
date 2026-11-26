@@ -129,7 +129,7 @@ await build({
   ],
 })
 
-const { describeItemEffects, resolveItemAsideCards, extractBuffBonusItems } = await import(pathToFileURL(tempOut).href)
+const { describeItemEffects, describeEquipmentEffects, resolveItemAsideCards, extractBuffBonusItems } = await import(pathToFileURL(tempOut).href)
 
 test('describeItemEffects: 战斗药品（如止血散）从 buffEffects 提取持续时间与冷却', () => {
   const zhixueItem = {
@@ -334,4 +334,33 @@ test('extractBuffBonusItems: 阵法 Buff 范围简化为队伍与自身', () => 
   assert.equal(mizongItems[0].value, '队伍')
   assert.equal(mizongItems[1].value, '+10')
   assert.equal(mizongItems[2].value, '+30%')
+})
+
+test('describeEquipmentEffects: 强化技艺工具展示随强化缩放的秘法速度与固定强化成功率', () => {
+  const hammer = {
+    equipmentId: 'equipment.tool-zhenling-hammer',
+    name: '玄光镇灵锤',
+    slot: 'tool-enhancement',
+    tier: 3,
+    level: 30,
+    techniqueBonus: {
+      technique: 'enhancement',
+      speedRatio: 0.3,
+      enhancementSuccessBonus: 0.07,
+    },
+  }
+
+  const lines0 = describeEquipmentEffects(hammer, 0)
+  assert.equal(lines0.length, 2, '白板玄光镇灵锤应展示装备强化速度与强化成功率两行')
+  assert.equal(lines0[0].props.label, '装备强化速度')
+  assert.equal(lines0[0].props.value, '+30%')
+  assert.equal(lines0[1].props.label, '强化成功率')
+  assert.equal(lines0[1].props.value, '+7%')
+
+  // 强化 +10 时：速度按 1.05^10 缩放（48.9%），但强化成功率保持固定 +7% 不缩放
+  const lines10 = describeEquipmentEffects(hammer, 10)
+  assert.equal(lines10.length, 2)
+  assert.equal(lines10[0].props.value, `+${+(0.3 * Math.pow(1.05, 10) * 100).toFixed(1)}%`)
+  assert.equal(lines10[1].props.label, '强化成功率')
+  assert.equal(lines10[1].props.value, '+7%')
 })

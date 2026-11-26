@@ -11,10 +11,15 @@ internal static class CombatDamageSettlement
             && CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.HasteTraitId)
             ? hitpoints - 1 : damage;
 
-    /// <summary>扣除生命并返回裁决伤害及实际扣血；蓄意爆发可明确禁止再次积蓄。</summary>
+    /// <summary>扣除生命并返回裁决伤害及实际扣血；对称同刻波次期间暂存至波次缓冲区统一落账。</summary>
     internal static (double Damage, double Actual) Apply(CombatEncounterState? encounter,
         CombatantState attacker, CombatantState target, double damage, bool accumulateXuyi = true)
     {
+        if (encounter?.ActiveWave is SimultaneousCombatWave wave)
+        {
+            var deferred = wave.RecordDamage(encounter, attacker, target, damage, accumulateXuyi);
+            return (deferred.Damage, deferred.Actual);
+        }
         if (!target.IsAlive) return (0, 0);
         damage = Limit(attacker, target.Hitpoints, Math.Max(0, damage));
         var before = target.Hitpoints;
@@ -32,6 +37,10 @@ internal static class CombatDamageSettlement
         if (!target.IsAlive) encounter?.NotifyAliveCountsChanged();
         return (damage, actual);
     }
+
+    /// <summary>读取当前上下文下目标是否存活（同刻波次内读当前出手者视角虚拟存活，常规读真实存活）。</summary>
+    internal static bool IsTargetAlive(CombatEncounterState? encounter, CombatantState target)
+        => encounter?.ActiveWave is SimultaneousCombatWave wave ? wave.IsLocallyAlive(target) : target.IsAlive;
 
     /// <summary>即时与衍生伤害使用实时增伤 Buff，避免只读静态面板遗漏欲速则不达等修饰。</summary>
     internal static CombatantStats StrikeStats(CombatantState unit, double power, CombatDamageKind kind, CombatElement element)

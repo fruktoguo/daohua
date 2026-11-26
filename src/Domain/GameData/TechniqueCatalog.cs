@@ -140,6 +140,38 @@ public static class TechniqueCatalog
     public static double EquippedToolSpeedRatio(PlayerLoadoutState loadout, string techniqueId, GameDataCatalog? catalog)
         => EquippedToolSpeedRatio(loadout.Equipment, techniqueId, catalog);
 
+    /// <summary>
+    /// 已装备强化技艺工具（technique = enhancement）提供的额外强化成功率加成合计（总纲 §20.4.2 / §20.7.2）：
+    /// 遍历装配槽位，读取装备配表 techniqueBonus.enhancementSuccessBonus；
+    /// 固定按白板值结算，不随工具自身强化等级缩放，与强化自动栏持续消耗品加算后受高阶硬封顶约束。
+    /// </summary>
+    public static double EquippedToolEnhancementSuccessBonus(IReadOnlyList<PlayerEquipmentSlot>? equipmentSlots, GameDataCatalog? catalog)
+    {
+        if (catalog is null || equipmentSlots is null) return 0;
+        var bonus = 0d;
+        foreach (var slot in equipmentSlots)
+        {
+            if (!catalog.RawEquipments.TryGetValue(slot.ItemId, out var equipment)
+                || !equipment.TryGetProperty("techniqueBonus", out var tb)
+                || tb.ValueKind != JsonValueKind.Object
+                || !tb.TryGetProperty("technique", out var technique)
+                || technique.ValueKind != JsonValueKind.String
+                || !string.Equals(technique.GetString(), Enhancement, StringComparison.Ordinal))
+                continue;
+            if (tb.TryGetProperty("enhancementSuccessBonus", out var successBonus)
+                && successBonus.TryGetDouble(out var value)
+                && double.IsFinite(value) && value > 0)
+            {
+                bonus += value;
+            }
+        }
+        return bonus;
+    }
+
+    /// <summary>已装备强化技艺工具提供的额外强化成功率加成合计（固定不随工具强化缩放）。</summary>
+    public static double EquippedToolEnhancementSuccessBonus(PlayerLoadoutState loadout, GameDataCatalog? catalog)
+        => EquippedToolEnhancementSuccessBonus(loadout.Equipment, catalog);
+
     /// <summary>技艺前期经验削减覆盖的目标等级数：1~30 级按线性比例下调，30 级以上不削减（与共享削减段表同值）。</summary>
     public const int EarlyDiscountLevels = RealmProgressionCatalog.EarlyUpgradeDiscountLevels;
 

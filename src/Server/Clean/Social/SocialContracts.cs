@@ -26,10 +26,8 @@ public sealed record FriendRecord(Guid FriendId, string DisplayName);
 /// <param name="PlayerId">成员玩家 ID。</param>
 /// <param name="DisplayName">成员道号。</param>
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）。</param>
-/// <param name="DouDiZhuReady">斗地主就绪标记。</param>
-/// <param name="SpiritStones">成员灵石余额。</param>
 /// <param name="AssistMode">秘境助战模式开关（true 表示零耗体且无收益）。</param>
-public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false, bool DouDiZhuReady = false, double SpiritStones = 0, bool AssistMode = false);
+public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false, bool AssistMode = false);
 
 /// <summary>队伍档案（招募标签与活动配置）。</summary>
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
@@ -65,7 +63,23 @@ public sealed record PartyProfileRecord(
 /// <param name="Members">成员列表（含队长，按加入时间排序）。</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；满员判定与讨伐开战条件均以此为上限。</param>
 public sealed record PartyRecord(Guid PartyId, Guid LeaderId, PartyProfileRecord Profile, DateTimeOffset CreatedAt,
-    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 3, double DouDiZhuStake = 10);
+    IReadOnlyList<PartyMemberRecord> Members, int OpenSlots = 3);
+
+/// <summary>斗地主座位玩家的持久化身份与余额视图。</summary>
+public sealed record DouDiZhuSeatRecord(Guid PlayerId, string DisplayName, string Avatar, double SpiritStones);
+
+/// <summary>原子创建斗地主牌局并预扣十倍底注托管金的事务裁决结果。</summary>
+/// <param name="Created">是否成功建局并扣妥托管金。</param>
+/// <param name="InsufficientPlayerIds">因可用灵石不足十倍底注导致建局失败的玩家列表。</param>
+/// <param name="BusyPlayerIds">因已处于另一场活跃牌局中导致建局失败的玩家列表。</param>
+public sealed record DouDiZhuCreateGameResult(
+    bool Created,
+    IReadOnlyList<Guid>? InsufficientPlayerIds = null,
+    IReadOnlyList<Guid>? BusyPlayerIds = null)
+{
+    /// <summary>成功建局单例。</summary>
+    public static readonly DouDiZhuCreateGameResult Ok = new(true);
+}
 
 /// <summary>组队讨伐会话持久化行（总纲 §21.13）。</summary>
 /// <param name="SessionId">会话唯一标识（party:{partyId}:{unixSec}:{rand} 文本）。</param>
@@ -141,7 +155,8 @@ public sealed record SocialStateSnapshot(
     PartyInvitationRecord? Invitation,
     PartySeekerRecord? Seeker,
     PartySessionRecord? PartySession = null,
-    DouDiZhuGameState? DouDiZhuGame = null);
+    DouDiZhuGameState? DouDiZhuGame = null,
+    IReadOnlyList<DouDiZhuSeatRecord>? DouDiZhuSeats = null);
 
 /// <summary>传音消息内嵌的队伍卡片持久化视图。</summary>
 /// <param name="PartyId">队伍唯一标识。</param>
@@ -246,9 +261,7 @@ public enum PartyJoinResult : byte
     /// <summary>队伍已满员。</summary>
     Full,
     /// <summary>玩家已在其他队伍中。</summary>
-    AlreadyInParty,
-    /// <summary>斗地主牌局进行中，队伍名册已冻结。</summary>
-    GameActive
+    AlreadyInParty
 }
 
 /// <summary>玩家身份视图（角色信息卡身份区数据源）。</summary>
@@ -275,7 +288,7 @@ public interface ISocialRepository
     ValueTask<IReadOnlyList<FriendRequestView>> ListPendingRequestsAsync(Guid playerId, bool incoming, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 一次往返读取构建社交状态所需的全部视图（好友/双向申请/队伍含成员/队伍邀请），
+    /// 一次往返读取构建社交状态所需的全部视图（好友/双向申请/队伍含成员/队伍邀请/斗地主牌局），
     /// 供扇出与握手场景批量构建，替代逐条串行查询。
     /// </summary>
     ValueTask<SocialStateSnapshot> LoadStateSnapshotAsync(Guid playerId, CancellationToken cancellationToken = default);
@@ -307,17 +320,17 @@ public interface ISocialRepository
     /// <summary>整体覆盖队伍档案（调用方已合并补丁语义）；队伍不存在返回 false。</summary>
     ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile, DateTimeOffset now, CancellationToken cancellationToken = default);
 
-    /// <summary>队长更新斗地主底注（队伍行锁内复核权限和底注区间）。</summary>
-    ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake, DateTimeOffset now, CancellationToken cancellationToken = default);
+    /// <summary>原子创建全局匹配斗地主牌局：复核三名玩家无其他活跃牌局且可用灵石满足十倍底注，同事务预扣担保金并落盘。</summary>
+    ValueTask<DouDiZhuCreateGameResult> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, CancellationToken cancellationToken = default);
 
-    /// <summary>切换本人独立于共战的斗地主准备状态；牌局进行中拒绝修改。</summary>
-    ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default);
+    /// <summary>读取玩家当前进行中或尚未关闭结算视图的斗地主牌局检查点。</summary>
+    ValueTask<DouDiZhuGameState?> GetVisibleDouDiZhuGameAsync(Guid playerId, CancellationToken cancellationToken = default);
 
-    /// <summary>创建或重开牌局，锁定队伍并原子复核三名成员、全员准备、房主和底注。</summary>
-    ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy, CancellationToken cancellationToken = default);
+    /// <summary>判断玩家当前是否处于未结束的活跃斗地主牌局中。</summary>
+    ValueTask<bool> HasActiveDouDiZhuGameAsync(Guid playerId, CancellationToken cancellationToken = default);
 
-    /// <summary>读取队伍最近一局斗地主检查点。</summary>
-    ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId, CancellationToken cancellationToken = default);
+    /// <summary>关闭玩家本人已结束的斗地主赛后结算视图；全员关闭后自动删除终态行。</summary>
+    ValueTask<bool> TryDismissFinishedDouDiZhuGameAsync(Guid playerId, Guid? gameId = null, CancellationToken cancellationToken = default);
 
     /// <summary>列出仍在叫地主或出牌阶段的牌局，供服务端回合截止与托管推进。</summary>
     ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(CancellationToken cancellationToken = default);
@@ -325,7 +338,7 @@ public interface ISocialRepository
     /// <summary>保存非终局牌局操作；牌局行锁与预期版本不匹配时返回 false。</summary>
     ValueTask<bool> TrySaveDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default);
 
-    /// <summary>在单个 Serializable 事务内原子提交终局牌局检查点、灵石余额和幂等经济流水。</summary>
+    /// <summary>在单个 Serializable 事务内原子提交终局牌局检查点、退补十倍托管灵石余额和幂等经济流水。</summary>
     ValueTask<bool> TryCommitDouDiZhuGameAsync(DouDiZhuGameState state, long expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>

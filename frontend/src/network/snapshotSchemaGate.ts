@@ -6,7 +6,7 @@
  */
 
 /** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion 保持一致。 */
-export const SNAPSHOT_SCHEMA_VERSION = 49
+export const SNAPSHOT_SCHEMA_VERSION = 50
 
 /** schemaVersion 为载荷标签，minReaderSchemaVersion 为服务端声明的读者地板；任一缺失按保守语义拒绝。 */
 export function snapshotSchemaReadable(

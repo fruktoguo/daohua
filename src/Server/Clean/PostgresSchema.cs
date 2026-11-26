@@ -97,8 +97,10 @@ public static class PostgresSchema
     /// social.party_members 增 assist_mode 助战标记；progression 分段新增 tiliValue/tiliUpdatedAtUnixSeconds、actionQueue 远征新增秘境字段，均可缺省解码，存档标签推进至 v47）。
     /// v68：战斗统计新增紧凑 PVP 斗法记录（duel 分段行动账本新增 duelRecords、actionQueue 斗法回放新增 viewerRecord，均可缺省解码；存档标签推进至 v48，无 DDL 变更）。
     /// v69：符箓与阵法技艺每级提升 1% 对应伤害（CombatantStats 新增 talismanDamageBonusPoints/formationDamageBonusPoints，均可缺省解码为 0；存档标签推进至 v49，无 DDL 变更）。
+    /// v70：对弈独立同道子页与八阶全局匹配（移除 social.parties.doudizhu_stake 与 party_members.doudizhu_ready，social.doudizhu_games 改为 game_id 主键并记录 tier/player_ids/dismissed_by；存档标签保持 v49 不变）。
+    /// v71：双阵营完全对称战斗与 1~5v1~5 多方斗法协议（actionQueue 斗法回放 DuelScriptEvent 新增 attackerUnitIndex/targetUnitIndex、DuelPlaybackState 新增 selfUnitIndex/selfUnits/opponentUnits，均可缺省解码；存档标签推进至 v50，无 DDL 变更）。
     /// </summary>
-    public const int Version = 69;
+    public const int Version = 71;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -723,7 +725,6 @@ public static class PostgresSchema
         dungeon_id varchar(128) NOT NULL DEFAULT '',
         -- 秘境副本连刷次数（1~99 或 -1 刷至体力耗尽，默认 1）。
         dungeon_repeat_count integer NOT NULL DEFAULT 1 CHECK (dungeon_repeat_count = -1 OR (dungeon_repeat_count >= 1 AND dungeon_repeat_count <= 99)),
-        doudizhu_stake double precision NOT NULL DEFAULT 10 CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -738,20 +739,25 @@ public static class PostgresSchema
         joined_at timestamptz NOT NULL,
         -- 组队讨伐就绪标记（总纲 §21.13）：成员自开关，离队/被踢即随成员行删除。
         ready boolean NOT NULL DEFAULT false,
-        doudizhu_ready boolean NOT NULL DEFAULT false,
         -- 秘境副本助战标记（总纲 §30.5.3）：助战成员不扣体力不拿收益，照常参战。
         assist_mode boolean NOT NULL DEFAULT false
     );
     CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
 
+    -- 同道对弈（斗地主八阶全局匹配，总纲 §21.15）：独立于队伍，以 game_id 为主键。
     CREATE TABLE IF NOT EXISTS social.doudizhu_games (
-        party_id uuid PRIMARY KEY,
-        game_id uuid NOT NULL UNIQUE,
+        game_id uuid PRIMARY KEY,
+        tier smallint NOT NULL CHECK (tier BETWEEN 1 AND 8),
+        player_ids uuid[] NOT NULL CHECK (cardinality(player_ids) = 3),
+        dismissed_by uuid[] NOT NULL DEFAULT '{}'::uuid[],
         state jsonb NOT NULL,
         state_version bigint NOT NULL DEFAULT 0 CHECK (state_version >= 0),
         status smallint NOT NULL CHECK (status BETWEEN 0 AND 2),
         updated_at timestamptz NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS ix_doudizhu_games_players ON social.doudizhu_games USING gin (player_ids) WHERE status IN (0, 1);
+    CREATE INDEX IF NOT EXISTS ix_doudizhu_games_active_updated ON social.doudizhu_games(updated_at) WHERE status = 0;
+    CREATE INDEX IF NOT EXISTS ix_doudizhu_games_finished_updated ON social.doudizhu_games(updated_at) WHERE status <> 0;
 
     -- 组队讨伐会话（总纲 §21.13）：spec 为冻结输入，runtime_state 为唯一权威运行态。
     -- party_id 仅保留历史引用，队伍解散不能级联删除尚待成员消费的结算证据。
@@ -1058,7 +1064,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now()), (69, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now()), (69, now()), (70, now()), (71, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

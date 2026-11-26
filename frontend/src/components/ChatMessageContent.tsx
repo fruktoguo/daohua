@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react'
 import { resolveAssetName, resolveEntityName } from '../game/entityNames'
+import { formatNumber } from '../game/format'
 import { parseChatMarkup, type ChatMarkupSegment } from '../game/chatMarkup'
 import { findEquipmentInCatalog, findItemInCatalog } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
@@ -259,10 +260,80 @@ const ChatLocationReference = memo(function ChatLocationReference({
   )
 })
 
+/** 单条攻略超链接胶囊 (ChatGuideReference)：点击跳转「同道 → 攻略」并直达对应攻略详情 */
+const ChatGuideReference = memo(function ChatGuideReference({
+  guide,
+}: {
+  guide: Extract<ChatMarkupSegment, { type: 'guide' }>
+}): React.JSX.Element {
+  const t = useT()
+  const displayTitle = guide.title || t('social.guide.untitledPreview')
+  const isPaid = guide.unlockPrice > 0
+
+  const handleClick = (e: React.MouseEvent | React.KeyboardEvent): void => {
+    e.stopPropagation()
+    useUiStore.getState().navigateToGuidePost(guide.postId)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick(e)
+    }
+  }
+
+  const tooltipContent = (
+    <div className="chat-link-popover">
+      <div className="chat-link-popover-header">
+        <strong className="text-gold"><Icon name="codex" size={12} /> {displayTitle}</strong>
+      </div>
+      <div className="chat-link-popover-body">
+        <p className="chat-guide-popover-price">
+          {isPaid ? (
+            <>
+              <ItemIcon itemId="currency.spirit-stone" />
+              <span>{t('combat.chat.guidePriceLabel', { price: formatNumber(guide.unlockPrice) })}</span>
+            </>
+          ) : (
+            <span className="text-jade">{t('combat.chat.guideFreeLabel')}</span>
+          )}
+        </p>
+      </div>
+      <div className="chat-link-popover-hint">
+        <small className="text-jade">{t('combat.chat.guideClickActionHint')}</small>
+      </div>
+    </div>
+  )
+
+  return (
+    <FloatingTooltip placement="top" title={tooltipContent} tone="gold">
+      <span
+        aria-label={t('combat.chat.guideAria', { title: displayTitle })}
+        className={`chat-guide-link${isPaid ? ' is-paid' : ''}`}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+      >
+        <span className="chat-guide-badge"><Icon name="codex" size={10} /> {t('combat.chat.guideBadge')}</span>
+        <span className="chat-guide-name">{displayTitle}</span>
+        {isPaid ? (
+          <span className="chat-guide-price">
+            <ItemIcon itemId="currency.spirit-stone" />
+            <span>{formatNumber(guide.unlockPrice)}</span>
+          </span>
+        ) : (
+          <span className="chat-guide-free">{t('social.guide.badgeFree')}</span>
+        )}
+      </span>
+    </FloatingTooltip>
+  )
+})
+
 /**
  * 传音正文富文本渲染组件 (ChatMessageBody)
  *
- * 将传音文本中的 {{item:...}} 与 {{order:...}} 标记解析并渲染为带交互的修仙风格超链接胶囊。
+ * 将传音文本中的 {{item:...}}、{{order:...}}、{{party:...}}、{{location:...}} 与 {{guide:...}} 标记解析并渲染为带交互的修仙风格超链接胶囊。
  */
 export const ChatMessageBody = memo(function ChatMessageBody({
   body,
@@ -302,6 +373,9 @@ export const ChatMessageBody = memo(function ChatMessageBody({
         }
         if (seg.type === 'location') {
           return <ChatLocationReference key={idx} location={seg} />
+        }
+        if (seg.type === 'guide') {
+          return <ChatGuideReference guide={seg} key={idx} />
         }
         if (seg.type === 'sticker') {
           return compact ? <span key={idx}>{t('combat.chat.quoteImage')}</span> : <ChatSticker key={idx} url={seg.url} zoomable />

@@ -42,14 +42,14 @@ public sealed record DouDiZhuGameState
 {
     /// <summary>牌局唯一标识。</summary>
     public Guid GameId { get; init; }
-    /// <summary>所属队伍标识。</summary>
-    public Guid PartyId { get; init; }
+    /// <summary>所属场次阶位（1~8：凡~帝）。</summary>
+    public int Tier { get; init; } = DouDiZhuRules.MinTier;
     /// <summary>开局时冻结的三名玩家，数组下标即座位号。</summary>
     public Guid[] PlayerIds { get; init; } = [];
     /// <summary>开局冻结的灵石底注。</summary>
     public double BaseStake { get; init; }
-    /// <summary>开局是否已在账本中实际托管扣除 BaseStake，结算时统一退还托管金并叠加净输赢。</summary>
-    public bool StakeEscrowed { get; init; }
+    /// <summary>开局已在账本中向每人预扣托管的灵石担保额（正式局为 10 × BaseStake，结算时统一退还并叠加净输赢）。</summary>
+    public double EscrowedStake { get; init; }
     /// <summary>当前洗牌后的牌序，用于持久化后恢复。</summary>
     public int[] Deck { get; init; } = [];
     /// <summary>各座位当前手牌。</summary>
@@ -129,24 +129,26 @@ public static class DouDiZhuGame
     private static readonly TimeSpan PlayDelay = TimeSpan.FromMilliseconds(350);
     private static readonly TimeSpan RevealDuration = TimeSpan.FromSeconds(2.4);
 
-    /// <summary>创建一局牌局并完成首轮洗牌发牌。</summary>
-    public static DouDiZhuGameState Create(Guid gameId, Guid partyId, IReadOnlyList<Guid> playerIds,
-        double baseStake, DateTimeOffset now)
+    /// <summary>创建一局指定阶位的牌局并完成首轮洗牌发牌。</summary>
+    public static DouDiZhuGameState Create(Guid gameId, int tier, IReadOnlyList<Guid> playerIds, DateTimeOffset now)
     {
-        ValidateStart(gameId, partyId, playerIds, baseStake);
+        if (!DouDiZhuRules.IsValidTier(tier)) throw Invalid("对弈阶位无效。");
+        var baseStake = DouDiZhuRules.GetBaseStake(tier);
+        ValidateStart(gameId, playerIds, baseStake);
         var deck = ShuffleDeck();
         var firstBidder = RandomNumberGenerator.GetInt32(3);
-        return Deal(gameId, partyId, [.. playerIds], baseStake, deck, firstBidder, now, 0);
+        return Deal(gameId, tier, [.. playerIds], baseStake, 0d, deck, firstBidder, now, 0);
     }
 
     /// <summary>按牌序创建牌局，仅供确定性测试使用。</summary>
-    internal static DouDiZhuGameState CreateWithDeck(Guid gameId, Guid partyId, IReadOnlyList<Guid> playerIds,
+    internal static DouDiZhuGameState CreateWithDeck(Guid gameId, int tier, IReadOnlyList<Guid> playerIds,
         double baseStake, IReadOnlyList<int> deck, int firstBidder, DateTimeOffset now)
     {
-        ValidateStart(gameId, partyId, playerIds, baseStake);
+        if (!DouDiZhuRules.IsValidTier(tier)) throw Invalid("对弈阶位无效。");
+        ValidateStart(gameId, playerIds, baseStake);
         ValidateDeck(deck);
         if (firstBidder is < 0 or > 2) throw new ArgumentOutOfRangeException(nameof(firstBidder));
-        return Deal(gameId, partyId, [.. playerIds], baseStake, [.. deck], firstBidder, now, 0);
+        return Deal(gameId, tier, [.. playerIds], baseStake, 0d, [.. deck], firstBidder, now, 0);
     }
 
     /// <summary>应用当前座位的一次叫地主、不叫、抢地主或不抢操作。</summary>
@@ -207,7 +209,7 @@ public static class DouDiZhuGame
         if (landlordSeat is null)
         {
             var deck = ShuffleDeck();
-            return Deal(state.GameId, state.PartyId, state.PlayerIds, state.BaseStake, deck,
+            return Deal(state.GameId, state.Tier, state.PlayerIds, state.BaseStake, state.EscrowedStake, deck,
                 RandomNumberGenerator.GetInt32(3), now, state.DealNumber + 1) with
             {
                 Version = version,
@@ -408,25 +410,26 @@ public static class DouDiZhuGame
         return deltas;
     }
 
-    private static void ValidateStart(Guid gameId, Guid partyId, IReadOnlyList<Guid> playerIds, double baseStake)
+    private static void ValidateStart(Guid gameId, IReadOnlyList<Guid> playerIds, double baseStake)
     {
-        if (gameId == Guid.Empty || partyId == Guid.Empty) throw Invalid("牌局或队伍标识无效。");
+        if (gameId == Guid.Empty) throw Invalid("牌局标识无效。");
         if (playerIds.Count != 3 || playerIds.Any(id => id == Guid.Empty) || playerIds.Distinct().Count() != 3)
             throw Invalid("斗地主必须由三名不同玩家参加。");
         if (!double.IsFinite(baseStake) || baseStake < 0) throw Invalid("底注必须是非负有限数值。");
     }
 
-    private static DouDiZhuGameState Deal(Guid gameId, Guid partyId, Guid[] playerIds, double baseStake,
-        int[] deck, int firstBidder, DateTimeOffset now, int dealNumber)
+    private static DouDiZhuGameState Deal(Guid gameId, int tier, Guid[] playerIds, double baseStake,
+        double escrowedStake, int[] deck, int firstBidder, DateTimeOffset now, int dealNumber)
     {
         var hands = new[] { new List<int>(17), new List<int>(17), new List<int>(17) };
         for (var index = 0; index < 51; index++) hands[index % 3].Add(deck[index]);
         return new DouDiZhuGameState
         {
             GameId = gameId,
-            PartyId = partyId,
+            Tier = tier,
             PlayerIds = playerIds,
             BaseStake = baseStake,
+            EscrowedStake = escrowedStake,
             Deck = deck,
             Hands = hands.Select(hand => SortCards([.. hand])).ToArray(),
             BottomCards = deck[51..54],

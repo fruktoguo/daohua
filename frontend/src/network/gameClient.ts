@@ -536,6 +536,7 @@ export class GameClient {
       cards?: number[] | null
       interaction?: string | null
       assistMode?: boolean | null
+      douDiZhuTier?: number | null
     },
   ): boolean {
     const socket = this.ensureOpenSocket()
@@ -555,6 +556,7 @@ export class GameClient {
       ...(extras?.cards ? { cards: extras.cards } : {}),
       ...(extras?.interaction ? { interaction: extras.interaction } : {}),
       ...(extras?.assistMode !== undefined ? { assistMode: extras.assistMode } : {}),
+      ...(extras?.douDiZhuTier !== undefined && extras.douDiZhuTier !== null ? { douDiZhuTier: extras.douDiZhuTier } : {}),
     }
     if (!this.trySend(socket, WireMessageType.SocialAction, requestId, payload)) return false
     // 社交成功应答是带 requestId 的 SocialState（必达）、失败是 Error 帧：登记超时计时器做兜底，

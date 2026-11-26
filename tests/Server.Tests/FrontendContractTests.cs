@@ -308,4 +308,35 @@ public sealed class FrontendContractTests
         Assert.False(duelElem.GetProperty("viewerIsInitiator").GetBoolean());
         Assert.True(duelElem.GetProperty("forfeited").GetBoolean());
     }
+
+    /// <summary>装备静态目录投影必须透传三档强化技艺工具的 speedRatio 与固定 enhancementSuccessBonus，防止前端无法预览加成。</summary>
+    [Fact]
+    public void EquipmentsMapperIncludesTechniqueToolSuccessBonuses()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var equipments = StaticGameCatalogMapper.Equipments(catalog);
+        var json = JsonSerializer.Serialize(equipments, ProtocolJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        var byId = doc.RootElement.EnumerateArray().ToDictionary(e => e.GetProperty("equipmentId").GetString()!);
+
+        void AssertHammer(string id, int expectedLevel, int expectedTier, double expectedSpeed, double expectedSuccess)
+        {
+            Assert.True(byId.TryGetValue(id, out var eq), $"装备目录缺少 {id}");
+            Assert.Equal(expectedLevel, eq.GetProperty("level").GetInt32());
+            Assert.Equal(expectedTier, eq.GetProperty("tier").GetInt32());
+            var tb = eq.GetProperty("techniqueBonus");
+            Assert.Equal("enhancement", tb.GetProperty("technique").GetString());
+            Assert.Equal(expectedSpeed, tb.GetProperty("speedRatio").GetDouble(), precision: 4);
+            Assert.Equal(expectedSuccess, tb.GetProperty("enhancementSuccessBonus").GetDouble(), precision: 4);
+        }
+
+        AssertHammer("equipment.tool-quench-anvil", 1, 1, 0.1, 0.03);
+        AssertHammer("equipment.tool-copper-hammer", 18, 2, 0.2, 0.05);
+        AssertHammer("equipment.tool-zhenling-hammer", 30, 3, 0.3, 0.07);
+        // 非强化工具 enhancementSuccessBonus 为 0
+        var hoeBonus = byId["equipment.tool-jade-spade"].GetProperty("techniqueBonus");
+        Assert.Equal("gathering", hoeBonus.GetProperty("technique").GetString());
+        Assert.Equal(0.3, hoeBonus.GetProperty("speedRatio").GetDouble(), precision: 4);
+        Assert.Equal(0, hoeBonus.GetProperty("enhancementSuccessBonus").GetDouble(), precision: 4);
+    }
 }

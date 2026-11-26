@@ -653,3 +653,58 @@
   - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `48 -> 49`；
   - `INSERT INTO platform.schema_version(version, applied_at) VALUES (69, now()) ON CONFLICT (version) DO NOTHING`。
 - 【离线脚本 / 人工步骤】：无。
+
+
+## v69 -> v70
+
+- **变更日期**：2026-11-26 21:30:00
+- **关联任务**：`TASK-20261126-10`（对弈独立同道子页与八阶全局匹配重构）
+- **数据库版本**：`PostgresSchema.Version` 69 -> 70
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` 保持 `49`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0070_v69_to_v70.sql`（幂等安全）
+- **存量处理结论**：移除队伍斗地主冗余列并重建 `social.doudizhu_games`（若有在途未结算旧托管牌局先无损退还已预扣底注），玩家八分段存档零变更
+
+### 1. 变了什么
+- 【库结构/权限】
+  - `social.parties`：删除 `doudizhu_stake` 列；
+  - `social.party_members`：删除 `doudizhu_ready` 列；
+  - `social.doudizhu_games`：移除 `party_id` 主键，改为以 `game_id uuid PRIMARY KEY` 为主键，新增 `tier smallint NOT NULL CHECK (tier BETWEEN 1 AND 8)`、`player_ids uuid[] NOT NULL CHECK (cardinality(player_ids) = 3)`、`dismissed_by uuid[] NOT NULL DEFAULT '{}'::uuid[]`，配套创建部分 GIN 索引 `ix_doudizhu_games_players` 及活跃/终态更新时间索引 `ix_doudizhu_games_active_updated` / `ix_doudizhu_games_finished_updated`；`daohua_bootstrap` 属主与 `daohua_api` DML 授权不变。
+- 【清理策略】`PostgresRetentionWorker` 将 `'doudizhu.escrow'` 纳入 30 天白名单流水（与 `'doudizhu.settlement'` 成对留存），并新增 `FinishedDouDiZhuGames` 自动清理结束超过 2 小时的终态牌局检查点。
+- 【存档载荷】无变更（玩家八分段载荷与标签保持 `v49`）。
+- 【配表/持久化语义】`DouDiZhuGameState` 移除 `partyId`，改为记录 `tier`（1~8）与 `escrowedStake`（`10 × BaseStake`）。
+
+### 2. 是否需要处理存量数据
+- **玩家存档与钱包无需重算**：仅若停服迁移瞬间恰有旧版 `status = 0` 且已预扣 `stakeEscrowed = true` 的未完结队伍斗地主，需将预扣底注退回各参与者灵石余额后再重建 `social.doudizhu_games` 表。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0070_v69_to_v70.sql` 要点】：
+  - 检测旧表含 `party_id` 列时，遍历 `status = 0` 且 `stakeEscrowed = true` 的在途牌局退回 `baseStake` 至 `economy.player_asset_balances`，随后 `DROP TABLE social.doudizhu_games` 并按新结构重建表、索引与 `daohua_bootstrap`/`daohua_api` 权限；
+  - `ALTER TABLE social.parties DROP COLUMN IF EXISTS doudizhu_stake`、`ALTER TABLE social.party_members DROP COLUMN IF EXISTS doudizhu_ready`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (70, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。
+
+
+## v70 -> v71
+
+- **变更日期**：2026-11-26 23:14:00
+- **关联任务**：`TASK-20261126-13`（双阵营完全对称战斗引擎与 1~5v1~5 多方斗法协议重构）
+- **数据库版本**：`PostgresSchema.Version` 70 -> 71
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `49 -> 50`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0071_v70_to_v71.sql`（支持目标版本幂等重试）
+- **存量处理结论**：无 DDL/权限变更，仅推进三处玩家存档标签 `49 -> 50` 并登记 `schema_version = 71`
+
+### 1. 变了什么
+- 【库结构/权限】无。
+- 【存档载荷】
+  - `actionQueue`（`DuelScriptEvent`）新增 `attackerUnitIndex: int = 0`、`targetUnitIndex: int = 0`（双方阵营内参战单位下标 `0..4`，additive 可缺省解码为 `0`）；
+  - `actionQueue`（`DuelPlaybackState`）新增 `selfUnitIndex: int = 0`、`selfUnits: DuelPlaybackUnit[]? = null`、`opponentUnits: DuelPlaybackUnit[]? = null`（多方 1~5v1~5 斗法双方参战单位实时与冻结镜像，additive 可缺省解码为 `0`/`null`，旧 1v1 存档透明回退至顶层对手字段）。
+- 【配表/持久化语义】无。
+
+### 2. 是否需要处理存量数据
+- **仅需推进存档标签**：旧 `v49` 存档缺失上述字段时按默认 `0`/`null` 透明解码，既有进行中的 1v1 斗法回放完全兼容，无需重写存量 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0071_v70_to_v71.sql` 要点】：
+  - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `49 -> 50`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (71, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。

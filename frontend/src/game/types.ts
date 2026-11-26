@@ -941,6 +941,10 @@ export interface ExpeditionDuelEvent {
   attackerIsInitiator: boolean
   /** 受击方是否为斗法发起方 */
   targetIsInitiator: boolean
+  /** 出手方在其阵营中的下标（0..4；1v1 为 0） */
+  attackerUnitIndex?: number
+  /** 受击方在其阵营中的下标（0..4；1v1 为 0） */
+  targetUnitIndex?: number
   /** 出手功法/物品 ID（普攻为 null，用于行动条与 VFX 解析） */
   abilityId?: string | null
   /** 受击方结算后剩余气血 */
@@ -961,6 +965,22 @@ export interface ExpeditionDuelEvent {
   broken?: boolean
   /** 是否拆招 */
   parried?: boolean
+}
+
+/**
+ * 多方斗法回放中的单个参战玩家镜像（原生支持 1~5 vs 1~5）
+ */
+export interface ExpeditionDuelUnit {
+  playerId: string
+  displayName: string
+  avatar: string
+  hitpoints: number
+  manapoints: number
+  maxHitpoints: number
+  maxManapoints: number
+  attributes?: CombatAttributes | null
+  skills?: CombatAbilitySlot[] | null
+  equipment?: EquippedItem[] | null
 }
 
 /**
@@ -992,6 +1012,12 @@ export interface ExpeditionDuel {
   opponentHitpoints: number
   /** 对手当前灵力值（随回放事件推进） */
   opponentManapoints: number
+  /** 本机玩家在己方斗法阵容中的下标（0..4；1v1 为 0） */
+  selfUnitIndex?: number
+  /** 己方全体参战玩家镜像（1~5 人，旧 1v1 存档缺省为 null） */
+  selfUnits?: ExpeditionDuelUnit[] | null
+  /** 对方全体参战玩家镜像（1~5 人，旧 1v1 存档缺省为 null） */
+  opponentUnits?: ExpeditionDuelUnit[] | null
   /** 剧本总时长（秒） */
   durationSeconds: number
   /** 剧本事件列表（用于推导双方下一次出手与资源条的行动条） */
@@ -1782,7 +1808,7 @@ export interface CombatEquipmentDefinition {
    * technique 命中行动所属技艺时，speedRatio 与技艺等级加成并入同一除数
    * （duration /= 1 + 0.05×技艺等级 + Σ工具speedRatio）。
    */
-  techniqueBonus?: { technique: string; speedRatio: number } | null
+  techniqueBonus?: { technique: string; speedRatio: number; enhancementSuccessBonus?: number } | null
 }
 
 /**

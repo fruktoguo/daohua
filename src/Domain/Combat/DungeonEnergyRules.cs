@@ -35,6 +35,47 @@ public static class DungeonEnergyRules
     public const double RecoveryIntervalSeconds = 360.0;
 
     /// <summary>
+    /// 规范化旧存档尚未初始化的体力锚点（<paramref name="anchorUpdatedAtUnixSeconds"/> &lt;= 0 或非有限数）。
+    /// 当且仅当锚点未初始化且兜底时刻 <paramref name="fallbackAnchorUnixSeconds"/> 为有效正数时，
+    /// 按首日额度 <see cref="InitialEnergy"/> 与兜底时刻补齐锚点并返回 <c>true</c>；
+    /// 已初始化或兜底时刻无效时保持原值并返回 <c>false</c>。
+    /// </summary>
+    public static bool TryInitializeAnchor(
+        int anchorValue,
+        double anchorUpdatedAtUnixSeconds,
+        double fallbackAnchorUnixSeconds,
+        out int initializedValue,
+        out double initializedUpdatedAtUnixSeconds)
+    {
+        if ((!double.IsFinite(anchorUpdatedAtUnixSeconds) || anchorUpdatedAtUnixSeconds <= 0)
+            && double.IsFinite(fallbackAnchorUnixSeconds)
+            && fallbackAnchorUnixSeconds > 0)
+        {
+            initializedValue = InitialEnergy;
+            initializedUpdatedAtUnixSeconds = fallbackAnchorUnixSeconds;
+            return true;
+        }
+
+        initializedValue = Math.Clamp(anchorValue, 0, MaxEnergy);
+        initializedUpdatedAtUnixSeconds = anchorUpdatedAtUnixSeconds;
+        return false;
+    }
+
+    /// <summary>
+    /// 只读解析有效体力锚点：已初始化锚点原样夹取返回，未初始化旧存档按 <paramref name="fallbackAnchorUnixSeconds"/> 确定性补锚。
+    /// 供离线只读展示与组队快照冻结路径复用，与 ECS 装载补锚保持同一口径。
+    /// </summary>
+    public static (int Value, double UpdatedAtUnixSeconds) ResolveAnchor(
+        int anchorValue,
+        double anchorUpdatedAtUnixSeconds,
+        double fallbackAnchorUnixSeconds)
+    {
+        TryInitializeAnchor(anchorValue, anchorUpdatedAtUnixSeconds, fallbackAnchorUnixSeconds,
+            out var resolvedValue, out var resolvedUpdatedAt);
+        return (resolvedValue, resolvedUpdatedAt);
+    }
+
+    /// <summary>
     /// 按给定墙钟时间戳确定性推导当前有效体力及恢复倒计时。
     /// 若锚点时刻 &lt;= 0（旧存档缺省解码未初始化），视为首次激活并赋予 <see cref="InitialEnergy"/>。
     /// </summary>

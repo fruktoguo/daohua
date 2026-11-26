@@ -272,18 +272,43 @@ static void ValidateReferences(string directory)
     }
 
     // 装备 flatStats 中 Points 结尾的键为百分比点数通道，与怪物 modifiers 共用同一授权词汇表；
-    // 同时要求所有装备显式声明正整数穿戴等级 level，杜绝回退等阶换算。
+    // 同时要求所有装备显式声明正整数穿戴等级 level，杜绝回退等阶换算；校验技艺工具 techniqueBonus 块。
+    var techniqueVocabulary = TechniqueVocabulary();
     foreach (var file in JsonFiles(directory, "equipment"))
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
         foreach (var equipment in Elements(doc.RootElement))
         {
+            var eqId = Text(equipment, "id");
             var eqLevelProp = Property(equipment, "level");
             Require(eqLevelProp.ValueKind == JsonValueKind.Number && eqLevelProp.TryGetInt32(out var eqLevel) && eqLevel >= 1,
-                $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 必须声明正整数 level（>= 1）。");
+                $"{Rel(directory, file)} 装备 {eqId} 必须声明正整数 level（>= 1）。");
             foreach (var key in ObjectKeys(Property(equipment, "flatStats")).Where(name => name.EndsWith("Points", StringComparison.Ordinal)))
                 Require(percentPointKeys.Contains(key),
-                    $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 的 flatStats.{key} 不在授权词汇表内。");
+                    $"{Rel(directory, file)} 装备 {eqId} 的 flatStats.{key} 不在授权词汇表内。");
+            var techniqueBonus = Property(equipment, "techniqueBonus");
+            if (techniqueBonus.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var key in ObjectKeys(techniqueBonus))
+                    Require(key is "technique" or "speedRatio" or "enhancementSuccessBonus",
+                        $"{Rel(directory, file)} 装备 {eqId} 的 techniqueBonus.{key} 不在授权词汇表内。");
+                var bonusTechnique = Text(techniqueBonus, "technique");
+                Require(techniqueVocabulary.Contains(bonusTechnique),
+                    $"{Rel(directory, file)} 装备 {eqId} 的 techniqueBonus.technique={bonusTechnique} 不是合法技艺。");
+                var speedRatio = Number(techniqueBonus, "speedRatio", -1);
+                Require(double.IsFinite(speedRatio) && speedRatio >= 0,
+                    $"{Rel(directory, file)} 装备 {eqId} 的 techniqueBonus.speedRatio 必须为非负有限数。");
+                var enhanceBonusProp = Property(techniqueBonus, "enhancementSuccessBonus");
+                if (enhanceBonusProp.ValueKind != JsonValueKind.Undefined)
+                {
+                    Require(string.Equals(bonusTechnique, "enhancement", StringComparison.Ordinal),
+                        $"{Rel(directory, file)} 装备 {eqId} 仅 enhancement 技艺工具允许配置 enhancementSuccessBonus。");
+                    Require(enhanceBonusProp.ValueKind == JsonValueKind.Number
+                            && enhanceBonusProp.TryGetDouble(out var enhanceBonus)
+                            && double.IsFinite(enhanceBonus) && enhanceBonus > 0 && enhanceBonus < 1,
+                        $"{Rel(directory, file)} 装备 {eqId} 的 techniqueBonus.enhancementSuccessBonus 必须位于 (0, 1) 区间。");
+                }
+            }
         }
     }
 

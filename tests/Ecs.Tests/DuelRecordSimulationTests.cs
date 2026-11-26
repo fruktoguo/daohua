@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DaoHua.Ecs;
 using Domain.Combat;
 using Domain.Common;
@@ -113,5 +114,47 @@ public sealed class DuelRecordSimulationTests
         Assert.True(record.Truncated);
         Assert.Equal(DuelBattleRecordLimits.MaxActionsPerRecord, record.Actions!.Count);
         Assert.True(record.IsValid);
+    }
+
+    /// <summary>
+    /// PVP 斗法攻防双方均为玩家：无论发起方或应战方配置 target-enemy/is-player 还是 enemies/has-player，
+    /// 双方均可在开场正常触发雷击符等玩家条件消耗品，杜绝「发起方哑火、仅应战方触发」的不对称回归。
+    /// </summary>
+    [Fact]
+    public void DuelScriptEngine_BothInitiatorAndDefenderTriggerIsPlayerConsumables()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var stats = CombatantStats.Create(50_000, 100, 0, 2.0) with
+        {
+            SpellAttack = 100,
+            MaxManapoints = 1_000,
+            Accuracy = 100,
+            Evasion = 0
+        };
+        var targetIsPlayerTrigger = JsonDocument.Parse(
+            """{"dependency":"target-enemy","condition":"is-player","comparator":"is-active","value":1}""")
+            .RootElement.Clone();
+        var enemiesHasPlayerTrigger = JsonDocument.Parse(
+            """{"dependency":"enemies","condition":"has-player","comparator":"is-active","value":1}""")
+            .RootElement.Clone();
+
+        DuelCombatant MakeCombatant(string name, JsonElement trigger) => new(
+            PlayerId.New(), name, 100, stats, [], [], [],
+            ConsumableSlots: [new DuelConsumableSlotSnapshot(0, AutoUseSlotState.SlotGroupGeneral, "item.leiji-talisman", 0, 0)],
+            ItemBalances: new Dictionary<string, double> { ["item.leiji-talisman"] = 5 },
+            ConsumableTriggers: new Dictionary<string, JsonElement[]> { ["item.leiji-talisman"] = [trigger] });
+
+        var script = DuelScriptEngine.Resolve(
+            MakeCombatant("发起甲", targetIsPlayerTrigger),
+            MakeCombatant("应战乙", enemiesHasPlayerTrigger),
+            seed: 99, DuelSettings.Default, catalog);
+
+        Assert.Contains(script.Events, e => e.AttackerIsInitiator && e.AbilityId == "item.leiji-talisman");
+        Assert.Contains(script.Events, e => !e.AttackerIsInitiator && e.AbilityId == "item.leiji-talisman");
+        Assert.NotNull(script.InitiatorRecord);
+        var talismanDefIdx = script.InitiatorRecord.Defs!.ToList().IndexOf("item.leiji-talisman");
+        Assert.True(talismanDefIdx >= 0);
+        Assert.Contains(script.InitiatorRecord.Actions!, a => a.Actor == 0 && a.Kind == DuelRecordActionKind.Item && a.DefIndex == talismanDefIdx);
+        Assert.Contains(script.InitiatorRecord.Actions!, a => a.Actor == 1 && a.Kind == DuelRecordActionKind.Item && a.DefIndex == talismanDefIdx);
     }
 }

@@ -37,11 +37,8 @@ export type HelpJumpTarget =
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
 
-/** 同道页子选项卡：队伍、宗门、攻略与邀请。 */
-export type SocialSubTab = 'party' | 'zongmen' | 'guide' | 'invite'
-
-/** 队伍面板顶部页签：队伍管理与斗地主对弈。 */
-export type PartyGameSubTab = 'party' | 'doudizhu'
+/** 同道页子选项卡：队伍、对弈、宗门、攻略与邀请。 */
+export type SocialSubTab = 'party' | 'doudizhu' | 'zongmen' | 'guide' | 'invite'
 
 /** 地图页子选项卡：地图本体 vs 附近同域（妖兽、同道修士、灵地建筑） */
 export type MapSubTab = 'map' | 'monsters' | 'people' | 'buildings'
@@ -133,10 +130,6 @@ interface UiStore {
   socialSubTab: SocialSubTab
   /** 切换同道页子选项卡 */
   setSocialSubTab: (tab: SocialSubTab) => void
-  /** 队伍面板顶部页签 */
-  partyGameSubTab: PartyGameSubTab
-  /** 切换队伍面板顶部页签 */
-  setPartyGameSubTab: (tab: PartyGameSubTab) => void
   /** 队伍页内部当前页签 */
   partySubTab: PartySubTab
   /** 切换队伍页内部页签 */
@@ -169,6 +162,12 @@ interface UiStore {
   setMapFocusNodeId: (nodeId: string | null) => void
   /** 快捷直达大地图并聚焦指定地点节点 */
   navigateToMapNode: (nodeId: string) => void
+  /** 外部（如聊天攻略超链接）请求打开的目标攻略 ID */
+  guideFocusPostId: string | null
+  /** 设置或消费待打开的目标攻略 ID */
+  setGuideFocusPostId: (postId: string | null) => void
+  /** 快捷直达「同道 → 攻略」并打开指定攻略详情 */
+  navigateToGuidePost: (postId: string) => void
   /** 各分组记忆的落点页签：切回分组时直达上次所见的子项 */
   mobileNavMemory: Record<MobileNavGroupId, TabId>
   /** 按分组激活其记忆页签（首次为组内首项）并展开子行 */
@@ -302,8 +301,6 @@ export const useUiStore = create<UiStore>(set => ({
   setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
   socialSubTab: 'party',
   setSocialSubTab: socialSubTab => set({ socialSubTab }),
-  partyGameSubTab: 'party',
-  setPartyGameSubTab: partyGameSubTab => set({ partyGameSubTab }),
   partySubTab: 'lobby',
   setPartySubTab: partySubTab => set({ partySubTab }),
   mapSubTab: 'map',
@@ -335,6 +332,21 @@ export const useUiStore = create<UiStore>(set => ({
       activeTab: targetTab,
       mapSubTab: 'map',
       mapFocusNodeId: nodeId,
+      mailOpen: false,
+      helpModalOpen: false,
+      checkinModalOpen: false,
+      mobileNavMemory: { ...state.mobileNavMemory, [mobileNavGroupIdOf(targetTab)]: targetTab },
+    }))
+  },
+  guideFocusPostId: null,
+  setGuideFocusPostId: guideFocusPostId => set({ guideFocusPostId }),
+  navigateToGuidePost: (postId: string) => {
+    const targetTab: TabId = 'social'
+    set(state => ({
+      activeTab: targetTab,
+      socialNavExpanded: true,
+      socialSubTab: 'guide',
+      guideFocusPostId: postId,
       mailOpen: false,
       helpModalOpen: false,
       checkinModalOpen: false,

@@ -752,9 +752,17 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 })
 
 /**
- * 顶栏秘境体力胶囊：独立 1 秒刷新推算懒恢复倒计时，悬停展示恢复速率与回满剩余时间，点击跳转大地图。
+ * 秘境体力胶囊：独立 1 秒刷新推算懒恢复倒计时，悬停（竖屏历练页同步支持点击）展示恢复速率与回满剩余时间。
+ * - variant="topbar"：横屏顶栏常驻按钮，点击跳转「历练」页；竖屏（orientation: portrait）下经 CSS 隐藏。
+ * - variant="panel"：竖屏「历练」页标题栏右侧展示胶囊，避免在竖屏挤压顶栏第一行布局。
  */
-const TopbarTiliBadge = memo(function TopbarTiliBadge(): React.JSX.Element {
+const TiliBadge = memo(function TiliBadge({
+  variant,
+  active = true,
+}: {
+  variant: 'topbar' | 'panel'
+  active?: boolean
+}): React.JSX.Element {
   const t = useT()
   const tiliValue = useGameStore(state => state.stats.tiliValue)
   const tiliUpdatedAt = useGameStore(state => state.stats.tiliUpdatedAtUnixSeconds)
@@ -766,13 +774,16 @@ const TopbarTiliBadge = memo(function TopbarTiliBadge(): React.JSX.Element {
   })
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    if (!active) return undefined
+    const syncNow = () => {
       const s = useGameStore.getState()
       const estimatedMs = s.serverTimeUnixMilliseconds + Math.max(0, performance.now() - s.lastSyncPerformanceTime)
       setNowSec(Math.floor(estimatedMs / 1000))
-    }, 1000)
+    }
+    syncNow()
+    const timer = window.setInterval(syncNow, 1000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [active])
 
   const energy = useMemo(
     () => computeDungeonEnergy(tiliValue, tiliUpdatedAt, nowSec, tiliFallback),
@@ -800,21 +811,40 @@ const TopbarTiliBadge = memo(function TopbarTiliBadge(): React.JSX.Element {
           </div>
         </>
       )}
-      <div className="topbar-tili-tooltip-hint">{t('app.topbar.tiliClickHint')}</div>
+      {variant === 'topbar' && (
+        <div className="topbar-tili-tooltip-hint">{t('app.topbar.tiliClickHint')}</div>
+      )}
     </div>
   )
 
+  const stateClass = `${isFull ? ' is-full' : isLow ? ' is-low' : ''}`
+  const badgeBody = (
+    <>
+      <Icon name="bolt" size={13} />
+      <span>{energy.current}/{energy.max}</span>
+    </>
+  )
+
   return (
-    <FloatingTooltip placement="bottom" title={tooltip} tone={isFull ? 'jade' : isLow ? 'danger' : 'gold'}>
-      <button
-        aria-label={t('app.topbar.tiliAria', { current: energy.current, max: energy.max })}
-        className={`topbar-tili-btn${isFull ? ' is-full' : isLow ? ' is-low' : ''}`}
-        onClick={() => setActiveTab('exploration')}
-        type="button"
-      >
-        <Icon name="bolt" size={13} />
-        <span>{energy.current}/{energy.max}</span>
-      </button>
+    <FloatingTooltip displayContents placement="bottom" title={tooltip} tone={isFull ? 'jade' : isLow ? 'danger' : 'gold'}>
+      {variant === 'topbar' ? (
+        <button
+          aria-label={t('app.topbar.tiliAria', { current: energy.current, max: energy.max })}
+          className={`topbar-tili-btn topbar-tili-btn--topbar${stateClass}`}
+          onClick={() => setActiveTab('exploration')}
+          type="button"
+        >
+          {badgeBody}
+        </button>
+      ) : (
+        <span
+          aria-label={t('app.topbar.tiliPanelAria', { current: energy.current, max: energy.max })}
+          className={`topbar-tili-btn topbar-tili-btn--panel${stateClass}`}
+          tabIndex={0}
+        >
+          {badgeBody}
+        </span>
+      )}
     </FloatingTooltip>
   )
 })
@@ -934,7 +964,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       </div>
       <QueueCenter />
       <div className="topbar-actions">
-        <TopbarTiliBadge />
+        <TiliBadge variant="topbar" />
         <TopbarCommunityLinks />
         <TopbarMailButton />
         <TaijiToggle />
@@ -1386,15 +1416,16 @@ const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
 /** 同道通用二级菜单项（桌面侧栏折叠子菜单与竖屏底部子行共用顺序与标识） */
 const SOCIAL_NAV_TABS: ReadonlyArray<{ id: SocialSubTab; icon: IconName }> = [
   { id: 'party', icon: 'social' },
+  { id: 'doudizhu', icon: 'dice' },
   { id: 'zongmen', icon: 'gate' },
   { id: 'guide', icon: 'codex' },
   { id: 'invite', icon: 'chat' },
 ]
 
 /**
- * 竖屏同道二级切换栏（队伍/宗门/邀请）
+ * 竖屏同道二级切换栏（队伍/对弈/宗门/攻略/邀请）
  * 桌面端由侧边栏可折叠二级菜单承载；竖屏侧边栏整体隐藏，本栏作为底部导航在激活「同道」页签时
- * 浮现于「更多」子行之上的子行渲染，页面主体内不再重复出现；队伍内部的「队伍/对弈」仍留在面板顶部。
+ * 浮现于「更多」子行之上的子行渲染，页面主体内不再重复出现。
  */
 const SocialSubTabs = memo(function SocialSubTabs({ inviteBadge }: { inviteBadge: number }): React.JSX.Element {
   const t = useT()
@@ -2758,9 +2789,12 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
 
   return (
     <section className="panel skill-page" hidden={hidden}>
-      <header className="panel-header">
-        <h2>{t('app.nav.exploration')}</h2>
-        {world.locationName && <span className="location-sub-badge">{resolveWorldLocationName(world)}</span>}
+      <header className="panel-header exploration-header">
+        <div className="exploration-header-main">
+          <h2>{t('app.nav.exploration')}</h2>
+          {world.locationName && <span className="location-sub-badge">{resolveWorldLocationName(world)}</span>}
+        </div>
+        <TiliBadge active={!hidden} variant="panel" />
       </header>
       {hasBeenVisible && (
         <>

@@ -87,19 +87,19 @@ public sealed class CombatUnitStatsBook
     internal void ClearDirty() => Dirty = false;
 
     /// <summary>
-    /// 战斗单位键映射：本机成员 player、盟友 ally:{成员下标}、
-    /// 敌方按怪物定义 ID 折叠为 monster:{defId}（同类型合并计一个单位）；无定义 ID 的敌方沿用原 ID。
+    /// 战斗单位键映射：本机成员 player、盟友 ally:{成员下标}、对称斗法 sideA:{i}/sideB:{i}，
+    /// 仅怪物单位按定义 ID 折叠为 monster:{defId}（同类型合并计一个单位）；玩家/无定义 ID 单位沿用原 ID。
     /// </summary>
     public static string KeyOf(CombatantState unit)
-        => unit.Id.StartsWith("enemy:", StringComparison.Ordinal) && unit.DefinitionId is { } definitionId
+        => unit.IsMonster && unit.DefinitionId is { } definitionId
             ? $"monster:{definitionId}"
             : unit.Id;
 
-    /// <summary>按单位键取或建累计行；类别由键前缀推导，展示名留空待注册回填。</summary>
-    public CombatUnitStatEntry Entry(string unitKey)
+    /// <summary>按单位键取或建累计行；类别缺省由键前缀推导，展示名留空待注册回填。</summary>
+    public CombatUnitStatEntry Entry(string unitKey, CombatStatUnitKind? kindOverride = null)
     {
         if (_byKey.TryGetValue(unitKey, out var entry)) return entry;
-        entry = new CombatUnitStatEntry(unitKey, KindOf(unitKey));
+        entry = new CombatUnitStatEntry(unitKey, kindOverride ?? KindOf(unitKey));
         _byKey.Add(unitKey, entry);
         _entries.Add(entry);
         Dirty = true;
@@ -107,9 +107,9 @@ public sealed class CombatUnitStatsBook
     }
 
     /// <summary>注册单位展示名；已存在的行仅在尚无名字时回填，不覆盖既有名字。</summary>
-    public CombatUnitStatEntry Register(string unitKey, string displayName)
+    public CombatUnitStatEntry Register(string unitKey, string displayName, CombatStatUnitKind? kindOverride = null)
     {
-        var entry = Entry(unitKey);
+        var entry = Entry(unitKey, kindOverride);
         if (entry.DisplayName.Length == 0 && displayName.Length > 0)
         {
             entry.DisplayName = displayName;

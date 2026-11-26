@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Protocol;
+using Server.Clean.Leaderboards;
 
 namespace Server.Clean.Social;
 
@@ -53,18 +54,27 @@ public sealed class ChatRuntime
     private readonly ISocialRepository _social;
     private readonly OnlinePresenceRegistry _presence;
     private readonly PostgresZongmenRepository? _zongmen;
+    private readonly LeaderboardRuntime? _leaderboards;
     private readonly ConcurrentDictionary<(Guid PlayerId, string Channel, bool ForLike), (long WindowStart, int Count)> _rateWindows = new();
 
     /// <summary>构造传音运行时。</summary>
     /// <param name="repository">传音消息持久化边界。</param>
     /// <param name="social">好友/队伍持久化边界（好友私聊与队伍频道作用域解析）。</param>
     /// <param name="presence">在线存在感注册表（广播收件人解析）。</param>
-    public ChatRuntime(IChatRepository repository, ISocialRepository social, OnlinePresenceRegistry presence, PostgresZongmenRepository? zongmen = null)
+    /// <param name="zongmen">宗门持久化仓储（用于冠名与宗门频道校验）。</param>
+    /// <param name="leaderboards">全服排行榜运行时（用于实时派生发言者最高个人榜 Top 50 徽标，不落盘）。</param>
+    public ChatRuntime(
+        IChatRepository repository,
+        ISocialRepository social,
+        OnlinePresenceRegistry presence,
+        PostgresZongmenRepository? zongmen = null,
+        LeaderboardRuntime? leaderboards = null)
     {
         _repository = repository;
         _social = social;
         _presence = presence;
         _zongmen = zongmen;
+        _leaderboards = leaderboards;
     }
 
     /// <summary>处理一次传音发言：校验 → 节流 → 落库 → 解析收件人。</summary>
@@ -93,7 +103,8 @@ public sealed class ChatRuntime
         var stored = await _repository.AppendAsync(record, RetentionPerScope, quoteId, cancellationToken);
         if (stored is null) return new ChatSendOutcome(ChatSendStatus.QuoteUnavailable);
         var recipients = await ResolveRecipientsAsync(request.Channel, scopeKey, senderId, targetId, cancellationToken);
-        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(stored), recipients);
+        var topRank = await ResolveTopRankAsync(senderId, cancellationToken);
+        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(stored, topRank), recipients);
     }
 
     /// <summary>
@@ -127,7 +138,8 @@ public sealed class ChatRuntime
             Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link, senderRealmLevel);
         await _repository.AppendAsync(record, RetentionPerScope, cancellationToken: cancellationToken);
         var recipients = await ResolveRecipientsAsync(channel, scopeKey, senderId, targetId, cancellationToken);
-        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
+        var topRank = await ResolveTopRankAsync(senderId, cancellationToken);
+        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record, topRank), recipients);
     }
 
     /// <summary>读取某频道作用域的最近消息（时间正序）。</summary>
@@ -142,7 +154,12 @@ public sealed class ChatRuntime
         var scopeKey = await ResolveScopeAsync(request.Channel, playerId, targetId, cancellationToken);
         if (scopeKey is null) return null;
         var messages = await _repository.LoadRecentAsync(request.Channel, scopeKey, playerId, RetentionPerScope, cancellationToken);
-        return new ChatHistoryDto(request.Channel, scopeKey, targetId?.ToString("D"), [.. messages.Select(ToDto)]);
+        var topRanks = await ResolveTopRanksAsync(messages, cancellationToken);
+        return new ChatHistoryDto(
+            request.Channel,
+            scopeKey,
+            targetId?.ToString("D"),
+            [.. messages.Select(message => ToDto(message, topRanks.GetValueOrDefault(message.SenderId)))]);
     }
 
     /// <summary>按历史回放相同的权限解析会话，再设置本人对该消息的点赞状态。</summary>
@@ -258,10 +275,31 @@ public sealed class ChatRuntime
         }
     }
 
+    private ValueTask<GuideRankBadgeDto?> ResolveTopRankAsync(Guid senderId, CancellationToken cancellationToken)
+        => _leaderboards is null
+            ? ValueTask.FromResult<GuideRankBadgeDto?>(null)
+            : _leaderboards.GetBestPersonalRankAsync(senderId, LeaderboardAssembler.TopN, cancellationToken);
+
+    private ValueTask<IReadOnlyDictionary<Guid, GuideRankBadgeDto>> ResolveTopRanksAsync(
+        IReadOnlyList<ChatMessageRecord> messages,
+        CancellationToken cancellationToken)
+    {
+        if (_leaderboards is null || messages.Count == 0)
+            return ValueTask.FromResult<IReadOnlyDictionary<Guid, GuideRankBadgeDto>>(EmptyTopRanks);
+
+        var senderIds = new HashSet<Guid>(messages.Count);
+        for (var i = 0; i < messages.Count; i++)
+            senderIds.Add(messages[i].SenderId);
+        return _leaderboards.GetBestPersonalRanksAsync(senderIds, LeaderboardAssembler.TopN, cancellationToken);
+    }
+
+    private static readonly IReadOnlyDictionary<Guid, GuideRankBadgeDto> EmptyTopRanks =
+        new Dictionary<Guid, GuideRankBadgeDto>(0);
+
     private static Guid? ParseId(string? value) =>
         Guid.TryParse(value, out var parsed) && parsed != Guid.Empty ? parsed : null;
 
-    private static ChatMessageDto ToDto(ChatMessageRecord record) => new(
+    private static ChatMessageDto ToDto(ChatMessageRecord record, GuideRankBadgeDto? senderTopRank = null) => new(
         record.MessageId.ToString("D"),
         record.Channel,
         record.ScopeKey,
@@ -282,5 +320,6 @@ public sealed class ChatRuntime
         record.Quote is { } quote ? new ChatQuoteDto(quote.MessageId.ToString("D"), quote.SenderName, quote.Body) : null,
         record.LikeCount,
         record.LikedByMe,
-        record.LikeVersion);
+        record.LikeVersion,
+        senderTopRank);
 }

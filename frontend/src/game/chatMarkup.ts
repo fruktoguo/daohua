@@ -49,6 +49,13 @@ export type ChatMarkupSegment =
       raw: string
     }
   | {
+      type: 'guide'
+      postId: string
+      unlockPrice: number
+      title: string
+      raw: string
+    }
+  | {
       type: 'sticker'
       url: string
       raw: string
@@ -59,8 +66,8 @@ export type ChatMarkupSegment =
       raw: string
     }
 
-/** 行内标记匹配正则：{{item:...}} 或 {{order:...}} 或 {{party:...}} 或 {{location:...}} 或 {{map:...}} 或 {{img:...}} 或 {{sticker:...}} */
-const CHAT_MARKUP_PATTERN = /\{\{(item|order|party|location|map|img|sticker):([^}]+)\}\}/g
+/** 行内标记匹配正则：{{item:...}}、{{order:...}}、{{party:...}}、{{location:...}}、{{map:...}}、{{guide:...}}、{{img:...}} 或 {{sticker:...}} */
+const CHAT_MARKUP_PATTERN = /\{\{(item|order|party|location|map|guide|img|sticker):([^}]+)\}\}/g
 /** 匹配经典 QQ 表情中括号标记，如 [微笑]、[呲牙] */
 const QQ_EMOJI_PATTERN = /\[([^\[\]\s]{1,10})\]/g
 /** 匹配常见图片扩展名的 HTTP/HTTPS 直链 */
@@ -169,6 +176,34 @@ export function buildLocationChatMarkup(nodeId: string, name?: string): string {
     return `{{location:${trimmedId}:${trimmedName}}}`
   }
   return `{{location:${trimmedId}}}`
+}
+
+/** 攻略传音构建入参 */
+export interface GuideMarkupParams {
+  postId: string
+  title: string
+  unlockPrice?: number
+}
+
+/** 攻略标记标题最大字符数，确保整段标记留出充裕空间给玩家在 200 字上限内补充附言 */
+const MAX_GUIDE_MARKUP_TITLE_RUNES = 48
+
+/**
+ * 构建攻略传音标记：{{guide:postId:unlockPrice:title}}
+ * 清理会破坏标记分隔符的字符并限制标题长度。
+ */
+export function buildGuideChatMarkup({
+  postId,
+  title,
+  unlockPrice = 0,
+}: GuideMarkupParams): string {
+  const trimmedId = postId.trim()
+  const safePrice = Number.isFinite(unlockPrice) && unlockPrice > 0 ? Math.floor(unlockPrice) : 0
+  const cleanedTitle = Array.from(title.trim().replace(/[:{}]/g, ' ').replace(/\s+/g, ' '))
+    .slice(0, MAX_GUIDE_MARKUP_TITLE_RUNES)
+    .join('')
+    .trim()
+  return `{{guide:${trimmedId}:${safePrice}:${cleanedTitle}}}`
 }
 /**
  * 解析传音正文字符串为富文本分段列表
@@ -301,6 +336,23 @@ export function parseChatMarkup(body: string): readonly ChatMarkupSegment[] {
         type: 'location',
         nodeId,
         name,
+        raw,
+      })
+    } else if (kind === 'guide') {
+      const parts = payload.split(':')
+      const postId = parts[0]?.trim()
+      if (!postId || !/^[a-zA-Z0-9_-]{4,64}$/.test(postId)) {
+        segments.push({ type: 'text', text: raw })
+        continue
+      }
+      const parsedPrice = parts.length >= 2 ? Number(parts[1]) : 0
+      const unlockPrice = Number.isFinite(parsedPrice) && parsedPrice > 0 ? Math.floor(parsedPrice) : 0
+      const title = parts.length >= 3 ? parts.slice(2).join(':').trim() : ''
+      segments.push({
+        type: 'guide',
+        postId,
+        unlockPrice,
+        title,
         raw,
       })
     } else if (kind === 'img' || kind === 'sticker') {

@@ -491,6 +491,8 @@ export interface ChatMessageDto {
   likeCount: number
   likedByMe: boolean
   likeVersion: number
+  /** 发送者当前在个人排行榜（除宗门榜外 11 榜）Top 50 中的最高名次徽标；未上榜时为空 */
+  senderTopRank?: GuideRankBadgeDto | null
 }
 
 /** ChatHistory 频道历史回放载荷 */
@@ -568,10 +570,9 @@ export const SocialAction = {
   PartySlots: 'party.slots',
   /** 切换本人秘境助战模式开关（assistMode 必填；免耗体力且无收益） */
   PartyAssist: 'party.assist',
-  DouDiZhuStake: 'doudizhu.stake',
-  DouDiZhuReady: 'doudizhu.ready',
-  DouDiZhuUnready: 'doudizhu.unready',
-  DouDiZhuStart: 'doudizhu.start',
+  DouDiZhuMatchJoin: 'doudizhu.match.join',
+  DouDiZhuMatchCancel: 'doudizhu.match.cancel',
+  DouDiZhuLeave: 'doudizhu.leave',
   DouDiZhuBid: 'doudizhu.bid',
   DouDiZhuPlay: 'doudizhu.play',
   DouDiZhuPass: 'doudizhu.pass',
@@ -601,8 +602,6 @@ export interface PartyProfileDto {
   difficulty?: number | null
   /** 开启槽位数（2~5）；仅 party.slots 使用 */
   openSlots?: number | null
-  /** 斗地主底注；仅队长通过 doudizhu.stake 设置 */
-  douDiZhuStake?: number | null
   /** 秘境配置 ID（仅 activityKind='dungeon' 有效） */
   dungeonId?: string | null
   /** 秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数） */
@@ -630,6 +629,8 @@ export interface SocialActionDto {
   interaction?: string | null
   /** 秘境助战开关；仅 party.assist 使用 */
   assistMode?: boolean | null
+  /** 斗地主匹配阶位（1~8）；仅 doudizhu.match.join 使用 */
+  douDiZhuTier?: number | null
 }
 
 /** 好友条目 */
@@ -672,10 +673,6 @@ export interface PartyMemberDto {
   /** 成员受到的队伍等级惩罚比率（0~0.9） */
   levelMalus?: number
   valuationBreakdown?: ValuationBreakdownDto | null
-  /** 斗地主独立准备状态 */
-  douDiZhuReady?: boolean
-  /** 队伍内展示的当前可用灵石余额。 */
-  spiritStones: number
   /** 秘境助战开关（true 表示免耗体力且无收益） */
   assistMode?: boolean
   /** 当前秘境有效体力 */
@@ -684,9 +681,18 @@ export interface PartyMemberDto {
   tiliMax?: number
 }
 
+/** 斗地主牌桌座位玩家信息投影 */
+export interface DouDiZhuSeatDto {
+  playerId: string
+  displayName: string
+  avatar: string
+  spiritStones: number
+}
+
 /** 斗地主公共牌局状态与本人私有手牌。 */
 export interface DouDiZhuGameDto {
   gameId: string
+  tier: number
   playerIds: string[]
   baseStake: number
   phase: 'bidding' | 'playing' | 'finished' | 'cancelled'
@@ -717,6 +723,7 @@ export interface DouDiZhuGameDto {
   /** 仅本人的初始 17 张发牌顺序，不包含他人手牌。 */
   dealHand: number[]
   bids: { seat: number; action: 'call' | 'rob' | 'pass'; version: number }[]
+  seats: DouDiZhuSeatDto[]
 }
 
 /** 经过同桌与限频校验的短暂互动。 */
@@ -768,10 +775,6 @@ export interface PartyDto {
   members: PartyMemberDto[]
   /** 队伍设定的讨伐/秘境难度等级（野外 0~5，秘境 0~11） */
   difficulty: number
-  /** 队长设置的斗地主底注，默认 10 灵石 */
-  douDiZhuStake?: number
-  /** 当前或最近一局斗地主；本人手牌按观者私有投影下发 */
-  douDiZhuGame?: DouDiZhuGameDto | null
   /** 秘境配置 ID（仅 activityKind='dungeon' 有效） */
   dungeonId?: string
   /** 秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数） */
@@ -823,6 +826,9 @@ export interface SocialStateDto {
   /** 本人匹配中登记；未登记为 null */
   seeking?: PartySeekerDto | null
   douDiZhuInteractions?: DouDiZhuInteractionDto[] | null
+  douDiZhuGame?: DouDiZhuGameDto | null
+  douDiZhuMatchingTier?: number | null
+  douDiZhuQueueCounts?: number[] | null
 }
 
 /** PartyLobbyRequest 组队大厅筛选请求载荷 */

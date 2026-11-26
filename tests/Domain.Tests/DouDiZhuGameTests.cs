@@ -202,12 +202,46 @@ public sealed class DouDiZhuGameTests
         Assert.Equal(0, farmerWin.Sum());
     }
 
-    private static DouDiZhuGameState NewGame(int firstBidder) => DouDiZhuGame.CreateWithDeck(
-        Guid.Parse("10000000-0000-0000-0000-000000000001"), Guid.Parse("20000000-0000-0000-0000-000000000001"),
-        Players, 10, Deck, firstBidder, Now);
+    [Fact]
+    public void TierRules_EnforceEightTiersBaseStakeAndTenFoldEscrow()
+    {
+        double[] expectedStakes = [1d, 100d, 10_000d, 1_000_000d, 100_000_000d, 10_000_000_000d, 1_000_000_000_000d, 100_000_000_000_000d];
+        for (var tier = DouDiZhuRules.MinTier; tier <= DouDiZhuRules.MaxTier; tier++)
+        {
+            Assert.True(DouDiZhuRules.IsValidTier(tier));
+            Assert.Equal(expectedStakes[tier - 1], DouDiZhuRules.GetBaseStake(tier));
+            Assert.Equal(expectedStakes[tier - 1] * 10d, DouDiZhuRules.GetRequiredStones(tier));
+        }
+
+        Assert.False(DouDiZhuRules.IsValidTier(0));
+        Assert.False(DouDiZhuRules.IsValidTier(9));
+
+        var game = DouDiZhuGame.Create(Guid.NewGuid(), 2, Players, Now);
+        Assert.Equal(2, game.Tier);
+        Assert.Equal(100d, game.BaseStake);
+        Assert.Equal(0d, game.EscrowedStake);
+    }
+
+    [Fact]
+    public void ApplyBid_PreservesEscrowedStakeAcrossAllPassRedeal()
+    {
+        var game = NewGame(firstBidder: 0, tier: 2) with { EscrowedStake = 1_000d };
+        Assert.Equal(1_000d, game.EscrowedStake);
+        game = DouDiZhuGame.ApplyBid(game, Players[0], 0, DouDiZhuBidAction.Pass, game.ActionAvailableAt);
+        game = DouDiZhuGame.ApplyBid(game, Players[1], 1, DouDiZhuBidAction.Pass, game.ActionAvailableAt);
+        var redealt = DouDiZhuGame.ApplyBid(game, Players[2], 2, DouDiZhuBidAction.Pass, game.ActionAvailableAt);
+        Assert.Equal(2, redealt.Tier);
+        Assert.Equal(100d, redealt.BaseStake);
+        Assert.Equal(1_000d, redealt.EscrowedStake);
+    }
+
+    private static DouDiZhuGameState NewGame(int firstBidder, int tier = 1) => DouDiZhuGame.CreateWithDeck(
+        Guid.Parse("10000000-0000-0000-0000-000000000001"),
+        tier, Players, DouDiZhuRules.GetBaseStake(tier), Deck, firstBidder, Now);
 
     private static DouDiZhuGameState FinishedGame(bool landlordWon) => NewGame(0) with
     {
+        BaseStake = 10,
         Phase = DouDiZhuGamePhase.Finished,
         LandlordSeat = 0,
         LandlordWon = landlordWon,

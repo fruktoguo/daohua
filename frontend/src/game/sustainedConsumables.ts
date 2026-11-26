@@ -1,5 +1,5 @@
 import { ENHANCE_ACTION_ID, TECHNIQUE_IDS } from './combatConstants'
-import type { ActionDefinition, AutoUseBarType, AutoUseSlot, InventoryItem, ItemDefinition, QueueEntry } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, CombatEquipmentDefinition, EquippedItem, InventoryItem, ItemDefinition, QueueEntry } from './types'
 
 export type SustainedDurationClock =
   | { mode: 'frozen' }
@@ -104,6 +104,32 @@ export function resolveEffectiveEnhancementSuccessBonuses(
   }
 
   return { totalBonus, items: bonusItems }
+}
+
+/**
+ * 统计已穿戴强化技艺工具（techniqueBonus.technique === 'enhancement'）提供的固定强化成功率加成：
+ * 与服务端 TechniqueCatalog.EquippedToolEnhancementSuccessBonus 同口径，按白板固定值累加，不随工具强化等级缩放。
+ */
+export function resolveEquippedEnhancementToolBonuses(
+  equipped: readonly EquippedItem[] | undefined,
+  equipmentCatalog: readonly CombatEquipmentDefinition[],
+): EffectiveEnhancementConsumables {
+  if (!equipped || equipped.length === 0 || equipmentCatalog.length === 0) {
+    return { totalBonus: 0, items: [] }
+  }
+  const byId = new Map(equipmentCatalog.map(eq => [eq.equipmentId, eq]))
+  const items: EnhancementConsumableBonusItem[] = []
+  let totalBonus = 0
+  for (const eq of equipped) {
+    const def = byId.get(eq.itemId)
+    const bonus = def?.techniqueBonus
+    if (!def || !bonus || bonus.technique !== 'enhancement') continue
+    const rate = bonus.enhancementSuccessBonus
+    if (rate === undefined || !Number.isFinite(rate) || rate <= 0) continue
+    totalBonus += rate
+    items.push({ itemId: def.equipmentId, name: def.name, bonus: rate })
+  }
+  return { totalBonus, items }
 }
 
 /** 判定持续消耗品是否会被当前行动实际消耗，保持与服务端生效守卫一致。 */

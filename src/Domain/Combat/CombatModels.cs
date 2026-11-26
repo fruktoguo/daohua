@@ -16,6 +16,32 @@ public enum CombatDamageKind : byte
 }
 
 /// <summary>
+/// 战斗阵营标识（正交于单位身份）：PVE 中 SideA 为己方/玩家侧、SideB 为敌方/怪物侧；
+/// PVP 对称斗法中 SideA 与 SideB 地位完全平等，两侧单位均可为玩家。
+/// </summary>
+public enum CombatSide : byte
+{
+    /// <summary>甲侧阵营（PVE 友方 / PVP 甲方）。</summary>
+    SideA = 0,
+    /// <summary>乙侧阵营（PVE 敌方 / PVP 乙方）。</summary>
+    SideB = 1
+}
+
+/// <summary>
+/// 战斗单位身份类别（正交于阵营与单位 ID 前缀）：玩家、妖兽怪物或召唤物。
+/// 触发器 is-player/has-player/is-summon/has-summon 与统计簿分类一律以本枚举为唯一真源。
+/// </summary>
+public enum CombatantKind : byte
+{
+    /// <summary>修士玩家（含组队队友与 PVP 斗法玩家镜像）。</summary>
+    Player = 0,
+    /// <summary>妖兽怪物（含普通、精英与妖王）。</summary>
+    Monster = 1,
+    /// <summary>召唤物单位。</summary>
+    Summon = 2
+}
+
+/// <summary>
 /// 组队讨伐的复活时机策略（总纲 §7.9.4.1）：倒地读条走完后是否立刻起身，由成员自设策略裁决。
 /// 策略只在组队会话内生效——单人战斗恒为 <see cref="Immediate"/>。
 /// </summary>
@@ -281,13 +307,14 @@ public sealed record CombatBuffState(
     }
 }
 
-/// <summary>战斗单位生成模板：静态属性 + 可选技能槽 + 实体属性扩展。</summary>
+/// <summary>战斗单位生成模板：静态属性 + 可选技能槽 + 实体身份扩展。</summary>
 public sealed record CombatantTemplate(
     CombatantStats Stats,
     IReadOnlyList<SkillSlot>? Skills = null,
     string? DefinitionId = null,
     CombatMonsterRank? Rank = null,
-    bool IsSummon = false);
+    bool IsSummon = false,
+    CombatantKind? Kind = null);
 
 /// <summary>
 /// 战斗交锋中的单位动态运行时状态（维护当前气血、灵力、威胁与下一次出手时刻）。
@@ -295,13 +322,25 @@ public sealed record CombatantTemplate(
 public sealed class CombatantState
 {
     /// <summary>以静态属性创建战斗单位运行时状态；气血灵力初始为满，首次出手动作由开战决策决定。</summary>
-    /// <param name="id">战斗单位标识（player 或 enemy:{index}，≤128 字符）。</param>
+    /// <param name="id">战斗单位标识（player / ally:{i} / enemy:{i} / sideA:{i} / sideB:{i}，≤128 字符）。</param>
     /// <param name="stats">静态属性面板。</param>
     /// <param name="skills">随战技能槽（可空）。</param>
-    public CombatantState(string id, CombatantStats stats, IReadOnlyList<SkillSlot>? skills = null)
+    /// <param name="side">所属阵营；缺省按单位标识推断，对称与遭遇工厂均显式传入。</param>
+    /// <param name="kind">单位身份类别；缺省按单位标识推断，遭遇工厂按模板显式写入。</param>
+    public CombatantState(string id, CombatantStats stats, IReadOnlyList<SkillSlot>? skills = null,
+        CombatSide? side = null, CombatantKind? kind = null)
     {
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗单位标识无效。");
         Id = id;
+        Side = side ?? (id.StartsWith("enemy:", StringComparison.Ordinal) || id.StartsWith("sideB:", StringComparison.Ordinal)
+            ? CombatSide.SideB
+            : CombatSide.SideA);
+        Kind = kind ?? (id.StartsWith("player", StringComparison.Ordinal)
+            || id.StartsWith("ally:", StringComparison.Ordinal)
+            || id.StartsWith("sideA:", StringComparison.Ordinal)
+            || id.StartsWith("sideB:", StringComparison.Ordinal)
+                ? CombatantKind.Player
+                : CombatantKind.Monster);
         Stats = stats ?? throw new ArgumentNullException(nameof(stats));
         stats.Validate();
         TraitState = CombatTraitState.Capture(stats);
@@ -317,8 +356,12 @@ public sealed class CombatantState
 
     /// <summary>单位进入战斗的基础威胁值：每场战斗开始时重置为该值（总纲 §7.8.1）。</summary>
     public const double BaseThreat = 100;
-    /// <summary>战斗者标识（player 或 enemy:{index}）</summary>
+    /// <summary>战斗者标识（player / ally:{i} / enemy:{i} / sideA:{i} / sideB:{i}）</summary>
     public string Id { get; }
+    /// <summary>所属战斗阵营（SideA / SideB，与单位身份正交）。</summary>
+    public CombatSide Side { get; }
+    /// <summary>单位在所属阵营列表中的下标（0..N-1）。</summary>
+    public int SideIndex { get; internal set; }
     /// <summary>
     /// ECS 宿主挂接的单位实体标识；-1 表示未绑定实体。
     /// 运行时字段，不进入快照——Attach/恢复挂接时由宿主回填，纯领域路径恒为 -1。
@@ -328,10 +371,14 @@ public sealed class CombatantState
     public string? DefinitionId { get; set; }
     /// <summary>单位阶层：妖兽(普通)/精英/妖王，玩家为 null。</summary>
     public CombatMonsterRank? Rank { get; set; }
-    /// <summary>是否为召唤物。</summary>
-    public bool IsSummon { get; set; }
-    /// <summary>是否为玩家（含镜像）。</summary>
-    public bool IsPlayer => !string.IsNullOrEmpty(Id) && Id.StartsWith("player", StringComparison.Ordinal);
+    /// <summary>单位身份类别（玩家 / 怪物 / 召唤物）；唯一身份真源。</summary>
+    public CombatantKind Kind { get; set; }
+    /// <summary>是否为召唤物（由 <see cref="Kind"/> 派生）。</summary>
+    public bool IsSummon => Kind == CombatantKind.Summon;
+    /// <summary>是否为玩家（含组队队友与 PVP 斗法双侧修士；由 <see cref="Kind"/> 派生）。</summary>
+    public bool IsPlayer => Kind == CombatantKind.Player;
+    /// <summary>是否为妖兽怪物（由 <see cref="Kind"/> 派生）。</summary>
+    public bool IsMonster => Kind == CombatantKind.Monster;
     /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
     public CombatantStats Stats { get; private set; }
     /// <summary>本场入战定格的特质；普通面板刷新与快照恢复必须沿用该输入。</summary>
@@ -738,21 +785,29 @@ public sealed record CombatantSnapshot(
 /// </summary>
 public sealed class CombatEncounterState
 {
-    private CombatEncounterState(string encounterId, long seed, IReadOnlyList<CombatantState> playerAllies,
-        int selfIndex, IReadOnlyList<CombatantState> enemies, double playerRespawnSeconds, bool wipeEndsBattle = false)
+    private CombatEncounterState(string encounterId, long seed, IReadOnlyList<CombatantState> sideA,
+        int selfIndex, IReadOnlyList<CombatantState> sideB, double playerRespawnSeconds,
+        bool wipeEndsBattle = false, bool isSymmetric = false)
     {
         EncounterId = encounterId;
         Seed = seed;
-        PlayerAllies = playerAllies;
+        PlayerAllies = sideA;
         SelfIndex = selfIndex;
-        Enemies = enemies;
+        Enemies = sideB;
         PlayerRespawnSeconds = playerRespawnSeconds;
         WipeEndsBattle = wipeEndsBattle;
+        IsSymmetric = isSymmetric;
         TraitListeners = new CombatTraitListeners(this);
     }
 
     /// <summary>遭遇战唯一标识</summary>
     public string EncounterId { get; }
+    /// <summary>
+    /// 是否为双阵营完全对称遭遇（如 PVP 斗法）：
+    /// 为 true 时 SideA 与 SideB 地位完全平等，同刻动作/消耗品/Tick 采用两阶段同时生效裁决并共享统一随机通道；
+    /// 为 false 时沿用 PVE 既有边界序与随机通道。
+    /// </summary>
+    public bool IsSymmetric { get; }
     /// <summary>
     /// 边界事实追踪已接入（TASK-20261112-15）：由 CombatFactTracker 置位；为 false 时
     /// 技能判定缓存不得复用（无增量折叠，复用会永久滞留过期判定）。
@@ -762,6 +817,28 @@ public sealed class CombatEncounterState
     public long Seed { get; }
     /// <summary>当前战斗已推进的总时间（秒）</summary>
     public double ElapsedSeconds { get; internal set; }
+    /// <summary>甲侧阵营单位列表（PVE 中即 PlayerAllies，PVP 中即甲侧参战修士）。</summary>
+    public IReadOnlyList<CombatantState> SideA => PlayerAllies;
+    /// <summary>乙侧阵营单位列表（PVE 中即 Enemies，PVP 中即乙侧参战修士）。</summary>
+    public IReadOnlyList<CombatantState> SideB => Enemies;
+    /// <summary>返回指定阵营的对立阵营。</summary>
+    public static CombatSide Opposite(CombatSide side) => side == CombatSide.SideA ? CombatSide.SideB : CombatSide.SideA;
+    /// <summary>按阵营枚举 O(1) 读取对应侧全部单位。</summary>
+    public IReadOnlyList<CombatantState> UnitsOf(CombatSide side) => side == CombatSide.SideA ? PlayerAllies : Enemies;
+    /// <summary>按单位所属阵营 O(1) 读取其友方全员。</summary>
+    public IReadOnlyList<CombatantState> AlliesOf(CombatantState unit) => UnitsOf(unit.Side);
+    /// <summary>按单位所属阵营 O(1) 读取其敌方全员。</summary>
+    public IReadOnlyList<CombatantState> OpponentsOf(CombatantState unit) => UnitsOf(Opposite(unit.Side));
+    /// <summary>按单位标识在两侧阵营中查找对应单位（零 LINQ 分配）。</summary>
+    public CombatantState? FindUnit(string? unitId)
+    {
+        if (string.IsNullOrEmpty(unitId)) return null;
+        for (var i = 0; i < PlayerAllies.Count; i++)
+            if (PlayerAllies[i].Id == unitId) return PlayerAllies[i];
+        for (var i = 0; i < Enemies.Count; i++)
+            if (Enemies[i].Id == unitId) return Enemies[i];
+        return null;
+    }
     /// <summary>玩家方盟友阵列（含本机成员，按下标稳定排序；顺序即共享剧本成员序）。</summary>
     public IReadOnlyList<CombatantState> PlayerAllies { get; }
     /// <summary>本机成员在盟友阵列中的下标；单人恒为 0。</summary>
@@ -770,12 +847,32 @@ public sealed class CombatEncounterState
     public CombatantState Player => PlayerAllies[SelfIndex];
     /// <summary>战斗内条件特质监听绑定，不进入快照；由真实入场及恢复状态重建。</summary>
     internal CombatTraitListeners TraitListeners { get; }
+    /// <summary>同刻同时生效波次期间暂缓存活人数特质刷新，波末统一收口，防止先结算侧中途改写同刻后结算侧的单挑王/我要打十个层数。</summary>
+    internal bool DeferAliveCountNotifications { get; set; }
+    private bool _pendingAliveCountNotification;
 
     /// <summary>真实入场或快照应用后重建条件特质监听并初始化效果。</summary>
     internal void InitializeTraitListeners() => TraitListeners.Rebuild();
 
     /// <summary>存活状态变化后的同步事件入口，只通知当前挂接的条件特质检查器。</summary>
-    internal void NotifyAliveCountsChanged() => TraitListeners.AliveCountsChanged();
+    internal void NotifyAliveCountsChanged()
+    {
+        if (DeferAliveCountNotifications)
+        {
+            _pendingAliveCountNotification = true;
+            return;
+        }
+        TraitListeners.AliveCountsChanged();
+    }
+
+    /// <summary>解除同刻暂缓并一次性刷新挂起的存活人数特质检查器。</summary>
+    internal void FlushAliveCountNotifications()
+    {
+        DeferAliveCountNotifications = false;
+        if (!_pendingAliveCountNotification) return;
+        _pendingAliveCountNotification = false;
+        TraitListeners.AliveCountsChanged();
+    }
     /// <summary>同波全体敌方单位（含已阵亡者，按下标稳定排序）。</summary>
     public IReadOnlyList<CombatantState> Enemies { get; }
     /// <summary>当前对决胜负裁决</summary>
@@ -841,6 +938,11 @@ public sealed class CombatEncounterState
     /// 只观察已结算结果，不参与任何随机数或状态裁决。
     /// </summary>
     public ICombatActionRecorder? ActionRecorder { get; set; }
+    /// <summary>
+    /// 对称同刻同时生效波次缓冲区（运行时，由 Ecs 层 <c>SimultaneousCombatWave</c> 挂载）；
+    /// 仅在 <see cref="IsSymmetric"/> 且同一自然边界存在 ≥2 名同时出手单位期间非空，不进入快照。
+    /// </summary>
+    internal object? ActiveWave { get; set; }
     /// <summary>本机成员当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
@@ -953,20 +1055,28 @@ public sealed class CombatEncounterState
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇原地复活时长无效。");
         var allyStates = new CombatantState[allies.Count];
         for (var i = 0; i < allies.Count; i++)
-            allyStates[i] = new CombatantState(i == selfIndex ? "player" : $"ally:{i}", allies[i].Stats, allies[i].Skills)
+        {
+            var kind = allies[i].Kind ?? (allies[i].IsSummon ? CombatantKind.Summon : CombatantKind.Player);
+            allyStates[i] = new CombatantState(i == selfIndex ? "player" : $"ally:{i}", allies[i].Stats, allies[i].Skills,
+                CombatSide.SideA, kind)
             {
+                SideIndex = i,
                 DefinitionId = allies[i].DefinitionId,
-                Rank = allies[i].Rank,
-                IsSummon = allies[i].IsSummon
+                Rank = allies[i].Rank
             };
+        }
         var enemyStates = new CombatantState[enemies.Count];
         for (var i = 0; i < enemies.Count; i++)
-            enemyStates[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills)
+        {
+            var kind = enemies[i].Kind ?? (enemies[i].IsSummon ? CombatantKind.Summon : CombatantKind.Monster);
+            enemyStates[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills,
+                CombatSide.SideB, kind)
             {
+                SideIndex = i,
                 DefinitionId = enemies[i].DefinitionId,
-                Rank = enemies[i].Rank,
-                IsSummon = enemies[i].IsSummon
+                Rank = enemies[i].Rank
             };
+        }
         // 特质开战授予（如看不到我→隐身 buff）：仅首次开战路径生效；
         // 快照恢复由 Buffs 还原不重复授予，复活起身亦不视为开战。
         // 授予顺序为盟友序→敌方序：单人退化为 玩家→敌人，与既有序列逐位一致。
@@ -975,6 +1085,51 @@ public sealed class CombatEncounterState
         for (var i = 0; i < enemyStates.Length; i++)
             CombatTraitRules.ApplyBattleStartTraits(enemyStates[i]);
         var encounter = new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds, wipeEndsBattle);
+        encounter.InitializeTraitListeners();
+        return encounter;
+    }
+
+    /// <summary>
+    /// 创建双阵营完全对称遭遇（PVP 单人/多方斗法原生入口，总纲 §7.3.1 / §7.10.2）：
+    /// SideA 与 SideB 地位完全平等，单位均以 <c>sideA:{i}</c> / <c>sideB:{i}</c> 对称命名、
+    /// 默认身份均为 <see cref="CombatantKind.Player"/>，且启用同刻同时生效与对称随机通道。
+    /// </summary>
+    public static CombatEncounterState CreateSymmetric(string encounterId, long seed,
+        IReadOnlyList<CombatantTemplate> sideA,
+        IReadOnlyList<CombatantTemplate> sideB)
+    {
+        if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
+        if (sideA is null || sideA.Count == 0 || sideA.Any(template => template?.Stats is null))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "甲侧阵营阵容无效。");
+        if (sideB is null || sideB.Count == 0 || sideB.Any(template => template?.Stats is null))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "乙侧阵营阵容无效。");
+
+        static CombatantState[] BuildSide(IReadOnlyList<CombatantTemplate> templates, CombatSide side, string prefix)
+        {
+            var states = new CombatantState[templates.Count];
+            for (var i = 0; i < templates.Count; i++)
+            {
+                var template = templates[i];
+                var kind = template.Kind ?? (template.IsSummon ? CombatantKind.Summon : CombatantKind.Player);
+                states[i] = new CombatantState($"{prefix}:{i}", template.Stats, template.Skills, side, kind)
+                {
+                    SideIndex = i,
+                    DefinitionId = template.DefinitionId,
+                    Rank = template.Rank
+                };
+            }
+            return states;
+        }
+
+        var sideAStates = BuildSide(sideA, CombatSide.SideA, "sideA");
+        var sideBStates = BuildSide(sideB, CombatSide.SideB, "sideB");
+        for (var i = 0; i < sideAStates.Length; i++)
+            CombatTraitRules.ApplyBattleStartTraits(sideAStates[i]);
+        for (var i = 0; i < sideBStates.Length; i++)
+            CombatTraitRules.ApplyBattleStartTraits(sideBStates[i]);
+        var encounter = new CombatEncounterState(encounterId, seed, sideAStates, 0, sideBStates,
+            playerRespawnSeconds: 0, wipeEndsBattle: true, isSymmetric: true);
         encounter.InitializeTraitListeners();
         return encounter;
     }

@@ -10,33 +10,46 @@ internal static class CombatTraitReactions
     internal static void OnHit(CombatHitContext context)
     {
         if (!context.Hit || !context.Attacker.IsAlive) return;
+        var wave = context.Encounter.ActiveWave as SimultaneousCombatWave;
         ApplyRanhun(context.Attacker, context.Target, context.AttackStats.Element, context.ActualDamage, context.AtSeconds, context.Encounter);
         var attacker = context.Attacker;
         if (!CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.XuyiTraitId)) return;
         var buff = attacker.Buffs.FirstOrDefault(current => current.BuffId == CombatTraitRules.XuyiBuffId);
         if (buff is null || buff.Stacks <= attacker.Stats.MaxHitpoints) return;
-        attacker.RemoveBuffsWhere(current => current.BuffId == CombatTraitRules.XuyiBuffId);
-        var opponents = context.Encounter.PlayerAllies.Contains(attacker)
-            ? context.Encounter.Enemies : context.Encounter.PlayerAllies;
+        if (wave is not null)
+        {
+            if (!wave.TryConsumeXuyi(attacker)) return;
+            wave.DeferBuffOp(() => attacker.RemoveBuffsWhere(current => current.BuffId == CombatTraitRules.XuyiBuffId));
+        }
+        else
+        {
+            attacker.RemoveBuffsWhere(current => current.BuffId == CombatTraitRules.XuyiBuffId);
+        }
+        var opponents = context.Encounter.OpponentsOf(attacker);
         // 主目标先结算，随后按阵容序溅射；消费先于落账，且爆发不重新积蓄意。
-        if (context.Target.IsAlive) Burst(context.Target, true);
-        foreach (var target in opponents)
-            if (target.IsAlive && !ReferenceEquals(target, context.Target)) Burst(target, false);
+        if (CombatDamageSettlement.IsTargetAlive(context.Encounter, context.Target)) Burst(context.Target, true);
+        for (var i = 0; i < opponents.Count; i++)
+        {
+            var target = opponents[i];
+            if (CombatDamageSettlement.IsTargetAlive(context.Encounter, target) && !ReferenceEquals(target, context.Target))
+                Burst(target, false);
+        }
 
         void Burst(CombatantState target, bool primary)
         {
-            var wasAlive = target.IsAlive;
+            var wasAlive = CombatDamageSettlement.IsTargetAlive(context.Encounter, target);
             var strikeElement = primary ? CombatElement.None : CombatTraitRules.ResolveDamageElement(attacker.Stats.Traits, CombatElement.None);
             var damage = primary ? buff.Stacks : DeterministicCombatEngine.ResolveStrikeDamage(
                 CombatDamageSettlement.StrikeStats(attacker, buff.Stacks, CombatDamageKind.Physical, strikeElement),
                 target);
             var settled = CombatDamageSettlement.Apply(context.Encounter, attacker, target, damage, accumulateXuyi: false);
-            attacker.Threat += settled.Damage;
+            if (wave is not null) wave.AddThreatDelta(attacker, settled.Damage);
+            else attacker.Threat += settled.Damage;
             context.Encounter.StatsBook?.RecordHit(attacker, target, primary ? CombatDamageKind.True : CombatDamageKind.Physical, settled.Damage, primary ? 0 : Math.Max(0, buff.Stacks - settled.Damage));
             context.Encounter.ActionRecorder?.RecordDamage(attacker, target, DuelRecordEffectKind.TraitBurst,
                 primary ? CombatDamageKind.True : CombatDamageKind.Physical,
                 strikeElement, DuelRecordHitMark.Hit, settled.Damage, CombatTraitRules.XuyiTraitId,
-                targetDowned: wasAlive && !target.IsAlive);
+                targetDowned: wasAlive && !CombatDamageSettlement.IsTargetAlive(context.Encounter, target));
             context.Emit(new CombatEvent(context.AtSeconds, attacker.Id, target.Id, settled.Damage, true,
                 primary ? CombatDamageKind.True : CombatDamageKind.Physical, target.Hitpoints) { AbilityId = CombatTraitRules.XuyiTraitId });
         }
@@ -46,9 +59,22 @@ internal static class CombatTraitReactions
     internal static void AddRanhunStacks(CombatantState attacker, CombatantState target, double stacks, double at,
         CombatEncounterState? encounter = null)
     {
-        if (stacks <= 0 || !target.IsAlive) return;
-        var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
-        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
+        if (stacks <= 0 || !CombatDamageSettlement.IsTargetAlive(encounter, target)) return;
+        if (encounter?.ActiveWave is SimultaneousCombatWave wave)
+        {
+            wave.DeferBuffOp(() =>
+            {
+                if (!target.IsAlive) return;
+                var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
+                target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
+                    "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
+            });
+            encounter.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, stacks,
+                DuelRecordActionKind.Trait, at, CombatTraitRules.RanhunTraitId);
+            return;
+        }
+        var existingNow = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
+        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existingNow?.Stacks ?? 0),
             "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
         encounter?.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, stacks,
             DuelRecordActionKind.Trait, at, CombatTraitRules.RanhunTraitId);
@@ -58,7 +84,7 @@ internal static class CombatTraitReactions
     internal static void ApplyRanhun(CombatantState attacker, CombatantState target, CombatElement element, double actual, double at,
         CombatEncounterState? encounter = null)
     {
-        if (actual <= 0 || !target.IsAlive || element != CombatElement.Fire
+        if (actual <= 0 || !CombatDamageSettlement.IsTargetAlive(encounter, target) || element != CombatElement.Fire
             || !CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.RanhunTraitId)) return;
         var stacks = Math.Max(1, Math.Floor(actual * 0.02 * CombatTraitRules.LevelScale(attacker, CombatTraitRules.RanhunTraitId)));
         AddRanhunStacks(attacker, target, stacks, at, encounter);
@@ -72,7 +98,7 @@ internal static class CombatTraitReactions
         {
             var power = buff.EffectValue(BuffEffectChannel.FireSpellDamagePerSecond) * buff.Stacks;
             if (power <= 0 || buff.ExpiresAtSeconds + 1e-9 < at) continue;
-            var source = encounter.PlayerAllies.Concat(encounter.Enemies).FirstOrDefault(unit => unit.Id == buff.SourceUnitId)
+            var source = encounter.FindUnit(buff.SourceUnitId)
                 ?? throw new DomainException(DomainErrorCode.InvariantViolation, "持续伤害缺少战斗来源。");
             var wasAlive = target.IsAlive;
             var attack = CombatDamageSettlement.StrikeStats(source, power, CombatDamageKind.Spell, CombatElement.Fire);

@@ -15,9 +15,10 @@ import type {
   GuidePostDetailDto,
   GuidePostSummaryDto,
   GuidePostUpsertPayload,
-  GuideRankBadgeDto,
 } from '../network/protocol'
 import { resolvePlayerActorId } from '../game/avatarStore'
+import { buildGuideChatMarkup } from '../game/chatMarkup'
+import { shareToChat } from '../game/chatShare'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { formatNumber } from '../game/format'
 import { GUIDE_MAX_PRICE_STONES } from '../game/guideMarkup'
@@ -31,39 +32,10 @@ import { clearGuideLocalDraft, GuideEditorModal } from './GuideEditorModal'
 import { GuideRichContent } from './GuideRichContent'
 import { Icon } from './Icon'
 import { ItemIcon } from './ItemDisplay'
+import { LeaderboardRankBadge } from './LeaderboardGlyph'
 import { RealmBadge } from './RealmBadge'
 
 const TIP_PRESETS: readonly number[] = [10, 50, 100, 520, 1000]
-
-function formatRankBadgeText(
-  badge: GuideRankBadgeDto,
-  t: (key: string, params?: Record<string, string | number>) => string,
-): string {
-  let boardName: string
-  switch (badge.kind) {
-    case 'realm':
-      boardName = t('app.leaderboard.tabRealm')
-      break
-    case 'valuation':
-      boardName = t('app.leaderboard.tabValuation')
-      break
-    case 'spirit-stone':
-      boardName = t('app.leaderboard.tabSpiritStone')
-      break
-    case 'duel':
-      boardName = t('app.leaderboard.tabDuel')
-      break
-    case 'technique':
-      boardName = badge.techniqueId
-        ? `${t(`insight.technique.${badge.techniqueId}`)}${t('social.guide.boardSuffix')}`
-        : t('app.leaderboard.tabTechnique')
-      break
-    default:
-      boardName = badge.boardId
-      break
-  }
-  return `${boardName} #${badge.rank}`
-}
 
 function formatShortTime(iso: string): string {
   const date = new Date(iso)
@@ -145,19 +117,21 @@ const GuidePostCard = memo(function GuidePostCard({
           tabIndex={0}
           title={t('social.card.openCardHint')}
         >
-          <CharacterAvatar
-            actorId={resolvePlayerActorId(item.authorAvatar)}
-            className="guide-author-avatar"
-            name={item.authorName}
-            role="player"
-          />
+          <span className="guide-author-avatar-box">
+            <CharacterAvatar
+              actorId={resolvePlayerActorId(item.authorAvatar)}
+              className="guide-author-avatar"
+              name={item.authorName}
+              role="player"
+            />
+          </span>
           <span className="guide-author-name">
             {item.authorZongmenPrefix && <em className="guide-zongmen-prefix">[{item.authorZongmenPrefix}]</em>}
             {item.authorName}
           </span>
           <span className="guide-author-minor">{realmInfo.minorName}</span>
           {item.authorTopRank && (
-            <span className="guide-rank-pill">{formatRankBadgeText(item.authorTopRank, t)}</span>
+            <LeaderboardRankBadge badge={item.authorTopRank} variant="guide" />
           )}
         </div>
 
@@ -190,6 +164,8 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
   const inventory = useGameStore(state => state.inventory)
   const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const guideFocusPostId = useUiStore(state => state.guideFocusPostId)
+  const setGuideFocusPostId = useUiStore(state => state.setGuideFocusPostId)
 
   const [sort, setSort] = useState<'hot' | 'reward'>('hot')
   const [mineOnly, setMineOnly] = useState(false)
@@ -282,6 +258,21 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
     return () => controller.abort()
   }, [selectedPostId, t])
 
+  // 响应外部（如传音攻略胶囊）直达指定攻略详情
+  useEffect(() => {
+    if (!guideFocusPostId) return
+    setSelectedPostId(guideFocusPostId)
+    setGuideFocusPostId(null)
+  }, [guideFocusPostId, setGuideFocusPostId])
+
+  const handleShareGuide = useCallback((post: Pick<GuidePostDetailDto, 'postId' | 'title' | 'unlockPrice'>) => {
+    shareToChat(buildGuideChatMarkup({
+      postId: post.postId,
+      title: post.title,
+      unlockPrice: post.unlockPrice,
+    }))
+  }, [])
+
   const handleOpenCreate = useCallback(() => {
     setEditingPost(null)
     setEditorOpen(true)
@@ -293,27 +284,35 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
     setEditorOpen(true)
   }, [detail])
 
-  const handleEditorSubmit = useCallback(async (payload: GuidePostUpsertPayload) => {
+  const handleEditorSubmit = useCallback(async (
+    payload: GuidePostUpsertPayload,
+    options?: { shareAfterSave?: boolean },
+  ) => {
     setEditorSubmitting(true)
     try {
+      let savedPost: GuidePostDetailDto
       if (editingPost) {
-        const updated = await updateGuidePost(editingPost.postId, payload)
-        setDetail(updated)
+        savedPost = await updateGuidePost(editingPost.postId, payload)
+        setDetail(savedPost)
         useGameStore.getState().setNotice(t('social.guide.noticeUpdated'))
       } else {
-        const created = await createGuidePost(payload)
+        savedPost = await createGuidePost(payload)
         clearGuideLocalDraft(selfPlayerId)
-        setSelectedPostId(created.postId)
-        setDetail(created)
+        setSelectedPostId(savedPost.postId)
+        setDetail(savedPost)
         useGameStore.getState().setNotice(t('social.guide.noticePublished'))
       }
       setEditorOpen(false)
       setEditingPost(null)
       setRefreshTick(n => n + 1)
+      if (options?.shareAfterSave) {
+        // 等编辑 Modal 卸载完成并收尾其焦点还原后，再聚焦传音输入框写入草稿，避免焦点被抢回
+        window.requestAnimationFrame(() => handleShareGuide(savedPost))
+      }
     } finally {
       setEditorSubmitting(false)
     }
-  }, [editingPost, selfPlayerId, t])
+  }, [editingPost, handleShareGuide, selfPlayerId, t])
 
   const handleToggleLike = useCallback(async () => {
     if (!detail || liking) return
@@ -479,7 +478,7 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
 
             <div className="guide-toolbar-right">
               {myTopBadge && (
-                <span className="guide-rank-pill">{formatRankBadgeText(myTopBadge, t)}</span>
+                <LeaderboardRankBadge badge={myTopBadge} variant="guide" />
               )}
               <button
                 className="inline-modify-btn"
@@ -558,16 +557,30 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
               ← {t('social.guide.backToList')}
             </button>
 
-            {isDetailMine && detail && (
-              <div className="guide-owner-actions">
-                <button className="inline-modify-btn" onClick={handleOpenEdit} type="button">
-                  {t('social.guide.editBtn')}
+            <div className="guide-detail-topbar-actions">
+              {detail && (
+                <button
+                  className="guide-share-btn"
+                  onClick={() => handleShareGuide(detail)}
+                  title={t('combat.chat.shareToChat')}
+                  type="button"
+                >
+                  <Icon name="chat" size={13} />
+                  <span>{t('combat.chat.shareToChat')}</span>
                 </button>
-                <button className="danger inline-modify-btn" onClick={() => setDeleteConfirmOpen(true)} type="button">
-                  {t('social.guide.deleteBtn')}
-                </button>
-              </div>
-            )}
+              )}
+
+              {isDetailMine && detail && (
+                <div className="guide-owner-actions">
+                  <button className="inline-modify-btn" onClick={handleOpenEdit} type="button">
+                    {t('social.guide.editBtn')}
+                  </button>
+                  <button className="danger inline-modify-btn" onClick={() => setDeleteConfirmOpen(true)} type="button">
+                    {t('social.guide.deleteBtn')}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {detailLoading ? (
@@ -593,12 +606,14 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
                     role="button"
                     tabIndex={0}
                   >
-                    <CharacterAvatar
-                      actorId={resolvePlayerActorId(detail.authorAvatar)}
-                      className="guide-author-avatar guide-author-avatar--lg"
-                      name={detail.authorName}
-                      role="player"
-                    />
+                    <span className="guide-author-avatar-box guide-author-avatar-box--lg">
+                      <CharacterAvatar
+                        actorId={resolvePlayerActorId(detail.authorAvatar)}
+                        className="guide-author-avatar guide-author-avatar--lg"
+                        name={detail.authorName}
+                        role="player"
+                      />
+                    </span>
                     <div className="guide-detail-author-meta">
                       <div className="guide-detail-author-line">
                         {detail.authorZongmenPrefix && (
@@ -606,7 +621,7 @@ export const GuidePage = memo(function GuidePage(): React.JSX.Element {
                         )}
                         <strong>{detail.authorName}</strong>
                         {detail.authorTopRank && (
-                          <span className="guide-rank-pill">{formatRankBadgeText(detail.authorTopRank, t)}</span>
+                          <LeaderboardRankBadge badge={detail.authorTopRank} variant="guide" />
                         )}
                       </div>
                       <span className="guide-detail-timestamps">

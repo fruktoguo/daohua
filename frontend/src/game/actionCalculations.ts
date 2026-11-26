@@ -112,7 +112,7 @@ interface CalculateActionParams {
     equipmentId: string
     name?: string
     slot?: string
-    techniqueBonus?: { technique: string; speedRatio: number } | null
+    techniqueBonus?: { technique: string; speedRatio: number; enhancementSuccessBonus?: number } | null
   }[]
 }
 

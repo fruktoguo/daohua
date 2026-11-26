@@ -35,6 +35,7 @@ import type {
   ExpeditionAlly,
   ExpeditionDuel,
   ExpeditionDuelEvent,
+  ExpeditionDuelUnit,
   ExpeditionEnemy,
   ExpeditionPhase,
   ExpeditionProgress,
@@ -314,6 +315,12 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
         atSeconds: finiteNumber(duelEvent.atSeconds, `${label}.atSeconds`),
         attackerIsInitiator: booleanValue(duelEvent.attackerIsInitiator),
         targetIsInitiator: booleanValue(duelEvent.targetIsInitiator),
+        attackerUnitIndex: duelEvent.attackerUnitIndex === undefined || duelEvent.attackerUnitIndex === null
+          ? 0
+          : finiteInteger(duelEvent.attackerUnitIndex, `${label}.attackerUnitIndex`),
+        targetUnitIndex: duelEvent.targetUnitIndex === undefined || duelEvent.targetUnitIndex === null
+          ? 0
+          : finiteInteger(duelEvent.targetUnitIndex, `${label}.targetUnitIndex`),
         abilityId: optionalString(duelEvent.abilityId, `${label}.abilityId`),
         targetHitpointsAfter: duelEvent.targetHitpointsAfter === undefined || duelEvent.targetHitpointsAfter === null
           ? undefined
@@ -332,6 +339,27 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
         parried: duelEvent.parried === undefined ? undefined : booleanValue(duelEvent.parried),
       }
     })
+  const mapDuelUnits = (rawUnits: unknown, fieldLabel: string): ExpeditionDuelUnit[] | null => {
+    if (rawUnits === null || rawUnits === undefined) return null
+    return arrayValue(rawUnits).map((entry, idx) => {
+      const u = object(entry)
+      const label = `${fieldLabel}[${idx}]`
+      return {
+        playerId: stringValue(u.playerId),
+        displayName: stringValue(u.displayName),
+        avatar: optionalString(u.avatar, `${label}.avatar`) ?? 'player',
+        hitpoints: finiteNumber(u.hitpoints, `${label}.hitpoints`),
+        manapoints: finiteNumber(u.manapoints, `${label}.manapoints`),
+        maxHitpoints: finiteNumber(u.maxHitpoints, `${label}.maxHitpoints`),
+        maxManapoints: finiteNumber(u.maxManapoints, `${label}.maxManapoints`),
+        attributes: u.attributes === null || u.attributes === undefined
+          ? null
+          : mapCombatAttributes(u.attributes, `${label}.attributes`),
+        skills: mapUnitSkillSlots(u.skills, `${label}.skills`),
+        equipment: mapEquippedItems(u.equipment, `${label}.equipment`),
+      }
+    })
+  }
   return {
     opponentAvatar: optionalString(row.opponentAvatar, `行动 ${actionId} 的 duel.opponentAvatar`) ?? 'player',
     opponentName: stringValue(row.opponentName),
@@ -347,6 +375,11 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     opponentEquipment: mapEquippedItems(row.opponentEquipment, `行动 ${actionId} 的 duel.opponentEquipment`),
     opponentHitpoints,
     opponentManapoints,
+    selfUnitIndex: row.selfUnitIndex === undefined || row.selfUnitIndex === null
+      ? 0
+      : finiteInteger(row.selfUnitIndex, `行动 ${actionId} 的 duel.selfUnitIndex`),
+    selfUnits: mapDuelUnits(row.selfUnits, `行动 ${actionId} 的 duel.selfUnits`),
+    opponentUnits: mapDuelUnits(row.opponentUnits, `行动 ${actionId} 的 duel.opponentUnits`),
     durationSeconds: finiteNumber(row.durationSeconds, `行动 ${actionId} 的 duel.durationSeconds`),
     events,
   }

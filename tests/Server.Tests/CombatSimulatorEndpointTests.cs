@@ -314,13 +314,13 @@ public sealed class CombatSimulatorEndpointAuthTests
             => throw new NotSupportedException();
         public ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile, DateTimeOffset now, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake, DateTimeOffset now, CancellationToken ct = default)
+        public ValueTask<DouDiZhuCreateGameResult> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready, CancellationToken ct = default)
+        public ValueTask<DouDiZhuGameState?> GetVisibleDouDiZhuGameAsync(Guid playerId, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId, CancellationToken ct = default)
+        public ValueTask<bool> HasActiveDouDiZhuGameAsync(Guid playerId, CancellationToken ct = default)
+            => ValueTask.FromResult(false);
+        public ValueTask<bool> TryDismissFinishedDouDiZhuGameAsync(Guid playerId, Guid? gameId = null, CancellationToken ct = default)
             => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(CancellationToken ct = default)
             => throw new NotSupportedException();

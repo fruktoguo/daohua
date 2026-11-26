@@ -124,6 +124,97 @@ public sealed class LeaderboardTests
         Assert.Equal(2, sect.MyRanks[players[1].PlayerId].Rank);
     }
 
+    /// <summary>个人荣誉头衔（传音最高排名徽标 / 攻略作者头衔）内存快照查询：仅取个人 11 榜 Top 50、排除宗门榜、同排名按 境界 &gt; 斗法 &gt; 身家 &gt; 灵石 &gt; 七技艺 裁决。</summary>
+    [Fact]
+    public async Task PersonalHonorRankLookup_RespectsPriorityOrderTop50CutoffAndExcludesZongmen()
+    {
+        // 验证 PersonalHonorBoards 固定 11 榜且顺序严格一致
+        var expectedOrder = new[]
+        {
+            LeaderboardBoardIds.Realm,
+            LeaderboardBoardIds.Duel,
+            LeaderboardBoardIds.Valuation,
+            LeaderboardBoardIds.SpiritStone,
+            LeaderboardBoardIds.Technique("alchemy"),
+            LeaderboardBoardIds.Technique("forging"),
+            LeaderboardBoardIds.Technique("talisman"),
+            LeaderboardBoardIds.Technique("enhancement"),
+            LeaderboardBoardIds.Technique("formation"),
+            LeaderboardBoardIds.Technique("gathering"),
+            LeaderboardBoardIds.Technique("mining"),
+        };
+        Assert.Equal(expectedOrder, LeaderboardAssembler.PersonalHonorBoards.Select(b => b.BoardId));
+
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var unusedSource = NpgsqlDataSource.Create("Host=127.0.0.1;Database=unused");
+        var sections = new PostgresSectionRepository(unusedSource, NullLogger<PostgresSectionRepository>.Instance);
+        var runtime = new LeaderboardRuntime(
+            unusedSource, sections, new StubPlayerRuntime(), market: null, catalog, NullLogger<LeaderboardRuntime>.Instance);
+
+        var pRealmKing = Guid.NewGuid();
+        var pDuelTie = Guid.NewGuid();
+        var pValuationTie = Guid.NewGuid();
+        var pAlchemyKing = Guid.NewGuid();
+        var pSectOnlyRank51 = Guid.NewGuid();
+
+        // 构造 52 名玩家使 pSectOnlyRank51 在境界榜落到第 52（榜外），且持有宗门榜第 1。
+        var inputs = new List<LeaderboardPlayerInput>(52)
+        {
+            // pRealmKing：境界第 1、斗法第 1、身家第 1 → 同为第 1 时境界胜出
+            new(pRealmKing, 1, "境界尊者", "player", 60, 100, EquipmentValuation: 9000, SpiritStones: 9000, DuelWins: 99,
+                TechniqueExperiences: new Dictionary<string, double> { ["forging"] = 9000 }),
+            // pDuelTie：境界第 2、斗法第 2、身家第 2、灵石第 2、炼丹第 2 → 同为第 2，但先设境界为第 5（更靠后），验证斗法 #2 战胜身家/灵石/炼丹 #2
+            new(pDuelTie, 2, "斗法剑修", "player", 50, 100, EquipmentValuation: 8000, SpiritStones: 8000, DuelWins: 50,
+                TechniqueExperiences: new Dictionary<string, double> { ["alchemy"] = 8000 }),
+            // pValuationTie：身家第 3、灵石第 3、炼丹第 3（无斗法胜场）→ 验证身家 #3 战胜灵石/炼丹 #3
+            new(pValuationTie, 3, "身家巨贾", "player", 40, 100, EquipmentValuation: 7000, SpiritStones: 7000, DuelWins: 0,
+                TechniqueExperiences: new Dictionary<string, double> { ["alchemy"] = 7000 }),
+            // pAlchemyKing：境界第 4，但炼丹第 1 → 绝对名次 #1 压倒境界 #4
+            new(pAlchemyKing, 4, "丹道宗师", "player", 45, 100, EquipmentValuation: 100, SpiritStones: 100, DuelWins: 0,
+                TechniqueExperiences: new Dictionary<string, double> { ["alchemy"] = 99999 }),
+        };
+        for (var i = 0; i < 47; i++)
+        {
+            // 填充 47 名 55 级修士，将 pDuelTie/pValuationTie/pAlchemyKing/pSectOnlyRank51 境界压到靠后位置
+            inputs.Add(new LeaderboardPlayerInput(Guid.NewGuid(), 10 + i, $"众修{i}", "player", 55, 10 + i));
+        }
+        inputs.Add(new LeaderboardPlayerInput(pSectOnlyRank51, 99, "大宗萌新", "player", 1, 0));
+
+        var zongmens = new[]
+        {
+            new LeaderboardZongmenInput(Guid.NewGuid(), "太初第一宗", "太初", 1, 10, DateTimeOffset.UtcNow, [pSectOnlyRank51]),
+        };
+        var assembly = LeaderboardAssembler.Assemble(DateTimeOffset.UtcNow, inputs, zongmens, catalog.RealmProgression);
+        runtime.SeedSnapshotForTesting(assembly);
+
+        var bestRealm = await runtime.GetBestPersonalRankAsync(pRealmKing);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Realm, "realm", null, 1), bestRealm);
+
+        var bestDuel = await runtime.GetBestPersonalRankAsync(pDuelTie);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Duel, "duel", null, 2), bestDuel);
+
+        var bestVal = await runtime.GetBestPersonalRankAsync(pValuationTie);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Valuation, "valuation", null, 3), bestVal);
+
+        var bestAlchemy = await runtime.GetBestPersonalRankAsync(pAlchemyKing);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Technique("alchemy"), "technique", "alchemy", 1), bestAlchemy);
+
+        // 宗门第 1 + 境界第 52（超 Top 50）不授予个人聊天/攻略徽标
+        Assert.Null(await runtime.GetBestPersonalRankAsync(pSectOnlyRank51));
+
+        // 批量查询与单查口径一致
+        var batch = await runtime.GetBestPersonalRanksAsync([pRealmKing, pDuelTie, pValuationTie, pAlchemyKing, pSectOnlyRank51]);
+        Assert.Equal(4, batch.Count);
+        Assert.Equal(bestDuel, batch[pDuelTie]);
+        Assert.False(batch.ContainsKey(pSectOnlyRank51));
+
+        // 列表查询按 (Rank, 荣誉优先序) 稳定排序
+        var duelAll = await runtime.GetPersonalTopRanksAsync(pDuelTie);
+        Assert.Equal(
+            [LeaderboardBoardIds.Duel, LeaderboardBoardIds.Valuation, LeaderboardBoardIds.SpiritStone, LeaderboardBoardIds.Technique("alchemy")],
+            duelAll.Where(b => b.Rank == 2).Select(b => b.BoardId));
+    }
+
     /// <summary>HTTP 端点边界：未登录 401、未物化 503 + Retry-After:5、未知榜 404、已物化 200/ETag-304 与跨玩家 ETag 防串号。</summary>
     [Fact]
     public async Task Endpoints_EnforceAuthWarmup404ETag304AndPerViewerIsolation()

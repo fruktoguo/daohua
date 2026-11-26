@@ -5,6 +5,7 @@ import {
   buildOrderChatMarkup,
   buildPartyChatMarkup,
   buildLocationChatMarkup,
+  buildGuideChatMarkup,
   parseChatMarkup,
 } from './chatMarkup.ts'
 import { getQqEmojiUrls, QQ_EMOJI_LIST } from './qqEmojis.ts'
@@ -166,6 +167,43 @@ test('chatMarkup: 队伍与地点标记解析与往返一致性', () => {
   const badLoc = parseChatMarkup('{{location:}}')
   assert.equal(badLoc.length, 1)
   assert.equal(badLoc[0].type, 'text')
+})
+
+test('chatMarkup: 攻略标记构建、往返解析、超长截断与异常降级', () => {
+  const paidTag = buildGuideChatMarkup({
+    postId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    title: '剑修:筑基{全攻略}',
+    unlockPrice: 500,
+  })
+  assert.ok(paidTag.length <= 200, '攻略传音标记长度必须远小于 200 字符上限')
+  const parsed = parseChatMarkup(`欢迎参考 ${paidTag} 少走弯路`)
+  assert.equal(parsed.length, 3)
+  assert.equal(parsed[1].type, 'guide')
+  if (parsed[1].type === 'guide') {
+    assert.equal(parsed[1].postId, 'f47ac10b-58cc-4372-a567-0e02b2c3d479')
+    assert.equal(parsed[1].unlockPrice, 500)
+    assert.equal(parsed[1].title, '剑修 筑基 全攻略')
+  }
+
+  // 超长标题自动截断且总长度控制安全边界内
+  const longTag = buildGuideChatMarkup({
+    postId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    title: '道'.repeat(80),
+    unlockPrice: 0,
+  })
+  assert.ok(longTag.length <= 120)
+  const longParsed = parseChatMarkup(longTag)
+  assert.equal(longParsed.length, 1)
+  assert.equal(longParsed[0].type, 'guide')
+  if (longParsed[0].type === 'guide') {
+    assert.equal(longParsed[0].unlockPrice, 0)
+    assert.equal(Array.from(longParsed[0].title).length, 48)
+  }
+
+  // 非法或空 postId 容错降级为纯文本
+  const badGuide = parseChatMarkup('{{guide:}} {{guide:bad id with space:0:x}}')
+  assert.equal(badGuide.length, 1)
+  assert.equal(badGuide[0].type, 'text')
 })
 
 test('chatMarkup: 自动解析独立图片链接与混排表情包', () => {

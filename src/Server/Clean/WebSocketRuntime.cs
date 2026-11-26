@@ -1272,7 +1272,7 @@ public static class WebSocketEndpoint
         Social.SocialFailure.SeekingNotFound => "你没有进行中的队伍匹配。",
         Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",
         Social.SocialFailure.ChannelUnavailable => "该传音频道当前不可用。",
-        Social.SocialFailure.DouDiZhuUnavailable => "斗地主暂不可操作，请确认队伍恰好 3 人、全员准备且灵石足够。",
+        Social.SocialFailure.DouDiZhuUnavailable => detail ?? "对弈暂不可操作，请确认当前无进行中牌局且持有不少于十倍底注的灵石。",
         Social.SocialFailure.DouDiZhuInvalid => detail ?? "斗地主操作无效或牌局已更新，请重试。",
         _ => "社交操作失败。"
     };

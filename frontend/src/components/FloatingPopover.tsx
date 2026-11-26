@@ -905,30 +905,40 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       }
     }
 
-    const TriggerTag = triggerAs as 'span'
+    const triggerContent = typeof children === 'function'
+      ? children({ isOpen, toggle: handleToggle })
+      : children
 
-    const triggerElement = (
-      <TriggerTag
-        aria-controls={isOpen ? id : undefined}
-        aria-expanded={isOpen}
-        aria-haspopup="dialog"
-        className={`daohua-floating-trigger ${displayContents ? 'daohua-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
-        data-floating-trigger={trigger}
-        onClick={handleTriggerClick}
-        onContextMenu={handleTriggerContextMenu}
-        onMouseEnter={handleTriggerMouseEnter}
-        onMouseLeave={handleTriggerMouseLeave}
-        onPointerCancel={handleTriggerPointerCancel}
-        onPointerDown={handleTriggerPointerDown}
-        onPointerMove={handleTriggerPointerMove}
-        onPointerUp={handleTriggerPointerUp}
-        ref={anchorRef as RefObject<HTMLSpanElement>}
-        tabIndex={tabIndex}
-      >
-        {typeof children === 'function'
-          ? children({ isOpen, toggle: handleToggle })
-          : children}
-      </TriggerTag>
+    const triggerProps = {
+      'aria-controls': isOpen ? id : undefined,
+      'aria-expanded': isOpen,
+      'aria-haspopup': 'dialog' as const,
+      className: `daohua-floating-trigger ${displayContents ? 'daohua-floating-trigger--contents' : ''} ${triggerClassName}`.trim(),
+      'data-floating-trigger': trigger,
+      onClick: handleTriggerClick,
+      onContextMenu: handleTriggerContextMenu,
+      onMouseEnter: handleTriggerMouseEnter,
+      onMouseLeave: handleTriggerMouseLeave,
+      onPointerCancel: handleTriggerPointerCancel,
+      onPointerDown: handleTriggerPointerDown,
+      onPointerMove: handleTriggerPointerMove,
+      onPointerUp: handleTriggerPointerUp,
+      tabIndex,
+    }
+
+    // triggerAs="button" 必须显式声明 type="button"，避免位于 <form> 内时按默认 submit 行为误触表单提交
+    const triggerElement = triggerAs === 'button' ? (
+      <button {...triggerProps} ref={anchorRef as RefObject<HTMLButtonElement>} type="button">
+        {triggerContent}
+      </button>
+    ) : triggerAs === 'div' ? (
+      <div {...triggerProps} ref={anchorRef as RefObject<HTMLDivElement>}>
+        {triggerContent}
+      </div>
+    ) : (
+      <span {...triggerProps} ref={anchorRef as RefObject<HTMLSpanElement>}>
+        {triggerContent}
+      </span>
     )
 
     const portalRoot = typeof document !== 'undefined' ? getOrCreateFloatingPortalRoot() : null

@@ -5,10 +5,23 @@ import type { DouDiZhuGameDto } from '../../network/protocol.ts'
  * 协议序列化启用了 WhenWritingNull，可空字段为 null 时 JSON 键会被省略（反序列化为 undefined），
  * 在入库前统一补齐为 null，避免下游严格相等 `=== null` 判定失真。
  */
+export const EMPTY_DOUDIZHU_QUEUE_COUNTS: readonly number[] = [0, 0, 0, 0, 0, 0, 0, 0]
+
+export function normalizeDouDiZhuQueueCounts(raw: readonly number[] | null | undefined): number[] {
+  if (!Array.isArray(raw)) return [...EMPTY_DOUDIZHU_QUEUE_COUNTS]
+  return Array.from({ length: 8 }, (_, idx) => {
+    const val = raw[idx]
+    return typeof val === 'number' && Number.isFinite(val) && val > 0 ? Math.trunc(val) : 0
+  })
+}
+
 export function normalizeDouDiZhuGame(game: DouDiZhuGameDto | null | undefined): DouDiZhuGameDto | null {
   if (!game) return null
   return {
     ...game,
+    tier: typeof game.tier === 'number' && Number.isFinite(game.tier) && game.tier >= 1 && game.tier <= 8
+      ? Math.trunc(game.tier)
+      : 1,
     landlordSeat: game.landlordSeat ?? null,
     lastPlayedSeat: game.lastPlayedSeat ?? null,
     winnerSeat: game.winnerSeat ?? null,
@@ -16,6 +29,7 @@ export function normalizeDouDiZhuGame(game: DouDiZhuGameDto | null | undefined):
     landlordConfirmedAtUnixMilliseconds: game.landlordConfirmedAtUnixMilliseconds ?? null,
     dealHand: Array.isArray(game.dealHand) ? game.dealHand : [],
     bids: Array.isArray(game.bids) ? game.bids : [],
+    seats: Array.isArray(game.seats) ? game.seats : [],
   }
 }
 

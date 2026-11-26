@@ -1648,6 +1648,406 @@
     ]
   },
   {
+    "id": "forge.tool-pine-hoe",
+    "name": "灵松药锄",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 13,
+    "inputs": {
+      "equipment.tool-herb-hoe": 2,
+      "item.refined-copper": 2,
+      "item.spirit-pine-crystal": 2,
+      "item.banling-flower": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-pine-hoe",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-copper-pick",
+    "name": "赤铜灵镐",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 20,
+    "inputs": {
+      "equipment.tool-prospect-compass": 2,
+      "item.refined-copper": 4,
+      "item.beast-fang": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-copper-pick",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-copper-ding",
+    "name": "赤铜丹鼎",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 20,
+    "inputs": {
+      "equipment.tool-flame-ding": 2,
+      "item.refined-copper": 4,
+      "item.fire-feather": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-copper-ding",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-copper-tongs",
+    "name": "赤铜火钳",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 20,
+    "inputs": {
+      "equipment.tool-forge-hammer": 2,
+      "item.refined-copper": 4,
+      "item.beast-fang": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-copper-tongs",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-pine-brush",
+    "name": "松纹灵笔",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 13,
+    "inputs": {
+      "equipment.tool-talisman-brush": 2,
+      "item.spirit-pine-crystal": 4,
+      "item.soul-talisman": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-pine-brush",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-pine-flag",
+    "name": "灵松阵旗",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 20,
+    "inputs": {
+      "equipment.tool-formation-flag": 2,
+      "item.spirit-pine-crystal": 4,
+      "item.fire-feather": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-pine-flag",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-copper-hammer",
+    "name": "赤铜淬灵锤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 18,
+    "durationSeconds": 26,
+    "inputs": {
+      "equipment.tool-quench-anvil": 2,
+      "item.refined-copper": 4,
+      "item.soul-talisman": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-copper-hammer",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-jade-spade",
+    "name": "寒玉灵铲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 16,
+    "inputs": {
+      "equipment.tool-pine-hoe": 2,
+      "item.spirit-pine-crystal": 8,
+      "item.banling-essence": 4,
+      "item.refined-copper": 4
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-jade-spade",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-xuanjing-pick",
+    "name": "玄晶开山镐",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 24,
+    "inputs": {
+      "equipment.tool-copper-pick": 2,
+      "item.refined-copper": 10,
+      "item.spirit-pine-crystal": 4,
+      "item.beast-fang": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-xuanjing-pick",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-xuanyan-furnace",
+    "name": "玄炎九转炉",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 24,
+    "inputs": {
+      "equipment.tool-copper-ding": 2,
+      "item.refined-copper": 10,
+      "item.banling-essence": 4,
+      "item.fire-feather": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-xuanyan-furnace",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-zhenyue-tongs",
+    "name": "镇岳玄铁钳",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 24,
+    "inputs": {
+      "equipment.tool-copper-tongs": 2,
+      "item.refined-copper": 10,
+      "item.refined-iron": 10,
+      "item.beast-fang": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-zhenyue-tongs",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-zihao-brush",
+    "name": "紫毫承雷笔",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 16,
+    "inputs": {
+      "equipment.tool-pine-brush": 2,
+      "item.spirit-pine-crystal": 10,
+      "item.fire-feather": 6,
+      "item.soul-talisman": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-zihao-brush",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-jiugong-flag",
+    "name": "九宫玄纹旗",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 24,
+    "inputs": {
+      "equipment.tool-pine-flag": 2,
+      "item.spirit-pine-crystal": 10,
+      "item.refined-copper": 4,
+      "item.soul-talisman": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-jiugong-flag",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-zhenling-hammer",
+    "name": "玄光镇灵锤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 32,
+    "inputs": {
+      "equipment.tool-copper-hammer": 2,
+      "item.refined-copper": 10,
+      "item.spirit-pine-crystal": 6,
+      "item.soul-talisman": 8
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-zhenling-hammer",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
     "id": "forge.baihu-dagger",
     "name": "白虎煞牙匕",
     "description": "",

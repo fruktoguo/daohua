@@ -46,13 +46,52 @@ public readonly record struct DouDiZhuPattern(
     int CardCount,
     int SequenceLength = 1);
 
-/// <summary>斗地主牌型识别、比较及倍率规则。</summary>
+/// <summary>斗地主牌型识别、比较、八阶场次及倍率规则。</summary>
 public static class DouDiZhuRules
 {
     /// <summary>完整牌副包含的牌张数。</summary>
     public const int DeckSize = 54;
     /// <summary>单手出牌的最大张数。</summary>
     public const int MaxPlaySize = 20;
+    /// <summary>最低对弈阶位（凡阶）。</summary>
+    public const int MinTier = 1;
+    /// <summary>最高对弈阶位（帝阶）。</summary>
+    public const int MaxTier = 8;
+    /// <summary>准入验资与开局担保托管倍数（十倍底注）。</summary>
+    public const int EscrowMultiplier = 10;
+
+    private static readonly double[] TierBaseStakes =
+    [
+        1d,
+        100d,
+        10_000d,
+        1_000_000d,
+        100_000_000d,
+        10_000_000_000d,
+        1_000_000_000_000d,
+        100_000_000_000_000d
+    ];
+
+    private static readonly string[] TierNames =
+    [
+        "凡阶", "黄阶", "玄阶", "地阶", "天阶", "灵阶", "圣阶", "帝阶"
+    ];
+
+    /// <summary>判定阶位是否为合法的 1~8 阶。</summary>
+    public static bool IsValidTier(int tier) => tier is >= MinTier and <= MaxTier;
+
+    /// <summary>读取指定阶位（1~8）的固定灵石底注。</summary>
+    public static double GetBaseStake(int tier) => IsValidTier(tier)
+        ? TierBaseStakes[tier - 1]
+        : throw new ArgumentOutOfRangeException(nameof(tier), "对弈阶位必须在 1~8 之间。");
+
+    /// <summary>读取指定阶位（1~8）的十倍准入验资与开局托管灵石数额。</summary>
+    public static double GetRequiredStones(int tier) => GetBaseStake(tier) * EscrowMultiplier;
+
+    /// <summary>读取指定阶位（1~8）的中文阶位名称。</summary>
+    public static string GetTierName(int tier) => IsValidTier(tier)
+        ? TierNames[tier - 1]
+        : throw new ArgumentOutOfRangeException(nameof(tier), "对弈阶位必须在 1~8 之间。");
 
     /// <summary>读取牌张的点数：3 至 A 为 3~14，2 为 15，小王为 16，大王为 17。</summary>
     public static int RankOf(int cardId) => cardId switch

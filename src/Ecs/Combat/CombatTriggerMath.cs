@@ -15,8 +15,18 @@ public static class CombatTriggerMath
     {
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
         if (points <= 0) return;
-        var healing = Math.Min(context.Attacker.Stats.MaxHitpoints - context.Attacker.Hitpoints,
-            context.Damage * points / 100 * PercentValue.Multiplier(context.Attacker.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
+        var rawHeal = context.Damage * points / 100
+            * PercentValue.Multiplier(context.Attacker.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
+        if (rawHeal <= 0) return;
+        if (context.Encounter.ActiveWave is SimultaneousCombatWave wave)
+        {
+            wave.RecordHeal(context.Encounter, context.Attacker, context.Attacker, DuelRecordEffectKind.HpDrain, rawHeal);
+            context.Emit(new CombatEvent(context.AtSeconds, context.Attacker.Id, context.Attacker.Id,
+                0, true, context.AttackStats.DamageKind, context.Attacker.Hitpoints)
+            { AbilityId = context.AbilityId, Healing = rawHeal });
+            return;
+        }
+        var healing = Math.Min(context.Attacker.Stats.MaxHitpoints - context.Attacker.Hitpoints, rawHeal);
         if (healing <= 0) return;
         context.Attacker.Hitpoints += healing;
         // 气血汲取按攻击方归属计入「其他治疗」输出。
@@ -32,6 +42,15 @@ public static class CombatTriggerMath
     {
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
         if (points <= 0) return;
+        if (context.Encounter.ActiveWave is SimultaneousCombatWave wave)
+        {
+            var drainedWave = Math.Min(wave.GetEffectiveMana(context.Target), context.Damage * points / 100);
+            if (drainedWave <= 0) return;
+            wave.AddManaDelta(context.Target, -drainedWave);
+            wave.AddManaDelta(context.Attacker, drainedWave);
+            context.Encounter.ActionRecorder?.RecordMana(context.Attacker, context.Target, DuelRecordEffectKind.ManaDrain, drainedWave);
+            return;
+        }
         var drained = Math.Min(context.Target.Manapoints, context.Damage * points / 100);
         if (drained <= 0) return;
         context.Target.Manapoints -= drained;
@@ -47,15 +66,18 @@ public static class CombatTriggerMath
         if (points <= 0) return;
         var reflected = context.Damage * points / 100;
         if (reflected <= 0) return;
-        var wasAttackerAlive = context.Attacker.IsAlive;
+        var wasAttackerAlive = CombatDamageSettlement.IsTargetAlive(context.Encounter, context.Attacker);
         reflected = CombatDamageSettlement.Apply(context.Encounter, context.Target, context.Attacker, reflected).Damage;
-        context.Target.Threat += reflected;
+        if (context.Encounter.ActiveWave is SimultaneousCombatWave wave)
+            wave.AddThreatDelta(context.Target, reflected);
+        else
+            context.Target.Threat += reflected;
         // 反伤按受击方输出、攻击方实收入账；反弹伤害不再走减免链，减免记 0。
         context.Encounter.StatsBook?.RecordHit(context.Target, context.Attacker,
             context.AttackStats.DamageKind, reflected, 0);
         context.Encounter.ActionRecorder?.RecordDamage(context.Target, context.Attacker, DuelRecordEffectKind.Reflect,
             context.AttackStats.DamageKind, CombatElement.None, DuelRecordHitMark.Hit, reflected,
-            targetDowned: wasAttackerAlive && !context.Attacker.IsAlive);
+            targetDowned: wasAttackerAlive && !CombatDamageSettlement.IsTargetAlive(context.Encounter, context.Attacker));
         context.Emit(new CombatEvent(context.AtSeconds, context.Target.Id, context.Attacker.Id,
             reflected, true, context.AttackStats.DamageKind, context.Attacker.Hitpoints));
     }
@@ -69,25 +91,27 @@ public static class CombatTriggerMath
         if (!context.Hit || points <= 0) return;
         var gained = context.RawDamage * points / 100;
         if (gained <= 0) return;
-        context.Target.Threat += gained;
+        if (context.Encounter.ActiveWave is SimultaneousCombatWave wave)
+            wave.AddThreatDelta(context.Target, gained);
+        else
+            context.Target.Threat += gained;
     }
 
     /// <summary>
     /// 阵盘受击反击反应：任意单位受到有效伤害时，敌对阵营在场存活且持有天雷阵/血煞阵的单位
-    /// 各自独立判定 20% 概率触发天雷或血煞反击（支持 PVE 友方与 PVP 斗法双侧对称触发）。
+    /// 各自独立判定 20% 概率触发天雷或血煞反击（通过 OpponentsOf 原生支持双侧对称触发）。
     /// </summary>
     public static void FormationReactiveStrike(CombatHitContext context)
     {
-        if (!context.Hit || context.Damage <= 0 || !context.Target.IsAlive) return;
         var encounter = context.Encounter;
-        var allies = encounter.PlayerAllies.Contains(context.Target)
-            ? encounter.Enemies
-            : encounter.PlayerAllies;
+        if (!context.Hit || context.Damage <= 0 || !CombatDamageSettlement.IsTargetAlive(encounter, context.Target)) return;
+        var wave = encounter.ActiveWave as SimultaneousCombatWave;
+        var allies = encounter.OpponentsOf(context.Target);
 
         for (var i = 0; i < allies.Count; i++)
         {
             var ally = allies[i];
-            if (!ally.IsAlive || !context.Target.IsAlive) continue;
+            if (!ally.IsAlive || !CombatDamageSettlement.IsTargetAlive(encounter, context.Target)) continue;
 
             // 1. 天雷阵盘：20% 几率触发木系雷击，每秒最多 1 次，耗蓝 1%
             if (ally.BuffStacks("formation.tianlei") > 0)
@@ -95,9 +119,11 @@ public static class CombatTriggerMath
                 var canTrigger = ally.LastTianleiTriggerAtSeconds < 0
                     || (context.AtSeconds - ally.LastTianleiTriggerAtSeconds) >= 1.0 - 1e-9;
                 var manaCost = ally.Stats.MaxManapoints * 0.01;
-                if (canTrigger && ally.Manapoints >= manaCost && context.NextRoll() < 0.20)
+                var availMana = wave is not null ? wave.GetEffectiveMana(ally) : ally.Manapoints;
+                if (canTrigger && availMana >= manaCost && context.NextRoll() < 0.20)
                 {
-                    ally.Manapoints = Math.Max(0, ally.Manapoints - manaCost);
+                    if (wave is not null) wave.AddManaDelta(ally, -manaCost);
+                    else ally.Manapoints = Math.Max(0, ally.Manapoints - manaCost);
                     ally.LastTianleiTriggerAtSeconds = context.AtSeconds;
 
                     // 阵法伤害增幅在抗性穿甲前并入第一层原始威力（总纲 §7.7.1 / §20.1.3，阵法技艺每级 +1 点）；不放大耗蓝代价。
@@ -114,16 +140,16 @@ public static class CombatTriggerMath
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
-                        var wasTargetAlive = context.Target.IsAlive;
-                        var targetHpBefore = context.Target.Hitpoints;
-                        damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
-                        var actualDamage = targetHpBefore - context.Target.Hitpoints;
+                        var wasTargetAlive = CombatDamageSettlement.IsTargetAlive(encounter, context.Target);
+                        var settled = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage);
+                        var actualDamage = settled.Actual;
                         CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds, encounter);
-                        ally.Threat += actualDamage;
+                        if (wave is not null) wave.AddThreatDelta(ally, actualDamage);
+                        else ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Spell, actualDamage, 0);
                         encounter.ActionRecorder?.RecordDamage(ally, context.Target, DuelRecordEffectKind.FormationStrike,
                             CombatDamageKind.Spell, strikeElement, DuelRecordHitMark.Hit, actualDamage,
-                            "item.tianlei-formation-disk", targetDowned: wasTargetAlive && !context.Target.IsAlive);
+                            "item.tianlei-formation-disk", targetDowned: wasTargetAlive && !CombatDamageSettlement.IsTargetAlive(encounter, context.Target));
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
                             actualDamage, true, CombatDamageKind.Spell, context.Target.Hitpoints)
                         {
@@ -135,7 +161,7 @@ public static class CombatTriggerMath
                 }
             }
 
-            if (!context.Target.IsAlive) break;
+            if (!CombatDamageSettlement.IsTargetAlive(encounter, context.Target)) break;
 
             // 2. 血煞阵盘：20% 几率触发物理无五行血煞，每秒最多 1 次，10% 最大生命伤害并 100% 吸血
             if (ally.BuffStacks("formation.xuesha") > 0)
@@ -160,25 +186,35 @@ public static class CombatTriggerMath
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
-                        var wasTargetAlive = context.Target.IsAlive;
-                        var targetHpBefore = context.Target.Hitpoints;
-                        damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
-                        var actualDamage = targetHpBefore - context.Target.Hitpoints;
+                        var wasTargetAlive = CombatDamageSettlement.IsTargetAlive(encounter, context.Target);
+                        var settled = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage);
+                        var actualDamage = settled.Actual;
                         CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds, encounter);
 
-                        var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage * PercentValue.Multiplier(ally.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
-                        if (heal > 0)
+                        var rawHeal = actualDamage * PercentValue.Multiplier(ally.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
+                        double heal;
+                        if (wave is not null)
                         {
-                            ally.Hitpoints += heal;
-                            encounter.StatsBook?.RecordHealing(ally, autoRegen: false, heal);
+                            heal = rawHeal;
+                            wave.RecordHeal(encounter, ally, ally, DuelRecordEffectKind.HpDrain, rawHeal, "item.xuesha-formation-disk");
+                        }
+                        else
+                        {
+                            heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, rawHeal);
+                            if (heal > 0)
+                            {
+                                ally.Hitpoints += heal;
+                                encounter.StatsBook?.RecordHealing(ally, autoRegen: false, heal);
+                            }
                         }
 
-                        ally.Threat += actualDamage;
+                        if (wave is not null) wave.AddThreatDelta(ally, actualDamage);
+                        else ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Physical, actualDamage, 0);
                         encounter.ActionRecorder?.RecordDamage(ally, context.Target, DuelRecordEffectKind.FormationStrike,
                             CombatDamageKind.Physical, strikeElement, DuelRecordHitMark.Hit, actualDamage,
-                            "item.xuesha-formation-disk", targetDowned: wasTargetAlive && !context.Target.IsAlive);
-                        if (heal > 0)
+                            "item.xuesha-formation-disk", targetDowned: wasTargetAlive && !CombatDamageSettlement.IsTargetAlive(encounter, context.Target));
+                        if (wave is null && heal > 0)
                             encounter.ActionRecorder?.RecordHeal(ally, ally, DuelRecordEffectKind.HpDrain, heal, "item.xuesha-formation-disk");
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
                             actualDamage, true, CombatDamageKind.Physical, context.Target.Hitpoints)

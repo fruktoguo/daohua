@@ -47,46 +47,55 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         // 若先剔除再结算，到期时刻恰好落在 5 秒网格上时该跳会被整段吞掉，10.0s「每秒每层 1 血」退化为 1 跳。
         var regenTick = Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) <= 1e-9;
         var secondTick = Math.Abs(at / ThreatTickSeconds - Math.Round(at / ThreatTickSeconds)) <= 1e-9;
-        if (regenTick || secondTick)
+        var deferAlive = encounter.IsSymmetric;
+        if (deferAlive) encounter.DeferAliveCountNotifications = true;
+        try
         {
-            var statsBook = encounter.StatsBook;
-            var recorder = encounter.ActionRecorder;
-            // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；显式循环避免 Concat 迭代器分配。
+            if (regenTick || secondTick)
+            {
+                var statsBook = encounter.StatsBook;
+                var recorder = encounter.ActionRecorder;
+                // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；显式循环避免 Concat 迭代器分配。
+                for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+                {
+                    var unit = encounter.PlayerAllies[i];
+                    var alive = unit.IsAlive;
+                    Tick(unit, statsBook, recorder, at, regenTick, secondTick);
+                    if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
+                    if (secondTick)
+                    {
+                        CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                        if (at > 1e-9) unit.DecayBuffStacksPerSecond();
+                    }
+                }
+                for (var i = 0; i < encounter.Enemies.Count; i++)
+                {
+                    var unit = encounter.Enemies[i];
+                    var alive = unit.IsAlive;
+                    Tick(unit, statsBook, recorder, at, regenTick, secondTick);
+                    if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
+                    if (secondTick)
+                    {
+                        CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
+                        if (at > 1e-9) unit.DecayBuffStacksPerSecond();
+                    }
+                }
+            }
+            // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
             for (var i = 0; i < encounter.PlayerAllies.Count; i++)
             {
-                var unit = encounter.PlayerAllies[i];
-                var alive = unit.IsAlive;
-                Tick(unit, statsBook, recorder, at, regenTick, secondTick);
-                if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
-                if (secondTick)
-                {
-                    CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
-                    if (at > 1e-9) unit.DecayBuffStacksPerSecond();
-                }
+                var ally = encounter.PlayerAllies[i];
+                if (ally.Buffs.Count > 0) ally.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
             }
             for (var i = 0; i < encounter.Enemies.Count; i++)
             {
-                var unit = encounter.Enemies[i];
-                var alive = unit.IsAlive;
-                Tick(unit, statsBook, recorder, at, regenTick, secondTick);
-                if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
-                if (secondTick)
-                {
-                    CombatTraitReactions.Tick(encounter, unit, at, ref context.Events);
-                    if (at > 1e-9) unit.DecayBuffStacksPerSecond();
-                }
+                var enemy = encounter.Enemies[i];
+                if (enemy.Buffs.Count > 0) enemy.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
             }
         }
-        // 结算完毕后统一剔除到期 Buff：到期时刻所在边界已按完整效果结算，之后不再参与任何相位。
-        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+        finally
         {
-            var ally = encounter.PlayerAllies[i];
-            if (ally.Buffs.Count > 0) ally.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
-        }
-        for (var i = 0; i < encounter.Enemies.Count; i++)
-        {
-            var enemy = encounter.Enemies[i];
-            if (enemy.Buffs.Count > 0) enemy.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+            if (deferAlive) encounter.FlushAliveCountNotifications();
         }
 
         static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, ICombatActionRecorder? recorder,

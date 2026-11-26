@@ -1378,6 +1378,9 @@ internal static class CombatActionRules
         var playbackFrom = expedition.BattleElapsedSeconds;
         var playbackTo = Math.Min(playbackFrom + step, playback.DurationSeconds);
         var cursor = (int)playback.EventCursor;
+        var selfUnitIndex = playback.SelfUnitIndex;
+        var selfUnits = playback.SelfUnits is { Count: > 0 } ? playback.SelfUnits.ToArray() : null;
+        var opponentUnits = playback.OpponentUnits is { Count: > 0 } ? playback.OpponentUnits.ToArray() : null;
         var viewerHp = expedition.PlayerHitpoints;
         var opponentHp = playback.OpponentHitpoints;
         var viewerMp = expedition.PlayerManapoints;
@@ -1390,22 +1393,87 @@ internal static class CombatActionRules
         DateTimeOffset WallAt(double battleSeconds)
             => from.AddSecondsExact(elapsedBefore + Math.Max(0, battleSeconds - playbackFrom));
 
+        bool IsSelfActor(DuelScriptEvent frame)
+            => frame.AttackerIsInitiator == playback.ViewerIsInitiator && frame.AttackerUnitIndex == selfUnitIndex;
+
         void ApplyDuelResources(DuelScriptEvent frame)
         {
-            var frameTargetIsViewer = frame.TargetIsInitiator == playback.ViewerIsInitiator;
-            var frameAttackerIsViewer = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
-            if (frameTargetIsViewer) { viewerHp = frame.TargetHitpointsAfter; viewerMp = frame.TargetManapointsAfter; }
-            else { opponentHp = frame.TargetHitpointsAfter; opponentMp = frame.TargetManapointsAfter; }
-            if (frameAttackerIsViewer) viewerMp = frame.AttackerManapointsAfter;
-            else opponentMp = frame.AttackerManapointsAfter;
+            var frameTargetIsViewerSide = frame.TargetIsInitiator == playback.ViewerIsInitiator;
+            var frameAttackerIsViewerSide = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
+            var targetIdx = frame.TargetUnitIndex;
+            var attackerIdx = frame.AttackerUnitIndex;
+
+            if (frameTargetIsViewerSide)
+            {
+                if (targetIdx == selfUnitIndex)
+                {
+                    viewerHp = frame.TargetHitpointsAfter;
+                    viewerMp = frame.TargetManapointsAfter;
+                }
+                if (selfUnits is not null && (uint)targetIdx < (uint)selfUnits.Length)
+                {
+                    selfUnits[targetIdx] = selfUnits[targetIdx] with
+                    {
+                        Hitpoints = Math.Clamp(frame.TargetHitpointsAfter, 0, selfUnits[targetIdx].Stats.MaxHitpoints),
+                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, selfUnits[targetIdx].Stats.MaxManapoints)
+                    };
+                }
+            }
+            else
+            {
+                if (targetIdx == 0)
+                {
+                    opponentHp = frame.TargetHitpointsAfter;
+                    opponentMp = frame.TargetManapointsAfter;
+                }
+                if (opponentUnits is not null && (uint)targetIdx < (uint)opponentUnits.Length)
+                {
+                    opponentUnits[targetIdx] = opponentUnits[targetIdx] with
+                    {
+                        Hitpoints = Math.Clamp(frame.TargetHitpointsAfter, 0, opponentUnits[targetIdx].Stats.MaxHitpoints),
+                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, opponentUnits[targetIdx].Stats.MaxManapoints)
+                    };
+                }
+            }
+
+            if (frameAttackerIsViewerSide)
+            {
+                if (attackerIdx == selfUnitIndex)
+                    viewerMp = frame.AttackerManapointsAfter;
+                if (selfUnits is not null && (uint)attackerIdx < (uint)selfUnits.Length)
+                {
+                    selfUnits[attackerIdx] = selfUnits[attackerIdx] with
+                    {
+                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, selfUnits[attackerIdx].Stats.MaxManapoints)
+                    };
+                }
+            }
+            else
+            {
+                if (attackerIdx == 0)
+                    opponentMp = frame.AttackerManapointsAfter;
+                if (opponentUnits is not null && (uint)attackerIdx < (uint)opponentUnits.Length)
+                {
+                    opponentUnits[attackerIdx] = opponentUnits[attackerIdx] with
+                    {
+                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, opponentUnits[attackerIdx].Stats.MaxManapoints)
+                    };
+                }
+            }
+        }
+
+        string UnitEventId(bool isInitiatorSide, int unitIndex)
+        {
+            var isViewerSide = isInitiatorSide == playback.ViewerIsInitiator;
+            if (!isViewerSide) return $"enemy:{unitIndex}";
+            return unitIndex == selfUnitIndex ? "player" : $"ally:{unitIndex}";
         }
 
         // 帧记账与日志合并分离：血蓝镜像与功法经验逐帧结算，战报按同次施放合并产出。
         void ApplyDuelFrame(DuelScriptEvent frame)
         {
-            var frameAttackerIsViewer = frame.AttackerIsInitiator == playback.ViewerIsInitiator;
-            // 斗法本方施放功法计每次 1 点功法经验；消耗品与镜像施放不入账。
-            if (frameAttackerIsViewer && frame.AbilityId is { } frameAbility
+            // 斗法本方本人施放功法计每次 1 点功法经验；消耗品、队友与镜像施放不入账。
+            if (IsSelfActor(frame) && frame.AbilityId is { } frameAbility
                 && gameData.Abilities.ContainsKey(frameAbility))
                 GrantAbilityUseExperience(player, action.Id, frameAbility,
                     WallAt(frame.AtSeconds).ToUnixTimeMilliseconds() / 1000d);
@@ -1415,12 +1483,13 @@ internal static class CombatActionRules
         void RecordTailCombatEvent(DuelScriptEvent frame)
         {
             if (frame.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker) return;
-            if (frame.AbilityId is null && frame.AttackerIsInitiator == frame.TargetIsInitiator && frame.Damage == 0)
+            if (frame.AbilityId is null && frame.AttackerIsInitiator == frame.TargetIsInitiator
+                && frame.AttackerUnitIndex == frame.TargetUnitIndex && frame.Damage == 0)
                 return;
             (tailCombatEvents ??= []).Add(new CombatEvent(
                 frame.AtSeconds,
-                frame.AttackerIsInitiator == playback.ViewerIsInitiator ? "player" : "enemy:0",
-                frame.TargetIsInitiator == playback.ViewerIsInitiator ? "player" : "enemy:0",
+                UnitEventId(frame.AttackerIsInitiator, frame.AttackerUnitIndex),
+                UnitEventId(frame.TargetIsInitiator, frame.TargetUnitIndex),
                 frame.Damage,
                 frame.Hit,
                 CombatDamageKind.Physical,
@@ -1437,7 +1506,20 @@ internal static class CombatActionRules
             });
         }
 
-        string DuelLabel(bool initiatorSide) => initiatorSide == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
+        string DuelLabel(bool initiatorSide, int unitIndex)
+        {
+            var isViewerSide = initiatorSide == playback.ViewerIsInitiator;
+            if (isViewerSide)
+            {
+                if (unitIndex == selfUnitIndex) return "你";
+                if (selfUnits is not null && (uint)unitIndex < (uint)selfUnits.Length)
+                    return selfUnits[unitIndex].DisplayName;
+                return "队友";
+            }
+            if (opponentUnits is not null && (uint)unitIndex < (uint)opponentUnits.Length)
+                return opponentUnits[unitIndex].DisplayName;
+            return playback.OpponentName;
+        }
         // 回放游标前的事件已全部应用过；未裁决前游标到 playbackTo 之间的事件逐条应用并写日志（已弃战/对方弃战则直接结算终局，不再回放后续事件）。
         // 普攻帧不落日志；同一次施放的连续帧（同出手方+技能+时刻）合并为一条施放行。
         for (var i = cursor; !playback.Resolved && i < playback.Events.Count; i++)
@@ -1455,7 +1537,7 @@ internal static class CombatActionRules
             if (duelEvent.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker)
             {
                 ApplyDuelResources(duelEvent);
-                if (duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator
+                if (IsSelfActor(duelEvent)
                     && duelEvent.AbilityId is { } sustainedItemId
                     && gameData.Items.TryGetValue(new ItemId(sustainedItemId), out var sustainedItem)
                     && sustainedItem.Consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false } sustainedConsumable)
@@ -1476,7 +1558,7 @@ internal static class CombatActionRules
                 ApplyDuelResources(duelEvent);
                 RecordTailCombatEvent(duelEvent);
                 var eventAt = WallAt(duelEvent.AtSeconds);
-                if (duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator)
+                if (IsSelfActor(duelEvent))
                 {
                     ApplyViewerDuelInstantConsumable(player, action.Id, gameData, assetBalances,
                         duelEvent, instantItem, instantConsumable, eventAt,
@@ -1485,9 +1567,9 @@ internal static class CombatActionRules
                 else if (instantConsumable.Strike is not null)
                 {
                     var clauses = new List<string>(1);
-                    AppendCastClause(clauses, DuelLabel(duelEvent.TargetIsInitiator), duelEvent.Hit,
+                    AppendCastClause(clauses, DuelLabel(duelEvent.TargetIsInitiator, duelEvent.TargetUnitIndex), duelEvent.Hit,
                         duelEvent.Damage, duelEvent.Healing, duelEvent.Critical, duelEvent.Break, duelEvent.Parried);
-                    var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), itemKey, gameData);
+                    var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator, duelEvent.AttackerUnitIndex), itemKey, gameData);
                     AppendCastClauses(builder, clauses);
                     AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
                 }
@@ -1502,6 +1584,7 @@ internal static class CombatActionRules
                 && playback.Events[castEnd].AtSeconds == duelEvent.AtSeconds
                 && playback.Events[castEnd].AbilityId == duelEvent.AbilityId
                 && playback.Events[castEnd].AttackerIsInitiator == duelEvent.AttackerIsInitiator
+                && playback.Events[castEnd].AttackerUnitIndex == duelEvent.AttackerUnitIndex
                 && playback.Events[castEnd].AbilityNameOverride == duelEvent.AbilityNameOverride)
             {
                 cursor = castEnd + 1;
@@ -1514,9 +1597,9 @@ internal static class CombatActionRules
             for (var j = i; j < castEnd; j++)
             {
                 var member = playback.Events[j];
-                AppendCastClause(abilityClauses, DuelLabel(member.TargetIsInitiator), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
+                AppendCastClause(abilityClauses, DuelLabel(member.TargetIsInitiator, member.TargetUnitIndex), member.Hit, member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
             }
-            var abilityBuilder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator), duelEvent.AbilityId, gameData,
+            var abilityBuilder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator, duelEvent.AttackerUnitIndex), duelEvent.AbilityId, gameData,
                 duelEvent.AbilityNameOverride);
             AppendCastClauses(abilityBuilder, abilityClauses);
             AddCombatEventAt(ref events, WallAt(duelEvent.AtSeconds),
@@ -1532,7 +1615,14 @@ internal static class CombatActionRules
             BattleElapsedSeconds = playbackTo,
             PlayerHitpoints = viewerHp,
             PlayerManapoints = viewerMp,
-            Duel = playback with { EventCursor = cursor, OpponentHitpoints = opponentHp, OpponentManapoints = opponentMp }
+            Duel = playback with
+            {
+                EventCursor = cursor,
+                OpponentHitpoints = opponentHp,
+                OpponentManapoints = opponentMp,
+                SelfUnits = selfUnits,
+                OpponentUnits = opponentUnits
+            }
         };
         action.Expedition = updated;
         player.Resources.Hitpoints = Math.Clamp(viewerHp, 0, player.Resources.MaxHitpoints);

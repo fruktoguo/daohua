@@ -1,5 +1,11 @@
+using System.Text.Json;
+using Domain.GameData;
+using Domain.Player;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Protocol;
+using Server.Clean;
+using Server.Clean.Leaderboards;
 using Server.Clean.Social;
 using Xunit;
 
@@ -148,6 +154,54 @@ public sealed class ChatIntegrationTests
             (await fixture.Chat.SendAsync(author, "作者", new("after-spam", ChatChannels.Nearby, "仍可发言"))).Status);
     }
 
+    [Fact]
+    public async Task SendAndLoadHistory_AttachesBestPersonalTopRankWithinTop50AndExcludesZongmen()
+    {
+        var fixture = await Fixture.CreateAsync();
+        var (author, peer, outsider) = fixture.Players;
+        var now = DateTimeOffset.UtcNow;
+
+        // author 同时在 4 个个人榜并列第 2（炼丹/身家/灵石/斗法）且炼器第 10：
+        // 并列优先序为 境界 > 斗法 > 身家 > 灵石 > 七技艺，故应取 duel #2。
+        // peer 仅持有宗门榜第 1（排除）与境界榜第 51（超 Top 50）：应返回 null。
+        // outsider 持有炼丹榜第 1 与境界榜第 3：最小名次为 1，故应取 technique.alchemy #1。
+        await fixture.SqlAsync("""
+            INSERT INTO game.leaderboard_ranks(player_id, board_id, rank, score, updated_at)
+            VALUES ($1, 'technique.alchemy', 2, 1000, $4),
+                   ($1, 'valuation', 2, 2000, $4),
+                   ($1, 'spirit-stone', 2, 3000, $4),
+                   ($1, 'duel', 2, 15, $4),
+                   ($1, 'technique.forging', 10, 500, $4),
+                   ($2, 'zongmen', 1, 50, $4),
+                   ($2, 'realm', 51, 5, $4),
+                   ($3, 'technique.alchemy', 1, 5000, $4),
+                   ($3, 'realm', 3, 25, $4)
+            """, author, peer, outsider, now);
+
+        var chatWithRanks = fixture.CreateChatWithLeaderboards();
+
+        var authorSend = await chatWithRanks.SendAsync(author, "作者", new("rank-1", ChatChannels.Nearby, "并列测试"));
+        Assert.Equal(ChatSendStatus.Ok, authorSend.Status);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Duel, "duel", null, 2), authorSend.Message!.SenderTopRank);
+
+        var peerSend = await chatWithRanks.SendAsync(peer, "好友", new("rank-2", ChatChannels.Nearby, "宗门与榜外测试"));
+        Assert.Equal(ChatSendStatus.Ok, peerSend.Status);
+        Assert.Null(peerSend.Message!.SenderTopRank);
+
+        await fixture.Presence.RegisterAsync(outsider, "外人", fixture.Node);
+        var outsiderSend = await chatWithRanks.SendAsync(outsider, "外人", new("rank-3", ChatChannels.Nearby, "技艺第一测试"));
+        Assert.Equal(ChatSendStatus.Ok, outsiderSend.Status);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Technique("alchemy"), "technique", "alchemy", 1), outsiderSend.Message!.SenderTopRank);
+
+        // 历史回放同样按发送者实时批量派生，不依赖聊天表额外列。
+        var history = await chatWithRanks.LoadHistoryAsync(author, new(ChatChannels.Nearby));
+        Assert.NotNull(history);
+        Assert.Equal(3, history!.Messages.Count);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Duel, "duel", null, 2), history.Messages[0].SenderTopRank);
+        Assert.Null(history.Messages[1].SenderTopRank);
+        Assert.Equal(new GuideRankBadgeDto(LeaderboardBoardIds.Technique("alchemy"), "technique", "alchemy", 1), history.Messages[2].SenderTopRank);
+    }
+
     private sealed class Fixture
     {
         private Fixture(NpgsqlDataSource source)
@@ -158,11 +212,53 @@ public sealed class ChatIntegrationTests
         }
 
         private NpgsqlDataSource Source { get; }
-        private OnlinePresenceRegistry Presence { get; } = new();
+        public OnlinePresenceRegistry Presence { get; } = new();
         public PostgresChatRepository Repository { get; }
         public ChatRuntime Chat { get; }
         public string Node { get; } = Guid.NewGuid().ToString("N");
         public (Guid Author, Guid Peer, Guid Outsider) Players { get; } = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        public ChatRuntime CreateChatWithLeaderboards()
+        {
+            var sections = new PostgresSectionRepository(Source, NullLogger<PostgresSectionRepository>.Instance);
+            var leaderboards = new LeaderboardRuntime(
+                Source,
+                sections,
+                new StubPlayerRuntime(),
+                market: null,
+                GameDataCatalog.LoadEmbedded(),
+                NullLogger<LeaderboardRuntime>.Instance);
+            return new ChatRuntime(Repository, new PostgresSocialRepository(Source), Presence, leaderboards: leaderboards);
+        }
+
+        private sealed class StubPlayerRuntime : IPlayerRuntime
+        {
+            public int LoadedCount => 0;
+            public DateTimeOffset? NextAdvanceBoundaryUtc => null;
+#pragma warning disable CS0067
+            public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
+            public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
+#pragma warning restore CS0067
+            public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken ct = default)
+                => throw new NotSupportedException();
+            public ValueTask<PlayerRuntimeSnapshot> AttachConnectionAsync(Guid playerId, CancellationToken ct = default)
+                => throw new NotSupportedException();
+            public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
+            public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command,
+                JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken ct = default)
+                => throw new NotSupportedException();
+            public ValueTask FlushAsync(Guid playerId, bool force, CancellationToken ct = default) => ValueTask.CompletedTask;
+            public ValueTask FlushAllAsync(bool force, CancellationToken ct = default) => ValueTask.CompletedTask;
+            public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken ct = default) => ValueTask.CompletedTask;
+            public ValueTask RemoveAsync(Guid playerId, bool flush, DateTimeOffset? offlineSince, CancellationToken ct = default)
+                => ValueTask.CompletedTask;
+            public ValueTask<PlayerRuntimeSnapshot> MutateOwnedAsync(Guid playerId,
+                Action<PlayerAggregate> mutate, CancellationToken ct = default) => throw new NotSupportedException();
+            public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
+            public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken ct = default)
+                => new([]);
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
 
         public static async Task<Fixture> CreateAsync()
         {

@@ -64,6 +64,32 @@ public sealed class DungeonRulesTests
     }
 
     [Fact]
+    public void EnergyRules_TryInitializeAnchor_NormalizesLegacyZeroAnchorAndPreservesInitializedAnchor()
+    {
+        const double fallbackAt = 1_760_000_000.0;
+
+        // 旧存档缺失体力锚点（TiliUpdatedAtUnixSeconds <= 0）：补锚至首日 240 与兜底时刻
+        Assert.True(DungeonEnergyRules.TryInitializeAnchor(0, 0, fallbackAt, out var initVal, out var initAt));
+        Assert.Equal(DungeonEnergyRules.InitialEnergy, initVal);
+        Assert.Equal(fallbackAt, initAt, precision: 6);
+
+        // 补锚后无需消耗体力，经过 20 分钟（1200 秒 = 3 点余 120 秒）应自然回复至 243
+        var recovered = DungeonEnergyRules.Compute(initVal, initAt, fallbackAt + 1200);
+        Assert.Equal(243, recovered.Current);
+        Assert.Equal(240.0, recovered.NextRecoverySeconds, precision: 6);
+
+        // 已初始化锚点幂等保持原值，不重复触发补锚
+        Assert.False(DungeonEnergyRules.TryInitializeAnchor(180, fallbackAt - 500, fallbackAt, out var keptVal, out var keptAt));
+        Assert.Equal(180, keptVal);
+        Assert.Equal(fallbackAt - 500, keptAt, precision: 6);
+
+        // 兜底时刻无效（<= 0）时不误补锚
+        Assert.False(DungeonEnergyRules.TryInitializeAnchor(0, 0, 0, out var uninitVal, out var uninitAt));
+        Assert.Equal(0, uninitVal);
+        Assert.Equal(0, uninitAt);
+    }
+
+    [Fact]
     public void DifficultyRules_ElevenTiers_VirtualAndReality_MatchSpec()
     {
         int[] expectedCosts = [30, 40, 50, 60, 80, 100, 120, 150, 180, 210, 240];

@@ -320,12 +320,18 @@ export function useCombatVfx(
       } else if (phase === 'duel' && expedition.duel) {
         const duel = expedition.duel
         const events = duel.events ?? []
+        const duelSelfIdx = duel.selfUnitIndex ?? 0
+        const maxActors = (duel.selfUnits?.length ?? 1) + (duel.opponentUnits?.length ?? 1)
         const seenSide = new Set<string>()
         for (const ev of events) {
           if (ev.atSeconds <= battleElapsed) continue
           if (ev.abilityId && (ev.abilityId.startsWith('item.') || ev.abilityId.startsWith('trait.'))) continue
-          if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator) continue
-          const sideActorId = ev.attackerIsInitiator === duel.isInitiator ? 'player' : 'enemy:0'
+          if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator
+            && (ev.attackerUnitIndex ?? 0) === (ev.targetUnitIndex ?? 0)) continue
+          const uIdx = ev.attackerUnitIndex ?? 0
+          const sideActorId = ev.attackerIsInitiator === duel.isInitiator
+            ? (uIdx === duelSelfIdx ? 'player' : `ally:${uIdx}`)
+            : `enemy:${uIdx}`
           if (seenSide.has(sideActorId)) continue
           seenSide.add(sideActorId)
           if (!ev.abilityId) continue
@@ -343,7 +349,7 @@ export function useCombatVfx(
               ability,
             })
           }
-          if (seenSide.size >= 2) break
+          if (seenSide.size >= maxActors) break
         }
       }
 
@@ -555,17 +561,23 @@ export function useCombatVfx(
             duelLastElapsed = battleElapsed <= 2.5 ? -1e-6 : battleElapsed
           }
           const rawEvents = duel.events ?? []
+          const duelSelfIdx = duel.selfUnitIndex ?? 0
+          const toDuelActorId = (sideIsInitiator: boolean, unitIdx: number): string =>
+            sideIsInitiator === duel.isInitiator
+              ? (unitIdx === duelSelfIdx ? 'player' : `ally:${unitIdx}`)
+              : `enemy:${unitIdx}`
           const crossed: Array<{ index: number; mapped: CombatRecentEvent }> = []
           for (let i = 0; i < rawEvents.length; i++) {
             const ev = rawEvents[i]
-            if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator && (ev.damage ?? 0) <= 0) continue
+            if (!ev.abilityId && ev.attackerIsInitiator === ev.targetIsInitiator
+              && (ev.attackerUnitIndex ?? 0) === (ev.targetUnitIndex ?? 0) && (ev.damage ?? 0) <= 0) continue
             if (ev.atSeconds > duelLastElapsed && ev.atSeconds <= battleElapsed) {
               crossed.push({
                 index: i,
                 mapped: {
                   at: ev.atSeconds,
-                  attackerId: ev.attackerIsInitiator === duel.isInitiator ? 'player' : 'enemy:0',
-                  targetId: ev.targetIsInitiator === duel.isInitiator ? 'player' : 'enemy:0',
+                  attackerId: toDuelActorId(ev.attackerIsInitiator, ev.attackerUnitIndex ?? 0),
+                  targetId: toDuelActorId(ev.targetIsInitiator, ev.targetUnitIndex ?? 0),
                   damage: ev.damage ?? 0,
                   hit: ev.hit !== false,
                   critical: ev.critical,

@@ -17,7 +17,7 @@ import type {
 import type { BattleReport, RespawnPolicy } from './types'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from './gameStore'
-import { normalizeDouDiZhuGame } from '../components/doudizhu/doudizhuState'
+import { EMPTY_DOUDIZHU_QUEUE_COUNTS, normalizeDouDiZhuGame, normalizeDouDiZhuQueueCounts } from '../components/doudizhu/doudizhuState'
 
 /** 队伍开启槽位数下限（§21.13：2~5） */
 export const PARTY_OPEN_SLOTS_MIN = 2
@@ -65,6 +65,12 @@ const CARD_REQUEST_TIMEOUT_MS = 15_000
 interface SocialStore {
   /** 服务端校验后广播的同桌短暂互动。 */
   douDiZhuInteractions: readonly DouDiZhuInteractionDto[]
+  /** 当前活跃或尚未关闭结算面板的斗地主牌局投影；无牌局为 null */
+  douDiZhuGame: DouDiZhuGameDto | null
+  /** 本人正在排队匹配的斗地主阶位（1~8）；未在队列中为 null */
+  douDiZhuMatchingTier: number | null
+  /** 八阶（1~8）当前匹配人数列表（固定 8 项） */
+  douDiZhuQueueCounts: readonly number[]
   /** 好友列表 */
   friends: readonly FriendDto[]
   /** 收到的好友申请 */
@@ -144,12 +150,14 @@ interface SocialStore {
   setPartyPvp: (pvpEnabled: boolean) => boolean
   /** 切换本人秘境助战模式开关（party.assist 社交指令；免耗体力且无收益） */
   setPartyAssist: (assistMode: boolean) => boolean
-  /** 设置队伍斗地主底注；非队长、负数及非有限数不派发。 */
-  setDouDiZhuStake: (stake: number) => boolean
-  /** 切换本人独立的斗地主准备状态。 */
-  setDouDiZhuReady: (ready: boolean) => boolean
-  /** 队长在三人全员准备后开局。 */
-  startDouDiZhu: () => boolean
+  /** 应用 HTTP 轮询或推送的斗地主八阶匹配人数快照。 */
+  applyDouDiZhuQueues: (payload: { matchingTier?: number | null; queueCounts?: readonly number[] | null }) => void
+  /** 加入指定阶位（1~8）的全局斗地主匹配队列。 */
+  joinDouDiZhuMatch: (tier: number) => boolean
+  /** 取消本人当前的斗地主匹配排队。 */
+  cancelDouDiZhuMatch: () => boolean
+  /** 关闭已结束的斗地主赛后结算面板并返回匹配页。 */
+  leaveDouDiZhu: (gameId?: string | null) => boolean
   /** 提交当前牌局版本的叫地主/抢地主/放弃。 */
   bidDouDiZhu: (game: DouDiZhuGameDto, bidAction: 'pass' | 'call' | 'rob') => boolean
   /** 提交当前牌局版本与所选牌。 */
@@ -168,8 +176,11 @@ interface SocialStore {
   setRespawnPolicy: (policy: RespawnPolicy, targetPlayerId?: string | null) => boolean
 }
 
-const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'unlockedPartyLoadoutSessionId' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'playerCardError' | 'activeFriendId' | 'teammateReports'> = {
+const EMPTY: Pick<SocialStore, 'douDiZhuInteractions' | 'douDiZhuGame' | 'douDiZhuMatchingTier' | 'douDiZhuQueueCounts' | 'friends' | 'incomingRequests' | 'outgoingRequests' | 'party' | 'unlockedPartyLoadoutSessionId' | 'partyInvitation' | 'seeking' | 'nearbyPlayers' | 'lobby' | 'myValuation' | 'myValuationBreakdown' | 'playerCard' | 'playerCardRequestId' | 'playerCardError' | 'activeFriendId' | 'teammateReports'> = {
   douDiZhuInteractions: [],
+  douDiZhuGame: null,
+  douDiZhuMatchingTier: null,
+  douDiZhuQueueCounts: EMPTY_DOUDIZHU_QUEUE_COUNTS,
   friends: [],
   incomingRequests: [],
   outgoingRequests: [],
@@ -207,17 +218,21 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
   applyState: state => set(current => {
     const friends = Array.isArray(state.friends) ? state.friends : []
     const stillFriend = current.activeFriendId !== null && friends.some(friend => friend.playerId === current.activeFriendId)
+    const rawMatchingTier = state.douDiZhuMatchingTier
+    const matchingTier = typeof rawMatchingTier === 'number' && Number.isFinite(rawMatchingTier) && rawMatchingTier >= 1 && rawMatchingTier <= 8
+      ? Math.trunc(rawMatchingTier)
+      : null
     return {
       friends,
       incomingRequests: Array.isArray(state.incomingRequests) ? state.incomingRequests : [],
       outgoingRequests: Array.isArray(state.outgoingRequests) ? state.outgoingRequests : [],
-      party: state.party ? {
-        ...state.party,
-        douDiZhuGame: normalizeDouDiZhuGame(state.party.douDiZhuGame),
-      } : null,
+      party: state.party ?? null,
       unlockedPartyLoadoutSessionId: state.party?.activeSession?.sessionId === current.unlockedPartyLoadoutSessionId
         ? current.unlockedPartyLoadoutSessionId : null,
       douDiZhuInteractions: state.douDiZhuInteractions ?? [],
+      douDiZhuGame: normalizeDouDiZhuGame(state.douDiZhuGame),
+      douDiZhuMatchingTier: matchingTier,
+      douDiZhuQueueCounts: normalizeDouDiZhuQueueCounts(state.douDiZhuQueueCounts),
       partyInvitation: state.partyInvitation ?? null,
       seeking: state.seeking ?? null,
       nearbyPlayers: Array.isArray(state.nearbyPlayers) ? state.nearbyPlayers : [],
@@ -232,6 +247,17 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
         const me = myId ? state.nearbyPlayers?.find(p => p.playerId === myId) : null
         return me?.valuationBreakdown ?? current.myValuationBreakdown
       })(),
+    }
+  }),
+  applyDouDiZhuQueues: payload => set(current => {
+    const nextTier = payload.matchingTier === undefined
+      ? current.douDiZhuMatchingTier
+      : typeof payload.matchingTier === 'number' && Number.isFinite(payload.matchingTier) && payload.matchingTier >= 1 && payload.matchingTier <= 8
+        ? Math.trunc(payload.matchingTier)
+        : null
+    return {
+      douDiZhuMatchingTier: nextTier,
+      douDiZhuQueueCounts: normalizeDouDiZhuQueueCounts(payload.queueCounts),
     }
   }),
   applyLobby: lobby => set({
@@ -358,27 +384,19 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     if (self && Boolean(self.assistMode) === assistMode) return false
     return gameClient.sendSocialAction('party.assist', undefined, undefined, { assistMode })
   },
-  setDouDiZhuStake: stake => {
-    const party = get().party
-    if (!party || party.leaderId !== gameClient.playerId || !Number.isFinite(stake) || stake < 0
-      || party.douDiZhuStake === stake) return false
-    return gameClient.sendSocialAction('doudizhu.stake', undefined, undefined, { party: { douDiZhuStake: stake } })
+  joinDouDiZhuMatch: tier => {
+    if (!Number.isInteger(tier) || tier < 1 || tier > 8) return false
+    const game = get().douDiZhuGame
+    if (game?.phase === 'bidding' || game?.phase === 'playing') return false
+    return gameClient.sendSocialAction('doudizhu.match.join', undefined, undefined, { douDiZhuTier: tier })
   },
-  setDouDiZhuReady: ready => {
-    const party = get().party
-    if (!party || party.members.length !== 3 || party.douDiZhuGame?.phase === 'bidding'
-      || party.douDiZhuGame?.phase === 'playing') return false
-    const self = party.members.find(member => member.playerId === gameClient.playerId)
-    if (!self || self.douDiZhuReady === ready) return false
-    return gameClient.sendSocialAction(ready ? 'doudizhu.ready' : 'doudizhu.unready')
-  },
-  startDouDiZhu: () => {
-    const party = get().party
-    if (!party || party.leaderId !== gameClient.playerId || party.members.length !== 3
-      || party.members.some(member => !member.douDiZhuReady)
-      || party.douDiZhuGame?.phase === 'bidding' || party.douDiZhuGame?.phase === 'playing') return false
-    return gameClient.sendSocialAction('doudizhu.start')
-  },
+  cancelDouDiZhuMatch: () => gameClient.sendSocialAction('doudizhu.match.cancel'),
+  leaveDouDiZhu: gameId => gameClient.sendSocialAction(
+    'doudizhu.leave',
+    undefined,
+    undefined,
+    gameId ? { gameId } : undefined,
+  ),
   bidDouDiZhu: (game, bidAction) => gameClient.sendSocialAction('doudizhu.bid', undefined, undefined, {
     gameId: game.gameId, gameVersion: game.version, bidAction,
   }),

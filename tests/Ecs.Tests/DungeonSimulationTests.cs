@@ -274,4 +274,68 @@ public sealed class DungeonSimulationTests
         Assert.True(expByMember[1] > 0 && expByMember[1] < expByMember[0] * 0.5,
             $"低等级成员经验应按通用等级差折减：carry={expByMember[0]}, rookie={expByMember[1]}");
     }
+
+    [Fact]
+    public void LegacyZeroTiliMember_CaptureNormalizesAnchor_AndSettlementZeroAnchorNeverOverwritesValidAnchor()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var t0 = BaseTime.ToUnixTimeMilliseconds() / 1000.0;
+
+        // 模拟未初始化体力锚点的旧存档角色
+        var legacy = CreateSoloPlayer(catalog, Guid.Parse("10000000-0000-4000-8000-00000000d209"), realmLevel: 60, initialTili: 0, nowUnix: 0, makeStrong: true);
+        var captured = legacy.CaptureActionParticipantSnapshot(catalog);
+        Assert.Equal(DungeonEnergyRules.InitialEnergy, captured.InitialTiliValue);
+        Assert.Equal(t0, captured.InitialTiliUpdatedAtUnixSeconds, precision: 6);
+
+        // 构造已激活有效锚点的成员并绑定组队会话，检验带有未初始化 0 锚点的结算不会把已激活锚点冲回 0
+        var active = CreateSoloPlayer(catalog, Guid.Parse("10000000-0000-4000-8000-00000000d210"), realmLevel: 60, initialTili: 300, nowUnix: t0, makeStrong: true);
+        var activeSnap = active.CaptureActionParticipantSnapshot(catalog) with { AssistMode = true };
+        var spec = new ActionParticipationSpec(
+            SessionId: "party:dungeon-tili-guard:1",
+            EncounterId: QingyunDungeonId,
+            NodeId: QingyunNodeId,
+            Seed: 20261126L,
+            SearchSpeedPoints: 0,
+            StartedAtUnixSeconds: t0,
+            Members: [activeSnap])
+        {
+            ActionId = new ActionId(QingyunDungeonId),
+            PvpEnabled = false,
+            Difficulty = 0,
+            DungeonId = QingyunDungeonId,
+            DungeonRepeatCount = 1
+        };
+        var queued = active.StartActionParticipation(spec, BaseTime, catalog.Actions);
+        Assert.NotNull(queued);
+        var engine = ActionParticipationSessionEngine.Create(spec, catalog);
+        var expedition = engine.ProjectFor(active.PlayerId);
+        var zeroAnchorSettlement = new ActionParticipationMemberSettlement(
+            spec.SessionId,
+            Sequence: 1,
+            active.PlayerId,
+            From: BaseTime,
+            To: BaseTime.AddSeconds(10),
+            Hitpoints: active.Resources.Hitpoints,
+            Manapoints: active.Resources.Manapoints,
+            RegenCarrySeconds: 0,
+            Skills: active.Combat.Skills,
+            Buffs: active.Combat.Buffs,
+            Expedition: expedition,
+            ProgressSeconds: 10,
+            CompletedRepeats: 0,
+            Stats: [],
+            AssetDeltas: [],
+            Events: [],
+            CombatStats: [],
+            DroppedEventCount: 0,
+            EndsAtUnixSeconds: BaseTime.AddSeconds(10).ToUnixTimeMilliseconds() / 1000d,
+            StagedItems: null,
+            ConsumableSlots: null,
+            TiliValue: 0,
+            TiliUpdatedAtUnixSeconds: 0);
+
+        active.ApplyActionParticipationSettlement(zeroAnchorSettlement, catalog);
+        Assert.Equal(300, active.Progression.TiliValue);
+        Assert.Equal(t0, active.Progression.TiliUpdatedAtUnixSeconds, precision: 6);
+    }
 }

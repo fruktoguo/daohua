@@ -22,7 +22,8 @@ import {
 } from '../game/leaderboardHelpers'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
-import { Icon, type IconName } from './Icon'
+import { Icon } from './Icon'
+import { LeaderboardGlyph } from './LeaderboardGlyph'
 import { OptionToggle } from './OptionToggle'
 import { RealmBadge } from './RealmBadge'
 import { UnitNumber } from './UnitNumber'
@@ -30,17 +31,16 @@ import { ValuationHoverTarget } from './ValuationDisplay'
 
 interface CategoryTabSpec {
   id: LeaderboardCategory
-  icon: IconName
   labelKey: string
 }
 
 const CATEGORY_TABS: readonly CategoryTabSpec[] = [
-  { id: 'realm', icon: 'insight', labelKey: 'app.leaderboard.tabRealm' },
-  { id: 'technique', icon: 'forging', labelKey: 'app.leaderboard.tabTechnique' },
-  { id: 'valuation', icon: 'shop', labelKey: 'app.leaderboard.tabValuation' },
-  { id: 'spirit-stone', icon: 'spirit', labelKey: 'app.leaderboard.tabSpiritStone' },
-  { id: 'zongmen', icon: 'social', labelKey: 'app.leaderboard.tabZongmen' },
-  { id: 'duel', icon: 'combat', labelKey: 'app.leaderboard.tabDuel' },
+  { id: 'realm', labelKey: 'app.leaderboard.tabRealm' },
+  { id: 'technique', labelKey: 'app.leaderboard.tabTechnique' },
+  { id: 'valuation', labelKey: 'app.leaderboard.tabValuation' },
+  { id: 'spirit-stone', labelKey: 'app.leaderboard.tabSpiritStone' },
+  { id: 'zongmen', labelKey: 'app.leaderboard.tabZongmen' },
+  { id: 'duel', labelKey: 'app.leaderboard.tabDuel' },
 ] as const
 
 /**
@@ -120,6 +120,7 @@ export const LeaderboardPage = memo(function LeaderboardPage(): React.JSX.Elemen
   const techniqueOptions = TECHNIQUE_IDS.map(id => ({
     value: id,
     label: t(`insight.technique.${id}`),
+    icon: <LeaderboardGlyph boardId={`technique.${id}`} size={14} />,
   }))
 
   const activeSummary = indexData?.boards.find(b => b.boardId === activeBoardId) ?? null
@@ -162,6 +163,7 @@ export const LeaderboardPage = memo(function LeaderboardPage(): React.JSX.Elemen
       <div className="leaderboard-tabs" role="tablist" aria-label={t('app.leaderboard.categoryAria')}>
         {CATEGORY_TABS.map(tab => {
           const isActive = category === tab.id
+          const tabBoardId = tab.id === 'technique' ? `technique.${techniqueId}` : tab.id
           return (
             <button
               aria-selected={isActive}
@@ -171,7 +173,7 @@ export const LeaderboardPage = memo(function LeaderboardPage(): React.JSX.Elemen
               role="tab"
               type="button"
             >
-              <Icon name={tab.icon} size={14} />
+              <LeaderboardGlyph boardId={tabBoardId} size={15} />
               <span>{t(tab.labelKey)}</span>
             </button>
           )
@@ -212,6 +214,7 @@ export const LeaderboardPage = memo(function LeaderboardPage(): React.JSX.Elemen
       ) : snapshot ? (
         <>
           <MyRankBanner
+            boardId={activeBoardId}
             category={category}
             myRank={snapshot.myRank ?? null}
             entries={snapshot.entries}
@@ -247,12 +250,14 @@ export const LeaderboardPage = memo(function LeaderboardPage(): React.JSX.Elemen
 })
 
 interface MyRankBannerProps {
+  boardId: string
   category: LeaderboardCategory
   myRank: LeaderboardMyRankDto | null
   entries: readonly LeaderboardEntryDto[]
 }
 
 const MyRankBanner = memo(function MyRankBanner({
+  boardId,
   category,
   myRank,
   entries,
@@ -262,7 +267,10 @@ const MyRankBanner = memo(function MyRankBanner({
   if (!myRank) {
     return (
       <div className="leaderboard-my-rank is-unranked">
-        <span className="leaderboard-my-rank-label">{t('app.leaderboard.myRankLabel')}</span>
+        <div className="leaderboard-my-rank-left">
+          <LeaderboardGlyph boardId={boardId} className="leaderboard-my-rank-glyph" size={16} />
+          <span className="leaderboard-my-rank-label">{t('app.leaderboard.myRankLabel')}</span>
+        </div>
         <span className="leaderboard-my-rank-empty">
           {category === 'zongmen'
             ? t('app.leaderboard.notInZongmen')
@@ -278,6 +286,7 @@ const MyRankBanner = memo(function MyRankBanner({
   return (
     <div className="leaderboard-my-rank">
       <div className="leaderboard-my-rank-left">
+        <LeaderboardGlyph boardId={boardId} className="leaderboard-my-rank-glyph" size={16} />
         <span className="leaderboard-my-rank-label">{t('app.leaderboard.myRankLabel')}</span>
         <strong className="leaderboard-my-rank-pos">#{myRank.rank}</strong>
         {matchedZongmen && (

@@ -31,3 +31,68 @@ test('marketPricing: normalizeMarketPrice 严格遵循系统回收底价与价�
   assert.equal(normalizeMarketPrice(2002, 2002, true), 2050)
   assert.equal(normalizeMarketPrice(2120, 2002, false), 2100)
 })
+
+test('marketPricing: 切换强化等级仅初始化一次默认价，后续盘口轮询与参考价变动不得回退用户单价', async () => {
+  const { resolveMarketModalPriceAfterBook, resolveMarketOrderDefaultPrice } = await import('./marketPricing.ts')
+
+  // 复现真实场景：在 +0 盘口详情页打开求购弹窗，切到 +10（回收底价 313900，网格底价 320000，无买盘参考价 660000）
+  const initialPlus0 = resolveMarketOrderDefaultPrice({
+    side: 'buy',
+    bestBid: 40_000,
+    referenceDefault: 30_000,
+    vendorPrice: 20_000,
+    minimumPrice: 20_000,
+  })
+  assert.equal(initialPlus0, 40_000)
+
+  // 首次切到 +10：pricedLevel(0) !== targetLevel(10)，应应用 +10 默认参考价 66万 并标记已定价
+  const switchedToPlus10 = resolveMarketModalPriceAfterBook({
+    currentPrice: initialPlus0,
+    pricedLevel: 0,
+    targetLevel: 10,
+    side: 'buy',
+    bestBid: undefined,
+    referenceDefault: 660_000,
+    vendorPrice: 313_900,
+    minimumPrice: 320_000,
+  })
+  assert.deepEqual(switchedToPlus10, {
+    price: 660_000,
+    pricedLevel: 10,
+    changed: true,
+  })
+
+  // 玩家手动步进调高到 90万 后，再次收到盘口刷新或市场参考价波动：pricedLevel(10) === targetLevel(10)，绝不能回退回 66万
+  const afterPolling = resolveMarketModalPriceAfterBook({
+    currentPrice: 900_000,
+    pricedLevel: switchedToPlus10.pricedLevel,
+    targetLevel: 10,
+    side: 'buy',
+    bestBid: 640_000,
+    referenceDefault: 660_000,
+    vendorPrice: 313_900,
+    minimumPrice: 320_000,
+  })
+  assert.deepEqual(afterPolling, {
+    price: 900_000,
+    pricedLevel: 10,
+    changed: false,
+  })
+
+  // 玩家切回 +0 时：pricedLevel(10) !== targetLevel(0)，应重新应用 +0 的盘口买一价
+  const switchedBackToPlus0 = resolveMarketModalPriceAfterBook({
+    currentPrice: 900_000,
+    pricedLevel: afterPolling.pricedLevel,
+    targetLevel: 0,
+    side: 'buy',
+    bestBid: 42_000,
+    referenceDefault: 30_000,
+    vendorPrice: 20_000,
+    minimumPrice: 20_000,
+  })
+  assert.deepEqual(switchedBackToPlus0, {
+    price: 42_000,
+    pricedLevel: 0,
+    changed: true,
+  })
+})

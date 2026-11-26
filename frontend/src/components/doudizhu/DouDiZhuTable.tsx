@@ -3,14 +3,14 @@ import { useT } from '../../i18n'
 import { formatNumber } from '../../game/format'
 import { resolvePlayerActorId } from '../../game/avatarStore'
 import { useSocialStore } from '../../game/socialStore'
-import type { DouDiZhuGameDto, PartyDto } from '../../network/protocol'
+import type { DouDiZhuGameDto } from '../../network/protocol'
 import { CharacterAvatar } from '../CharacterAvatar'
 import { ItemIcon } from '../ItemDisplay'
 import { FloatingPopover } from '../FloatingPopover'
 import { Modal } from '../Modal'
 import { cardName, isRed, type JokerLabels } from './doudizhuArt'
 import { CardFace, VisualSymbols } from './doudizhuSvg'
-import { beats, evaluate, legalMoves, sortCards, type PatternKind } from './doudizhuRules'
+import { beats, evaluate, getDouDiZhuTierMeta, legalMoves, sortCards, type PatternKind } from './doudizhuRules'
 import { resolveDouDiZhuBidChoice } from './doudizhuState'
 import { DouDiZhuMotion } from './doudizhuMotion'
 import { handPosition, measureHand } from './doudizhuLayout'
@@ -18,15 +18,13 @@ import './doudizhu.css'
 
 interface TableProps {
   game: DouDiZhuGameDto
-  party: PartyDto
   mySeat: number
-  isLeader: boolean
-  canStart: boolean
+  canRematch: boolean
   onBid: (action: 'call' | 'rob' | 'pass') => boolean
   onPlay: (cards: number[]) => boolean
   onPass: () => boolean
-  onStart: () => boolean
-  onEnd: () => void
+  onRematch: () => void
+  onLeave: () => void
   onSetHosted: (hosted: boolean) => boolean
 }
 const PROPS = ['tomato', 'flower', 'tea', 'applause'] as const
@@ -39,7 +37,7 @@ const Card = memo(function Card({ card, jokerLabels, className = '', style }: { 
 })
 
 /** 真正的牌桌仅消费私有投影和公开记录；动画、提示与选牌不修改游戏资产。 */
-export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, isLeader, canStart, onBid, onPlay, onPass, onStart, onEnd, onSetHosted }: TableProps): React.JSX.Element {
+export const DouDiZhuTable = memo(function DouDiZhuTable({ game, mySeat, canRematch, onBid, onPlay, onPass, onRematch, onLeave, onSetHosted }: TableProps): React.JSX.Element {
   const t = useT()
   const jokerLabels = useMemo<JokerLabels>(() => ({
     small: t('social.doudizhu.jokerSmall'),
@@ -113,11 +111,12 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   const seconds = Math.max(0, Math.ceil((game.turnDeadlineAtUnixMilliseconds - serverNow) / 1000))
   const isFullscreen = fullscreen || fallbackFullscreen
   const multiplier = game.phase === 'finished' ? game.finalMultiplier : 2 ** (game.robCount + game.bombCount)
-  const findMember = (playerId: string | undefined) =>
-    playerId ? (party.members.find(member => member.playerId === playerId) ?? null) : null
-  const memberDisplayName = (playerId: string | undefined, seat: number): string =>
-    findMember(playerId)?.displayName ?? t('social.doudizhu.seat', { seat: seat + 1 })
-  const name = (seat: number): string => memberDisplayName(game.playerIds[seat], seat)
+  const tierMeta = getDouDiZhuTierMeta(game.tier)
+  const tierLabel = t(`social.doudizhu.tier.${tierMeta.key}`)
+  const seatInfo = (seat: number) => game.seats[seat] ?? null
+  const seatDisplayName = (seat: number): string =>
+    seatInfo(seat)?.displayName || t('social.doudizhu.seat', { seat: seat + 1 })
+  const name = (seat: number): string => seatDisplayName(seat)
   const allPlays = game.history
   let trickStart = 0
   for (let i = 1; i < allPlays.length; i++) if (allPlays[i].isPass && allPlays[i - 1].isPass) trickStart = i + 1
@@ -376,8 +375,8 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
   }
   function renderSeat(seat: number): React.JSX.Element {
     const seatPlayerId = game.playerIds[seat] ?? ''
-    const member = findMember(seatPlayerId)
-    const displayName = member?.displayName ?? t('social.doudizhu.seat', { seat: seat + 1 })
+    const member = seatInfo(seat)
+    const displayName = seatDisplayName(seat)
     const spiritStones = member?.spiritStones ?? 0
     const own = seat === mySeat, position = own ? 'self' : (seat - mySeat + 3) % 3 === 1 ? 'left' : 'right'
     const lastBid = [...game.bids].reverse().find(bid => bid.seat === seat)
@@ -389,10 +388,10 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
         <strong className="ddz-player-name">{displayName}</strong>
         <span className={`ddz-role${game.landlordSeat === seat ? ' is-landlord' : ''}`}>{!hasLandlord ? '　' : t(game.landlordSeat === seat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</span>
         <div className="ddz-avatar-row">
-          {own || !member ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
+          {own || !seatPlayerId ? portrait : <FloatingPopover trigger="click" triggerAs="button" triggerClassName="ddz-avatar-trigger" placement={position === 'left' ? 'right-start' : 'left-start'} size="auto" className="ddz-social-menu" content={({ close }) => <>
             <div className="ddz-interaction-header">{t('social.doudizhu.interactWith', { name: displayName })}</div>
-            <div className="ddz-prop-grid">{PROPS.map(prop => <button className="ddz-prop-button" key={prop} type="button" onClick={() => sendInteraction(member.playerId, prop, close)}><svg className="ddz-prop-art" viewBox="0 0 64 64"><use href={`#ddz-prop-${prop}`} /></svg><span>{t(`social.doudizhu.prop.${prop}`)}</span></button>)}</div>
-            <div className="ddz-quick-phrases">{PHRASES.map(phrase => <button className="ddz-phrase-button" key={phrase} type="button" onClick={() => sendInteraction(member.playerId, phrase, close)}>{t(`social.doudizhu.phrase.${phrase}`)}</button>)}</div>
+            <div className="ddz-prop-grid">{PROPS.map(prop => <button className="ddz-prop-button" key={prop} type="button" onClick={() => sendInteraction(seatPlayerId, prop, close)}><svg className="ddz-prop-art" viewBox="0 0 64 64"><use href={`#ddz-prop-${prop}`} /></svg><span>{t(`social.doudizhu.prop.${prop}`)}</span></button>)}</div>
+            <div className="ddz-quick-phrases">{PHRASES.map(phrase => <button className="ddz-phrase-button" key={phrase} type="button" onClick={() => sendInteraction(seatPlayerId, phrase, close)}>{t(`social.doudizhu.phrase.${phrase}`)}</button>)}</div>
           </>}>{portrait}<span className="ddz-interact-label">{t('social.doudizhu.interact')}</span></FloatingPopover>}
           {!own && <span className="ddz-hand-counter" aria-label={t('social.doudizhu.cardsLeft', { count: game.handsRemaining[seat] })}><i className="ddz-mini-back" /><b>{intro ? landedCount(seat) : revealing && game.landlordSeat === seat ? 17 + game.bottomCards.filter((_, i) => revealAge >= 1080 + i * 190).length : game.handsRemaining[seat]}</b></span>}
         </div>
@@ -406,7 +405,7 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
 
   return <section ref={node => { shellRef.current = node }} className={`ddz-shell${portrait ? ' is-portrait' : ''}${fallbackFullscreen ? ' is-fullscreen' : ''}`}>
     <VisualSymbols />
-    <header className="ddz-header"><div className="ddz-brand"><strong>{t('social.doudizhu.title')}</strong><span>{phaseText}</span></div>
+    <header className="ddz-header"><div className="ddz-brand"><strong>{t('social.doudizhu.title')} · {tierLabel}</strong><span>{phaseText}</span></div>
       <div className="ddz-stats"><span>{t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })}</span><b>×{multiplier}</b>
         <button type="button" onClick={() => setRulesOpen(true)}>{t('social.doudizhu.rules')}</button>
         <button type="button" aria-pressed={soundOn} onClick={() => setSoundOn(value => !value)}>{t(soundOn ? 'social.doudizhu.soundOn' : 'social.doudizhu.soundOff')}</button>
@@ -463,10 +462,10 @@ export const DouDiZhuTable = memo(function DouDiZhuTable({ game, party, mySeat, 
         <span>{t(game.landlordWon ? 'social.doudizhu.landlordWon' : 'social.doudizhu.farmerWon')}</span>
         <h2>{t((game.landlordSeat === mySeat) === game.landlordWon ? 'social.doudizhu.youWon' : 'social.doudizhu.youLost')}</h2>
         {game.spring && <strong>{t(game.landlordWon ? 'social.doudizhu.spring' : 'social.doudizhu.antiSpring')}</strong>}
-        <div className="ddz-result-summary">{t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })} · ×{game.finalMultiplier}</div>
-        {game.playerIds.map((id, seat) => { const member = findMember(id); const displayName = memberDisplayName(id, seat); return <div className="ddz-result-row" key={id}><CharacterAvatar actorId={resolvePlayerActorId(member?.avatar)} role="player" name={displayName} /><span>{displayName}<small>{t(seat === game.landlordSeat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</small></span><b className={game.settlementDeltas[seat] < 0 ? 'is-negative' : ''}>{game.settlementDeltas[seat] >= 0 ? '+' : '−'}{formatNumber(Math.abs(game.settlementDeltas[seat]))}</b></div> })}
-        <div className="ddz-result-buttons"><button type="button" onClick={onEnd}>{t('social.doudizhu.end')}</button><button className="ddz-primary" type="button" disabled={!canStart} onClick={onStart}>{t('social.doudizhu.playAgain')}</button></div>
-        {!isLeader && <small>{t('social.doudizhu.waitLeader')}</small>}
+        <div className="ddz-result-summary">{tierLabel} · {t('social.doudizhu.baseStakeValue', { stake: formatNumber(game.baseStake) })} · ×{game.finalMultiplier}</div>
+        {game.playerIds.map((id, seat) => { const member = seatInfo(seat); const displayName = seatDisplayName(seat); return <div className="ddz-result-row" key={id}><CharacterAvatar actorId={resolvePlayerActorId(member?.avatar)} role="player" name={displayName} /><span>{displayName}<small>{t(seat === game.landlordSeat ? 'social.doudizhu.landlord' : 'social.doudizhu.farmer')}</small></span><b className={game.settlementDeltas[seat] < 0 ? 'is-negative' : ''}>{game.settlementDeltas[seat] >= 0 ? '+' : '−'}{formatNumber(Math.abs(game.settlementDeltas[seat]))}</b></div> })}
+        <div className="ddz-result-buttons"><button type="button" onClick={onLeave}>{t('social.doudizhu.leaveTable')}</button><button className="ddz-primary" type="button" disabled={!canRematch} onClick={onRematch}>{t('social.doudizhu.rematch')}</button></div>
+        {!canRematch && <small>{t('social.doudizhu.rematchInsufficient')}</small>}
       </section></div>}
     </div>
     <Modal open={rulesOpen} onClose={() => setRulesOpen(false)} labelledBy="ddz-rules-title" size="small"><h2 id="ddz-rules-title">{t('social.doudizhu.rules')}</h2><p>{t('social.doudizhu.rulesText')}</p></Modal>

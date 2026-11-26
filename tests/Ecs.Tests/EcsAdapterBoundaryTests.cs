@@ -888,6 +888,59 @@ public sealed class EcsAdapterBoundaryTests
     }
 
     /// <summary>
+    /// 回归：v47 前旧存档缺失追忆副本周清体力锚点（TiliValue=0, TiliUpdatedAtUnixSeconds=0），
+    /// 装载时必须按 LastSimulatedAt 一次性补锚为首日 240 并标脏 Progression 落盘；
+    /// 之后无需消耗一次体力也能随时间推进自然回复（不再永久卡死 240），且重载幂等不再推进版本。
+    /// </summary>
+    [Fact]
+    public async Task LoadInitializesLegacyZeroTiliAnchor_AndRecoversWithoutPriorConsumption()
+    {
+        var fixture = CreateFixture();
+        await using var adapter = fixture.Adapter;
+
+        var legacyId = Guid.Parse("10000000-0000-4000-8000-0000000000a9");
+        var legacy = PlayerAggregate.Create(new PlayerId(legacyId), fixture.InitialState.AccountId,
+            "旧档体力回归", Epoch, fixture.Catalog.Fingerprint);
+        legacy.SetPresence(PresenceState.Offline, Epoch);
+        var exported = legacy.ExportState();
+        // 模拟 v46 -> v47 升级后的存量旧存档：两处体力锚点均为缺省 0
+        var legacyState = exported with
+        {
+            Progression = exported.Progression with { TiliValue = 0, TiliUpdatedAtUnixSeconds = 0 }
+        };
+        fixture.Sections.Register(ToBundle(legacyState));
+
+        // 1. 首次装载：以 LastSimulatedAt（Epoch）补锚 240，推进版本并标脏 Progression
+        var loaded = await adapter.LoadAsync(legacyId);
+        var expectedAnchorUnix = Epoch.ToUnixTimeMilliseconds() / 1000d;
+        Assert.Equal(DungeonEnergyRules.InitialEnergy, loaded.State.Progression.TiliValue);
+        Assert.Equal(expectedAnchorUnix, loaded.State.Progression.TiliUpdatedAtUnixSeconds, precision: 6);
+        Assert.Equal(legacyState.StateVersion + 1, loaded.StateVersion);
+        Assert.Contains(PlayerSectionKind.Progression, fixture.Ecs.GetDirtySections(legacyId));
+
+        // 2. 无需先消耗一次体力，推进 20 分钟（1200s = +3 点，余 120s）即应正常回复至 243
+        var after20MinUnix = Epoch.AddMinutes(20).ToUnixTimeMilliseconds() / 1000d;
+        var recovered = DungeonEnergyRules.Compute(
+            loaded.State.Progression.TiliValue,
+            loaded.State.Progression.TiliUpdatedAtUnixSeconds,
+            after20MinUnix);
+        Assert.Equal(243, recovered.Current);
+        Assert.Equal(240.0, recovered.NextRecoverySeconds, precision: 6);
+
+        // 3. 落盘卸载后重新装载：已有正数锚点应幂等保留，不再重复推进版本或标脏 Progression
+        await adapter.RemoveAsync(legacyId, flush: true, offlineSince: null);
+        var persistedBundle = await fixture.Sections.LoadAsync(legacyId);
+        Assert.NotNull(persistedBundle);
+        var versionAfterFlush = persistedBundle!.Head.StateVersion;
+
+        var reloaded = await adapter.LoadAsync(legacyId);
+        Assert.Equal(DungeonEnergyRules.InitialEnergy, reloaded.State.Progression.TiliValue);
+        Assert.Equal(expectedAnchorUnix, reloaded.State.Progression.TiliUpdatedAtUnixSeconds, precision: 6);
+        Assert.Equal(versionAfterFlush, reloaded.StateVersion);
+        Assert.DoesNotContain(PlayerSectionKind.Progression, fixture.Ecs.GetDirtySections(legacyId));
+    }
+
+    /// <summary>
     /// 回归：主服在启用斗法撮合（MatchingEnabled=true）时调用 LoadAsync 装载离线玩家并补算 16 分钟，
     /// 离线玩家不得在补算阶段进入 DuelPending 卡死，必须正常推进怪物波次并随后允许重连上线。
     /// </summary>
@@ -1465,13 +1518,13 @@ public sealed class EcsAdapterBoundaryTests
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<bool> TryUpdatePartyProfileAsync(Guid partyId, PartyProfileRecord profile,
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<bool> TryUpdateDouDiZhuStakeAsync(Guid partyId, Guid leaderId, double stake,
-            DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<bool> TrySetDouDiZhuReadyAsync(Guid playerId, bool ready,
+        public ValueTask<DouDiZhuCreateGameResult> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<bool> TryCreateDouDiZhuGameAsync(DouDiZhuGameState state, Guid startedBy,
+        public ValueTask<DouDiZhuGameState?> GetVisibleDouDiZhuGameAsync(Guid playerId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<DouDiZhuGameState?> GetDouDiZhuGameAsync(Guid partyId,
+        public ValueTask<bool> HasActiveDouDiZhuGameAsync(Guid playerId,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+        public ValueTask<bool> TryDismissFinishedDouDiZhuGameAsync(Guid playerId, Guid? gameId = null,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<IReadOnlyList<DouDiZhuGameState>> ListActiveDouDiZhuGamesAsync(
             CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<DouDiZhuGameState>>([]);

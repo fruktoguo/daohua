@@ -10,6 +10,7 @@ import { gameClient } from '../../network/gameClient'
 import { ItemTile } from '../ItemDisplay'
 import { Modal } from '../Modal'
 import { getMarketPriceIncrement, isEquipmentInstrument, normalizeMarketPrice, resolveMarketInstrumentMetadata, type MarketInstrument } from './MarketOrderForm'
+import { resolveMarketModalPriceAfterBook, resolveMarketOrderDefaultPrice } from '../../game/marketPricing'
 import { useMountedTimeout } from '../../hooks/useMountedTimeout'
 
 /** 挂单单价上限：防止 ×2 步进无限放大导致总价显示失真（服务端仅要求有限正数）。 */
@@ -74,13 +75,15 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const setNotice = useGameStore(state => state.setNotice)
   const isEquipment = instrument !== null && isEquipmentInstrument(instrument)
   const [level, setLevel] = useState<number>(enhancementLevel)
-  const initialLevelRef = useRef(enhancementLevel)
+  // 记录最近一次已完成定价（初始打开、切等级应用默认价或用户手动调价）的强化等级，
+  // 防止同等级后续行情轮询或参考价刷新把用户正在编辑的单价打回默认价。
+  const pricedLevelRef = useRef<number>(enhancementLevel)
 
   // 当外部传入的 enhancementLevel 或弹窗重新展开时同步状态
   useEffect(() => {
     if (open) {
       setLevel(enhancementLevel)
-      initialLevelRef.current = enhancementLevel
+      pricedLevelRef.current = enhancementLevel
     }
   }, [enhancementLevel, open])
 
@@ -157,36 +160,86 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
   // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
   // 快捷入口锁定价（initialPrice）按方向归一化：买入向上取整、卖出向下取整，保证落价能立即撮合对手档。
-  const [price, setPrice] = useState<number>(() => {
-    const bookDefault = side === 'sell'
-      ? (book?.asks[0]?.price ?? referenceDefault)
-      : (book?.bids[0]?.price ?? referenceDefault)
-    return Math.max(minimumPrice, normalizeMarketPrice(initialPrice ?? bookDefault, vendorPrice, side === 'buy'))
-  })
+  const [price, setPrice] = useState<number>(() => resolveMarketOrderDefaultPrice({
+    side,
+    bestAsk: book?.asks[0]?.price,
+    bestBid: book?.bids[0]?.price,
+    referenceDefault,
+    vendorPrice,
+    minimumPrice,
+    initialPrice,
+  }))
   const [quantity, setQuantity] = useState(1)
 
-  // 盘口对账：强化等级切换或宿主尚未下发盘口时，异步拉取当前等级深度簿。
-  // 非装备标的也要自取一次——详情页轮询尚未落地时 activeBook 为空，买入侧「最大」
-  // 会拿不到卖档深度而退化为余额上限，重新出现「一键全额排队求购」。
+  // 异步盘口回调通过 ref 读取最新定价参数，避免无关的 book 轮询或 marketStats 刷新触发重拉与重置单价。
+  const pricingContextRef = useRef({
+    book,
+    minimumPrice,
+    referenceDefault,
+    side,
+    vendorPrice,
+  })
+  pricingContextRef.current = {
+    book,
+    minimumPrice,
+    referenceDefault,
+    side,
+    vendorPrice,
+  }
+  const instrumentId = instrument?.itemId ?? null
+
+  // 同步宿主实时轮询的同等级盘口深度（仅更新盘口档位，绝不重置用户输入单价）。
   useEffect(() => {
-    if (!open || !instrument) return
-    if (book && book.enhancementLevel === level) {
+    if (!open || !instrumentId || !book) return
+    if (book.itemId === instrumentId && book.enhancementLevel === level) {
       setActiveBook(book)
+    }
+  }, [book, instrumentId, level, open])
+
+  // 标的或强化等级变化时对账当前等级深度簿：
+  // - 宿主已有同等级盘口（例如从 +10 切回初始 +0）时直接复用并按需一次性重置默认价；
+  // - 否则先清空旧等级盘口并异步拉取新等级深度簿，返回后仅在当前等级尚未定价时写入默认价。
+  // 非装备标的也会在宿主盘口尚未落地时自取一次，避免买入侧「最大」拿不到卖档深度而退化为全额排队。
+  useEffect(() => {
+    if (!open || !instrumentId) return
+
+    const applyDefaultPriceOnce = (targetBook: MarketBook | null) => {
+      if (pricedLevelRef.current === level) return
+      const ctx = pricingContextRef.current
+      const targetPricedLevel = pricedLevelRef.current
+      pricedLevelRef.current = level
+      setPrice(current => resolveMarketModalPriceAfterBook({
+        currentPrice: current,
+        pricedLevel: targetPricedLevel,
+        targetLevel: level,
+        side: ctx.side,
+        bestAsk: targetBook?.asks[0]?.price,
+        bestBid: targetBook?.bids[0]?.price,
+        referenceDefault: ctx.referenceDefault,
+        vendorPrice: ctx.vendorPrice,
+        minimumPrice: ctx.minimumPrice,
+      }).price)
+    }
+
+    const currentBook = pricingContextRef.current.book
+    if (currentBook && currentBook.itemId === instrumentId && currentBook.enhancementLevel === level) {
+      setActiveBook(currentBook)
+      applyDefaultPriceOnce(currentBook)
       return
     }
+
+    setActiveBook(null)
     let cancelled = false
-    fetchMarketBook(instrument.itemId, level).then(b => {
-      if (cancelled || !b) return
-      setActiveBook(b)
-      if (level !== initialLevelRef.current) {
-        const bookDefault = side === 'sell'
-          ? (b.asks[0]?.price ?? referenceDefault)
-          : (b.bids[0]?.price ?? referenceDefault)
-        setPrice(Math.max(minimumPrice, normalizeMarketPrice(bookDefault, vendorPrice, side === 'buy')))
-      }
-    }).catch(() => {})
+    fetchMarketBook(instrumentId, level).then(b => {
+      if (cancelled) return
+      if (b) setActiveBook(b)
+      applyDefaultPriceOnce(b ?? null)
+    }).catch(() => {
+      if (cancelled) return
+      applyDefaultPriceOnce(null)
+    })
     return () => { cancelled = true }
-  }, [book, instrument, level, minimumPrice, open, referenceDefault, side, vendorPrice])
+  }, [instrumentId, level, open, side])
 
   // 挂单数量会在下方随买卖方向、可售库存与可承受灵石上限统一钳位
   // 强化等级切换导致回收底价变动时，确保当前挂单价格不低于新底价
@@ -199,6 +252,8 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const bestBid = activeBook?.bids[0]?.price
   /** 步进调价：−/+ 按当前价位 tick 步长走一档，÷2/×2 折半翻倍后归一化到价格网格。 */
   const adjustPrice = useCallback((action: 'half' | 'decrease' | 'increase' | 'double') => {
+    // 玩家在异步盘口返回前主动调价即视为接管当前等级定价，防止迟到的盘口响应覆盖手动单价。
+    pricedLevelRef.current = level
     setPrice(current => {
       switch (action) {
         case 'double':
@@ -213,11 +268,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
         }
       }
     })
-  }, [minimumPrice, vendorPrice])
+  }, [level, minimumPrice, vendorPrice])
 
   const applyPricePreset = useCallback((preset: number) => {
+    pricedLevelRef.current = level
     setPrice(Math.min(MARKET_ORDER_MAX_PRICE, Math.max(minimumPrice, normalizeMarketPrice(preset, vendorPrice, true))))
-  }, [minimumPrice, vendorPrice])
+  }, [level, minimumPrice, vendorPrice])
 
   const quantityLimit = useMemo(() => {
     if (side === 'sell') {

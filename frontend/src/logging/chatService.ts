@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatHistoryDto, ChatLikeChangedDto, ChatMessageDto, ChatQuoteDto, PartyLinkDto } from '../network/protocol'
+import type { ChatChannel, ChatHistoryDto, ChatLikeChangedDto, ChatMessageDto, ChatQuoteDto, GuideRankBadgeDto, PartyLinkDto } from '../network/protocol'
 
 /** 单条传音消息的本地内存形态 */
 export interface ChatMessage {
@@ -25,6 +25,8 @@ export interface ChatMessage {
   likeVersion: number
   likedByMe: boolean
   myLikeVersion: number
+  /** 发送者当前在个人排行榜 Top 50 中的最高名次徽标（由服务端实时派生） */
+  senderTopRank?: GuideRankBadgeDto | null
 }
 
 /** 传音服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
@@ -73,6 +75,7 @@ function toMessage(dto: ChatMessageDto): ChatMessage {
     likeVersion: dto.likeVersion ?? 0,
     myLikeVersion: dto.likeVersion ?? 0,
     likedByMe: dto.likedByMe ?? false,
+    senderTopRank: dto.senderTopRank ?? null,
   }
 }
 

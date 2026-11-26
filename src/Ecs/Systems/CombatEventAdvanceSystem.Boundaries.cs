@@ -184,8 +184,27 @@ public sealed partial class CombatEventAdvanceSystem
         context.AllyIndex = -1;
         context.Ally = null;
 
+        // 对称模式（PVP 斗法）：双方阵营平等收集本刻所有到点存活单位，单名直接结算，≥2 名进入同刻同时生效波次。
+        if (encounter.IsSymmetric)
+        {
+            var dueUnits = new List<CombatantState>(encounter.SideA.Count + encounter.SideB.Count);
+            var flipTieOrder = (encounter.Seed & 1L) != 0;
+            var firstSide = flipTieOrder ? encounter.SideB : encounter.SideA;
+            var secondSide = flipTieOrder ? encounter.SideA : encounter.SideB;
+            for (var i = 0; i < firstSide.Count; i++)
+                if (firstSide[i].IsAlive && firstSide[i].NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                    dueUnits.Add(firstSide[i]);
+            for (var i = 0; i < secondSide.Count; i++)
+                if (secondSide[i].IsAlive && secondSide[i].NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                    dueUnits.Add(secondSide[i]);
+
+            if (dueUnits.Count == 1)
+                CombatActSystem.ResolveSymmetricSingle(encounter, dueUnits[0], ref context.Events);
+            else if (dueUnits.Count > 1)
+                CombatActSystem.ResolveSymmetricWave(encounter, dueUnits, ref context.Events);
+        }
         // 全灭倒地窗口内全场冻结：存活盟友出手、敌方出手与倒地登记全部跳过（单人口径延续）。
-        if (!encounter.IsAllAlliesDowned)
+        else if (!encounter.IsAllAlliesDowned)
         {
             for (var i = 0; i < encounter.PlayerAllies.Count; i++)
             {

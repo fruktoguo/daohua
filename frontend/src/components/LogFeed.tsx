@@ -14,6 +14,7 @@ import { ChatMessageActions, repeatChatMessage } from './ChatMessageActions'
 import { ChatQuote } from './ChatQuote'
 import { ChatMessageBody } from './ChatMessageContent'
 import { RichContentSegmentView, RichTemplateText } from './EntityReference'
+import { LeaderboardRankBadge } from './LeaderboardGlyph'
 import { RealmBadge } from './RealmBadge'
 
 /** 格式化日志时间戳为月-日 时:分:秒 */
@@ -200,6 +201,10 @@ const ChatRow = memo(function ChatRow({
               {sectPrefix}
             </span>
           </FloatingTooltip>
+        )}
+
+        {message.senderTopRank && (
+          <LeaderboardRankBadge badge={message.senderTopRank} variant="chat" />
         )}
 
         <FloatingTooltip placement="top" title={t('social.card.viewDetail')} tone="gold">

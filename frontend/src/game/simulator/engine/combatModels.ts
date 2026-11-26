@@ -24,6 +24,19 @@ import {
 } from './rules.ts'
 import type { SlotWakeMask } from './triggerWake.ts'
 
+export const CombatSide = {
+  SideA: 0,
+  SideB: 1,
+} as const
+export type CombatSide = (typeof CombatSide)[keyof typeof CombatSide]
+
+export const CombatantKind = {
+  Player: 0,
+  Monster: 1,
+  Summon: 2,
+} as const
+export type CombatantKind = (typeof CombatantKind)[keyof typeof CombatantKind]
+
 export const CombatOutcome = {
   Running: 0,
   PlayerWon: 1,
@@ -60,6 +73,7 @@ export interface CombatantTemplate {
   definitionId?: string | null
   rank?: CombatMonsterRank | null
   isSummon?: boolean
+  kind?: CombatantKind
 }
 
 export interface CombatantSnapshot {
@@ -124,10 +138,12 @@ const CHANNEL_INFO_LIST = BUFF_CHANNELS.map((c) => BUFF_CHANNEL_BY_KEY.get(c.con
 
 export class CombatantState {
   readonly id: string
+  readonly side: CombatSide
+  sideIndex = 0
   entityId = -1
   definitionId: string | null = null
   rank: CombatMonsterRank | null = null
-  isSummon = false
+  kind: CombatantKind
   stats: CombatantStats
   traits: string[]
   traitLevels: Record<string, number> | null
@@ -162,8 +178,25 @@ export class CombatantState {
   private _buffTick1sPending = false
   private _effectiveStatsCache: CombatantStats | null = null
 
-  constructor(id: string, stats: CombatantStats, skills?: SkillSlotDefinition[] | null) {
+  constructor(
+    id: string,
+    stats: CombatantStats,
+    skills?: SkillSlotDefinition[] | null,
+    side?: CombatSide,
+    kind?: CombatantKind,
+  ) {
     this.id = id
+    this.side =
+      side ??
+      (id.startsWith('enemy:') || id.startsWith('sideB:') ? CombatSide.SideB : CombatSide.SideA)
+    this.kind =
+      kind ??
+      (id.startsWith('player') ||
+      id.startsWith('ally:') ||
+      id.startsWith('sideA:') ||
+      id.startsWith('sideB:')
+        ? CombatantKind.Player
+        : CombatantKind.Monster)
     this.traits = stats.traits ? [...stats.traits] : []
     this.traitLevels = stats.traitLevels ? { ...stats.traitLevels } : null
     this.stats = {
@@ -178,7 +211,15 @@ export class CombatantState {
   }
 
   get isPlayer(): boolean {
-    return this.id.startsWith('player')
+    return this.kind === CombatantKind.Player
+  }
+
+  get isMonster(): boolean {
+    return this.kind === CombatantKind.Monster
+  }
+
+  get isSummon(): boolean {
+    return this.kind === CombatantKind.Summon
   }
 
   get buffs(): readonly CombatBuffState[] {
@@ -763,7 +804,7 @@ export class CombatUnitStatsBook {
   }
 
   static keyOf(unit: CombatantState): string {
-    return unit.id.startsWith('enemy:') && unit.definitionId !== null
+    return unit.isMonster && unit.definitionId !== null
       ? `monster:${unit.definitionId}`
       : unit.id
   }
@@ -900,6 +941,7 @@ export interface CombatHitContext {
 
 export class CombatEncounterState {
   readonly encounterId: string
+  readonly isSymmetric: boolean
   wakeTracking = false
   readonly seed: bigint
   elapsedSeconds = 0
@@ -907,6 +949,9 @@ export class CombatEncounterState {
   readonly selfIndex: number
   readonly enemies: CombatantState[]
   readonly traitListeners: CombatTraitListeners
+  deferAliveCountNotifications = false
+  private _pendingAliveCountNotification = false
+  activeWave: unknown = null
   outcome: CombatOutcome = CombatOutcome.Running
   sequence = 0
   readonly playerRespawnSeconds: number
@@ -924,6 +969,7 @@ export class CombatEncounterState {
     enemies: CombatantState[],
     playerRespawnSeconds: number,
     wipeEndsBattle = false,
+    isSymmetric = false,
   ) {
     this.encounterId = encounterId
     this.seed = seed
@@ -932,7 +978,43 @@ export class CombatEncounterState {
     this.enemies = enemies
     this.playerRespawnSeconds = playerRespawnSeconds
     this.wipeEndsBattle = wipeEndsBattle
+    this.isSymmetric = isSymmetric
     this.traitListeners = new CombatTraitListeners(this)
+  }
+
+  get sideA(): readonly CombatantState[] {
+    return this.playerAllies
+  }
+
+  get sideB(): readonly CombatantState[] {
+    return this.enemies
+  }
+
+  static opposite(side: CombatSide): CombatSide {
+    return side === CombatSide.SideA ? CombatSide.SideB : CombatSide.SideA
+  }
+
+  unitsOf(side: CombatSide): readonly CombatantState[] {
+    return side === CombatSide.SideA ? this.playerAllies : this.enemies
+  }
+
+  alliesOf(unit: CombatantState): readonly CombatantState[] {
+    return this.unitsOf(unit.side)
+  }
+
+  opponentsOf(unit: CombatantState): readonly CombatantState[] {
+    return this.unitsOf(CombatEncounterState.opposite(unit.side))
+  }
+
+  findUnit(unitId: string | null | undefined): CombatantState | null {
+    if (!unitId) return null
+    for (let i = 0; i < this.playerAllies.length; i++) {
+      if (this.playerAllies[i].id === unitId) return this.playerAllies[i]
+    }
+    for (let i = 0; i < this.enemies.length; i++) {
+      if (this.enemies[i].id === unitId) return this.enemies[i]
+    }
+    return null
   }
 
   get player(): CombatantState {
@@ -984,6 +1066,17 @@ export class CombatEncounterState {
   }
 
   notifyAliveCountsChanged(): void {
+    if (this.deferAliveCountNotifications) {
+      this._pendingAliveCountNotification = true
+      return
+    }
+    this.traitListeners.aliveCountsChanged()
+  }
+
+  flushAliveCountNotifications(): void {
+    this.deferAliveCountNotifications = false
+    if (!this._pendingAliveCountNotification) return
+    this._pendingAliveCountNotification = false
     this.traitListeners.aliveCountsChanged()
   }
 
@@ -1067,19 +1160,27 @@ export class CombatEncounterState {
     const allyStates: CombatantState[] = new Array(allies.length)
     for (let i = 0; i < allies.length; i++) {
       const t = allies[i]
-      const u = new CombatantState(i === selfIndex ? 'player' : `ally:${i}`, t.stats, t.skills)
+      const kind = t.kind ?? (t.isSummon ? CombatantKind.Summon : CombatantKind.Player)
+      const u = new CombatantState(
+        i === selfIndex ? 'player' : `ally:${i}`,
+        t.stats,
+        t.skills,
+        CombatSide.SideA,
+        kind,
+      )
+      u.sideIndex = i
       u.definitionId = t.definitionId ?? null
       u.rank = t.rank ?? null
-      u.isSummon = Boolean(t.isSummon)
       allyStates[i] = u
     }
     const enemyStates: CombatantState[] = new Array(enemies.length)
     for (let i = 0; i < enemies.length; i++) {
       const t = enemies[i]
-      const u = new CombatantState(`enemy:${i}`, t.stats, t.skills)
+      const kind = t.kind ?? (t.isSummon ? CombatantKind.Summon : CombatantKind.Monster)
+      const u = new CombatantState(`enemy:${i}`, t.stats, t.skills, CombatSide.SideB, kind)
+      u.sideIndex = i
       u.definitionId = t.definitionId ?? null
       u.rank = t.rank ?? null
-      u.isSummon = Boolean(t.isSummon)
       enemyStates[i] = u
     }
     for (let i = 0; i < allyStates.length; i++) applyBattleStartTraits(allyStates[i])
@@ -1092,6 +1193,49 @@ export class CombatEncounterState {
       enemyStates,
       playerRespawnSeconds,
       wipeEndsBattle,
+      false,
+    )
+    encounter.initializeTraitListeners()
+    return encounter
+  }
+
+  /** 创建双阵营完全对称遭遇（PVP 单人/多方斗法原生入口，镜像 Domain.CombatEncounterState.CreateSymmetric）。 */
+  static createSymmetric(
+    encounterId: string,
+    seed: bigint,
+    sideA: readonly CombatantTemplate[],
+    sideB: readonly CombatantTemplate[],
+  ): CombatEncounterState {
+    const buildSide = (
+      templates: readonly CombatantTemplate[],
+      side: CombatSide,
+      prefix: string,
+    ): CombatantState[] => {
+      const states: CombatantState[] = new Array(templates.length)
+      for (let i = 0; i < templates.length; i++) {
+        const t = templates[i]
+        const kind = t.kind ?? (t.isSummon ? CombatantKind.Summon : CombatantKind.Player)
+        const u = new CombatantState(`${prefix}:${i}`, t.stats, t.skills, side, kind)
+        u.sideIndex = i
+        u.definitionId = t.definitionId ?? null
+        u.rank = t.rank ?? null
+        states[i] = u
+      }
+      return states
+    }
+    const sideAStates = buildSide(sideA, CombatSide.SideA, 'sideA')
+    const sideBStates = buildSide(sideB, CombatSide.SideB, 'sideB')
+    for (let i = 0; i < sideAStates.length; i++) applyBattleStartTraits(sideAStates[i])
+    for (let i = 0; i < sideBStates.length; i++) applyBattleStartTraits(sideBStates[i])
+    const encounter = new CombatEncounterState(
+      encounterId,
+      seed,
+      sideAStates,
+      0,
+      sideBStates,
+      0,
+      true,
+      true,
     )
     encounter.initializeTraitListeners()
     return encounter

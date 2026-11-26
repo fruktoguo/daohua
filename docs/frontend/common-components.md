@@ -5,7 +5,7 @@
 > 2. 凡是将某类 UI/交互收拢为统一模板，**必须同步登记至本手册**。
 > 3. 本手册**不记录具体 CSS 样式实现代码**，仅作为**快速索引与场景查找表**；具体用法、参数和样式直接查阅所列路径。
 
-斗地主牌桌：真实队伍对弈使用 `frontend/src/components/doudizhu/DouDiZhuTable.tsx`；固定坐标扑克牌图案与编号边界为 `doudizhuArt.ts`，手牌槽位布局为 `doudizhuLayout.ts`，表现动画为 `doudizhuMotion.ts`，样式为同目录 `doudizhu.css`。角色复用 `CharacterAvatar`，灵石复用携带 `itemId` 的 `ItemIcon`，角色互动菜单复用 `FloatingPopover`，玩法窗口复用 `Modal`。
+斗地主对弈与牌桌：同道「对弈」独立子页（`DouDiZhuPage`）顶部提供八阶全局匹配选择栏（凡~帝八品品质色调、底注、准入验资与实时匹配人数），真实牌局使用 `frontend/src/components/doudizhu/DouDiZhuTable.tsx`；固定坐标扑克牌图案与编号边界为 `doudizhuArt.ts`，手牌槽位布局为 `doudizhuLayout.ts`，表现动画为 `doudizhuMotion.ts`，样式为同目录 `doudizhu.css`。角色复用 `CharacterAvatar`，灵石复用携带 `itemId` 的 `ItemIcon` / `ItemReference`，角色互动菜单复用 `FloatingPopover`，玩法窗口复用 `Modal`。
 
 ---
 
@@ -75,8 +75,8 @@
 
 ## 4.1 主导航结构（桌面侧边栏 & 竖屏底部两级导航）
 
-- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/宗门/邀请]、其他[图鉴/签到/排行榜/更新日志/帮助]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
-- **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/宗门/邀请），`SocialPage` 顶部不再渲染重复切换栏；队伍内部「队伍/对弈」切换（`PartyGameTabs`）属玩法内页签，保持于 `PartyPage` 顶部。每日可签到红点上提至「其他 / 更多」与「签到」子项。
+- **桌面端（横屏）左侧栏 (`Sidebar`)**：一级导航与可折叠二级分组（`.nav-group` + `.nav-sub-menu`）并行——直达入口（内视/历练/地图/详情）、折叠分组（坊市[坊市/商店]、技艺[炼丹/炼器/符箓/阵法/秘法]、同道[队伍/对弈/宗门/攻略/邀请]、其他[图鉴/签到/排行榜/更新日志/帮助]），底部 `.sidebar-footer` 吸底保留「记录 / 设置」。「坊市」与「其他」折叠状态常驻 `useUiStore`（`marketNavExpanded`、`otherNavExpanded`），展开切换与子项渲染共用可折叠分组样式。
+- **竖屏（≤960px）底部主导航 (`BottomNav`)**：一级 7 个分组（内视/坊市/历练/详情/技艺/背包/更多），点击分组在其上方浮现组内子行完成二次选择；单页签分组不渲染子行。桌面端侧边栏的通用二级菜单在竖屏全部收拢至底部导航：`CraftingModeTabs` 承载「技艺」组子行（炼丹/炼器/符箓/阵法/强化），`SocialSubTabs` 在激活「同道」页签时于「更多」子行之上承载「同道」通用二级（队伍/对弈/宗门/攻略/邀请），`SocialPage` 顶部不再渲染重复切换栏。每日可签到红点上提至「其他 / 更多」与「签到」子项。
 - **分组真源**：`frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUPS` / `MOBILE_NAV_GROUP_DEFS` / `GROUP_OF_TAB` / `TAB_ICON`）。新增页签必须同时登记 `GROUP_OF_TAB`，否则 `satisfies Record<TabId, …>` 编译失败——这是竖屏可达性的编译期兜底。
 - **组件**：`BottomNav`（`frontend/src/App.tsx`）负责渲染与点击编排，`CraftingModeTabs` 与 `SocialSubTabs` 分别承载技艺与同道通用二级子行；点击语义与落点记忆规则见 [总纲 §13.1.2](../../docs/design/总纲/13-前端UI设计系统与修仙交互规范.md)。
 - **样式类名**：`.bottom-nav`, `.bottom-nav-row`, `.bottom-glyph`, `.bottom-glyph-badge`, `.bottom-sub-nav`, `.bottom-sub-nav--social`, `.bottom-sub-tabs`, `.bottom-sub-tabs--social`, `.bottom-sub-tab-btn`, `.bottom-sub-tab-glyph`, `.bottom-sub-tab-text`, `.bottom-sub-tab-badge`
@@ -739,10 +739,36 @@
 
 - **适用场景**：
   - 长文攻略安全排版展示（支持一至三级标题、加粗、引用、无序/有序列表、代码块、分割线、内置 `QqEmoji` 动态表情、颜文字、三种图片链接自动展开并复用 `ChatImageLightbox` 缩放、以及显式携带 `itemId` 的 `ItemReference` 物品胶囊） -> `GuideRichContent`
-  - 全功能独立长文创作弹窗（桌面端分栏实时预览 / 竖屏全视口「编辑 / 预览」切换，集成 `ChatEmojiPicker`、分类颜文字选择器、本地图片上传/直链插入、随身物品胶囊插入、付费灵石门槛设置与 `localStorage` 草稿防丢） -> `GuideEditorModal`
+  - 全功能独立长文创作弹窗（桌面端分栏实时预览 / 竖屏全视口「编辑 / 预览」切换，集成 `ChatEmojiPicker`、分类颜文字选择器、本地图片上传/直链插入、紧凑搜索随身物品胶囊插入、付费灵石门槛设置、`localStorage` 草稿防丢与「保存/发布并发送到聊天」） -> `GuideEditorModal`
+  - **传音攻略超链接胶囊 (`ChatGuideReference`)**：攻略查看页与编辑器均支持经 `buildGuideChatMarkup` + `shareToChat` 发送 `{{guide:postId:unlockPrice:title}}` 至当前聊天草稿；传音流内渲染为 `.chat-guide-link` 交互胶囊（带免费/灵石价格标识与 `FloatingTooltip`），点击经 `useUiStore.getState().navigateToGuidePost(postId)` 直达对应攻略详情。
 - **组件与纯逻辑源码**：
   - [`frontend/src/components/GuidePage.tsx`](../../frontend/src/components/GuidePage.tsx)
   - [`frontend/src/components/GuideEditorModal.tsx`](../../frontend/src/components/GuideEditorModal.tsx)
   - [`frontend/src/components/GuideRichContent.tsx`](../../frontend/src/components/GuideRichContent.tsx)
+  - [`frontend/src/components/ChatMessageContent.tsx`](../../frontend/src/components/ChatMessageContent.tsx)
   - [`frontend/src/game/guideMarkup.ts`](../../frontend/src/game/guideMarkup.ts)
-- **样式文件**：[`frontend/src/styles/guide.css`](../../frontend/src/styles/guide.css)
+  - [`frontend/src/game/chatMarkup.ts`](../../frontend/src/game/chatMarkup.ts)
+- **样式文件**：[`frontend/src/styles/guide.css`](../../frontend/src/styles/guide.css)、[`frontend/src/styles.css`](../../frontend/src/styles.css)（搜索 `.chat-guide-link`）、[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 47. 全服排行榜二值图腾与最高排名荣誉徽标 (`LeaderboardGlyph` / `LeaderboardRankBadge`)
+
+- **适用场景**：
+  - **12 榜专属二值图腾**（`frontend/src/assets/glyphs/lb.<boardId>.webp`，64×64 无损纯白二值 WebP，采用 CSS `mask-image` + `currentColor` 动态单色染色，复用于排行榜页大类 Tab、7 项技艺 `OptionToggle` 子榜按钮与「我的名次」栏） -> `LeaderboardGlyph`、`resolveLeaderboardGlyphUrl`
+  - **最高排名荣誉胶囊**（`variant="chat"` 用于 `LogFeed.tsx` 传音行头 `[时间] [境界] [宗门] [图腾 #N] 道号：`，内置 `FloatingTooltip` 悬停展示完整榜名与名次；`variant="guide"` 用于 `GuidePage` 作者上榜头衔；按 Top 1/2/3/常规分为金/银/铜/道金四档并完整适配深浅双主题） -> `LeaderboardRankBadge`
+- **附带扩展**：`OptionToggle`（`OptionToggleOption<T>`）新增可选 `icon?: React.ReactNode` 前置图标槽位。
+- **组件与纯逻辑源码**：
+  - [`frontend/src/components/LeaderboardGlyph.tsx`](../../frontend/src/components/LeaderboardGlyph.tsx)
+  - [`frontend/src/game/leaderboardHelpers.ts`](../../frontend/src/game/leaderboardHelpers.ts)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css)（搜索 `.chat-rank-capsule`、`.option-toggle-btn`）、[`frontend/src/styles/leaderboard.css`](../../frontend/src/styles/leaderboard.css)、[`frontend/src/styles/guide.css`](../../frontend/src/styles/guide.css)、[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 48. 秘境体力胶囊与竖屏历练标题栏迁移 (`TiliBadge`)
+
+- **适用场景**：
+  - 追忆副本秘境体力（`current / 1680`）的实时懒恢复推算与恢复速率/回满倒计时气泡展示，内置独立 1 秒刷新（隐藏面板停表）并按满体/常规/低于 30 点三态着色（深浅双主题同步覆盖）。
+  - **横竖屏自适配挂载**：横屏时置于顶栏 `.topbar-actions` 最左侧（`variant="topbar"`，外层 `FloatingTooltip` 启用 `displayContents`，点击直达「历练」页）；竖屏（`@media (orientation: portrait)`）下隐藏顶栏胶囊避免挤压 `.topbar` 第一行，改为在「历练」页标题栏（`.exploration-header`）右侧渲染同款胶囊（`variant="panel"`，非按钮锚点以保证触屏轻触与桌面悬停均可直接唤起恢复倒计时浮层）。
+- **组件源码**：[`frontend/src/App.tsx`](../../frontend/src/App.tsx)（`TiliBadge`、`TopBar`、`ExplorationPage`）
+- **样式文件**：[`frontend/src/styles/dungeon.css`](../../frontend/src/styles/dungeon.css)（搜索 `.topbar-tili-btn`、`.exploration-header`）

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 const {
   hasActiveSustainedEffect,
   resolveEffectiveEnhancementSuccessBonuses,
+  resolveEquippedEnhancementToolBonuses,
   resolveSustainedDurationClock,
 } = await import('./sustainedConsumables.ts')
 const { enhanceSuccessRate } = await import('./combatConstants.ts')
@@ -195,4 +196,60 @@ test('resolveEffectiveEnhancementSuccessBonuses 对同 uniqueEffectType 仅取�
   )
   assert.ok(Math.abs(singleStockTwoSlots.totalBonus - 0.05) < 1e-12)
   assert.equal(singleStockTwoSlots.items.length, 1)
+})
+
+test('resolveEquippedEnhancementToolBonuses 读取强化工具固定成功率加成且不随强化缩放', () => {
+  const catalog = [
+    {
+      equipmentId: 'equipment.tool-quench-anvil',
+      name: '淬灵锤',
+      slot: 'tool-enhancement',
+      tier: 1,
+      level: 1,
+      techniqueBonus: { technique: 'enhancement', speedRatio: 0.1, enhancementSuccessBonus: 0.03 },
+    },
+    {
+      equipmentId: 'equipment.tool-copper-hammer',
+      name: '赤铜淬灵锤',
+      slot: 'tool-enhancement',
+      tier: 2,
+      level: 18,
+      techniqueBonus: { technique: 'enhancement', speedRatio: 0.2, enhancementSuccessBonus: 0.05 },
+    },
+    {
+      equipmentId: 'equipment.tool-zhenling-hammer',
+      name: '玄光镇灵锤',
+      slot: 'tool-enhancement',
+      tier: 3,
+      level: 30,
+      techniqueBonus: { technique: 'enhancement', speedRatio: 0.3, enhancementSuccessBonus: 0.07 },
+    },
+    {
+      equipmentId: 'equipment.tool-jade-spade',
+      name: '寒玉灵铲',
+      slot: 'tool-gathering',
+      tier: 3,
+      level: 30,
+      techniqueBonus: { technique: 'gathering', speedRatio: 0.3 },
+    },
+  ]
+
+  // 即使工具自身强化到 +20，成功率仍保持固定 +7%，且忽略非 enhancement 工具
+  const res = resolveEquippedEnhancementToolBonuses(
+    [
+      { itemId: 'equipment.tool-zhenling-hammer', enhancementLevel: 20 },
+      { itemId: 'equipment.tool-jade-spade', enhancementLevel: 10 },
+    ],
+    catalog,
+  )
+  assert.ok(Math.abs(res.totalBonus - 0.07) < 1e-12)
+  assert.deepEqual(res.items, [
+    { itemId: 'equipment.tool-zhenling-hammer', name: '玄光镇灵锤', bonus: 0.07 },
+  ])
+
+  // 与固灵砂 (+5%) 加算，t<=10 累加、t>=11 仍受 45% 硬顶约束
+  const plus1 = enhanceSuccessRate(1, 1, res.totalBonus + 0.05)
+  assert.ok(Math.abs(plus1 - 0.62) < 1e-12)
+  const plus11Capped = enhanceSuccessRate(11, 60, res.totalBonus + 0.05)
+  assert.equal(plus11Capped, 0.45)
 })

@@ -298,6 +298,20 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 identity.StateVersion = checked(identity.StateVersion + 1);
                 identity.MarkDirty(PlayerSectionKind.Settings);
             }
+            // 旧存档缺失追忆副本周清体力锚点（TiliUpdatedAtUnixSeconds <= 0）：按 LastSimulatedAt 一次性补锚至首日额度 240，
+            // 并推进版本标脏 Progression 落盘，确保无需消耗一次体力即可按每 360 秒 +1 点正常懒恢复（与离线只读/冷挂机同口径）。
+            if (DungeonEnergyRules.TryInitializeAnchor(
+                    progression.Progression.TiliValue,
+                    progression.Progression.TiliUpdatedAtUnixSeconds,
+                    queue.LastAdvancedAt.ToUnixTimeMilliseconds() / 1000d,
+                    out var initializedTiliValue,
+                    out var initializedTiliUpdatedAt))
+            {
+                progression.Progression.TiliValue = initializedTiliValue;
+                progression.Progression.TiliUpdatedAtUnixSeconds = initializedTiliUpdatedAt;
+                identity.StateVersion = checked(identity.StateVersion + 1);
+                identity.MarkDirty(PlayerSectionKind.Progression);
+            }
             _players[state.PlayerId.Value] = entity.ID;
             SyncNodeMembership(entity);
             }

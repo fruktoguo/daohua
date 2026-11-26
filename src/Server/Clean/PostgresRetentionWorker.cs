@@ -43,6 +43,7 @@ public sealed class PostgresRetentionRepository(
         ExpiredLoadoutInspectGrants,
         ExpiredGuideDailyQuotas,
         DeletedGuidePosts,
+        FinishedDouDiZhuGames,
         Count
     }
 
@@ -177,7 +178,7 @@ public sealed class PostgresRetentionRepository(
                 FROM economy.transactions t
                 WHERE t.created_at <= $1
                   AND NOT (
-                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
+                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.escrow', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
                       OR t.transaction_type LIKE 'market.%'
                       OR t.transaction_type LIKE 'invitation.%'
                       OR t.transaction_type LIKE 'zongmen.%'
@@ -195,7 +196,7 @@ public sealed class PostgresRetentionRepository(
                 FROM economy.transactions t
                 WHERE t.created_at < $1
                   AND (
-                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
+                      t.transaction_type IN ('market', 'shop.buy', 'player.unlock_avatar', 'mail.claim', 'participation.assets', 'building.contribute', 'doudizhu.escrow', 'doudizhu.settlement', 'guide.reward', 'privacy.inspect', 'system-grant')
                       OR t.transaction_type LIKE 'market.%'
                       OR t.transaction_type LIKE 'invitation.%'
                       OR t.transaction_type LIKE 'zongmen.%'
@@ -323,6 +324,15 @@ public sealed class PostgresRetentionRepository(
                 ORDER BY deleted_at
                 LIMIT $2
                 """, "DELETE FROM social.guide_posts p USING ({0}) doomed WHERE p.post_id = doomed.post_id"),
+
+            // 11. 已结束超过 2 小时的斗地主终态牌局检查点（未全员主动点离开的残留赛后视图）。
+            new(CleanupStepKind.FinishedDouDiZhuGames, transientBefore, normalBatch, """
+                SELECT game_id
+                FROM social.doudizhu_games
+                WHERE status <> 0 AND updated_at < $1
+                ORDER BY updated_at
+                LIMIT $2
+                """, "DELETE FROM social.doudizhu_games g USING ({0}) doomed WHERE g.game_id = doomed.game_id"),
         ];
 
         var totals = new int[(int)CleanupStepKind.Count];
@@ -380,7 +390,8 @@ public sealed class PostgresRetentionRepository(
             totals[(int)CleanupStepKind.StickerTombstones],
             totals[(int)CleanupStepKind.ExpiredLoadoutInspectGrants]
                 + totals[(int)CleanupStepKind.ExpiredGuideDailyQuotas]
-                + totals[(int)CleanupStepKind.DeletedGuidePosts]);
+                + totals[(int)CleanupStepKind.DeletedGuidePosts]
+                + totals[(int)CleanupStepKind.FinishedDouDiZhuGames]);
 
         if (result.Total > 0)
             logger.LogInformation(

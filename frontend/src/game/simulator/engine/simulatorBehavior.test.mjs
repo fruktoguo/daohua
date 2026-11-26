@@ -1377,3 +1377,59 @@ test('符箓与阵法技艺每级独立 +1% 伤害增幅在 TS 模拟器与服�
   assert.ok(Math.abs(xHit50.healing - xHit50.damage) < 1e-6)
   assert.ok(Math.abs(xHit0.damage - xHitTalisman.damage) < 1e-9)
 })
+
+test('前端模拟器对称遭遇：双侧均识别为玩家、右侧阵盘反击生效、同刻致命互杀判平且满血吸血对称', () => {
+  const stats = createCombatantStats(1_000, 200, 0, 1.0, 1_000_000, 0, CombatDamageKind.Physical, {
+    spellAttack: 100,
+    maxManapoints: 10_000,
+    critical: 0,
+    hpRegen: 0,
+    mpRegen: 0,
+    effects: { hpDrainPoints: 25, mpDrainPoints: 0, damageReflectPoints: 0, healingBonusPoints: 0, threatOnTakenPoints: 0 },
+  })
+
+  // 1. 双侧均识别为 Player，is-player / has-player 触发器对称成立
+  const sym = CombatEncounterState.createSymmetric('ts-sym-1', 42n, [{ stats, skills: [] }], [{ stats, skills: [] }])
+  assert.equal(sym.isSymmetric, true)
+  assert.equal(sym.sideA[0].isPlayer, true)
+  assert.equal(sym.sideB[0].isPlayer, true)
+  const isPlayerTrigger = [{ dependency: 'target-enemy', condition: 'is-player', comparator: 'is-active', value: 1 }]
+  assert.equal(evaluateTriggers(isPlayerTrigger, sym.sideA[0], sym.sideB[0], sym.sideA, sym.sideB, 0), true)
+  assert.equal(evaluateTriggers(isPlayerTrigger, sym.sideB[0], sym.sideA[0], sym.sideB, sym.sideA, 0), true)
+
+  // 2. 同刻满血互砍 + 25% 吸血：双方剩余气血严格相等，最终同刻互杀判平
+  decideInitialActions(sym)
+  const r1 = advanceCombatTo(sym, 1.0)
+  assert.ok(Math.abs(sym.sideA[0].hitpoints - sym.sideB[0].hitpoints) < 1e-9, '同刻互砍加吸血后双方剩余气血必须完全相等')
+  assert.ok(r1.events.some(e => e.attackerId === sym.sideA[0].id && e.healing > 0))
+  assert.ok(r1.events.some(e => e.attackerId === sym.sideB[0].id && e.healing > 0))
+  const rEnd = advanceCombatTo(sym, 20)
+  assert.equal(rEnd.outcome, 3, '完全镜像同刻互杀应判平 (CombatOutcome.Draw=3)')
+
+  // 3. 右侧单位持有天雷阵盘，受攻击后反击伤害正常触发
+  const tankStats = createCombatantStats(100_000, 50, 0, 0.5, 1_000_000, 0, CombatDamageKind.Physical, {
+    spellAttack: 120,
+    maxManapoints: 10_000,
+    critical: 0,
+    hpRegen: 0,
+    mpRegen: 0,
+  })
+  const diskEnc = CombatEncounterState.createSymmetric('ts-sym-disk', 77n, [{ stats: tankStats, skills: [] }], [{ stats: tankStats, skills: [] }])
+  diskEnc.sideB[0].addBuff({
+    buffId: 'formation.tianlei',
+    expiresAtSeconds: 999,
+    stacks: 1,
+    name: 'formation.tianlei',
+    resetOnWave: false,
+    missingHitpointsPerStack: 0,
+    effects: null,
+    statRatios: null,
+    sourceUnitId: null,
+  })
+  decideInitialActions(diskEnc)
+  const diskRes = advanceCombatTo(diskEnc, 25)
+  assert.ok(
+    diskRes.events.some(e => e.attackerId === diskEnc.sideB[0].id && e.targetId === diskEnc.sideA[0].id && e.abilityId === 'item.tianlei-formation-disk' && e.damage > 0),
+    '右侧单位携带天雷阵盘时必须能正常触发反击',
+  )
+})

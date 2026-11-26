@@ -63,7 +63,7 @@ public sealed class SkillTriggerEvaluatorTests
         var minionEnemy = new CombatantState("enemy:1", CreateStats(100, 50))
         {
             Rank = CombatMonsterRank.Minion,
-            IsSummon = true
+            Kind = CombatantKind.Summon
         };
         var enemies = new[] { bossEnemy, minionEnemy };
 
@@ -160,5 +160,46 @@ public sealed class SkillTriggerEvaluatorTests
         var enemyHighestAbsOver100 = Json("""{"dependency":"enemy-highest-hp","condition":"current-hp","comparator":"greater-than","value":100.0}""");
         Assert.True(SkillTriggerEvaluator.MatchesAll([enemyHighestPctOver50], allyHighAbsLowPct, null, allies, enemies));
         Assert.False(SkillTriggerEvaluator.MatchesAll([enemyHighestAbsOver100], allyHighAbsLowPct, null, allies, enemies));
+    }
+
+    /// <summary>PVP 双阵营对称遭遇（CreateSymmetric）双方单位默认均为玩家；组队非召唤物队友为玩家，怪物与召唤物保持非玩家。</summary>
+    [Fact]
+    public void DuelAndPartyCombatants_ExposeIsPlayerSymmetrically()
+    {
+        var duelEncounter = CombatEncounterState.CreateSymmetric("duel", 1,
+            [new CombatantTemplate(CreateStats())],
+            [new CombatantTemplate(CreateStats())]);
+        Assert.True(duelEncounter.IsSymmetric);
+        Assert.True(duelEncounter.SideA[0].IsPlayer);
+        Assert.True(duelEncounter.SideB[0].IsPlayer);
+        Assert.Equal(CombatSide.SideA, duelEncounter.SideA[0].Side);
+        Assert.Equal(CombatSide.SideB, duelEncounter.SideB[0].Side);
+
+        var targetIsPlayer = Json("""{"dependency":"target-enemy","condition":"is-player","comparator":"is-active"}""");
+        var enemiesHasPlayer = Json("""{"dependency":"enemies","condition":"has-player","comparator":"is-active"}""");
+        Assert.True(SkillTriggerEvaluator.MatchesAll([targetIsPlayer], duelEncounter.SideA[0], duelEncounter.SideB[0],
+            duelEncounter.SideA, duelEncounter.SideB));
+        Assert.True(SkillTriggerEvaluator.MatchesAll([enemiesHasPlayer], duelEncounter.SideA[0], duelEncounter.SideB[0],
+            duelEncounter.SideA, duelEncounter.SideB));
+        Assert.True(SkillTriggerEvaluator.MatchesAll([targetIsPlayer], duelEncounter.SideB[0], duelEncounter.SideA[0],
+            duelEncounter.SideB, duelEncounter.SideA));
+        Assert.True(SkillTriggerEvaluator.MatchesAll([enemiesHasPlayer], duelEncounter.SideB[0], duelEncounter.SideA[0],
+            duelEncounter.SideB, duelEncounter.SideA));
+
+        var partyEncounter = CombatEncounterState.CreateAllied("party", 2,
+            [
+                new CombatantTemplate(CreateStats()),
+                new CombatantTemplate(CreateStats()),
+                new CombatantTemplate(CreateStats(), IsSummon: true)
+            ],
+            selfIndex: 0,
+            [new CombatantTemplate(CreateStats(), DefinitionId: "enemy.test", Rank: CombatMonsterRank.Minion)]);
+        Assert.False(partyEncounter.IsSymmetric);
+        Assert.True(partyEncounter.PlayerAllies[0].IsPlayer);
+        Assert.True(partyEncounter.PlayerAllies[1].IsPlayer);
+        Assert.False(partyEncounter.PlayerAllies[2].IsPlayer);
+        Assert.True(partyEncounter.PlayerAllies[2].IsSummon);
+        Assert.False(partyEncounter.Enemies[0].IsPlayer);
+        Assert.True(partyEncounter.Enemies[0].IsMonster);
     }
 }

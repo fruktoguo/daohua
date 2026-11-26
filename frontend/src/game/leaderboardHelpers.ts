@@ -19,6 +19,63 @@ export const LEADERBOARD_CATEGORIES: readonly LeaderboardCategory[] = [
   'duel',
 ] as const
 
+/** 全部 12 张全服排行榜的规范 boardId 清单（与服务端 LeaderboardAssembler.CanonicalBoards 对齐）。 */
+export const ALL_LEADERBOARD_BOARD_IDS: readonly string[] = [
+  'realm',
+  'technique.alchemy',
+  'technique.forging',
+  'technique.talisman',
+  'technique.enhancement',
+  'technique.formation',
+  'technique.gathering',
+  'technique.mining',
+  'valuation',
+  'spirit-stone',
+  'zongmen',
+  'duel',
+] as const
+
+/** 名次荣誉档位（用于金/银/铜/常规上榜视觉分层）。 */
+export type LeaderboardRankTier = 'top1' | 'top2' | 'top3' | 'ranked'
+
+/** 根据 1-based 榜单名次解析荣誉视觉档位。 */
+export function resolveRankTier(rank: number): LeaderboardRankTier {
+  if (rank === 1) return 'top1'
+  if (rank === 2) return 'top2'
+  if (rank === 3) return 'top3'
+  return 'ranked'
+}
+
+/**
+ * 将榜单元数据格式化为本地化全称（如「境界榜」「炼丹榜」「斗法榜」）。
+ */
+export function formatLeaderboardBoardName(
+  board: { boardId: string; kind?: string; techniqueId?: string | null },
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  const split = splitBoardId(board.boardId)
+  const kind = board.kind || split.category
+  const techniqueId = board.techniqueId ?? split.techniqueId
+  switch (kind) {
+    case 'realm':
+      return t('app.leaderboard.tabRealm')
+    case 'valuation':
+      return t('app.leaderboard.tabValuation')
+    case 'spirit-stone':
+      return t('app.leaderboard.tabSpiritStone')
+    case 'zongmen':
+      return t('app.leaderboard.tabZongmen')
+    case 'duel':
+      return t('app.leaderboard.tabDuel')
+    case 'technique':
+      return techniqueId
+        ? t('app.leaderboard.techniqueBoardName', { name: t(`insight.technique.${techniqueId}`) })
+        : t('app.leaderboard.tabTechnique')
+    default:
+      return board.boardId
+  }
+}
+
 /**
  * 将主类与子技艺 ID 组合为后端契约中的 `boardId`。
  */

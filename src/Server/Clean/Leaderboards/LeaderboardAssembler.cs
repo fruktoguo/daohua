@@ -66,6 +66,12 @@ public static class LeaderboardAssembler
     /// <summary>12 个全服固定榜单的规范展示顺序与元数据。</summary>
     public static readonly IReadOnlyList<LeaderboardBoardDescriptor> CanonicalBoards = BuildCanonicalBoards();
 
+    /// <summary>
+    /// 个人荣誉头衔（传音最高排名徽标 / 攻略作者头衔）采用的 11 张个人榜优先序（排除宗门榜）：
+    /// 同排名并列时按 境界 &gt; 斗法 &gt; 身家 &gt; 灵石 &gt; 七技艺（炼丹/炼器/制符/强化/阵法/采集/挖矿） 裁决。
+    /// </summary>
+    public static readonly IReadOnlyList<LeaderboardBoardDescriptor> PersonalHonorBoards = BuildPersonalHonorBoards();
+
     private static readonly FrozenSet<string> s_knownBoardIds = CanonicalBoards
         .Select(b => b.BoardId)
         .ToFrozenSet(StringComparer.Ordinal);
@@ -84,6 +90,22 @@ public static class LeaderboardAssembler
         list.Add(new(LeaderboardBoardIds.SpiritStone, "spirit-stone", null));
         list.Add(new(LeaderboardBoardIds.Zongmen, "zongmen", null));
         list.Add(new(LeaderboardBoardIds.Duel, "duel", null));
+        return [.. list];
+    }
+
+    private static LeaderboardBoardDescriptor[] BuildPersonalHonorBoards()
+    {
+        var list = new List<LeaderboardBoardDescriptor>(4 + TechniqueCatalog.All.Length)
+        {
+            new(LeaderboardBoardIds.Realm, "realm", null),
+            new(LeaderboardBoardIds.Duel, "duel", null),
+            new(LeaderboardBoardIds.Valuation, "valuation", null),
+            new(LeaderboardBoardIds.SpiritStone, "spirit-stone", null),
+        };
+        foreach (var techId in TechniqueCatalog.All)
+        {
+            list.Add(new(LeaderboardBoardIds.Technique(techId), "technique", techId));
+        }
         return [.. list];
     }
 

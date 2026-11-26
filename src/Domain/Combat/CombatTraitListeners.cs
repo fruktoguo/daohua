@@ -63,9 +63,9 @@ internal sealed class CombatTraitListeners(CombatEncounterState encounter)
 
     private void Refresh(Listener listener, double allies, double enemies)
     {
-        var isAlly = listener.Order < encounter.PlayerAllies.Count;
+        var isSideA = listener.Unit.Side == CombatSide.SideA;
         foreach (var checker in listener.Checkers)
-            checker.Refresh(encounter, listener.Unit, isAlly ? allies : enemies, isAlly ? enemies : allies);
+            checker.Refresh(encounter, listener.Unit, isSideA ? allies : enemies, isSideA ? enemies : allies);
     }
 
     private readonly record struct Listener(CombatantState Unit, int Order, CombatAliveCountTraitChecker[] Checkers);
