@@ -74,7 +74,7 @@ public sealed class PlayerAggregateTests
         Assert.Null(player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "alchemy").ItemId);
     }
 
-    /// <summary>内嵌消耗品目录默认不允许重复占槽，仅定神香与青灵香开放三槽。</summary>
+    /// <summary>内嵌消耗品目录默认不允许重复占槽，仅定神香与青灵香开放三槽；淬灵粉与固灵砂归属强化成功率独特效果组。</summary>
     [Fact]
     public void EmbeddedConsumableCatalogUsesConfiguredDuplicateSlotLimits()
     {
@@ -84,6 +84,51 @@ public sealed class PlayerAggregateTests
         Assert.All(catalog.Items.Values.Where(item => item.Consumable is not null
                 && item.Id.Value is not ("item.dingshen-incense" or "item.qingling-incense")),
             item => Assert.Equal(0, item.Consumable!.StackableSlotCount));
+        Assert.Equal(ConsumableUniqueEffect.EnhancementSuccess, catalog.Items[new ItemId("item.cuiling-powder")].Consumable!.UniqueEffect);
+        Assert.Equal(ConsumableUniqueEffect.EnhancementSuccess, catalog.Items[new ItemId("item.guling-sand")].Consumable!.UniqueEffect);
+        Assert.All(catalog.Items.Values.Where(item => item.Consumable is not null
+                && item.Id.Value is not ("item.cuiling-powder" or "item.guling-sand")),
+            item => Assert.Equal(ConsumableUniqueEffect.None, item.Consumable!.UniqueEffect));
+    }
+
+    /// <summary>独特效果消耗品：配置时跨槽互斥顶替，存量多槽加载归一化时自动移除低等级、仅留最高等级。</summary>
+    [Fact]
+    public void UniqueEffectAutoUseSlotsReplaceOnConfigureAndReconcileKeepsHighestLevel()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "独特互斥", Baseline, catalog.Fingerprint);
+        const string powderId = "item.cuiling-powder"; // Lv.1
+        const string sandId = "item.guling-sand";      // Lv.18
+
+        // 1. 手动配置互斥顶替：槽 0 装淬灵粉 -> 槽 1 装固灵砂自动清空槽 0 -> 槽 2 装淬灵粉自动清空槽 1
+        player.ConfigureAutoUse("enhancement", 0, powderId, 1, true,
+            uniqueEffect: ConsumableUniqueEffect.EnhancementSuccess, gameData: catalog);
+        player.ConfigureAutoUse("enhancement", 1, sandId, 1, true,
+            uniqueEffect: ConsumableUniqueEffect.EnhancementSuccess, gameData: catalog);
+        Assert.Null(player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 0).ItemId);
+        Assert.Equal(sandId, player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 1).ItemId);
+
+        player.ConfigureAutoUse("enhancement", 2, powderId, 1, true,
+            uniqueEffect: ConsumableUniqueEffect.EnhancementSuccess, gameData: catalog);
+        Assert.Null(player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 1).ItemId);
+        Assert.Equal(powderId, player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 2).ItemId);
+
+        // 2. 存量双槽对账（模拟旧存档同时装载 0:淬灵粉 + 1:固灵砂）：自动移除低等级淬灵粉，仅保留最高等级固灵砂
+        player.Settings.AutoUseSlots.Clear();
+        player.Settings.AutoUseSlots.Add(new AutoUseSlotState("enhancement", 0, powderId, 1, true, RemainingDurationSeconds: 200));
+        player.Settings.AutoUseSlots.Add(new AutoUseSlotState("enhancement", 1, sandId, 1, true, RemainingDurationSeconds: 50));
+
+        Assert.True(player.Settings.ReconcileUniqueAutoUseSlots(catalog));
+        var slot0 = player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 0);
+        var slot1 = player.Settings.AutoUseSlots.Single(s => s.SlotIndex == 1);
+        Assert.Null(slot0.ItemId);
+        Assert.False(slot0.Enabled);
+        Assert.Equal(0, slot0.RemainingDurationSeconds);
+        Assert.Equal(sandId, slot1.ItemId);
+        Assert.True(slot1.Enabled);
+        Assert.Equal(50, slot1.RemainingDurationSeconds);
+        // 幂等再次调用无变更
+        Assert.False(player.Settings.ReconcileUniqueAutoUseSlots(catalog));
     }
 
     /// <summary>

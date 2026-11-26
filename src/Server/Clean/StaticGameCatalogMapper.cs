@@ -40,6 +40,7 @@ public static class StaticGameCatalogMapper
             var techniqueSpeedRatio = hasConsumable ? ReadDouble(consumable, "techniqueSpeedRatio", 0) : 0;
             var enhancementSuccessBonus = hasConsumable ? ReadDouble(consumable, "enhancementSuccessBonus", 0) : 0;
             var stackableSlotCount = hasConsumable ? ReadInt(consumable, "stackableSlotCount", 0) : 0;
+            var uniqueEffectType = hasConsumable ? ReadInt(consumable, "uniqueEffectType", 0) : 0;
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
@@ -104,6 +105,7 @@ public static class StaticGameCatalogMapper
                 techniqueSpeedRatio,
                 enhancementSuccessBonus,
                 stackableSlotCount,
+                uniqueEffectType,
                 cooldownSeconds,
                 hitpointRestore,
                 manapointRestore,

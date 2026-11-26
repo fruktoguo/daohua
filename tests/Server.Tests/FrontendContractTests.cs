@@ -101,15 +101,21 @@ public sealed class FrontendContractTests
         using var doc = JsonDocument.Parse(json);
         var array = doc.RootElement.EnumerateArray().ToArray();
 
-        // 定神香验证：techniqueSpeedRatio 必须为 0.3
+        // 定神香验证：techniqueSpeedRatio 必须为 0.3，uniqueEffectType 为 0
         var dingshen = array.Single(e => e.GetProperty("itemId").GetString() == "item.dingshen-incense");
         Assert.True(dingshen.TryGetProperty("techniqueSpeedRatio", out var dingshenSpeed));
         Assert.Equal(0.3, dingshenSpeed.GetDouble(), precision: 2);
+        Assert.Equal(0, dingshen.GetProperty("uniqueEffectType").GetInt32());
 
-        // 淬灵粉验证：enhancementSuccessBonus 必须为 0.03
+        // 淬灵粉与固灵砂验证：enhancementSuccessBonus 与 uniqueEffectType = 1
         var cuiling = array.Single(e => e.GetProperty("itemId").GetString() == "item.cuiling-powder");
         Assert.True(cuiling.TryGetProperty("enhancementSuccessBonus", out var cuilingBonus));
         Assert.Equal(0.03, cuilingBonus.GetDouble(), precision: 3);
+        Assert.Equal(1, cuiling.GetProperty("uniqueEffectType").GetInt32());
+
+        var guling = array.Single(e => e.GetProperty("itemId").GetString() == "item.guling-sand");
+        Assert.Equal(0.05, guling.GetProperty("enhancementSuccessBonus").GetDouble(), precision: 3);
+        Assert.Equal(1, guling.GetProperty("uniqueEffectType").GetInt32());
     }
 
     /// <summary>阵盘物品静态目录投影中必须包含 teamWide、evasion、evasionPostRatio 等效果字段，防止前端悬浮无法展示详细信息。</summary>

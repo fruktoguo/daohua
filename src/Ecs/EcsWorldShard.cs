@@ -293,6 +293,11 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     identity.MarkDirty(PlayerSectionKind.Progression);
                 }
             }
+            if (settings.Settings.ReconcileUniqueAutoUseSlots(GameData))
+            {
+                identity.StateVersion = checked(identity.StateVersion + 1);
+                identity.MarkDirty(PlayerSectionKind.Settings);
+            }
             _players[state.PlayerId.Value] = entity.ID;
             SyncNodeMembership(entity);
             }

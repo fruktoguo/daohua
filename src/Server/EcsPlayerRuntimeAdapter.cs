@@ -773,7 +773,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                         var autoActionType = barId!;
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                             aggregate.ConfigureAutoUse(autoActionType, slotIndex, itemId, quantity, enabled, group,
-                                slotItem?.Consumable?.StackableSlotCount ?? 0));
+                                slotItem?.Consumable?.StackableSlotCount ?? 0,
+                                slotItem?.Consumable?.UniqueEffect ?? ConsumableUniqueEffect.None,
+                                gameData));
                         break;
                     }
                     case "loadout.replace":

@@ -116,30 +116,40 @@ test('秘法化灵、分解、转化对强化成功率消耗品均返回冻结�
   }
 })
 
-test('enhanceSuccessRate 正确累加消耗品成功率并钳位到 99%', () => {
+test('enhanceSuccessRate 按超出等级 0.5% 乘算并分段钳位（t<=10 上限 99%，t>=11 上限 45%）', () => {
   const base = enhanceSuccessRate(1, 0)
   assert.ok(Math.abs(enhanceSuccessRate(1, 0, 0.03) - (base + 0.03)) < 1e-12)
-  assert.ok(Math.abs(enhanceSuccessRate(1, 0, 0.08) - (base + 0.08)) < 1e-12)
-  assert.equal(enhanceSuccessRate(1, 0, 0.8), 0.99)
+  assert.equal(enhanceSuccessRate(20, 20), 0.3)
+  assert.ok(Math.abs(enhanceSuccessRate(18, 20) - 0.3 * 1.01) < 1e-12)
+  assert.ok(Math.abs(enhanceSuccessRate(1, 20) - 0.5 * 1.095) < 1e-12)
+  assert.equal(enhanceSuccessRate(10, 300, 0.8), 0.99)
+  assert.equal(enhanceSuccessRate(11, 300, 0.8), 0.45)
+  assert.equal(enhanceSuccessRate(20, 300, 0.8), 0.45)
   assert.equal(enhanceSuccessRate(1, 0, -0.2), base)
 })
 
-test('resolveEffectiveEnhancementSuccessBonuses 按库存与激活残余即时汇总并防重复计数', () => {
+test('resolveEffectiveEnhancementSuccessBonuses 对同 uniqueEffectType 仅取最高等级一项并防重复预约', () => {
   const powder = pill({
     itemId: 'item.cuiling-powder',
     name: '淬灵粉',
+    tier: 1,
+    level: 1,
     usableBars: ['enhancement'],
     enhancementSuccessBonus: 0.03,
+    uniqueEffectType: 1,
   })
   const sand = pill({
     itemId: 'item.guling-sand',
     name: '固灵砂',
+    tier: 2,
+    level: 18,
     usableBars: ['enhancement'],
     enhancementSuccessBonus: 0.05,
+    uniqueEffectType: 1,
   })
   const catalog = [powder, sand]
 
-  // 1. 未激活但背包库存充足：即时计入预期加成
+  // 1. 存量双槽同时配置且均有库存：同属 uniqueEffectType=1，仅保留最高等级固灵砂 +0.05
   const ready = resolveEffectiveEnhancementSuccessBonuses(
     [
       { itemId: 'item.cuiling-powder', quantity: 1, enabled: true, remainingDurationSeconds: 0 },
@@ -151,8 +161,8 @@ test('resolveEffectiveEnhancementSuccessBonuses 按库存与激活残余即时�
       { itemId: 'item.guling-sand', amount: 2 },
     ],
   )
-  assert.ok(Math.abs(ready.totalBonus - 0.08) < 1e-12)
-  assert.deepEqual(ready.items.map(i => i.itemId), ['item.cuiling-powder', 'item.guling-sand'])
+  assert.ok(Math.abs(ready.totalBonus - 0.05) < 1e-12)
+  assert.deepEqual(ready.items.map(i => i.itemId), ['item.guling-sand'])
 
   // 2. 已充能且仍有剩余时长：即便背包已扣空（0 件），本轮依然有效
   const activeNoInventory = resolveEffectiveEnhancementSuccessBonuses(

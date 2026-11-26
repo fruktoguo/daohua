@@ -303,7 +303,8 @@
       ],
       "durationSeconds": 300,
       "isContinuous": true,
-      "enhancementSuccessBonus": 0.03
+      "enhancementSuccessBonus": 0.03,
+      "uniqueEffectType": 1
     },
     "subCategory": "enhancementSupply",
     "level": 1
@@ -322,7 +323,8 @@
       ],
       "durationSeconds": 300,
       "isContinuous": true,
-      "enhancementSuccessBonus": 0.05
+      "enhancementSuccessBonus": 0.05,
+      "uniqueEffectType": 1
     },
     "subCategory": "enhancementSupply",
     "level": 18

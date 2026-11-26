@@ -1757,6 +1757,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     durationSeconds: 300,
     isContinuous: true,
     enhancementSuccessBonus: 0.03,
+    uniqueEffectType: 1,
   },
   'item.guling-sand': {
     itemId: 'item.guling-sand',
@@ -1773,6 +1774,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     durationSeconds: 300,
     isContinuous: true,
     enhancementSuccessBonus: 0.05,
+    uniqueEffectType: 1,
   },
   'item.awakening-stone': {
     itemId: 'item.awakening-stone',
@@ -2154,6 +2156,10 @@ export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | u
     cultivationMultiplier: def.cultivationMultiplier ?? 1,
     gatheringMultiplier: def.gatheringMultiplier ?? 1,
     alchemyMultiplier: def.alchemyMultiplier ?? 1,
+    techniqueSpeedRatio: def.techniqueSpeedRatio ?? 0,
+    enhancementSuccessBonus: def.enhancementSuccessBonus ?? 0,
+    stackableSlotCount: def.stackableSlotCount ?? 0,
+    uniqueEffectType: def.uniqueEffectType ?? 0,
   }
 }
 

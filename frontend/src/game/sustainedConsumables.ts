@@ -33,7 +33,8 @@ function getUnvariantInventoryAmount(
 
 /**
  * 统计强化栏位当前可即时生效的成功率加成（含已充能残余与开轮可自动充能的库存）：
- * 与服务端 EffectiveEnhancementSuccessBonus + PrepareSustainedAutoUse 同口径，按 itemId 预约库存防止重复计数。
+ * 与服务端 EffectiveEnhancementSuccessBonus + PrepareSustainedAutoUse 同口径，按 itemId 预约库存防止重复计数；
+ * 声明非零 uniqueEffectType 的同组消耗品仅保留最高等级（level → tier → bonus）的一件生效。
  */
 export function resolveEffectiveEnhancementSuccessBonuses(
   slots: readonly AutoUseSlot[] | undefined,
@@ -43,10 +44,17 @@ export function resolveEffectiveEnhancementSuccessBonuses(
   if (!slots || slots.length === 0) return { totalBonus: 0, items: [] }
   const itemById = new Map(items.map(item => [item.itemId, item]))
   const reservedByItem = new Map<string, number>()
-  const bonusItems: EnhancementConsumableBonusItem[] = []
-  let totalBonus = 0
+  const candidates: Array<{
+    slotOrder: number
+    uniqueEffectType: number
+    level: number
+    tier: number
+    entry: EnhancementConsumableBonusItem
+  }> = []
 
+  let slotOrder = 0
   for (const slot of slots) {
+    slotOrder += 1
     if (!slot.enabled || !slot.itemId) continue
     const item = itemById.get(slot.itemId)
     const bonus = item?.enhancementSuccessBonus
@@ -64,8 +72,35 @@ export function resolveEffectiveEnhancementSuccessBonuses(
       reservedByItem.set(item.itemId, reserved + 1)
     }
 
-    totalBonus += bonus
-    bonusItems.push({ itemId: item.itemId, name: item.name, bonus })
+    candidates.push({
+      slotOrder,
+      uniqueEffectType: item.uniqueEffectType ?? 0,
+      level: item.level ?? 1,
+      tier: item.tier ?? 1,
+      entry: { itemId: item.itemId, name: item.name, bonus },
+    })
+  }
+
+  const uniqueWinners = new Map<number, (typeof candidates)[number]>()
+  for (const c of candidates) {
+    if (c.uniqueEffectType <= 0) continue
+    const cur = uniqueWinners.get(c.uniqueEffectType)
+    if (
+      !cur
+      || c.level > cur.level
+      || (c.level === cur.level && c.tier > cur.tier)
+      || (c.level === cur.level && c.tier === cur.tier && c.entry.bonus > cur.entry.bonus)
+    ) {
+      uniqueWinners.set(c.uniqueEffectType, c)
+    }
+  }
+
+  const bonusItems: EnhancementConsumableBonusItem[] = []
+  let totalBonus = 0
+  for (const c of candidates) {
+    if (c.uniqueEffectType > 0 && uniqueWinners.get(c.uniqueEffectType) !== c) continue
+    totalBonus += c.entry.bonus
+    bonusItems.push(c.entry)
   }
 
   return { totalBonus, items: bonusItems }

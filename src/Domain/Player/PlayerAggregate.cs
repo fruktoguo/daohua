@@ -600,6 +600,59 @@ public sealed class PlayerSettingsState
         var normalized = PlayerAggregate.NormalizeAvatar(avatar);
         return UnlockedAvatars.Add(normalized);
     }
+
+    /// <summary>
+    /// 归一化自动使用槽中的独特效果互斥物品（总纲 §6.2.2）：
+    /// 当存量存档中同一非零 <see cref="ConsumableUniqueEffect"/> 装载了多个槽位时，
+    /// 自动移除低等级槽位，仅保留最高等级（同级依次比对品阶、强化加成、启用态与剩余持续时长）的那一个。
+    /// </summary>
+    /// <returns>若自动移除了至少一个冗余槽位则返回 true。</returns>
+    public bool ReconcileUniqueAutoUseSlots(GameDataCatalog? gameData)
+    {
+        if (gameData is null || AutoUseSlots.Count <= 1) return false;
+        Dictionary<ConsumableUniqueEffect, (int ListIndex, (int Level, int Tier, double Bonus, int Enabled, double Remaining) Rank)>? winners = null;
+        for (var i = 0; i < AutoUseSlots.Count; i++)
+        {
+            var slot = AutoUseSlots[i];
+            if (string.IsNullOrWhiteSpace(slot.ItemId)) continue;
+            if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item)
+                || item.Consumable is null
+                || item.Consumable.UniqueEffect == ConsumableUniqueEffect.None)
+                continue;
+            winners ??= [];
+            var effect = item.Consumable.UniqueEffect;
+            var rank = (
+                item.Level,
+                item.Tier,
+                item.Consumable.EnhancementSuccessBonus,
+                slot.Enabled ? 1 : 0,
+                slot.RemainingDurationSeconds);
+            if (!winners.TryGetValue(effect, out var current) || rank.CompareTo(current.Rank) > 0)
+                winners[effect] = (i, rank);
+        }
+        if (winners is null) return false;
+
+        var changed = false;
+        for (var i = 0; i < AutoUseSlots.Count; i++)
+        {
+            var slot = AutoUseSlots[i];
+            if (string.IsNullOrWhiteSpace(slot.ItemId)) continue;
+            if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item)
+                || item.Consumable is null
+                || item.Consumable.UniqueEffect == ConsumableUniqueEffect.None)
+                continue;
+            if (winners[item.Consumable.UniqueEffect].ListIndex == i) continue;
+            AutoUseSlots[i] = slot with
+            {
+                ItemId = null,
+                Enabled = false,
+                RemainingDurationSeconds = 0,
+                CooldownUntilUnixSeconds = 0
+            };
+            changed = true;
+        }
+        return changed;
+    }
 }
 
 /// <summary>
@@ -1500,7 +1553,9 @@ public sealed partial class PlayerAggregate
     /// 配置特定行动类型（如炼丹、战斗、采集）绑定的消耗品自动使用快捷槽位。
     /// </summary>
     public void ConfigureAutoUse(string actionType, int slotIndex, string? itemId, double quantity, bool enabled,
-        string? group = null, int stackableSlotCount = 0)
+        string? group = null, int stackableSlotCount = 0,
+        ConsumableUniqueEffect uniqueEffect = ConsumableUniqueEffect.None,
+        GameDataCatalog? gameData = null)
     {
         actionType = actionType?.Trim().ToLowerInvariant() ?? string.Empty;
         itemId = itemId?.Trim();
@@ -1511,6 +1566,8 @@ public sealed partial class PlayerAggregate
             || (group == AutoUseSlotState.SlotGroupPotion && actionType != Domain.GameData.AutoUseBar.Combat)
             || (itemId is not null && (itemId.Length == 0 || itemId.Length > 128))
             || stackableSlotCount < 0
+            || !Enum.IsDefined<ConsumableUniqueEffect>(uniqueEffect)
+            || (uniqueEffect != ConsumableUniqueEffect.None && stackableSlotCount > 1)
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");
         var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == actionType
@@ -1534,12 +1591,20 @@ public sealed partial class PlayerAggregate
         var clearedDuplicate = false;
         if (itemId is not null)
         {
+            var effectiveUniqueEffect = uniqueEffect != ConsumableUniqueEffect.None
+                ? uniqueEffect
+                : (gameData is not null
+                    && gameData.Items.TryGetValue(new ItemId(itemId), out var configuredItem)
+                    && configuredItem.Consumable is not null
+                    ? configuredItem.Consumable.UniqueEffect
+                    : ConsumableUniqueEffect.None);
+            var effectiveStackable = effectiveUniqueEffect != ConsumableUniqueEffect.None ? 1 : Math.Max(1, stackableSlotCount);
             var duplicates = Settings.AutoUseSlots
                 .Select((slot, slotIndex) => (slot, slotIndex))
                 .Where(entry => entry.slotIndex != index && entry.slot.ItemId == itemId)
                 .Select(entry => entry.slotIndex)
                 .ToArray();
-            var excess = duplicates.Length + 1 - Math.Max(1, stackableSlotCount);
+            var excess = duplicates.Length + 1 - effectiveStackable;
             for (var duplicateIndex = 0; duplicateIndex < duplicates.Length && excess > 0; duplicateIndex++, excess--)
             {
                 var duplicateSlotIndex = duplicates[duplicateIndex];
@@ -1552,6 +1617,26 @@ public sealed partial class PlayerAggregate
                     CooldownUntilUnixSeconds = 0
                 };
                 clearedDuplicate = true;
+            }
+            if (effectiveUniqueEffect != ConsumableUniqueEffect.None && gameData is not null)
+            {
+                for (var sIdx = 0; sIdx < Settings.AutoUseSlots.Count; sIdx++)
+                {
+                    if (sIdx == index) continue;
+                    var other = Settings.AutoUseSlots[sIdx];
+                    if (string.IsNullOrWhiteSpace(other.ItemId)) continue;
+                    if (!gameData.Items.TryGetValue(new ItemId(other.ItemId), out var otherItem)
+                        || otherItem.Consumable?.UniqueEffect != effectiveUniqueEffect)
+                        continue;
+                    Settings.AutoUseSlots[sIdx] = other with
+                    {
+                        ItemId = null,
+                        Enabled = false,
+                        RemainingDurationSeconds = 0,
+                        CooldownUntilUnixSeconds = 0
+                    };
+                    clearedDuplicate = true;
+                }
             }
         }
         if (unchanged && !clearedDuplicate) return;

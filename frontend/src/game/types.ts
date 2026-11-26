@@ -1219,6 +1219,8 @@ export interface ItemDefinition {
   enhancementSuccessBonus?: number
   /** 同一消耗品允许占用的自动使用槽位数；0 表示最多一个 */
   stackableSlotCount?: number
+  /** 自动消耗品独特效果互斥类型（0=普通不互斥，1=强化成功率提升；非0同类型全栏位至多装载1件） */
+  uniqueEffectType?: number
   /** 耐久型持续消耗品（true 时槽位持有即生效，不消耗不耗竭；如聚灵阵盘） */
   durable?: boolean
   /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
@@ -1226,6 +1228,16 @@ export interface ItemDefinition {
   /** 出厂默认战斗触发条件（如气血低于 50% 自动吃药） */
   triggers?: CombatTrigger[] | null
 }
+
+/**
+ * 自动消耗品独特效果互斥类型枚举（与服务端 ConsumableUniqueEffect 对齐）
+ */
+export const ConsumableUniqueEffect = {
+  /** 普通消耗品（不跨物品互斥） */
+  None: 0,
+  /** 强化成功率提升（如淬灵粉、固灵砂） */
+  EnhancementSuccess: 1,
+} as const
 
 /**
  * 消耗品即时打击定义（雷击符等：按灵力消耗换算元素术法伤害直取敌首）

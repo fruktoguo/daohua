@@ -276,10 +276,17 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(11), 12);
         // t=11..20 基础成功率统一为 30%（0.30）。
         Assert.Equal(0.3, EnhancementRules.BaseSuccessRate(20), 12);
-        // 技艺修正：L≥t 线性乘算 ×(1+0.01×L)；L<t 乘性衰减 ×0.9^(t-L)；终值 clamp [0, 0.99]。
-        Assert.Equal(0.99, EnhancementRules.SuccessRate(1, 127), 12);
+        // 技艺修正：L≥t 仅对超出部分线性乘算 ×(1+0.005×(L-t))；L<t 乘性衰减 ×0.9^(t-L)；
+        // 分段封顶：t≤10 clamp [0, 0.99]，t≥11 clamp [0, 0.45]。
+        Assert.Equal(0.99, EnhancementRules.SuccessRate(1, 300), 12);
         Assert.Equal(0.5 * Math.Pow(0.9, 1), EnhancementRules.SuccessRate(1, 0), 12);
-        Assert.Equal(0.4 * (1.0 + 0.01 * 5), EnhancementRules.SuccessRate(5, 5), 12);
+        Assert.Equal(0.4, EnhancementRules.SuccessRate(5, 5), 12);
+        Assert.Equal(0.3, EnhancementRules.SuccessRate(20, 20), 12);
+        Assert.Equal(0.3 * (1.0 + 0.005 * 2), EnhancementRules.SuccessRate(18, 20), 12);
+        Assert.Equal(0.5 * (1.0 + 0.005 * 19), EnhancementRules.SuccessRate(1, 20), 12);
+        Assert.Equal(0.99, EnhancementRules.SuccessRate(10, 300, 0.50), 12);
+        Assert.Equal(0.45, EnhancementRules.SuccessRate(11, 300, 0.50), 12);
+        Assert.Equal(0.45, EnhancementRules.SuccessRate(20, 300, 0.50), 12);
 
         // 判定种子取行动实例 Id 前 8 字节、通道独立：同实例同轮必得同结果，异实例结果流独立。
         var prep = new EnhancementRules.Preparation(sword, 0, 1, 10, null, 0.5);
@@ -1233,10 +1240,14 @@ public sealed class TechniqueAndEnhancementTests
     {
         var cuiling = new ItemDefinition(new ItemId("item.cuiling-powder"), "淬灵粉", "", true, 150,
             new ConsumableDefinition(new HashSet<string> { AutoUseBar.Enhancement },
-                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.03));
+                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.03,
+                UniqueEffect: ConsumableUniqueEffect.EnhancementSuccess),
+            Level: 1, Tier: 1);
         var guling = new ItemDefinition(new ItemId("item.guling-sand"), "固灵砂", "", true, 450,
             new ConsumableDefinition(new HashSet<string> { AutoUseBar.Enhancement },
-                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.05));
+                DurationSeconds: 300, IsContinuous: true, EnhancementSuccessBonus: 0.05,
+                UniqueEffect: ConsumableUniqueEffect.EnhancementSuccess),
+            Level: 18, Tier: 2);
         var catalog = new GameDataCatalog("test", "fp", ActionCatalog.Default,
             items: new Dictionary<ItemId, ItemDefinition> { [cuiling.Id] = cuiling, [guling.Id] = guling });
 
@@ -1257,8 +1268,14 @@ public sealed class TechniqueAndEnhancementTests
         var gulingRate = EnhancementRules.SuccessRate(1, 0, 0.05);
         Assert.Equal(baseRate + 0.05, gulingRate, 12);
 
-        // 3. 槽位未启用或耗竭时：加成归零
+        // 3. 存量双槽同时激活时：独特效果类型互斥，仅取最高等级固灵砂 +0.05（绝不叠成 +0.08）
+        slots.Add(new AutoUseSlotState(AutoUseBar.Enhancement, 1, cuiling.Id.Value, 1, true, RemainingDurationSeconds: 300));
+        Assert.Equal(0.05, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
+
+        // 4. 高级槽位耗竭而低级仍有残余时：平滑回落低级 +0.03；全部耗竭时归零
         slots[0] = slots[0] with { RemainingDurationSeconds = 0 };
+        Assert.Equal(0.03, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
+        slots[1] = slots[1] with { RemainingDurationSeconds = 0 };
         Assert.Equal(0.0, EnhancementRules.EffectiveEnhancementSuccessBonus(slots, catalog), 12);
     }
 

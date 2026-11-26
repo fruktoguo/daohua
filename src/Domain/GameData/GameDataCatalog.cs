@@ -84,6 +84,19 @@ public static class AutoUseBar
     }
 }
 
+/// <summary>
+/// 自动消耗品独特效果互斥类型（总纲 §6.2.2）：
+/// 0 为普通类型（不跨物品互斥，仅受自身 stackableSlotCount 约束）；
+/// 非 0 表示独特效果组，角色全部自动使用槽中同一独特效果类型至多装载 1 件。
+/// </summary>
+public enum ConsumableUniqueEffect
+{
+    /// <summary>普通消耗品（不跨物品互斥）。</summary>
+    None = 0,
+    /// <summary>强化成功率提升（如淬灵粉、固灵砂）。</summary>
+    EnhancementSuccess = 1,
+}
+
 /// <summary>行动在模拟器中的执行方式。</summary>
 public enum ActionExecutionKind : byte
 {
@@ -220,7 +233,8 @@ public sealed record ConsumableDefinition(
     double CooldownSeconds = 0,
     double TechniqueSpeedRatio = 0,
     double EnhancementSuccessBonus = 0,
-    int StackableSlotCount = 0)
+    int StackableSlotCount = 0,
+    ConsumableUniqueEffect UniqueEffect = ConsumableUniqueEffect.None)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -293,7 +307,9 @@ public sealed record ItemDefinition(
     double SellPrice = 0,
     ConsumableDefinition? Consumable = null,
     string Category = "general",
-    string? SubCategory = null)
+    string? SubCategory = null,
+    int Level = 1,
+    int Tier = 1)
 {
     /// <summary>自动消耗品主分类键：自动使用槽位仅接受本主分类的物品；手动消耗品（manual/chest 等）不入槽。</summary>
     public const string CategoryConsumable = "consumable";
@@ -1194,6 +1210,16 @@ public sealed class GameDataCatalog
             if (consumableProperty.TryGetProperty("stackableSlotCount", out var stackableSlotCountProperty)
                 && (!stackableSlotCountProperty.TryGetInt32(out stackableSlotCount) || stackableSlotCount < 0))
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品 {id} 的 stackableSlotCount 必须为非负整数。");
+            var uniqueEffect = ConsumableUniqueEffect.None;
+            if (consumableProperty.TryGetProperty("uniqueEffectType", out var uniqueEffectProperty))
+            {
+                if (!uniqueEffectProperty.TryGetInt32(out var rawUniqueEffect)
+                    || !Enum.IsDefined<ConsumableUniqueEffect>((ConsumableUniqueEffect)rawUniqueEffect))
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品 {id} 的 uniqueEffectType 必须为合法独特效果枚举值。");
+                uniqueEffect = (ConsumableUniqueEffect)rawUniqueEffect;
+            }
+            if (uniqueEffect != ConsumableUniqueEffect.None && stackableSlotCount > 1)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品 {id} 声明独特效果互斥时不得配置多槽叠加。");
             consumable = new ConsumableDefinition(
                 new ReadOnlySet<string>(usableBars),
                 JsonRead.Number(consumableProperty, "durationSeconds"),
@@ -1207,13 +1233,20 @@ public sealed class GameDataCatalog
                 JsonRead.Number(consumableProperty, "cooldownSeconds"),
                 JsonRead.Number(consumableProperty, "techniqueSpeedRatio"),
                 JsonRead.Number(consumableProperty, "enhancementSuccessBonus"),
-                stackableSlotCount);
+                stackableSlotCount,
+                uniqueEffect);
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";
         var subCategory = entry.TryGetProperty("subCategory", out var subCategoryProperty)
             ? subCategoryProperty.GetString() : null;
-        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable, category, subCategory);
+        var level = entry.TryGetProperty("level", out var levelProperty)
+            && levelProperty.TryGetInt32(out var parsedLevel) && parsedLevel >= 1
+            ? parsedLevel : 1;
+        var tier = entry.TryGetProperty("tier", out var tierProperty)
+            && tierProperty.TryGetInt32(out var parsedTier) && parsedTier >= 1
+            ? parsedTier : 1;
+        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable, category, subCategory, level, tier);
     }
 
     /// <summary>解析消耗/产出等数量字典</summary>

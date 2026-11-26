@@ -324,9 +324,17 @@ static void ValidateReferences(string directory)
                 Require(ConsumableKeys().Contains(key),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 consumable.{key} 不在授权词汇表内。");
             var stackableSlotCount = Property(consumable, "stackableSlotCount");
+            var parsedStackableSlotCount = 0;
             Require(stackableSlotCount.ValueKind == JsonValueKind.Undefined
-                    || stackableSlotCount.TryGetInt32(out var parsedStackableSlotCount) && parsedStackableSlotCount >= 0,
+                    || stackableSlotCount.TryGetInt32(out parsedStackableSlotCount) && parsedStackableSlotCount >= 0,
                 $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 stackableSlotCount 必须为非负整数。");
+            var uniqueEffectType = Property(consumable, "uniqueEffectType");
+            var parsedUniqueEffectType = 0;
+            Require(uniqueEffectType.ValueKind == JsonValueKind.Undefined
+                    || uniqueEffectType.TryGetInt32(out parsedUniqueEffectType) && parsedUniqueEffectType is >= 0 and <= 1,
+                $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 uniqueEffectType 必须为已定义的独特效果枚举值（0..1）。");
+            Require(parsedUniqueEffectType == 0 || parsedStackableSlotCount <= 1,
+                $"{Rel(directory, file)} 物品 {Text(item, "id")} 声明非零 uniqueEffectType 时不得配置 stackableSlotCount > 1。");
             foreach (var bar in StringArray(consumable, "usableInActionTypes"))
                 Require(AutoUseBarVocabulary().Contains(bar),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{bar} 不是合法物品栏域。");
@@ -611,7 +619,7 @@ static HashSet<string> ConsumableKeys() => new(StringComparer.Ordinal)
     "usableInActionTypes", "durationSeconds", "isContinuous", "durable",
     "cultivationMultiplier", "gatheringMultiplier", "alchemyMultiplier",
     "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike",
-    "techniqueSpeedRatio", "enhancementSuccessBonus", "stackableSlotCount"
+    "techniqueSpeedRatio", "enhancementSuccessBonus", "stackableSlotCount", "uniqueEffectType"
 };
 
 /// <summary>雷击符打击规格授权键。</summary>

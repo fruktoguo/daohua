@@ -754,13 +754,19 @@ export const ENHANCE_BASE_SUCCESS_RATES = [
 ] as const
 /** 目标等级 t≥11 的基础成功率基数（固定 0.3） */
 export const ENHANCE_HIGH_TIER_BASE = 0.3
+/** 高阶强化成功率封顶起算目标等级（t≥11 即 +10→+11 起硬封顶 45%） */
+export const ENHANCE_HIGH_TIER_CAP_LEVEL = 11
+/** 高阶强化（t≥11）单次成功率硬上限（45%） */
+export const ENHANCE_HIGH_TIER_MAX_SUCCESS_RATE = 0.45
+/** 秘法等级超出目标等级（L>t）时每超 1 级的线性乘算提升比率（0.5%） */
+export const ENHANCE_OVERLEVEL_SUCCESS_RATIO = 0.005
 /** 单轮强化基础耗时 = ENHANCE_DURATION_BASE + targetLevel */
 export const ENHANCE_DURATION_BASE = 5
 /** 强化起护等级最低阈值：最低从 +2 开始保护 */
 export const ENHANCE_MIN_PROTECT_LEVEL = 2
 
 
-/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后叠加消耗品加成并 clamp [0,0.99]） */
+/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：L≥t 仅超出部分 ×(1+0.005×(L-t))，t≤10 clamp [0,0.99]，t≥11 clamp [0,0.45]） */
 export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, consumableBonus = 0): number {
   const t = Math.max(1, Math.floor(targetLevel))
   const base = t <= ENHANCE_BASE_SUCCESS_RATES.length
@@ -768,9 +774,10 @@ export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number, 
     : ENHANCE_HIGH_TIER_BASE
   const clampedBase = Math.max(0.01, Math.min(0.5, base))
   const L = Math.max(0, techniqueLevel)
-  const rate = L >= t ? clampedBase * (1 + 0.01 * L) : clampedBase * Math.pow(0.9, t - L)
+  const rate = L >= t ? clampedBase * (1 + ENHANCE_OVERLEVEL_SUCCESS_RATIO * (L - t)) : clampedBase * Math.pow(0.9, t - L)
   const bonus = Number.isFinite(consumableBonus) && consumableBonus > 0 ? consumableBonus : 0
-  return Math.max(0, Math.min(0.99, rate + bonus))
+  const maxRate = t >= ENHANCE_HIGH_TIER_CAP_LEVEL ? ENHANCE_HIGH_TIER_MAX_SUCCESS_RATE : 0.99
+  return Math.max(0, Math.min(maxRate, rate + bonus))
 }
 
 /** 单轮灵石消耗 = t × 10 */

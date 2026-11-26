@@ -16,6 +16,12 @@ public static class EnhancementRules
     public const string ActionId = "enhance.equipment";
     /// <summary>强化等级上限；目标等级 t 超出后行动阻塞。</summary>
     public const int MaxLevel = 20;
+    /// <summary>高阶强化成功率封顶起算目标等级（t ≥ 11，即 +10→+11 及以上受 45% 硬上限约束）。</summary>
+    public const int HighTierSuccessCapLevel = 11;
+    /// <summary>高阶强化（t ≥ 11）单次成功率硬上限（45%），防止跨过 50% 对称点引发期望轮次坍塌。</summary>
+    public const double HighTierMaxSuccessRate = 0.45;
+    /// <summary>秘法等级超出目标等级（L &gt; t）时每超出 1 级的线性乘算提升比率（0.5%）。</summary>
+    public const double OverlevelSuccessRatioPerLevel = 0.005;
     /// <summary>单次强化基础耗时基数：实际耗时 = BaseDurationSeconds + 目标等级。</summary>
     public const double BaseDurationSeconds = 5;
     /// <summary>保护材料意图槽键：AuxItemId 指定每轮消耗的保护材料 ID（装备配表 enhanceProtectionItems 列表内任一材料，或未配置时同装备无强化基础件）。</summary>
@@ -253,15 +259,20 @@ public static class EnhancementRules
         return Math.Clamp(rate, 0.01, 0.5);
     }
 
-    /// <summary>技艺与辅助消耗品修正后成功率：L≥t 线性乘算 ×(1+0.01×L)，L<t 乘性衰减 ×0.9^(t-L)，叠加消耗品加成后 clamp [0, 0.99]。</summary>
+    /// <summary>
+    /// 技艺与辅助消耗品修正后成功率（总纲 §20.4.2）：
+    /// L≥t 仅对超出目标等级部分线性乘算 ×(1+0.005×(L-t))，L&lt;t 乘性衰减 ×0.9^(t-L)；
+    /// 叠加消耗品加成后分段封顶：t≤10 clamp [0, 0.99]，t≥11 clamp [0, 0.45]。
+    /// </summary>
     public static double SuccessRate(int targetLevel, double techniqueLevel, double consumableBonus = 0)
     {
         var rate = BaseSuccessRate(targetLevel);
         rate = techniqueLevel >= targetLevel
-            ? rate * (1.0 + 0.01 * techniqueLevel)
+            ? rate * (1.0 + OverlevelSuccessRatioPerLevel * (techniqueLevel - targetLevel))
             : rate * Math.Pow(0.9, targetLevel - techniqueLevel);
         rate += consumableBonus;
-        return Math.Clamp(rate, 0, 0.99);
+        var maxRate = targetLevel >= HighTierSuccessCapLevel ? HighTierMaxSuccessRate : 0.99;
+        return Math.Clamp(rate, 0, maxRate);
     }
 
     /// <summary>
@@ -407,6 +418,7 @@ public static class EnhancementRules
 
     /// <summary>
     /// 获取玩家强化自动栏（AutoUseBar.Enhancement）中当前生效的持续消耗品所提供的强化成功率加成（如淬灵粉 +0.03、固灵砂 +0.05）。
+    /// 对声明非零 <see cref="ConsumableUniqueEffect"/> 的同组消耗品仅取最高等级一项，不重复累加。
     /// </summary>
     public static double EffectiveEnhancementSuccessBonus(
         IReadOnlyList<AutoUseSlotState>? slots,
@@ -414,14 +426,31 @@ public static class EnhancementRules
     {
         if (slots is null || slots.Count == 0 || gameData is null) return 0;
         var bonus = 0d;
+        Dictionary<ConsumableUniqueEffect, ((int Level, int Tier, double Bonus) Rank, double Bonus)>? uniqueWinners = null;
         for (var i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
             if (!slot.Enabled || slot.ItemId is null || slot.RemainingDurationSeconds <= 0) continue;
             if (!string.Equals(slot.ActionType, Domain.GameData.AutoUseBar.Enhancement, StringComparison.OrdinalIgnoreCase)) continue;
             if (!gameData.Items.TryGetValue(new ItemId(slot.ItemId), out var item) || item.Consumable is null) continue;
-            if (item.Consumable.EnhancementSuccessBonus > 0)
+            if (item.Consumable.EnhancementSuccessBonus <= 0) continue;
+            if (item.Consumable.UniqueEffect != ConsumableUniqueEffect.None)
+            {
+                uniqueWinners ??= [];
+                var rank = (item.Level, item.Tier, item.Consumable.EnhancementSuccessBonus);
+                if (!uniqueWinners.TryGetValue(item.Consumable.UniqueEffect, out var current)
+                    || rank.CompareTo(current.Rank) > 0)
+                    uniqueWinners[item.Consumable.UniqueEffect] = (rank, item.Consumable.EnhancementSuccessBonus);
+            }
+            else
+            {
                 bonus += item.Consumable.EnhancementSuccessBonus;
+            }
+        }
+        if (uniqueWinners is not null)
+        {
+            foreach (var winner in uniqueWinners.Values)
+                bonus += winner.Bonus;
         }
         return bonus;
     }
