@@ -535,7 +535,7 @@ test('配表仅在整批指纹一致并校验成功后发布，混版整批 relo
   })
   await fetchGameCatalog()
   assert.equal(getCatalogFingerprint(), 'base')
-  assert.equal(calls.length, 10)
+  assert.equal(calls.length, 11)
   assert.ok(calls.every(call => call.cache === 'no-cache'))
   calls.length = 0
   mode = 'mixed'
@@ -543,7 +543,7 @@ test('配表仅在整批指纹一致并校验成功后发布，混版整批 relo
   await readingLastBody.promise
   assert.equal(getCatalogFingerprint(), 'base', '等待迟到响应体时不能将新指纹交给 Hello')
   const initialPaths = calls.filter(call => call.cache === 'no-cache').map(call => call.path)
-  assert.equal(initialPaths.length, 10)
+  assert.equal(initialPaths.length, 11)
   assert.deepEqual(calls.filter(call => call.cache === 'reload').map(call => call.path), initialPaths)
   lastBody.resolve({})
   await loading
@@ -552,7 +552,7 @@ test('配表仅在整批指纹一致并校验成功后发布，混版整批 relo
   mode = 'missing'
   calls.length = 0
   await assert.rejects(fetchGameCatalog(), /配表版本不一致/)
-  assert.equal(calls.length, 20)
+  assert.equal(calls.length, 22)
   assert.equal(getCatalogFingerprint(), 'next', '失败批次不覆盖最后一次有效指纹')
   mode = 'bad-body'
   await assert.rejects(fetchGameCatalog(), /锚点无效/)

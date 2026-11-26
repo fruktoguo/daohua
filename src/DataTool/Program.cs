@@ -132,9 +132,11 @@ static void ValidateReferences(string directory)
 {
     var monsters = CollectIds(directory, "monsters");
     var encounters = CollectIds(directory, "encounters");
+    var dungeons = CollectIds(directory, "dungeons");
     var actions = CollectIds(directory, "actions");
     var abilities = CollectIds(directory, "abilities");
     var items = CollectIds(directory, "items");
+    var equipments = CollectIds(directory, "equipment");
     var buildingIds = CollectIds(directory, "buildings");
     var percentPointKeys = PercentPointKeys();
     var monsterModifierKeys = MonsterModifierKeys();
@@ -157,6 +159,8 @@ static void ValidateReferences(string directory)
                 if (nodeId.Length > 0) nodeIds.Add(nodeId);
                 foreach (var id in StringArray(node, "encounterIds"))
                     Require(encounters.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的遭遇 {id}。");
+                foreach (var id in StringArray(node, "dungeonIds"))
+                    Require(dungeons.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的秘境 {id}。");
                 foreach (var id in StringArray(node, "availableActionIds"))
                 {
                     Require(actions.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的行动 {id}。");
@@ -446,6 +450,57 @@ static void ValidateReferences(string directory)
                         && dailyLimitProp.TryGetInt32(out var dailyLimit)
                         && dailyLimit > 0,
                     $"{Rel(directory, file)} 商店商品 {id} 的 dailyLimit 必须是正整数。");
+            }
+        }
+    }
+
+    foreach (var file in JsonFiles(directory, "dungeons"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var dungeon in Elements(doc.RootElement))
+        {
+            var id = Text(dungeon, "id");
+            Require(id.StartsWith("dungeon.", StringComparison.Ordinal) && id.Length <= 128,
+                $"{Rel(directory, file)} 秘境 ID 无效：{id}（必须以 dungeon. 开头且长度 ≤128）。");
+            var nodeId = Text(dungeon, "nodeId");
+            Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 秘境 {id} 引用了不存在的节点 {nodeId}。");
+            Require(Number(dungeon, "waveRestSeconds", 0) > 0, $"{Rel(directory, file)} 秘境 {id} 的 waveRestSeconds 必须为正数。");
+            var waveCount = 0;
+            foreach (var wave in Elements(Property(dungeon, "waves")))
+            {
+                waveCount++;
+                var kind = Text(wave, "kind");
+                Require(kind.Length == 0 || kind is "normal" or "elite" or "boss",
+                    $"{Rel(directory, file)} 秘境 {id} 第 {waveCount} 波 kind={kind} 无效。");
+                var enemyCount = 0;
+                foreach (var enemyId in StringArray(wave, "enemyIds"))
+                {
+                    enemyCount++;
+                    Require(monsters.Contains(enemyId),
+                        $"{Rel(directory, file)} 秘境 {id} 第 {waveCount} 波引用了不存在的怪物 {enemyId}。");
+                }
+                Require(enemyCount is >= 1 and <= 9,
+                    $"{Rel(directory, file)} 秘境 {id} 第 {waveCount} 波敌怪数量 {enemyCount} 必须在 1..9 之间。");
+            }
+            Require(waveCount >= 1, $"{Rel(directory, file)} 秘境 {id} 至少需要 1 个波次。");
+            foreach (var loot in Elements(Property(dungeon, "clearLootTable")))
+            {
+                var itemId = Text(loot, "itemId");
+                Require(items.Contains(itemId) || equipments.Contains(itemId),
+                    $"{Rel(directory, file)} 秘境 {id} 通关掉落引用了不存在的物品或装备 {itemId}。");
+                var kind = Text(loot, "kind");
+                Require(kind is "guaranteed" or "rare",
+                    $"{Rel(directory, file)} 秘境 {id} 通关掉落 {itemId} 的 kind={kind} 必须是 guaranteed 或 rare。");
+                var chance = Number(loot, "dropChance", 0);
+                Require(chance > 0 && chance <= 1,
+                    $"{Rel(directory, file)} 秘境 {id} 通关掉落 {itemId} 的 dropChance={chance} 超出 (0,1]。");
+                var minQty = Number(loot, "minQuantity", 0);
+                var maxQty = Number(loot, "maxQuantity", 0);
+                Require(minQty > 0 && maxQty >= minQty,
+                    $"{Rel(directory, file)} 秘境 {id} 通关掉落 {itemId} 的数量区间无效。");
+                var minDiff = Number(loot, "minDifficulty", 0);
+                Require(minDiff is >= 0 and <= 10 && minDiff == Math.Floor(minDiff),
+                    $"{Rel(directory, file)} 追忆副本 {id} 通关掉落 {itemId} 的 minDifficulty={minDiff} 超出 [0,10]。");
             }
         }
     }

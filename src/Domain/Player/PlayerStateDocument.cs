@@ -65,7 +65,11 @@ public sealed record PlayerProgressionState(
     /// <summary>已凝练根基点数（每点 +1% 全六维向上取整；可缺省解码为 0）。</summary>
     int GenjiPoints = 0,
     /// <summary>是否已解锁根基常驻凝练（可缺省解码为 false）。</summary>
-    bool GenjiUnlocked = false);
+    bool GenjiUnlocked = false,
+    /// <summary>秘境体力锚点值（0..1680；可缺省解码为 0）。</summary>
+    int TiliValue = 0,
+    /// <summary>秘境体力锚点时刻（Unix 秒；可缺省解码为 0，旧档首次加载按初始 240 点激活）。</summary>
+    double TiliUpdatedAtUnixSeconds = 0);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -127,7 +131,9 @@ public sealed record PlayerSettingsStateDocument(
     /// <summary>指定队友存活策略的观察对象玩家 ID（缺省为未指定）</summary>
     Guid? RespawnTargetPlayerId = null,
     /// <summary>非同队修士是否可见角色名片配装详情（缺省开放）</summary>
-    bool PublicLoadoutVisible = true)
+    bool PublicLoadoutVisible = true,
+    /// <summary>非公开配装时的付费查阅价格（0 表示完全隐藏，正整数表示支付灵石查阅至当日零点）</summary>
+    double LoadoutInspectPrice = 0d)
 {
     /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
     public bool IsAvatarUnlocked(string? avatar)
@@ -154,7 +160,8 @@ public sealed record PlayerSettingsStateDocument(
             && ((UnlockedAvatars == null && other.UnlockedAvatars == null) || (UnlockedAvatars != null && other.UnlockedAvatars != null && UnlockedAvatars.SequenceEqual(other.UnlockedAvatars)))
             && RespawnPolicy == other.RespawnPolicy
             && Nullable.Equals(RespawnTargetPlayerId, other.RespawnTargetPlayerId)
-            && PublicLoadoutVisible == other.PublicLoadoutVisible;
+            && PublicLoadoutVisible == other.PublicLoadoutVisible
+            && LoadoutInspectPrice.Equals(other.LoadoutInspectPrice);
     }
 
     public override int GetHashCode()
@@ -172,6 +179,7 @@ public sealed record PlayerSettingsStateDocument(
         hash.Add(RespawnPolicy);
         hash.Add(RespawnTargetPlayerId);
         hash.Add(PublicLoadoutVisible);
+        hash.Add(LoadoutInspectPrice);
         return hash.ToHashCode();
     }
 }
@@ -237,7 +245,9 @@ public sealed partial class PlayerAggregate
                 Progression.DuelWins,
                 Progression.DuelLosses,
                 Progression.Genji.Points,
-                Progression.Genji.Unlocked),
+                Progression.Genji.Unlocked,
+                Progression.TiliValue,
+                Progression.TiliUpdatedAtUnixSeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
             GetCachedBuffs(),
@@ -359,6 +369,7 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.RespawnPolicy == Settings.RespawnPolicy
             && _cachedSettingsDoc.RespawnTargetPlayerId == Settings.RespawnTargetPlayerId
             && _cachedSettingsDoc.PublicLoadoutVisible == Settings.PublicLoadoutVisible
+            && _cachedSettingsDoc.LoadoutInspectPrice.Equals(Settings.LoadoutInspectPrice)
             && _cachedSettingsDoc.UnlockedAvatars != null
             && _cachedSettingsDoc.UnlockedAvatars.Count == Settings.UnlockedAvatars.Count
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
@@ -379,7 +390,8 @@ public sealed partial class PlayerAggregate
             Settings.UnlockedAvatars.ToArray(),
             Settings.RespawnPolicy,
             Settings.RespawnTargetPlayerId,
-            Settings.PublicLoadoutVisible);
+            Settings.PublicLoadoutVisible,
+            Settings.LoadoutInspectPrice);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -429,6 +441,8 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.DuelWins) || state.Progression.DuelWins < 0 ||
             !double.IsFinite(state.Progression.DuelLosses) || state.Progression.DuelLosses < 0 ||
             state.Progression.GenjiPoints < 0 ||
+            state.Progression.TiliValue < 0 || state.Progression.TiliValue > DungeonEnergyRules.MaxEnergy ||
+            !double.IsFinite(state.Progression.TiliUpdatedAtUnixSeconds) || state.Progression.TiliUpdatedAtUnixSeconds < 0 ||
             !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
             !double.IsFinite(state.Progression.AgeSeconds) || state.Progression.AgeSeconds < 0 ||
             !double.IsFinite(state.Progression.Foundation) || state.Progression.Foundation < -1e-9 ||
@@ -498,6 +512,8 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.Genji.Apply(
             state.Progression.GenjiPoints,
             state.Progression.GenjiUnlocked);
+        aggregate.Progression.TiliValue = state.Progression.TiliValue;
+        aggregate.Progression.TiliUpdatedAtUnixSeconds = state.Progression.TiliUpdatedAtUnixSeconds;
         if (state.Progression.TraitIds is { Count: > 0 } traitIds)
         {
             if (traitIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128))
@@ -589,6 +605,7 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.RespawnPolicy = state.Settings.RespawnPolicy;
         aggregate.Settings.RespawnTargetPlayerId = state.Settings.RespawnTargetPlayerId;
         aggregate.Settings.PublicLoadoutVisible = state.Settings.PublicLoadoutVisible;
+        aggregate.Settings.LoadoutInspectPrice = PlayerSettingsState.NormalizeLoadoutInspectPrice(state.Settings.LoadoutInspectPrice, state.Settings.PublicLoadoutVisible);
         aggregate.Settings.UnlockedAvatars.Clear();
         aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
         aggregate.Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);
@@ -706,6 +723,8 @@ public sealed partial class PlayerAggregate
             restored.Progression.HeavenGate.Entered,
             restored.Progression.HeavenGate.RerollCount);
         Progression.Genji.Apply(restored.Progression.Genji.Points, restored.Progression.Genji.Unlocked);
+        Progression.TiliValue = restored.Progression.TiliValue;
+        Progression.TiliUpdatedAtUnixSeconds = restored.Progression.TiliUpdatedAtUnixSeconds;
         Progression.UnlockedTraits.Clear();
         if (restored.Progression.UnlockedTraits is { Count: > 0 } unlocked)
         {
@@ -758,6 +777,7 @@ public sealed partial class PlayerAggregate
         Settings.RespawnPolicy = restored.Settings.RespawnPolicy;
         Settings.RespawnTargetPlayerId = restored.Settings.RespawnTargetPlayerId;
         Settings.PublicLoadoutVisible = restored.Settings.PublicLoadoutVisible;
+        Settings.LoadoutInspectPrice = restored.Settings.LoadoutInspectPrice;
         Settings.UnlockedAvatars.Clear();
         foreach (var avatar in restored.Settings.UnlockedAvatars)
             Settings.UnlockedAvatars.Add(avatar);
@@ -832,7 +852,9 @@ public sealed partial class PlayerAggregate
                     && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)))
             && (report.DuelItemsLost is null || (report.DuelItemsLost.Count <= 512
                 && report.DuelItemsLost.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
-                    && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0))));
+                    && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)))
+            && (report.DuelRecords is null || (report.DuelRecords.Count <= DuelBattleRecordLimits.MaxRecordsPerAction
+                && report.DuelRecords.All(record => record is not null && record.IsValid))));
 
     private static bool IsValidDuelDocument(PlayerDuelStateDocument document)
         => double.IsFinite(document.EncounterCharges) && document.EncounterCharges >= 0
@@ -944,7 +966,9 @@ public sealed partial class PlayerAggregate
                 Progression.DuelWins,
                 Progression.DuelLosses,
                 Progression.Genji.Points,
-                Progression.Genji.Unlocked),
+                Progression.Genji.Unlocked,
+                Progression.TiliValue,
+                Progression.TiliUpdatedAtUnixSeconds),
             Progression.RealmLevelVersion,
             Progression.TraitIds.Version,
             Progression.DefeatedMonsterIds.Version,
@@ -976,7 +1000,8 @@ public sealed partial class PlayerAggregate
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
                 Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
                 Settings.QueuePaused, Settings.TutorialStep, Settings.TutorialRewardsStep, Settings.Avatar,
-                Settings.UnlockedAvatars.ToArray(), Settings.RespawnPolicy, Settings.RespawnTargetPlayerId, Settings.PublicLoadoutVisible)),
+                Settings.UnlockedAvatars.ToArray(), Settings.RespawnPolicy, Settings.RespawnTargetPlayerId,
+                Settings.PublicLoadoutVisible, Settings.LoadoutInspectPrice)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -1059,6 +1084,7 @@ public sealed partial class PlayerAggregate
                 Settings.RespawnPolicy = data.State.RespawnPolicy;
                 Settings.RespawnTargetPlayerId = data.State.RespawnTargetPlayerId;
                 Settings.PublicLoadoutVisible = data.State.PublicLoadoutVisible;
+                Settings.LoadoutInspectPrice = PlayerSettingsState.NormalizeLoadoutInspectPrice(data.State.LoadoutInspectPrice, data.State.PublicLoadoutVisible);
                 Settings.UnlockedAvatars.Clear();
                 Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultFemaleAvatar);
                 Settings.UnlockedAvatars.Add(PlayerSettingsState.DefaultMaleAvatar);

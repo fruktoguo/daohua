@@ -104,7 +104,9 @@ public sealed record DuelScript(
     IReadOnlyList<DuelStagedItem> InitiatorStagedItems,
     IReadOnlyList<DuelStagedItem> DefenderStagedItems,
     IReadOnlyList<CombatUnitStatDocument>? InitiatorStats = null,
-    IReadOnlyList<CombatUnitStatDocument>? DefenderStats = null);
+    IReadOnlyList<CombatUnitStatDocument>? DefenderStats = null,
+    DuelBattleRecordDocument? InitiatorRecord = null,
+    DuelBattleRecordDocument? DefenderRecord = null);
 
 /// <summary>
 /// 单个玩家视角的斗法回放状态；随战斗远征分段持久化，断线重连按事件游标续播。
@@ -147,7 +149,8 @@ public sealed record DuelPlaybackState(
     IReadOnlyList<CombatUnitStatDocument>? ViewerStats = null,
     IReadOnlyList<PlayerAbilitySlot>? OpponentSkills = null,
     IReadOnlyList<PlayerEquipmentSlot>? OpponentEquipment = null,
-    string OpponentAvatar = "player")
+    string OpponentAvatar = "player",
+    DuelBattleRecordDocument? ViewerRecord = null)
 {
     /// <summary>校验回放状态不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(DuelId) && DuelId.Length <= 64
@@ -178,7 +181,8 @@ public sealed record DuelPlaybackState(
             && double.IsFinite(slot.Level) && slot.Level >= 1)))
         && (OpponentEquipment is null || (OpponentEquipment.Count <= 24 && OpponentEquipment.All(item => item is not null
             && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
-            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)));
+            && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)))
+        && (ViewerRecord is null || ViewerRecord.IsValid);
 
     /// <summary>把撮合剧本翻译为单视角回放载荷：胜负与双方暂存快照按观看方翻转。</summary>
     public static DuelPlaybackState ForViewer(DuelScript script, string duelId,
@@ -209,7 +213,10 @@ public sealed record DuelPlaybackState(
                 .Select(slot => new PlayerAbilitySlot(JsonRead.Text(slot.Ability, "id"), slot.Level))
                 .ToArray(),
             OpponentEquipment: opponent.Equipment,
-            OpponentAvatar: opponent.Avatar);
+            OpponentAvatar: opponent.Avatar,
+            ViewerRecord: viewerIsInitiator
+                ? (script.InitiatorRecord is { } initRec ? initRec with { DuelId = duelId } : null)
+                : (script.DefenderRecord is { } defRec ? defRec with { DuelId = duelId } : null));
     }
 }
 

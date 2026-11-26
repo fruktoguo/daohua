@@ -55,12 +55,34 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         unit.PendingSkillIndex = -1;
         if (pending >= 0 && pending < unit.Skills.Count)
         {
-            CastSkill(encounter, unit, allies, opponents, target, unit.Skills[pending], pending, side + SkillSideOffset, ref events);
+            var slot = unit.Skills[pending];
+            var abilityId = AbilityText(slot.Ability, "id") ?? string.Empty;
+            var hasYixing = unit.BuffStacks(CombatTraitRules.YixingBuffId) > 0;
+            var morphOverride = hasYixing ? AbilityText(slot.Ability, "yixingMorphName") : null;
+            encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, unit, DuelRecordActionKind.Skill, abilityId, morphOverride);
+            try
+            {
+                CastSkill(encounter, unit, allies, opponents, target, slot, pending, side + SkillSideOffset, ref events);
+            }
+            finally
+            {
+                encounter.ActionRecorder?.EndAction();
+            }
             unit.SkillCastCount += 1;
             return;
         }
         if (target is not null)
-            ResolveAttack(encounter, unit, target, side, encounter.ElapsedSeconds, ref events);
+        {
+            encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, unit, DuelRecordActionKind.BasicAttack);
+            try
+            {
+                ResolveAttack(encounter, unit, target, side, encounter.ElapsedSeconds, ref events);
+            }
+            finally
+            {
+                encounter.ActionRecorder?.EndAction();
+            }
+        }
     }
 
     /// <summary>
@@ -188,7 +210,11 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 var healed = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, Math.Max(0, output));
                 ally.Hitpoints += healed;
                 // 治疗按施放方归属计入「其他治疗」输出。
-                if (healed > 0) encounter.StatsBook?.RecordHealing(caster, autoRegen: false, healed);
+                if (healed > 0)
+                {
+                    encounter.StatsBook?.RecordHealing(caster, autoRegen: false, healed);
+                    encounter.ActionRecorder?.RecordHeal(caster, ally, DuelRecordEffectKind.Heal, healed);
+                }
                 ev ??= new List<CombatEvent>();
                 ev.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
                     spell ? CombatDamageKind.Spell : CombatDamageKind.Physical, ally.Hitpoints)
@@ -231,17 +257,17 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 if (targetType == "lowestHitpointsAlly")
                 {
                     if (LowestHitpointsRatioAlly(allies) is { } weakest)
-                        foreach (var spec in buffSpecs) GrantBuff(spec, caster, weakest, encounter.ElapsedSeconds, levelGrowth, id);
+                        foreach (var spec in buffSpecs) GrantBuff(spec, caster, weakest, encounter.ElapsedSeconds, levelGrowth, id, encounter);
                 }
                 else if (targetType == "allAllies")
                 {
                     for (var i = 0; i < allies.Count; i++)
                         if (allies[i].IsAlive)
-                            foreach (var spec in buffSpecs) GrantBuff(spec, caster, allies[i], encounter.ElapsedSeconds, levelGrowth, id);
+                            foreach (var spec in buffSpecs) GrantBuff(spec, caster, allies[i], encounter.ElapsedSeconds, levelGrowth, id, encounter);
                 }
                 else
                 {
-                    foreach (var spec in buffSpecs) GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id);
+                    foreach (var spec in buffSpecs) GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id, encounter);
                 }
             }
             events ??= new List<CombatEvent>();
@@ -335,7 +361,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             {
                 var spec = selfBuffSpecs[i];
                 if (AbilityFlag(spec, "skipIfHasYixing") && hasYixing) continue;
-                GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id);
+                GrantBuff(spec, caster, caster, encounter.ElapsedSeconds, levelGrowth, id, encounter);
             }
         }
     }
@@ -367,6 +393,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             Count = countOverride ?? attacker.AttackCount,
             AtSeconds = at
         };
+        var wasTargetAlive = target.IsAlive;
         ResolveHit(context);
         var settled = CombatDamageSettlement.Apply(encounter, attacker, target, context.Damage);
         context.Damage = settled.Damage;
@@ -374,6 +401,16 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         // 行动级战斗统计：攻方按伤害类别计输出、守方计实收与减免（减免 = 原始威力 − 实收，未命中不落账）。
         encounter.StatsBook?.RecordHit(attacker, target, context.AttackStats.DamageKind,
             context.Damage, context.Hit ? Math.Max(0, context.RawDamage - context.Damage) : 0);
+        if (encounter.ActionRecorder is { } recorder)
+        {
+            var flags = context.Hit ? DuelRecordHitMark.Hit : DuelRecordHitMark.Dodge;
+            if (context.Critical) flags |= DuelRecordHitMark.Crit;
+            if (context.Broken) flags |= DuelRecordHitMark.Break;
+            if (context.Parried) flags |= DuelRecordHitMark.Parry;
+            recorder.RecordDamage(attacker, target, DuelRecordEffectKind.Damage,
+                context.AttackStats.DamageKind, context.AttackStats.Element, flags,
+                context.Damage, abilityId, targetDowned: wasTargetAlive && !target.IsAlive);
+        }
         attacker.AttackCount += 1;
         attacker.Threat += context.Damage;
         events ??= new List<CombatEvent>();
@@ -384,10 +421,10 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId, AbilityNameOverride = abilityNameOverride });
         EmitHitTriggers(encounter, context, events, mainEventIndex);
         if (context.Hit && extraRanhunStacks > 0)
-            CombatTraitReactions.AddRanhunStacks(attacker, target, extraRanhunStacks, at);
+            CombatTraitReactions.AddRanhunStacks(attacker, target, extraRanhunStacks, at, encounter);
         if (context.Hit && target.IsAlive && onHitBuffs is { Count: > 0 })
             for (var i = 0; i < onHitBuffs.Count; i++)
-                GrantBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? string.Empty);
+                GrantBuff(onHitBuffs[i], attacker, target, at, levelGrowth, abilityId ?? string.Empty, encounter);
     }
 
     /// <summary>
@@ -412,7 +449,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// （每损失 N 点气血 1 层）或固定 <c>baseStacks</c> 派生；标记 <c>noLevelGrowth</c> 者数值与派生层数均豁免技能等级放大。
     /// </summary>
     private static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
-        double grantedAtSeconds, double levelGrowth, string abilityId)
+        double grantedAtSeconds, double levelGrowth, string abilityId, CombatEncounterState? encounter = null)
     {
         var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{abilityId}";
         var policy = AbilityText(buff, "stackPolicy") ?? "capped";
@@ -454,6 +491,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         }
         // 层数由已损气血派生者，授予瞬间即按当前血线对齐（满血为 0 层）。
         target.SyncDerivedStacks();
+        var recordedStacks = target.Buffs.FirstOrDefault(current => current.BuffId == buffId)?.Stacks ?? nextStacks;
+        if (recordedStacks > 0)
+            encounter?.ActionRecorder?.RecordBuff(caster, target, baseBuffId, recordedStacks);
     }
 
     /// <summary>

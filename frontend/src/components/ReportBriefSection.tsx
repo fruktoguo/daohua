@@ -173,7 +173,7 @@ export const CombatHeaderRateBar = memo(function CombatHeaderRateBar({
   hidden?: boolean
 }): React.JSX.Element | null {
   const t = useT()
-  const isCombatHead = useGameStore(state => state.queue.entries[0]?.executionKind === 'combat-encounter')
+  const isCombatHead = useGameStore(state => state.queue.entries[0]?.executionKind === 'combat-encounter' || state.queue.entries[0]?.executionKind === 'dungeon')
   const currentReport = useGameStore(state => state.duel.currentReport)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)

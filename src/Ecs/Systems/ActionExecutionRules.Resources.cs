@@ -440,14 +440,13 @@ internal static partial class ActionExecutionRules
                 if (evalTarget is null || player.Resources.Manapoints < manaCost - 1e-9) continue;
                 var targetIndex = evalEnemies!.IndexOf(evalTarget);
                 if (targetIndex < 0) continue;
-                // 打击威力 = (灵力倍率×灵力上限 + 术攻倍率×术攻) ×(1+技能增幅点数/100)，
-                // 增幅并入原始威力乘位，与技能命中口径一致（总纲 §7.7.1）。
+                // 打击威力 = 灵力倍率×灵力上限 + 术攻倍率×术攻（总纲 §20.2）；
+                // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域）。
                 var strikeElement = CombatTraitRules.ResolveDamageElement(evalCaster.Stats.Traits, strike.Element);
                 var strikeStats = evalCaster.Stats with
                 {
-                    AttackPower = (strike.ManaDamageRatio * evalCaster.Stats.MaxManapoints
-                        + strike.SpellAttackRatio * evalCaster.Stats.SpellAttack)
-                        * PercentValue.Multiplier(evalCaster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
+                    AttackPower = strike.ManaDamageRatio * evalCaster.Stats.MaxManapoints
+                        + strike.SpellAttackRatio * evalCaster.Stats.SpellAttack,
                     DamageKind = CombatDamageKind.Spell,
                     Element = strikeElement
                 };

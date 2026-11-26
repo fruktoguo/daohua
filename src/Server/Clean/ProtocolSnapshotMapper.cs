@@ -316,7 +316,23 @@ public static class ProtocolSnapshotMapper
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
                 : 0,
-            stagedEnhancements = state.Progression.StagedEnhancements ?? []
+            stagedEnhancements = state.Progression.StagedEnhancements ?? [],
+            // 秘境体力（总纲 §30.3）：同时下发持久化锚点与按 LastSimulatedAt 推算的当前有效值，供前端本地倒计时。
+            tiliValue = state.Progression.TiliValue,
+            tiliUpdatedAtUnixSeconds = state.Progression.TiliUpdatedAtUnixSeconds,
+            tiliCurrent = Domain.Combat.DungeonEnergyRules.Compute(
+                state.Progression.TiliValue,
+                state.Progression.TiliUpdatedAtUnixSeconds,
+                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).Current,
+            tiliMax = Domain.Combat.DungeonEnergyRules.MaxEnergy,
+            tiliNextRecoverySeconds = Domain.Combat.DungeonEnergyRules.Compute(
+                state.Progression.TiliValue,
+                state.Progression.TiliUpdatedAtUnixSeconds,
+                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).NextRecoverySeconds,
+            tiliFullRecoverySeconds = Domain.Combat.DungeonEnergyRules.Compute(
+                state.Progression.TiliValue,
+                state.Progression.TiliUpdatedAtUnixSeconds,
+                state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d).FullRecoverySeconds
         },
         PlayerSectionKind.World => ToWorldSection(state.World, gameData),
         PlayerSectionKind.Combat => ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")),
@@ -339,20 +355,55 @@ public static class ProtocolSnapshotMapper
                 ? PlayerAttributeResolver.Resolve(state, gameData).ThreatBonusPoints : 0,
             state.Combat.Buffs, state.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio,
             state),
-        // 当前账本/归档/离线/每日四类已消费通道。
+        // 当前账本/归档/离线/每日四类已消费通道：WS 快照剥离 DuelRecords 明细，仅下发轻量计数。
         PlayerSectionKind.Duel => new
         {
             state.Duel.EncounterCharges,
             state.Duel.CooldownUntilUnixSeconds,
             state.Duel.ActiveDuelId,
             state.Duel.StagedItems,
-            state.Duel.CurrentReport,
-            state.Duel.Reports,
-            state.Duel.OfflineReport,
-            state.Duel.DailyReport
+            currentReport = ToWireBattleReport(state.Duel.CurrentReport),
+            reports = state.Duel.Reports.Select(ToWireBattleReport).ToArray(),
+            offlineReport = ToWireBattleReport(state.Duel.OfflineReport),
+            dailyReport = ToWireBattleReport(state.Duel.DailyReport)
         },
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
     };
+
+    /// <summary>
+    /// 战报线协议投影：剥离重型 DuelRecords 行动流数组，仅保留轻量 duelRecordCount 供界面徽标与按需拉取感知。
+    /// </summary>
+    private static object? ToWireBattleReport(PlayerBattleReportDocument? report)
+        => report is null ? null : new
+        {
+            report.ReportId,
+            report.ActionId,
+            report.ActionName,
+            report.StartedAtUnixSeconds,
+            report.EndedAtUnixSeconds,
+            report.Experience,
+            report.RootExp,
+            report.Items,
+            report.DuelWins,
+            report.DuelLosses,
+            report.ItemsLost,
+            report.AbilityExp,
+            report.TechniqueExp,
+            report.LevelUps,
+            report.Cycles,
+            report.Encounters,
+            report.NormalKills,
+            report.EliteKills,
+            report.BossKills,
+            report.Deaths,
+            report.DayIndex,
+            report.Foundation,
+            report.CombatExperience,
+            report.Combatants,
+            report.DuelItemsGained,
+            report.DuelItemsLost,
+            duelRecordCount = report.DuelRecords?.Count ?? 0
+        };
 
     private static object ToLoadoutSection(PlayerAggregateState state, GameDataCatalog? gameData)
     {
@@ -537,6 +588,7 @@ public static class ProtocolSnapshotMapper
             {
                 ActionExecutionKind.CombatEncounter => "combat-encounter",
                 ActionExecutionKind.Travel => "travel",
+                ActionExecutionKind.Dungeon => "dungeon",
                 _ => "timed"
             };
             double durationSeconds;
@@ -575,7 +627,7 @@ public static class ProtocolSnapshotMapper
                 completedRepeats = action.CompletedRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio, action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty, state?.Settings.AutoUseSlots),
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, action.Participation?.Spec, gameData, inspectedUnit, onAttributesProjected, playerThreatBonusPoints, playerCarriedBuffs, monsterWeakenRatio, action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty, state?.Settings.AutoUseSlots, action.Participation?.Spec is { Members.Count: > 0 } partySpec ? partySpec.Members.Max(m => m.RealmLevel) : (state?.Progression.RealmLevel ?? 1)),
                 // 行动参与会话标记：参与会话负责调度，散场时刻为权威值（+∞ 进行中 → null）。
                 participation = action.Participation is { } participationBinding ? new
                 {
@@ -623,7 +675,7 @@ public static class ProtocolSnapshotMapper
     /// 会话观察目标（UnitInspect）命中该侧下标时才携带 attributes，未点开的单位不占快照带宽。
     /// 威胁字段统一投影有效威胁值（基础实际值×(1+增幅点数/100)），与目标判定口径一致。
     /// </summary>
-    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, int difficulty = 0, IReadOnlyList<AutoUseSlotState>? autoUseSlots = null)
+    private static object ToExpeditionDto(CombatExpeditionState expedition, ActionParticipationSpec? spec, GameDataCatalog? gameData, UnitInspectDto? inspectedUnit, Action? onAttributesProjected = null, double playerThreatBonusPoints = 0, PlayerCombatBuffState? playerCarriedBuffs = null, double monsterWeakenRatio = 0, int difficulty = 0, IReadOnlyList<AutoUseSlotState>? autoUseSlots = null, int maxPartyRealmLevel = 1)
     {
         var effectiveDifficulty = spec?.Difficulty ?? difficulty;
         // 敌怪展示面板削弱口径：会话取开打定格冻结值，单人取本机当前节点建筑投影。
@@ -635,9 +687,13 @@ public static class ProtocolSnapshotMapper
             : expedition.Phase == CombatExpeditionPhase.Duel
                 ? ToDuelPlayerBuffsDto(playerCarriedBuffs, autoUseSlots, gameData, expedition.BattleElapsedSeconds)
                 : ToCombatBuffsDto(playerCarriedBuffs, expedition.BattleElapsedSeconds);
+        var isDungeon = !string.IsNullOrEmpty(expedition.DungeonId);
         return new
         {
             expedition.EncounterId,
+            dungeonId = expedition.DungeonId,
+            dungeonTotalWaves = expedition.DungeonTotalWaves > 0 ? (int?)expedition.DungeonTotalWaves : null,
+            dungeonEnergyCharged = isDungeon ? (bool?)expedition.DungeonEnergyCharged : null,
             difficulty = effectiveDifficulty,
             phase = MapExpeditionPhase(expedition.Phase),
             expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
@@ -653,8 +709,10 @@ public static class ProtocolSnapshotMapper
             expedition.Seed,
             // 倒地窗口（原地复活遭遇）：复活截止点与读条时长（战斗时钟秒），前端据此渲染阵亡置灰与复活读条。
             playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
-            playerRespawnDurationSeconds = gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
-                ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
+            playerRespawnDurationSeconds = isDungeon
+                ? Domain.GameData.DungeonDefinition.InBattleRespawnSeconds
+                : gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
+                    ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
             // 读条已走完但复活策略条件未成立的等待复查时刻：前端据此把读条改为「等待条件」态。
             playerRespawnWaitingUntilSeconds = expedition.Phase == CombatExpeditionPhase.Combat
                 && expedition.PlayerState?.RespawnWaitingUntilSeconds is { } waitingSelf
@@ -663,7 +721,7 @@ public static class ProtocolSnapshotMapper
             // 前端按 battleElapsedSeconds 反推剩余；非战斗相位改投跨波携带态
             // （expiresAt = 冻结时钟基准 + 剩余秒数，前端换算后倒计时即剩余时长）。
             playerBuffs = playerBuffsDto,
-            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken, effectiveDifficulty)).ToArray(),
+            enemies = (expedition.Enemies ?? []).Select((enemy, i) => ToExpeditionEnemyDto(enemy, gameData, inspectedEnemyIndex == i, onAttributesProjected, effectiveMonsterWeaken, effectiveDifficulty, isDungeon, expedition.DungeonId, maxPartyRealmLevel)).ToArray(),
             duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel, inspectedEnemyIndex == 0, onAttributesProjected),
             recentEvents = expedition.RecentEvents is null || expedition.RecentEvents.Count == 0 ? null : expedition.RecentEvents.Select(e => new
             {
@@ -792,13 +850,23 @@ public static class ProtocolSnapshotMapper
         }
     }
 
-    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null, double monsterWeakenRatio = 0, int difficulty = 0)
+    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData, bool includeAttributes, Action? onAttributesProjected = null, double monsterWeakenRatio = 0, int difficulty = 0, bool isDungeon = false, string? dungeonId = null, int maxPartyRealmLevel = 1)
     {
-        var definition = gameData is null ? null : gameData.CombatMonsters.GetValueOrDefault(enemy.EnemyId);
+        var definition = gameData is null
+            ? null
+            : (isDungeon && !string.IsNullOrEmpty(dungeonId) && gameData.Dungeons.TryGetValue(dungeonId, out var dungeonDef) && gameData.CombatMonsters.ContainsKey(enemy.EnemyId)
+                ? gameData.ResolveDungeonMonster(dungeonDef, enemy.EnemyId, difficulty, maxPartyRealmLevel)
+                : gameData.CombatMonsters.GetValueOrDefault(enemy.EnemyId));
         var found = definition is not null;
-        var scaledStats = found ? Domain.Combat.CombatDifficultyRules.ScaleMonsterStats(definition!.Stats, difficulty) : null;
-        // 封魔阵类节点削弱随展示口径同步折减：血条分母与按需属性面板与实战结算一致。
-        var stats = scaledStats is not null ? NodeBuildingRules.WeakenMonsterStats(scaledStats, monsterWeakenRatio) : null;
+        var scaledStats = found
+            ? (isDungeon
+                ? Domain.Combat.DungeonDifficultyRules.ScaleMonsterStats(definition!.Stats, difficulty)
+                : Domain.Combat.CombatDifficultyRules.ScaleMonsterStats(definition!.Stats, difficulty))
+            : null;
+        // 封魔阵类节点削弱随展示口径同步折减：秘境独立于野外节点建筑不适用削弱。
+        var stats = scaledStats is not null
+            ? (isDungeon ? scaledStats : NodeBuildingRules.WeakenMonsterStats(scaledStats, monsterWeakenRatio))
+            : null;
         JsonElement? visual = null;
         if (gameData is not null
             && gameData.Monsters.TryGetValue(enemy.EnemyId, out var raw)
@@ -993,6 +1061,7 @@ public static class ProtocolSnapshotMapper
         public required double CultivationMultiplier { get; init; }
         public required string[] AvailableActionIds { get; init; }
         public required string[] EncounterIds { get; init; }
+        public required string[] DungeonIds { get; init; }
         public required object[] Npcs { get; init; }
         public required object[] Buildings { get; init; }
         public required string[]? BuildableBuildingIds { get; init; }
@@ -1090,6 +1159,7 @@ public static class ProtocolSnapshotMapper
                         CultivationMultiplier = ReadDouble(node, "cultivationMultiplier", 1),
                         AvailableActionIds = ReadStringArray(node, "availableActionIds"),
                         EncounterIds = encounterIds,
+                        DungeonIds = ReadStringArray(node, "dungeonIds"),
                         Npcs = ReadEntities(node, "npcs"),
                         Buildings = ReadEntities(node, "buildings"),
                         BuildableBuildingIds = Domain.World.NodeBuildingRules.ResolveBuildableIds(node, catalog.Buildings ?? new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal))
@@ -1165,6 +1235,7 @@ public static class ProtocolSnapshotMapper
                 ? gameData.Actions.All.Where(action => action.Kind is ActionKind.Cultivation or ActionKind.Alchemy or ActionKind.Enhancement).Select(action => action.Id.Value).ToArray()
                 : onEdge || projection is null ? Array.Empty<string>() : projection.AvailableActionIds,
             encounterIds = onEdge || projection is null ? Array.Empty<string>() : projection.EncounterIds,
+            dungeonIds = onEdge || projection is null ? Array.Empty<string>() : projection.DungeonIds,
             npcs = onEdge || projection is null ? Array.Empty<object>() : projection.Npcs,
             buildings = onEdge || projection is null ? Array.Empty<object>() : projection.Buildings,
             // 节点可建列表：buildableList/buildableTemplate 二选一解析；null 表示该节点不可建（前端隐藏加号卡）。

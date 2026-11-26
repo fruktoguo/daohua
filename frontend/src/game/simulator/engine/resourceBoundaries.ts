@@ -808,10 +808,10 @@ export function activateInstantConsumables(
       const targetIndex = evalEnemies!.indexOf(evalTarget)
       if (targetIndex < 0) continue
 
+      // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
       const attackPower =
-        (strike.manaDamageRatio * evalCaster!.stats.maxManapoints +
-          strike.spellAttackRatio * evalCaster!.stats.spellAttack) *
-        percentMultiplier(evalCaster!.stats.skillBonusPoints, PercentCurveMode.Linear)
+        strike.manaDamageRatio * evalCaster!.stats.maxManapoints +
+        strike.spellAttackRatio * evalCaster!.stats.spellAttack
       const strikeElement = resolveDamageElement(
         evalCaster!.stats.traits,
         strike.element as CombatElement,

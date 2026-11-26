@@ -358,6 +358,10 @@ public sealed class CombatSimulatorEndpointAuthTests
             => throw new NotSupportedException();
         public ValueTask<bool> TrySetPartyMemberReadyAsync(Guid playerId, bool ready, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public ValueTask<bool> TrySetPartyMemberAssistAsync(Guid playerId, bool assistMode, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public ValueTask ResetPartyMembersReadyAsync(Guid partyId, CancellationToken ct = default)
+            => throw new NotSupportedException();
         public ValueTask<bool> TryUpdatePartyOpenSlotsAsync(Guid partyId, int openSlots, DateTimeOffset now, CancellationToken ct = default)
             => throw new NotSupportedException();
         public ValueTask<PartySessionRecord?> GetPartySessionAsync(string sessionId, CancellationToken ct = default)

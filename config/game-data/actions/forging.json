@@ -1850,5 +1850,121 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "forge.changhu-pendant",
+    "name": "伥虎镇魂佩",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 12,
+    "durationSeconds": 25,
+    "inputs": {
+      "item.qingyun-secret-crystal": 8,
+      "equipment.shouya-pendant": 5,
+      "item.refined-iron": 15,
+      "item.beast-bone": 15
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.changhu-pendant",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.golden-ape-cloak",
+    "name": "金背撼岳甲",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 16,
+    "durationSeconds": 30,
+    "inputs": {
+      "item.boundary-spirit-shard": 10,
+      "equipment.suozi-armor": 12,
+      "item.refined-copper": 25,
+      "item.thick-beast-hide": 18
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.golden-ape-cloak",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.starfall-crown",
+    "name": "星陨镇灵冠",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 24,
+    "durationSeconds": 40,
+    "inputs": {
+      "item.starfall-astral-core": 12,
+      "equipment.ziwu-crown": 25,
+      "item.spirit-pine-crystal": 40,
+      "item.soul-talisman": 25
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.starfall-crown",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "forge.wuyin-spirit-sword",
+    "name": "雾隐青冥剑",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "level": 30,
+    "durationSeconds": 45,
+    "inputs": {
+      "item.wumeng-sword-soul": 15,
+      "equipment.pogang-sword": 35,
+      "item.refined-copper": 60,
+      "item.beast-fang": 40
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.wuyin-spirit-sword",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

@@ -13,6 +13,7 @@ import { CombatHeaderRateBar } from './components/ReportBriefSection'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
+import { DungeonModal } from './components/DungeonModal'
 import { ConditionedTile } from './components/ConditionedTile'
 import { EnhancementPage } from './components/EnhancementPage'
 import { createProgressAsideCard, FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './components/FloatingPopover'
@@ -45,6 +46,7 @@ import { Icon, type IconName } from './components/Icon'
 import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory, resolveQueueActionName, resolveWorldLocationName } from './game/ids'
 import { getDifficultyBracket } from './game/combatDifficulty'
+import { computeDungeonEnergy, getDungeonDifficultyMeta } from './game/dungeonRules'
 import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
 import { computeMsUntilNextChinaMidnight, getChinaDayIndex, hasCheckinRedDot, readDismissedCheckinDay, useCheckinStore } from './game/checkinStore'
 import { selectPartyLoadoutLocked, useSocialStore } from './game/socialStore'
@@ -441,6 +443,8 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
   const maps = useGameStore(state => state.maps)
   const queuePaused = useGameStore(state => state.queue.paused)
   const isCombatExpedition = entry.type === 'combat'
+  const isDungeonEntry = entry.executionKind === 'dungeon' || Boolean(entry.expedition?.dungeonId)
+  const dungeonDiffMeta = isDungeonEntry ? getDungeonDifficultyMeta(entry.expedition?.difficulty ?? entry.difficulty ?? 0) : null
   const phaseLabel = isCombatExpedition
     ? getCombatPhaseLabel(entry.expedition?.phase, t)
     : entry.executionKind === 'travel'
@@ -462,6 +466,19 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
       <div className="qc-main">
         <div className="qc-title">
           <strong>{resolveQueueEntryName(entry, undefined, world, maps)}</strong>
+          {dungeonDiffMeta && (
+            <span className={`dungeon-diff-pill dungeon-diff-tone--${dungeonDiffMeta.styleTone}`}>
+              {t(`combat.dungeon.difficulty.${dungeonDiffMeta.key}`)}
+            </span>
+          )}
+          {isDungeonEntry && entry.expedition && (
+            <span className="badge">
+              {t('app.queue.dungeonWaveBadge', {
+                wave: entry.expedition.waveNumber ?? 1,
+                total: entry.expedition.dungeonTotalWaves ?? 10,
+              })}
+            </span>
+          )}
           <CurrentActionRepeatsLabel departing={departing} entry={entry} queuePaused={queuePaused} />
           {(entry.status === 'blocked' || phaseLabel) && (
             <span className={entry.status === 'blocked' ? 'badge badge-danger' : 'badge'}>
@@ -735,6 +752,74 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 })
 
 /**
+ * 顶栏秘境体力胶囊：独立 1 秒刷新推算懒恢复倒计时，悬停展示恢复速率与回满剩余时间，点击跳转大地图。
+ */
+const TopbarTiliBadge = memo(function TopbarTiliBadge(): React.JSX.Element {
+  const t = useT()
+  const tiliValue = useGameStore(state => state.stats.tiliValue)
+  const tiliUpdatedAt = useGameStore(state => state.stats.tiliUpdatedAtUnixSeconds)
+  const tiliFallback = useGameStore(state => state.stats.tiliCurrent)
+  const setActiveTab = useUiStore(state => state.setActiveTab)
+  const [nowSec, setNowSec] = useState<number>(() => {
+    const s = useGameStore.getState()
+    return Math.floor((s.serverTimeUnixMilliseconds + Math.max(0, performance.now() - s.lastSyncPerformanceTime)) / 1000)
+  })
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const s = useGameStore.getState()
+      const estimatedMs = s.serverTimeUnixMilliseconds + Math.max(0, performance.now() - s.lastSyncPerformanceTime)
+      setNowSec(Math.floor(estimatedMs / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const energy = useMemo(
+    () => computeDungeonEnergy(tiliValue, tiliUpdatedAt, nowSec, tiliFallback),
+    [tiliValue, tiliUpdatedAt, nowSec, tiliFallback],
+  )
+  const isFull = energy.current >= energy.max
+  const isLow = energy.current < 30
+
+  const tooltip = (
+    <div className="topbar-tili-tooltip">
+      <div className="topbar-tili-tooltip-head">
+        <span>{t('app.topbar.tiliTitle')}</span>
+        <strong>{t('app.topbar.tiliValue', { current: energy.current, max: energy.max })}</strong>
+      </div>
+      <div className="topbar-tili-tooltip-row">{t('app.topbar.tiliRecoveryRate')}</div>
+      {isFull ? (
+        <div className="topbar-tili-tooltip-row">{t('app.topbar.tiliFull')}</div>
+      ) : (
+        <>
+          <div className="topbar-tili-tooltip-row">
+            {t('app.topbar.tiliNextRecovery', { time: formatRemainingSeconds(energy.nextRecoverySeconds) })}
+          </div>
+          <div className="topbar-tili-tooltip-row">
+            {t('app.topbar.tiliFullRecovery', { time: formatRemainingSeconds(energy.fullRecoverySeconds) })}
+          </div>
+        </>
+      )}
+      <div className="topbar-tili-tooltip-hint">{t('app.topbar.tiliClickHint')}</div>
+    </div>
+  )
+
+  return (
+    <FloatingTooltip placement="bottom" title={tooltip} tone={isFull ? 'jade' : isLow ? 'danger' : 'gold'}>
+      <button
+        aria-label={t('app.topbar.tiliAria', { current: energy.current, max: energy.max })}
+        className={`topbar-tili-btn${isFull ? ' is-full' : isLow ? ' is-low' : ''}`}
+        onClick={() => setActiveTab('exploration')}
+        type="button"
+      >
+        <Icon name="bolt" size={13} />
+        <span>{energy.current}/{energy.max}</span>
+      </button>
+    </FloatingTooltip>
+  )
+})
+
+/**
  * 客户端全局顶栏组件（包含道号、境界徽章、修为进度条与队列控制中心）
  */
 const TopBar = memo(function TopBar(): React.JSX.Element {
@@ -849,6 +934,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       </div>
       <QueueCenter />
       <div className="topbar-actions">
+        <TopbarTiliBadge />
         <TopbarCommunityLinks />
         <TopbarMailButton />
         <TaijiToggle />
@@ -1301,6 +1387,7 @@ const CraftingModeTabs = memo(function CraftingModeTabs(): React.JSX.Element {
 const SOCIAL_NAV_TABS: ReadonlyArray<{ id: SocialSubTab; icon: IconName }> = [
   { id: 'party', icon: 'social' },
   { id: 'zongmen', icon: 'gate' },
+  { id: 'guide', icon: 'codex' },
   { id: 'invite', icon: 'chat' },
 ]
 
@@ -2591,6 +2678,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   const [hasBeenVisible, setHasBeenVisible] = useState(!hidden)
   if (!hidden && !hasBeenVisible) setHasBeenVisible(true)
   const actions = useGameStoreWhenVisible(hidden, state => state.actions)
+  const dungeons = useGameStoreWhenVisible(hidden, state => state.dungeons)
   const worldNodeId = useGameStoreWhenVisible(hidden, state => state.world.nodeId)
   const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
   const equipmentCatalog = useGameStoreWhenVisible(hidden, state => state.equipment)
@@ -2607,17 +2695,19 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
       && isActionAvailableAtNode(action, worldNodeId)
   )), [actions, worldNodeId])
 
-  // 分组顺序：常驻（cultivation）→ 技艺组（technique 归属，随技艺等级）→ 历练（无技艺探索）→ 讨伐（combat）
+  // 分组顺序：常驻（cultivation）→ 技艺组（technique 归属，随技艺等级）→ 历练（无技艺探索）→ 讨伐（combat）→ 追忆副本（dungeon）
   const groups = useMemo(() => {
     interface ActionGroup { key: string; label: string; actions: ActionDefinition[] }
     const result: ActionGroup[] = []
     const resident: ActionDefinition[] = []
     const cultivations: ActionDefinition[] = []
     const hunts: ActionDefinition[] = []
+    const dungeonActions: ActionDefinition[] = []
     const others: ActionDefinition[] = []
     const byTechnique = new Map<string, ActionDefinition[]>()
     for (const action of visibleActions) {
       if (action.type === 'cultivation') { cultivations.push(action); continue }
+      if (action.executionKind === 'dungeon') { dungeonActions.push(action); continue }
       if (action.type === 'combat') { hunts.push(action); continue }
       if (action.technique) {
         const list = byTechnique.get(action.technique) ?? []
@@ -2654,10 +2744,17 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
     }
     if (others.length > 0) result.push({ key: 'other', label: t('app.combatPanel.otherActions'), actions: others })
     if (hunts.length > 0) result.push({ key: 'combat', label: t('app.combatPanel.huntActions'), actions: hunts })
+    if (dungeonActions.length > 0) result.push({ key: 'dungeon', label: t('app.combatPanel.dungeonActions'), actions: dungeonActions })
     return result
   }, [realmLevel, techniqueExperiences, t, visibleActions, itemCatalog, equipmentCatalog, encounters])
 
   const closeModal = useCallback(() => setSelectedAction(null), [])
+  const selectedDungeon = useMemo(
+    () => (selectedAction?.executionKind === 'dungeon'
+      ? dungeons.find(d => d.dungeonId === selectedAction.id) ?? null
+      : null),
+    [selectedAction, dungeons],
+  )
 
   return (
     <section className="panel skill-page" hidden={hidden}>
@@ -2679,7 +2776,11 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
             {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
           </div>
           <AutoUse bar="exploration" hidden={hidden} />
-          {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+          {selectedAction && selectedAction.executionKind === 'dungeon' ? (
+            <DungeonModal dungeon={selectedDungeon} onClose={closeModal} open={selectedDungeon !== null} />
+          ) : (
+            selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />
+          )}
         </>
       )}
     </section>
@@ -3247,6 +3348,7 @@ export default function App(): React.JSX.Element {
         useGameStore.getState().setActions(localizedActions)
         useGameStore.getState().setMaps(catalog.maps)
         useGameStore.getState().setEncounters(catalog.encounters)
+        useGameStore.getState().setDungeons(catalog.dungeons)
         useGameStore.getState().setAbilities(catalog.abilities)
         useGameStore.getState().setBuildings(catalog.buildings)
         // 触发条件编辑器的 Buff 词表与规约常量：服务端配表派生，前端不另写一份。

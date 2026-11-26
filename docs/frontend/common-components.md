@@ -388,14 +388,14 @@
 ## 24. 行动统计/记录面板与账本分区 (Stats Panel / Records Panel & Report Blocks)
 
 - **适用场景**：
-  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）展示本次行动统计收益，支持「简要」（默认）与「详细」双 Tab 切换，并在队伍成员 > 1 时提供队友切换页签；`CombatStatsPanel`（战场详情左上角浮层「战斗统计」入口，仅队首为战斗行动时显示，按钮与弹窗均收拢在 `CombatArena` 内）展示当前行动的单位级战斗统计——「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图把当前侧全部单位按所选指标总值降序做横向对比（条宽按该组合最大值归一化），伤害系三项物理红·术法蓝分段、治疗按自动回复翠·其他治疗紫分段并配同色图例；`RecordsPanel`（主区顶级页签 `'records'`：左侧栏底部「记录」按钮切换进入，移动端由详情页头部 `.records-open-mobile` 入口兜底）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计仅进行中账本携带 combatants，归档即弃。
+  - **三个入口三块面板**：`StatsPanel`（详情页右上角「统计」）展示本次行动统计收益，支持「简要」（默认）与「详细」双 Tab 切换，并在队伍成员 > 1 时提供队友切换页签；`CombatStatsPanel`（战场详情左上角浮层「战斗统计」入口，仅队首为战斗行动时显示，按钮与弹窗均收拢在 `CombatArena` 内）包含「数据统计」与「斗法记录」双页签——「数据统计」展示当前行动的单位级战斗统计（「我方/敌方」阵营页签 ×「输出/承伤/减免/治疗」指标页签，条形图按所选指标总值降序横向对比），「斗法记录」按需请求 `GET /api/v1/players/{id}/duel-records` 拉取当前行动内最近 20 场 PVP 斗法紧凑记录（单场上限 1000 次行动）并经 `duelRecordFormatter` 结合本地配表拼装为带 `RichContentSegmentView` 图元引用的行动流；`RecordsPanel`（主区顶级页签 `'records'`：左侧栏底部「记录」按钮切换进入，移动端由详情页头部 `.records-open-mobile` 入口兜底）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。战斗统计与斗法记录仅进行中账本携带，归档即弃。
   - **行动简要统计与速率换算 (`ReportBriefSection` / `statsCalculations.ts`)**：根据行动流逝时间（$T_{\text{hours}} = T_{\text{seconds}} / 3600$）进行纯逻辑速率换算——掉落物折算灵石日收益（「`+xxx万 灵石/天`」）、战斗行动展示战斗频次（`xx.x 场/时`）与击杀速率（生活行动换算轮次速率）、每小时修为与战斗经验速率（及每日预计收益）、前 6 项主要产物日产量与日价值估算。
   - **队伍成员收益协同查看**：组队时顶栏展示队伍成员选择器（`[我]` / `[道友A]` / ...），选择队友时复用 `PlayerCardRequest` 协议从服务端拉取目标当前行动账本 `CurrentReport`，同样支持简要与详细查看，未行动时友好展示空态；查队友战报走独立缓存链路，严格不误触发 `PlayerCardModal`。
   - **行动收益详细账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference` 复合胶囊横排，与斗法暂存区同款）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
   - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
   - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。
 - **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)、[`frontend/src/components/ReportBriefSection.tsx`](../../frontend/src/components/ReportBriefSection.tsx)、[`frontend/src/components/CombatStatsPanel.tsx`](../../frontend/src/components/CombatStatsPanel.tsx)、[`frontend/src/components/RecordsPanel.tsx`](../../frontend/src/components/RecordsPanel.tsx)、[`frontend/src/components/reportSections.tsx`](../../frontend/src/components/reportSections.tsx)
-- **计算与缓存层**：[`frontend/src/game/statsCalculations.ts`](../../frontend/src/game/statsCalculations.ts)、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)、[`frontend/src/game/battleReportStore.ts`](../../frontend/src/game/battleReportStore.ts)
+- **计算与缓存层**：[`frontend/src/game/statsCalculations.ts`](../../frontend/src/game/statsCalculations.ts)、[`frontend/src/game/duelRecordFormatter.ts`](../../frontend/src/game/duelRecordFormatter.ts)、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)、[`frontend/src/game/battleReportStore.ts`](../../frontend/src/game/battleReportStore.ts)
 - **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`、`.combat-stats-`、`.records-page`)、[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)（浅色主题适配）；侧栏底部工具区 `.sidebar-footer` 在 `frontend/src/styles.css`
 
 ---
@@ -720,3 +720,29 @@
   - [`frontend/src/components/TerminalIdleOverlay.tsx`](../../frontend/src/components/TerminalIdleOverlay.tsx)
   - [`frontend/src/game/terminalIdleTelemetry.ts`](../../frontend/src/game/terminalIdleTelemetry.ts)
 - **样式文件**：[`frontend/src/styles/terminal-idle.css`](../../frontend/src/styles/terminal-idle.css)
+
+---
+
+## 45. 斗法暂存区待入袋共享区块 (`StagedLootSection`)
+
+- **适用场景**：
+  - 凡 `duel.stagedItems` 非空时（不受当前队首是否仍勾选斗法、或已切至其他行动/空闲影响），统一展示待自动入袋的暂存物品总量、冻结态/待入袋徽章、批次数与下一批/全部到账实时倒计时，以及悬浮机制说明；
+  - 统一复用于储物袋顶部（`InventoryPanel`，`variant="card"`）、记录页顶部（`RecordsPanel`，`variant="card"`）与行动统计面板斗法区（`StatsPanel`，`variant="inline"`）；无暂存物品时直接返回 `null` 且零定时器开销；物品胶囊复用 `ItemReference`，倒计时文本复用 `formatRemainingSeconds`。
+- **组件与纯逻辑源码**：
+  - [`frontend/src/components/StagedLootSection.tsx`](../../frontend/src/components/StagedLootSection.tsx)
+  - [`frontend/src/game/stagedLoot.ts`](../../frontend/src/game/stagedLoot.ts)
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css)（搜索 `.staged-loot-*` / `.inventory-staged-loot`），浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
+
+---
+
+## 46. 道友攻略富文本渲染器与横竖屏独立创作工作台 (`GuideRichContent` / `GuideEditorModal`)
+
+- **适用场景**：
+  - 长文攻略安全排版展示（支持一至三级标题、加粗、引用、无序/有序列表、代码块、分割线、内置 `QqEmoji` 动态表情、颜文字、三种图片链接自动展开并复用 `ChatImageLightbox` 缩放、以及显式携带 `itemId` 的 `ItemReference` 物品胶囊） -> `GuideRichContent`
+  - 全功能独立长文创作弹窗（桌面端分栏实时预览 / 竖屏全视口「编辑 / 预览」切换，集成 `ChatEmojiPicker`、分类颜文字选择器、本地图片上传/直链插入、随身物品胶囊插入、付费灵石门槛设置与 `localStorage` 草稿防丢） -> `GuideEditorModal`
+- **组件与纯逻辑源码**：
+  - [`frontend/src/components/GuidePage.tsx`](../../frontend/src/components/GuidePage.tsx)
+  - [`frontend/src/components/GuideEditorModal.tsx`](../../frontend/src/components/GuideEditorModal.tsx)
+  - [`frontend/src/components/GuideRichContent.tsx`](../../frontend/src/components/GuideRichContent.tsx)
+  - [`frontend/src/game/guideMarkup.ts`](../../frontend/src/game/guideMarkup.ts)
+- **样式文件**：[`frontend/src/styles/guide.css`](../../frontend/src/styles/guide.css)

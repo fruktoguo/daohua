@@ -458,7 +458,7 @@ public sealed class CombatMechanicTraitTests
         {
             Assert.Equal("ability.zhanyu", e.AbilityId);
             Assert.Equal("踏云", e.AbilityNameOverride);
-            Assert.Equal(110.0 * 110.0 / 111.0, e.Damage, 8);
+            Assert.Equal(200.0 * 200.0 / 201.0, e.Damage, 8);
         });
         Assert.Equal(1, Assert.Single(morphed.Player.Buffs, b => b.BuffId == CombatTraitRules.YixingBuffId).Stacks);
 

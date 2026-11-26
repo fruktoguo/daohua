@@ -1349,6 +1349,7 @@ public sealed class EcsAdapterBoundaryTests
         public DateTimeOffset? NextAdvanceBoundaryUtc => null;
         public bool RequiresReconciliation(Guid playerId) => true;
         public event Action<Guid>? WalletChanged { add { } remove { } }
+        public event Func<Guid, string, string, IReadOnlyList<Guid>, ValueTask>? SessionNaturallyEnded { add { } remove { } }
         public ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default)
             => ValueTask.CompletedTask;
         public ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default)
@@ -1455,6 +1456,10 @@ public sealed class EcsAdapterBoundaryTests
         public ValueTask<bool> TryRemoveFriendAsync(Guid playerId, Guid friendId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<PartyRecord?> GetPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TrySetPartyMemberAssistAsync(Guid playerId, bool assistMode,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask ResetPartyMembersReadyAsync(Guid partyId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<Guid> CreatePartyAsync(Guid leaderId, PartyProfileRecord profile,
             DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -3,6 +3,7 @@ import { useGameStore } from '../game/gameStore'
 import { loadBattleReportHistory } from '../game/battleReportStore'
 import { useT } from '../i18n'
 import { formatReportTime, reportHasContent, ReportBlock, ReportExpSection, ReportInfoSection, ReportItemsSection } from './reportSections'
+import { StagedLootSection } from './StagedLootSection'
 import type { BattleReport } from '../game/types'
 
 /** 历史战报展示上限 */
@@ -55,7 +56,7 @@ export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
       .slice(0, HISTORY_LIMIT)
   }, [playerId, duel.reports])
 
-  const isEmpty = !offline && !daily && history.length === 0
+  const isEmpty = !offline && !daily && history.length === 0 && duel.stagedItems.length === 0
 
   return (
     <section aria-label={t('app.nav.records')} className="panel records-page">
@@ -66,6 +67,7 @@ export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
         <p className="battle-report-empty">{t('combat.report.empty')}</p>
       ) : (
         <div className="battle-report-body">
+          <StagedLootSection variant="card" />
           {offline && (
             <ReportBlock
               nowSeconds={estimatedServerNow}

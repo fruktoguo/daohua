@@ -43,9 +43,7 @@ import {
   SlotGroupPotion,
   abilityLevelForExp,
   parseBuffEffects,
-  percentMultiplier,
   resolveDamageElement,
-  PercentCurveMode,
   type CombatRespawnPolicy,
 } from './rules.ts'
 import {
@@ -989,19 +987,18 @@ export class ActionParticipationSessionEngine {
       if (caster === null) return false
       const manaCost = strike.manaCostRatio * caster.stats.maxManapoints
       if (target === null || caster.manapoints < manaCost - 1e-9) return false
-      const skillMult = percentMultiplier(caster.stats.skillBonusPoints, PercentCurveMode.Linear)
       const totalDmgBonus =
         caster.stats.totalDamageBonusPoints + caster.buffTotal(BuffEffectChannel.DamageBonusPoints)
       const strikeElement = resolveDamageElement(
         caster.stats.traits,
         strike.element as CombatElement,
       )
+      // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
       const strikeStats = {
         ...caster.stats,
         attackPower:
-          (strike.manaDamageRatio * caster.stats.maxManapoints +
-            strike.spellAttackRatio * caster.stats.spellAttack) *
-          skillMult,
+          strike.manaDamageRatio * caster.stats.maxManapoints +
+          strike.spellAttackRatio * caster.stats.spellAttack,
         damageKind: CombatDamageKind.Spell,
         element: strikeElement,
         totalDamageBonusPoints: totalDmgBonus,

@@ -33,7 +33,7 @@ internal static partial class ActionExecutionRules
     {
         // 濒死复苏：阵亡不回血口径下 hp=0 的受阻战斗行动永远等不到回血，按脱战复苏 1 HP
         // 归一后复核准入；复苏或条件补足即恢复 Running，由正常分派接管，不再永久停泊。
-        if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter && player.Resources.Hitpoints <= 0)
+        if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon && player.Resources.Hitpoints <= 0)
         {
             player.Resources.Hitpoints = 1;
             player.MarkDirty(PlayerSectionKind.Combat);

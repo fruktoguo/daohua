@@ -1,0 +1,611 @@
+/* 追忆副本系统专属样式：顶栏体力胶囊、双下拉与波次备战弹窗、战场十波进度条与组队助战态 */
+
+/* ==================== 1. 顶栏体力胶囊 ==================== */
+.topbar-tili-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(201, 180, 109, 0.34);
+  border-radius: 4px;
+  background: rgba(201, 180, 109, 0.08);
+  color: var(--gold-bright);
+  font-family: var(--font-number);
+  font-size: var(--text-xs);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+}
+
+.topbar-tili-btn:hover {
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.16);
+}
+
+.topbar-tili-btn.is-full {
+  border-color: rgba(114, 169, 140, 0.52);
+  color: var(--jade);
+}
+
+.topbar-tili-btn.is-low {
+  border-color: rgba(200, 82, 63, 0.45);
+  color: var(--danger-bright);
+}
+
+.topbar-tili-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 210px;
+  font-size: var(--text-xs);
+}
+
+.topbar-tili-tooltip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.22);
+}
+
+.topbar-tili-tooltip-row {
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.topbar-tili-tooltip-hint {
+  margin-top: 2px;
+  color: var(--gold);
+  font-size: var(--text-2xs);
+}
+
+/* ==================== 2. 11 档难度通用色阶（虚境 3 档 + 现世 8 阶品质色） ==================== */
+.dungeon-diff-tone--normal { --dg-accent: #b7c2cc; --dg-bg: rgba(183, 194, 204, 0.10); }
+.dungeon-diff-tone--hard { --dg-accent: #72a98c; --dg-bg: rgba(114, 169, 140, 0.14); }
+.dungeon-diff-tone--hell { --dg-accent: #d96b59; --dg-bg: rgba(217, 107, 89, 0.16); }
+.dungeon-diff-tone--mundane { --dg-accent: rgb(170, 178, 188); --dg-bg: rgba(170, 178, 188, 0.12); }
+.dungeon-diff-tone--yellow { --dg-accent: rgb(58, 156, 96); --dg-bg: rgba(58, 156, 96, 0.16); }
+.dungeon-diff-tone--mystic { --dg-accent: rgb(79, 143, 216); --dg-bg: rgba(79, 143, 216, 0.18); }
+.dungeon-diff-tone--earth { --dg-accent: rgb(146, 118, 232); --dg-bg: rgba(123, 97, 209, 0.20); }
+.dungeon-diff-tone--heaven { --dg-accent: rgb(226, 138, 46); --dg-bg: rgba(226, 138, 46, 0.20); }
+.dungeon-diff-tone--immortal { --dg-accent: rgb(37, 184, 216); --dg-bg: rgba(37, 184, 216, 0.20); }
+.dungeon-diff-tone--divine { --dg-accent: rgb(224, 86, 86); --dg-bg: rgba(217, 74, 74, 0.22); }
+.dungeon-diff-tone--chaos { --dg-accent: rgb(242, 186, 82); --dg-bg: linear-gradient(135deg, rgba(236, 86, 72, 0.24), rgba(242, 186, 82, 0.22)); }
+
+.dungeon-diff-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--dg-accent, var(--gold));
+  border-radius: 3px;
+  background: var(--dg-bg, rgba(201, 180, 109, 0.12));
+  color: var(--dg-accent, var(--gold-bright));
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.4;
+}
+
+/* ==================== 3. 追忆副本备战弹窗 (DungeonModal) ==================== */
+.dungeon-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dungeon-modal-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.dungeon-modal-title-wrap h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--gold-bright);
+  font-size: var(--text-lg);
+}
+
+.dungeon-modal-desc {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.dungeon-modal-subbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dungeon-modal-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+
+.dungeon-modal-meta-chip.is-ok {
+  border-color: rgba(114, 169, 140, 0.42);
+  color: var(--jade);
+}
+
+.dungeon-modal-meta-chip.is-warn {
+  border-color: rgba(200, 82, 63, 0.48);
+  color: var(--danger-bright);
+}
+
+.dungeon-modal-meta-chip.is-reality {
+  border-color: rgba(201, 180, 109, 0.46);
+  color: var(--gold-bright);
+}
+
+.dungeon-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dungeon-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--gold);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* 联动双下拉选择条 */
+.dungeon-diff-select-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.dungeon-select-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dungeon-select-field.is-vertical {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.dungeon-select-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.dungeon-native-select {
+  min-width: 128px;
+  height: 32px;
+  padding: 0 10px;
+}
+
+.dungeon-reality-hint {
+  margin: 0;
+  color: var(--gold);
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+}
+
+.dungeon-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+/* 波次下拉框 + 右侧出战怪物展示区 */
+.dungeon-wave-browser {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.dungeon-wave-selector-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.dungeon-wave-monsters-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dungeon-wave-monster-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dungeon-wave-hover-hint {
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+}
+
+.dungeon-wave-kind {
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: var(--text-2xs);
+}
+
+.dungeon-wave-kind.is-normal {
+  background: rgba(183, 194, 204, 0.14);
+  color: var(--text-dim);
+}
+
+.dungeon-wave-kind.is-elite {
+  background: rgba(192, 132, 252, 0.2);
+  color: var(--purple);
+}
+
+.dungeon-wave-kind.is-boss {
+  background: rgba(200, 82, 63, 0.26);
+  color: var(--danger-bright);
+}
+
+.dungeon-clear-currencies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dungeon-currency-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: var(--text-xs);
+}
+
+.dungeon-loot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dungeon-loot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.dungeon-loot-row.is-locked {
+  opacity: 0.65;
+}
+
+.dungeon-loot-tile {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+}
+
+.dungeon-loot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dungeon-loot-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dungeon-loot-name {
+  color: var(--text-bright);
+  font-size: var(--text-sm);
+}
+
+.dungeon-loot-tag {
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: var(--text-2xs);
+}
+
+.dungeon-loot-tag.is-guaranteed {
+  background: rgba(114, 169, 140, 0.18);
+  color: var(--jade);
+}
+
+.dungeon-loot-tag.is-rare {
+  background: rgba(201, 180, 109, 0.18);
+  color: var(--gold-bright);
+}
+
+.dungeon-loot-meta {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.dungeon-loot-locked-hint {
+  color: var(--danger-bright);
+}
+
+.dungeon-rule-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.05);
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+
+.dungeon-modal-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gold-faint);
+}
+
+.dungeon-repeat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dungeon-repeat-label {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.dungeon-repeat-hint {
+  color: var(--gold);
+  font-size: var(--text-2xs);
+}
+
+.dungeon-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dungeon-party-btn,
+.dungeon-enter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ==================== 4. 战场十波进度条 ==================== */
+.arena-dungeon-banner {
+  position: relative;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  margin: 0 10px 4px;
+  border: 1px solid rgba(201, 180, 109, 0.34);
+  border-radius: 4px;
+  background: rgba(16, 15, 12, 0.86);
+}
+
+.arena-dungeon-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.arena-dungeon-title {
+  color: var(--gold-bright);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.arena-dungeon-wave-label {
+  color: var(--text);
+  font-family: var(--font-number);
+  font-size: var(--text-xs);
+}
+
+.arena-dungeon-rest-tag {
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(114, 169, 140, 0.16);
+  color: var(--jade);
+  font-size: var(--text-2xs);
+}
+
+.arena-dungeon-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arena-dungeon-pip {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.arena-dungeon-pip.is-elite {
+  border-color: rgba(192, 132, 252, 0.45);
+}
+
+.arena-dungeon-pip.is-boss {
+  width: 18px;
+  border-color: rgba(236, 86, 72, 0.56);
+}
+
+.arena-dungeon-pip.is-done {
+  border-color: var(--jade);
+  background: var(--jade);
+}
+
+.arena-dungeon-pip.is-active {
+  border-color: var(--gold-bright);
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(232, 214, 154, 0.6);
+}
+
+/* ==================== 5. 组队体力与助战状态 ==================== */
+.party-dungeon-tili-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: var(--text-2xs);
+}
+
+.party-tili-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid rgba(201, 180, 109, 0.34);
+  border-radius: 3px;
+  background: rgba(201, 180, 109, 0.08);
+  color: var(--gold-bright);
+  font-family: var(--font-number);
+}
+
+.party-tili-badge.is-short {
+  border-color: rgba(200, 82, 63, 0.46);
+  background: rgba(200, 82, 63, 0.12);
+  color: var(--danger-bright);
+}
+
+.party-assist-badge {
+  padding: 1px 6px;
+  border: 1px solid rgba(117, 169, 173, 0.48);
+  border-radius: 3px;
+  background: rgba(117, 169, 173, 0.14);
+  color: var(--qi);
+}
+
+.party-slot-assist {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--qi);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.party-dungeon-warn {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(200, 82, 63, 0.45);
+  border-radius: 4px;
+  background: rgba(200, 82, 63, 0.1);
+  color: var(--danger-bright);
+  font-size: var(--text-xs);
+}
+
+/* ==================== 6. 浅色主题适配 ==================== */
+:root[data-theme="light"] .topbar-tili-btn {
+  border-color: rgba(125, 82, 26, 0.32);
+  background: rgba(125, 82, 26, 0.07);
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .topbar-tili-btn.is-full {
+  border-color: rgba(23, 96, 67, 0.4);
+  color: var(--jade);
+}
+
+:root[data-theme="light"] .topbar-tili-btn.is-low {
+  border-color: rgba(155, 52, 40, 0.42);
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .arena-dungeon-title {
+  color: var(--gold);
+}
+
+:root[data-theme="light"] .arena-dungeon-banner {
+  background: rgba(var(--surface-rgb), 0.92);
+  border-color: rgba(125, 82, 26, 0.32);
+}
+
+:root[data-theme="light"] .dungeon-diff-tone--normal { --dg-accent: #4c5868; --dg-bg: rgba(76, 88, 104, 0.08); }
+:root[data-theme="light"] .dungeon-diff-tone--hard { --dg-accent: #176043; --dg-bg: rgba(23, 96, 67, 0.09); }
+:root[data-theme="light"] .dungeon-diff-tone--hell { --dg-accent: #9b3428; --dg-bg: rgba(155, 52, 40, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--mundane { --dg-accent: #4c5868; --dg-bg: rgba(76, 88, 104, 0.08); }
+:root[data-theme="light"] .dungeon-diff-tone--yellow { --dg-accent: #176043; --dg-bg: rgba(23, 96, 67, 0.09); }
+:root[data-theme="light"] .dungeon-diff-tone--mystic { --dg-accent: #225c94; --dg-bg: rgba(34, 92, 148, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--earth { --dg-accent: #69408c; --dg-bg: rgba(105, 64, 140, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--heaven { --dg-accent: #874418; --dg-bg: rgba(135, 68, 24, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--immortal { --dg-accent: #165c76; --dg-bg: rgba(22, 92, 118, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--divine { --dg-accent: #9b3428; --dg-bg: rgba(155, 52, 40, 0.10); }
+:root[data-theme="light"] .dungeon-diff-tone--chaos { --dg-accent: #902b28; --dg-bg: rgba(144, 43, 40, 0.12); }
+
+:root[data-theme="light"] .dungeon-diff-select-bar,
+:root[data-theme="light"] .dungeon-wave-browser,
+:root[data-theme="light"] .dungeon-currency-pill,
+:root[data-theme="light"] .dungeon-loot-row {
+  background: rgba(var(--surface-rgb), 0.78);
+}
+
+:root[data-theme="light"] .party-tili-badge {
+  color: var(--gold);
+  border-color: rgba(125, 82, 26, 0.34);
+}
+
+:root[data-theme="light"] .party-assist-badge,
+:root[data-theme="light"] .party-slot-assist {
+  color: var(--qi);
+}
+
+/* ==================== 7. 窄屏响应 ==================== */
+@media (max-width: 720px) {
+  .dungeon-wave-browser {
+    grid-template-columns: 1fr;
+  }
+  .dungeon-two-col {
+    grid-template-columns: 1fr;
+  }
+}

@@ -42,9 +42,9 @@ export type RespawnPolicy = 'immediate' | 'all-allies-ready' | 'target-ally-aliv
 export type QueueEntryStatus = 'queued' | 'running' | 'blocked'
 
 /**
- * 行动执行推进模式分类：标准计时推进 (timed)、战斗遭遇推进 (combat-encounter)、大地图移动旅行 (travel)
+ * 行动执行推进模式分类：标准计时推进 (timed)、战斗遭遇推进 (combat-encounter)、大地图移动旅行 (travel)、秘境副本 (dungeon)
  */
-export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
+export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel' | 'dungeon'
 
 /**
  * 远征探索与战斗历练阶段枚举：
@@ -655,6 +655,12 @@ export interface ExpeditionProgress {
   playerBuffs?: CombatBuffEntry[] | null
   /** 遭遇战 ID */
   encounterId?: string | null
+  /** 秘境副本 ID（仅秘境战斗非空） */
+  dungeonId?: string | null
+  /** 秘境总波数（标准为 10） */
+  dungeonTotalWaves?: number | null
+  /** 本把秘境是否已在第 1 波开局完成体力扣除 */
+  dungeonEnergyCharged?: boolean | null
   /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
   duel?: ExpeditionDuel | null
   /** 行动参与会话盟友阵列：按参与者固定顺序下发，含本机成员位。 */
@@ -825,6 +831,82 @@ export interface BattleReport {
   duelItemsGained: BattleReportItem[]
   /** 斗法损失物品明细列表 */
   duelItemsLost: BattleReportItem[]
+  /** 行动内已记录的 PVP 斗法场次数量（明细由 /duel-records 按需拉取） */
+  duelRecordCount: number
+}
+
+/** 斗法紧凑记录中的参战单位条目（服务端短键映射） */
+export interface DuelRecordUnitDto {
+  /** 单位展示名 */
+  n: string
+  /** 是否属于观看方阵营 */
+  ally?: boolean
+  /** 玩家 ID（可选） */
+  pid?: string | null
+}
+
+/** 斗法紧凑记录中的单条效果明细（服务端短键映射） */
+export interface DuelRecordEffectDto {
+  /** 效果来源单位下标 */
+  s: number
+  /** 效果目标单位下标 */
+  tg: number
+  /** 效果类别：0=Damage,1=Heal,2=ManaRestore,3=BuffGrant,4=HpDrain,5=ManaDrain,6=Reflect,7=TraitBurst,8=FormationStrike,9=UpkeepCost,10=Downed */
+  ek: number
+  /** 伤害大类：0=物理,1=术法,2=真实 */
+  dk?: number
+  /** 五行属性：0=无,1=金,2=木,3=水,4=火,5=土 */
+  el?: number
+  /** 判定标志位：1=命中,2=闪避,4=暴击,8=破招,16=化解 */
+  fl?: number
+  /** 数值（伤害/治疗/回复/层数/消耗） */
+  v?: number
+  /** 关联实体 ID 在 defs 池中的下标 */
+  df?: number | null
+}
+
+/** 斗法紧凑记录中的单次行动条目（服务端短键映射） */
+export interface DuelRecordActionDto {
+  /** 战斗相对时钟秒 */
+  t: number
+  /** 行动主体单位下标 */
+  a: number
+  /** 行动大类：0=普攻,1=功法,2=物品,3=阵法,4=特质,5=周期 */
+  k: number
+  /** 主实体 ID 在 defs 池中的下标 */
+  d?: number | null
+  /** 切态覆写名称在 defs 池中的下标 */
+  o?: number | null
+  /** 合并归属本次行动的全部效果明细 */
+  fx: DuelRecordEffectDto[]
+}
+
+/** 单场 PVP 斗法紧凑记录 */
+export interface DuelBattleRecordDto {
+  /** 斗法场次 ID */
+  id: string
+  /** 发生/结算 Unix 秒 */
+  at: number
+  /** 战斗总时长秒 */
+  dur: number
+  /** 观看方结局：0=进行中,1=胜,2=负,3=平 */
+  out: number
+  /** 是否弃战 */
+  ff?: boolean
+  /** 是否触发单场 1000 次行动上限截断 */
+  tr?: boolean
+  /** 参战单位列表 */
+  u: DuelRecordUnitDto[]
+  /** 实体 ID 字典池 */
+  defs: string[]
+  /** 行动时间轴 */
+  acts: DuelRecordActionDto[]
+}
+
+/** 按需拉取当前行动斗法记录的响应体 */
+export interface PlayerDuelRecordsResponseDto {
+  actionId: string
+  records: DuelBattleRecordDto[]
 }
 
 /**
@@ -1300,6 +1382,18 @@ export interface Stats {
   genjiNextCost?: number
   /** 服务端暂存的装备分级强化履历记录（供本地持久化与回执清理） */
   stagedEnhancements?: StagedEnhancementRecord[]
+  /** 秘境体力持久化锚点值 */
+  tiliValue?: number
+  /** 秘境体力锚点更新时间戳（Unix 秒） */
+  tiliUpdatedAtUnixSeconds?: number
+  /** 服务端按 LastSimulatedAt 推算的当前有效体力 */
+  tiliCurrent?: number
+  /** 秘境体力上限（1680） */
+  tiliMax?: number
+  /** 距下一点体力恢复剩余秒数 */
+  tiliNextRecoverySeconds?: number
+  /** 距回满体力剩余秒数 */
+  tiliFullRecoverySeconds?: number
   /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */
   combatExperience: number
   /** 累计采集灵草次数 */
@@ -1948,6 +2042,8 @@ export interface WorldNodeDefinition {
   availableActionIds: string[]
   /** 该节点可进入的遭遇战 ID 列表 */
   encounterIds: string[]
+  /** 该节点关联的秘境副本 ID 列表 */
+  dungeonIds?: string[]
   /** 驻留 NPC 列表 */
   npcs: NearbyEntity[]
   /** 建筑/功能实体列表 */
@@ -1985,6 +2081,77 @@ export interface WorldEdgeDefinition {
 /**
  * 大地图世界区域定义
  */
+/** 追忆副本波次类别 */
+export type DungeonWaveKind = 'normal' | 'elite' | 'boss'
+
+/** 追忆副本现世动态等级计算用的逐级期望锚点（由 /api/v1/catalog/dungeons 首项附带下发） */
+export interface DungeonLevelAnchor {
+  level: number
+  tier: number
+  hp: number
+  mp: number
+  ad: number
+  ap: number
+  armor: number
+  mr: number
+  acc: number
+  eva: number
+  crit: number
+  cavoid: number
+  breakPt: number
+  parry: number
+  killExpNormal: number
+  killExpElite: number
+  killExpBoss: number
+}
+
+/** 追忆副本波次内怪物扩展定义（附带同构权重与修饰项以支持前端现世动态等级重算） */
+export interface DungeonMonsterDefinition extends CombatantDefinition {
+  explicitExperience?: boolean
+  weights?: Record<string, number> | null
+  modifiers?: Record<string, number> | null
+}
+
+/** 追忆副本单波次固定敌阵静态定义 */
+export interface DungeonWaveDefinition {
+  waveNumber: number
+  kind: DungeonWaveKind
+  enemyIds: string[]
+  enemies: DungeonMonsterDefinition[]
+}
+
+/** 追忆副本第 10 波通关独占战利品条目 */
+export interface DungeonLootEntry {
+  itemId: string
+  kind: 'guaranteed' | 'rare'
+  minQuantity: number
+  maxQuantity: number
+  dropChance: number
+  minDifficulty: number
+}
+
+/** 追忆副本静态目录定义（/api/v1/catalog/dungeons） */
+export interface DungeonDefinition {
+  dungeonId: string
+  name: string
+  description: string
+  nodeId: string
+  tier: number
+  baseLevel: number
+  minMonsterLevel?: number
+  recommendedValuation: number[]
+  waveRestSeconds: number
+  totalWaves: number
+  waves: DungeonWaveDefinition[]
+  baseRewards: {
+    experience: number
+    spiritStones: number
+  }
+  clearLootTable: DungeonLootEntry[]
+  affixes?: string[]
+  levelAnchors?: DungeonLevelAnchor[] | null
+}
+
 export interface WorldMapDefinition {
   /** 地图唯一 ID */
   mapId: string
@@ -2063,6 +2230,8 @@ export interface WorldState {
   availableActionIds: string[]
   /** 当前地点可进入的遭遇战 ID 列表 */
   encounterIds: string[]
+  /** 当前地点关联的秘境副本 ID 列表 */
+  dungeonIds?: string[]
   /** 周边 NPC 列表 */
   npcs: NearbyEntity[]
   /** 周边建筑/功能实体列表（系统建筑） */
@@ -2142,6 +2311,8 @@ export interface PlayerSnapshot {
   respawnTargetPlayerId: string | null
   /** 是否对非队友公开角色配装明细（settings 分段权威，默认 true；对队友恒开放） */
   publicLoadoutVisible: boolean
+  /** 非公开配装时的付费查阅价格（0 表示完全隐藏，正整数表示支付灵石查阅至当日零点） */
+  loadoutInspectPrice: number
 }
 
 /**
@@ -2178,6 +2349,8 @@ export interface PlayerPatch {
   respawnTargetPlayerId?: string | null
   /** 是否对非队友公开角色配装明细（settings 分段变更时下发） */
   publicLoadoutVisible?: boolean
+  /** 非公开配装时的付费查阅价格（settings 分段变更时下发） */
+  loadoutInspectPrice?: number
 }
 
 /**

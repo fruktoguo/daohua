@@ -91,8 +91,13 @@ public static class PostgresSchema
     /// v64：筑基期根基系统（progression 分段新增 genjiPoints/genjiUnlocked，可缺省解码），推进玩家载荷标签至 v45；无 DDL 变更。
     /// v65：补齐两处高频扫描部分索引：platform.integration_outbox(delivered_at) WHERE delivered_at IS NOT NULL（留存清理防全表扫描）与
     /// identity.auth_sessions(account_id) WHERE revoked_at IS NULL（改密批量吊销按账号索引）；玩家载荷标签保持 v45 不变。
+    /// v66：道友攻略系统与配装付费查阅（新增 social.guide_posts / guide_daily_quotas / guide_post_views / guide_post_likes /
+    /// guide_post_unlocks / guide_post_tips / loadout_inspect_grants 表及权限；settings 分段新增 loadoutInspectPrice 可缺省解码，存档标签推进至 v46）。
+    /// v67：秘境副本系统全栈上线（social.parties 与 party_seekers 纳入 activity_kind='dungeon'、social.parties 难度放宽至 0..10 并增 dungeon_id/dungeon_repeat_count、
+    /// social.party_members 增 assist_mode 助战标记；progression 分段新增 tiliValue/tiliUpdatedAtUnixSeconds、actionQueue 远征新增秘境字段，均可缺省解码，存档标签推进至 v47）。
+    /// v68：战斗统计新增紧凑 PVP 斗法记录（duel 分段行动账本新增 duelRecords、actionQueue 斗法回放新增 viewerRecord，均可缺省解码；存档标签推进至 v48，无 DDL 变更）。
     /// </summary>
-    public const int Version = 65;
+    public const int Version = 68;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -702,7 +707,7 @@ public static class PostgresSchema
         -- 队伍档案：招募标签口径（目标类型/目标节点/身家门槛/公开性），不参与行动或战斗结算。
         name varchar(32) NOT NULL DEFAULT '',
         activity_kind varchar(16) NOT NULL DEFAULT 'any'
-            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
+            CHECK (activity_kind IN ('any', 'combat', 'dungeon', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
         node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         is_public boolean NOT NULL DEFAULT false,
@@ -711,8 +716,12 @@ public static class PostgresSchema
         pvp_enabled boolean NOT NULL DEFAULT false,
         -- 开启槽位（总纲 §21.13）：2~5，默认 3；收窄后不得低于当前队员数（由社交层裁决保证）。
         open_slots smallint NOT NULL DEFAULT 3 CHECK (open_slots BETWEEN 2 AND 5),
-        -- 队伍讨伐难度（总纲 §7.3）：0~5，默认 0。
-        difficulty smallint NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 5),
+        -- 队伍难度：野外讨伐 0~5，追忆副本 0~10（总纲 §7.3 / §30.3），默认 0。
+        difficulty smallint NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 10),
+        -- 秘境副本目标 ID（activity_kind='dungeon' 时有效，空串表示未指定）。
+        dungeon_id varchar(128) NOT NULL DEFAULT '',
+        -- 秘境副本连刷次数（1~99 或 -1 刷至体力耗尽，默认 1）。
+        dungeon_repeat_count integer NOT NULL DEFAULT 1 CHECK (dungeon_repeat_count = -1 OR (dungeon_repeat_count >= 1 AND dungeon_repeat_count <= 99)),
         doudizhu_stake double precision NOT NULL DEFAULT 10 CHECK (doudizhu_stake >= 0 AND doudizhu_stake < 'Infinity'::double precision),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
@@ -728,7 +737,9 @@ public static class PostgresSchema
         joined_at timestamptz NOT NULL,
         -- 组队讨伐就绪标记（总纲 §21.13）：成员自开关，离队/被踢即随成员行删除。
         ready boolean NOT NULL DEFAULT false,
-        doudizhu_ready boolean NOT NULL DEFAULT false
+        doudizhu_ready boolean NOT NULL DEFAULT false,
+        -- 秘境副本助战标记（总纲 §30.5.3）：助战成员不扣体力不拿收益，照常参战。
+        assist_mode boolean NOT NULL DEFAULT false
     );
     CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
 
@@ -794,7 +805,7 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS social.party_seekers (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         activity_kind varchar(16) NOT NULL DEFAULT 'any'
-            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
+            CHECK (activity_kind IN ('any', 'combat', 'dungeon', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
         node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         created_at timestamptz NOT NULL,
@@ -913,6 +924,96 @@ public static class PostgresSchema
         ON social.player_stickers(deleted_at)
         WHERE deleted_at IS NOT NULL;
 
+    -- 道友攻略主表（个人榜 Top 50 修士每日限发 1 篇，正文上限 10,000 字；deleted_at 非空表示软删除，30 天后物理回收）。
+    CREATE TABLE IF NOT EXISTS social.guide_posts (
+        post_id uuid PRIMARY KEY,
+        author_id uuid NOT NULL REFERENCES identity.players(player_id),
+        title varchar(120) NOT NULL CHECK (char_length(btrim(title)) > 0),
+        summary varchar(400) NOT NULL DEFAULT '',
+        body text NOT NULL CHECK (char_length(btrim(body)) > 0),
+        unlock_price double precision NOT NULL DEFAULT 0 CHECK (unlock_price >= 0 AND unlock_price <= 100000),
+        view_count integer NOT NULL DEFAULT 0 CHECK (view_count >= 0),
+        like_count integer NOT NULL DEFAULT 0 CHECK (like_count >= 0),
+        tipper_count integer NOT NULL DEFAULT 0 CHECK (tipper_count >= 0),
+        total_reward_stones double precision NOT NULL DEFAULT 0 CHECK (total_reward_stones >= 0),
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL,
+        deleted_at timestamptz NULL
+    ) WITH (fillfactor = 85);
+    CREATE INDEX IF NOT EXISTS ix_guide_posts_active_reward
+        ON social.guide_posts(total_reward_stones DESC, tipper_count DESC, created_at DESC, post_id DESC)
+        WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_guide_posts_active_created
+        ON social.guide_posts(created_at DESC, post_id DESC)
+        WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_guide_posts_author
+        ON social.guide_posts(author_id, created_at DESC)
+        WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS ix_guide_posts_deleted
+        ON social.guide_posts(deleted_at)
+        WHERE deleted_at IS NOT NULL;
+
+    -- 道友攻略每日发帖额度记录（按北京时间 UTC+8 自然日计，删帖不退还当日额度）。
+    CREATE TABLE IF NOT EXISTS social.guide_daily_quotas (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        post_date date NOT NULL,
+        post_count integer NOT NULL DEFAULT 0 CHECK (post_count >= 0),
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, post_date)
+    );
+    CREATE INDEX IF NOT EXISTS ix_guide_daily_quotas_updated
+        ON social.guide_daily_quotas(updated_at);
+
+    -- 道友攻略独立阅读去重记录（每帖每玩家至多计 1 次阅读）。
+    CREATE TABLE IF NOT EXISTS social.guide_post_views (
+        post_id uuid NOT NULL REFERENCES social.guide_posts(post_id) ON DELETE CASCADE,
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        viewed_at timestamptz NOT NULL,
+        PRIMARY KEY (post_id, player_id)
+    );
+
+    -- 道友攻略免费点赞表。
+    CREATE TABLE IF NOT EXISTS social.guide_post_likes (
+        post_id uuid NOT NULL REFERENCES social.guide_posts(post_id) ON DELETE CASCADE,
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (post_id, player_id)
+    );
+
+    -- 道友攻略付费可见永久解锁表。
+    CREATE TABLE IF NOT EXISTS social.guide_post_unlocks (
+        post_id uuid NOT NULL REFERENCES social.guide_posts(post_id) ON DELETE CASCADE,
+        viewer_id uuid NOT NULL REFERENCES identity.players(player_id),
+        paid_stones double precision NOT NULL CHECK (paid_stones > 0),
+        author_received_stones double precision NOT NULL CHECK (author_received_stones >= 0),
+        unlocked_at timestamptz NOT NULL,
+        PRIMARY KEY (post_id, viewer_id)
+    );
+
+    -- 道友攻略自由打赏累计表。
+    CREATE TABLE IF NOT EXISTS social.guide_post_tips (
+        post_id uuid NOT NULL REFERENCES social.guide_posts(post_id) ON DELETE CASCADE,
+        tipper_id uuid NOT NULL REFERENCES identity.players(player_id),
+        total_tipped_stones double precision NOT NULL CHECK (total_tipped_stones > 0),
+        tip_count integer NOT NULL DEFAULT 1 CHECK (tip_count > 0),
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (post_id, tipper_id)
+    );
+
+    -- 角色名片配装付费查阅当日授权表（维持至北京时间当日结束零点，即次日 00:00:00+08:00）。
+    CREATE TABLE IF NOT EXISTS social.loadout_inspect_grants (
+        viewer_id uuid NOT NULL REFERENCES identity.players(player_id),
+        target_id uuid NOT NULL REFERENCES identity.players(player_id),
+        access_date date NOT NULL,
+        paid_stones double precision NOT NULL CHECK (paid_stones > 0),
+        target_received_stones double precision NOT NULL CHECK (target_received_stones >= 0),
+        expires_at timestamptz NOT NULL,
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (viewer_id, target_id, access_date)
+    );
+    CREATE INDEX IF NOT EXISTS ix_loadout_inspect_grants_expires
+        ON social.loadout_inspect_grants(expires_at);
+
     -- 高频状态覆盖表与瞬时防重队列调优 fillfactor 与 autovacuum，降低页面分裂与膨胀写放大。
     ALTER TABLE game.player_state_heads SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
     ALTER TABLE game.player_state_sections SET (fillfactor = 80, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
@@ -956,7 +1057,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

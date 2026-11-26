@@ -205,6 +205,11 @@ export const gameZh = {
       'forge.mingsha-crown': { name: '九幽煞骨冠', description: '以祭司煞骨与子午冠精雕之幽冥道冠，幽冥护体。' },
       'forge.fentian-greaves': { name: '陨星踏虚胫', description: '以陨星破片与踏风裤熔铸之流线战胫，行动极速。' },
       'forge.demon-core-staff': { name: '坠星天核杖', description: '以坠星妖核与朝元杖合灵之天星法杖，神通疾转。' },
+      // 追忆副本专属材料打造核心装备
+      'forge.changhu-pendant': { name: '伥虎镇魂佩', description: '以追忆·青云古涧所产青云秘晶精雕的镇魂玉佩，固本培元。' },
+      'forge.golden-ape-cloak': { name: '金背撼岳甲', description: '以追忆·古道断界所产断界灵魄晶熔铸的镇关玄铠，巍然不动。' },
+      'forge.starfall-crown': { name: '星陨镇灵冠', description: '以追忆·星陨古墟所产星陨玄核精雕的紫金道冠，引星催法。' },
+      'forge.wuyin-spirit-sword': { name: '雾隐青冥剑', description: '以追忆·雾梦剑冢所产剑冢凝魄石重炼的古道灵剑，剑锋无匹。' },
 
       // 符箓·阵法·强化
       'talisman.draw-leiji': { name: '雷击符', description: '以桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
@@ -222,6 +227,17 @@ export const gameZh = {
       'combat.hunt-trail-beast': { name: '讨伐 青云古道', description: '在青云古道沿线搜寻凶兽踪迹——驿路苍狼、险栈暗涌、落石巨獠、古关暴猿，步步凶险。' },
       'combat.sweep-twilight-valley': { name: '讨伐 星陨异境', description: '深入星陨异境搜寻妖兽踪迹——界隙狼群、焦林火鸦、血池邪修、荒坑尸煞，各险地盘踞不同妖物。' },
       'combat.sweep-wumeng-marsh': { name: '讨伐 雾梦泽', description: '踏入畸木焦林以北的雾梦大泽——荒径水傀、浅沼玄鳄、泽心鬼车与沉潭剑魄，逐险征伐。' },
+      // 追忆副本行动
+      'dungeon.qingyun-secret-gorge': { name: '追忆·青云古涧', description: '云巅草庐绝崖云海之下留存的上古灵涧残影，十重妖雾缭绕，关底百载伥虎携魔猿镇守灵晶古脉。' },
+      'dungeon.trail-boundary-rift': { name: '追忆·古道断界', description: '断界古关石门之后定格的幽暗峡隙旧景，妖狼潮汐与铁甲岩獠层层扼守，撼地金背猿在古道尽头裂土咆哮。' },
+      'dungeon.starfall-ancient-ruin': { name: '追忆·星陨古墟', description: '坠星天坑核心星火灼穿地脉留下的古墟往昔，尸煞邪修与坠魔祭司簇拥天外坠星兽镇压星核奇珍。' },
+      'dungeon.wumeng-sword-tomb': { name: '追忆·雾梦剑冢', description: '沉溺于剑冢沉潭底部的上古剑修遗冢旧忆，瘴雾锁水、寒鳄鬼车纵横十重剑阵，雾隐剑魄在渊底静候问剑之人。' },
+    },
+    dungeon: {
+      'dungeon.qingyun-secret-gorge': { name: '追忆·青云古涧', description: '云巅草庐绝崖云海之下留存的上古灵涧残影，十重妖雾缭绕，关底百载伥虎携魔猿镇守灵晶古脉。' },
+      'dungeon.trail-boundary-rift': { name: '追忆·古道断界', description: '断界古关石门之后定格的幽暗峡隙旧景，妖狼潮汐与铁甲岩獠层层扼守，撼地金背猿在古道尽头裂土咆哮。' },
+      'dungeon.starfall-ancient-ruin': { name: '追忆·星陨古墟', description: '坠星天坑核心星火灼穿地脉留下的古墟往昔，尸煞邪修与坠魔祭司簇拥天外坠星兽镇压星核奇珍。' },
+      'dungeon.wumeng-sword-tomb': { name: '追忆·雾梦剑冢', description: '沉溺于剑冢沉潭底部的上古剑修遗冢旧忆，瘴雾锁水、寒鳄鬼车纵横十重剑阵，雾隐剑魄在渊底静候问剑之人。' },
     },
     item: {
       'item.ningxue-grass': { label: '凝气草', description: '幽谷凝气，叶脉含朱。\n生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。' },
@@ -417,6 +433,15 @@ export const gameZh = {
       'equipment.mingsha-crown': { label: '九幽煞骨冠', description: '幽骨聚煞寒透顶，神识澄明万法辟。\n坠魔祭司魔煞头骨雕成的幽冥道冠，刺骨冰寒阻绝妄念，常驻幽冥壁障化解诸般煞气。' },
       'equipment.fentian-greaves': { label: '陨星踏虚胫', description: '踏碎星辰履九霄，虚空渡步不沾尘。\n九天陨星黑铁熔铸的流线战胫，表面流转暗红星火余温，身轻若燕，行动极速绝尘。' },
       'equipment.demon-core-staff': { label: '坠星天核杖', description: '星核倒悬灵潮涌，古木生辉引九霄。\n以坠星古兽心脉妖核为枢机嵌于神木之巅，杖起之时沟通天地星海，诸法随心极速流转。' },
+      // 追忆副本通关独占特殊材料与专属装备
+      'item.qingyun-secret-crystal': { label: '青云秘晶', description: '追忆·青云古涧通关独占灵晶。\n自云海灵涧深脉凝结的澄澈青晶，灵韵醇厚，用于锻造「伥虎镇魂佩」或作为其强化保护材料。' },
+      'item.boundary-spirit-shard': { label: '断界灵魄晶', description: '追忆·古道断界通关独占灵晶。\n古关界隙崩裂处沉积的玄金灵魄结晶，质重如山，用于锻造「金背撼岳甲」或作为其强化保护材料。' },
+      'item.starfall-astral-core': { label: '星陨玄核', description: '追忆·星陨古墟通关独占奇珍。\n天外陨星落入古墟凝炼出的紫金玄核，星辉不息，用于锻造「星陨镇灵冠」或作为其强化保护材料。' },
+      'item.wumeng-sword-soul': { label: '剑冢凝魄石', description: '追忆·雾梦剑冢通关独占奇珍。\n沉潭千载古剑剑意汇聚凝结而成的青冥剑魄石，寒锋凛然，用于锻造「雾隐青冥剑」或作为其强化保护材料。' },
+      'equipment.changhu-pendant': { label: '伥虎镇魂佩', description: '青云秘晶镇妖魂，气血绵延护道心。\n以追忆·青云古涧所产青云秘晶配古兽灵骨精雕的镇魂玉佩，固本培元，气血法力生生不息。' },
+      'equipment.golden-ape-cloak': { label: '金背撼岳甲', description: '断界灵魄凝金铠，不动如岳御八荒。\n以断界灵魄晶熔入古道重甲锻成的镇关玄铠，兼修体魄护甲与灵抗屏障，巍然不动。' },
+      'equipment.starfall-crown': { label: '星陨镇灵冠', description: '九霄星核镶玄冠，神识洞彻引天雷。\n以星陨古墟核心玄核精雕而成的紫金道冠，蕴含浩瀚星海灵压，催发术法会心破虚。' },
+      'equipment.wuyin-spirit-sword': { label: '雾隐青冥剑', description: '沉潭剑魄铸青冥，一剑霜寒破九重。\n融雾梦剑冢千载凝魄石重炼的古道灵剑，剑气凛冽如霜，会心一击锋芒无匹。' },
     },
     realm: {
       stageFallback: '凡俗',
@@ -654,6 +679,9 @@ export const gameZh = {
       tagParty: '同道',
       categoryGeneral: '核心途径',
       categoryMonsters: '妖兽掉落',
+      categoryDungeon: '追忆副本通关',
+      dungeonGuaranteed: '通关必得',
+      dungeonRareFrom: '{difficulty}起 {rate}',
       categoryCrafting: '生活技艺',
       categoryGathering: '天地采集',
       categoryPacks: '福袋开启',

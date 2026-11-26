@@ -9,6 +9,9 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
     /// <summary>节点栖息生态引用的遭遇 ID 列表；战斗行动按当前节点解析实际遭遇。</summary>
     public IReadOnlyList<string> EncounterIds { get; init; } = [];
 
+    /// <summary>节点挂载的秘境副本 ID 列表；对应秘境仅允许在此节点开启。</summary>
+    public IReadOnlyList<string> DungeonIds { get; init; } = [];
+
     /// <summary>是否为隐藏地图节点（需满足检定条件方可感知可见）。</summary>
     public bool Hidden { get; init; }
 
@@ -23,15 +26,17 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
     /// <param name="encounterIds">节点生态遭遇 ID 列表，可为空。</param>
     /// <param name="hidden">是否为隐藏节点。</param>
     /// <param name="requiredConsciousness">最低神识要求。</param>
+    /// <param name="dungeonIds">节点挂载的秘境副本 ID 列表，可为空。</param>
     /// <returns>通过校验的节点实例。</returns>
     public static WorldNode Create(string id, string name, double x, double y, IReadOnlyList<string>? encounterIds = null,
-        bool hidden = false, double requiredConsciousness = 0)
+        bool hidden = false, double requiredConsciousness = 0, IReadOnlyList<string>? dungeonIds = null)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || !double.IsFinite(x) || !double.IsFinite(y))
             throw new DomainException(DomainErrorCode.InvalidArgument, "世界节点无效。");
         return new WorldNode(id.Trim(), name.Trim(), x, y)
         {
             EncounterIds = encounterIds ?? [],
+            DungeonIds = dungeonIds ?? [],
             Hidden = hidden,
             RequiredConsciousness = requiredConsciousness > 0 ? requiredConsciousness : 0
         };

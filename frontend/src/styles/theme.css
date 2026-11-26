@@ -52,6 +52,10 @@
   --cs-other: #7d4fa0;
 }
 
+:root[data-theme="light"] .duel-records-list-wrap {
+  background: rgba(125, 82, 26, 0.04);
+}
+
 /* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜；背景平色，不叠渐变。 */
 :root[data-theme="light"] body {
   background: var(--bg);
@@ -675,6 +679,13 @@
   background: var(--purple);
   color: var(--on-accent);
   box-shadow: 0 2px 6px rgba(105, 64, 140, 0.26);
+}
+
+:root[data-theme="light"] .world-map-node-badge.is-dungeon {
+  border-color: #6b4512;
+  background: var(--gold);
+  color: var(--on-accent);
+  box-shadow: 0 2px 6px rgba(125, 82, 26, 0.28);
 }
 
 :root[data-theme="light"] .world-location-panel {
@@ -1741,6 +1752,24 @@
 }
 :root[data-theme="light"] .battle-report-kpi-value--emerald {
   color: var(--jade);
+}
+:root[data-theme="light"] .battle-report-staged {
+  border-color: rgba(124, 77, 168, 0.35);
+  background: rgba(124, 77, 168, 0.06);
+}
+:root[data-theme="light"] .staged-loot-title-hint {
+  color: var(--purple);
+  border-bottom-color: rgba(124, 77, 168, 0.45);
+}
+:root[data-theme="light"] .staged-loot-badge {
+  color: var(--purple);
+  background: rgba(124, 77, 168, 0.12);
+  border-color: rgba(124, 77, 168, 0.35);
+}
+:root[data-theme="light"] .staged-loot-badge.is-frozen {
+  color: var(--danger);
+  background: rgba(178, 51, 39, 0.12);
+  border-color: rgba(178, 51, 39, 0.35);
 }
 
 /* 灵阶特质沿用品质色调，兼顾明暗主题可读性。 */

@@ -50,12 +50,13 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
         if (regenTick || secondTick)
         {
             var statsBook = encounter.StatsBook;
+            var recorder = encounter.ActionRecorder;
             // 结算顺序与原 Prepend(player) 一致：先全体盟友（成员序）后敌人；显式循环避免 Concat 迭代器分配。
             for (var i = 0; i < encounter.PlayerAllies.Count; i++)
             {
                 var unit = encounter.PlayerAllies[i];
                 var alive = unit.IsAlive;
-                Tick(unit, statsBook, regenTick, secondTick);
+                Tick(unit, statsBook, recorder, at, regenTick, secondTick);
                 if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
                 if (secondTick)
                 {
@@ -67,7 +68,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
             {
                 var unit = encounter.Enemies[i];
                 var alive = unit.IsAlive;
-                Tick(unit, statsBook, regenTick, secondTick);
+                Tick(unit, statsBook, recorder, at, regenTick, secondTick);
                 if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
                 if (secondTick)
                 {
@@ -88,9 +89,14 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
             if (enemy.Buffs.Count > 0) enemy.RemoveBuffsWhere(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         }
 
-        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, bool regenTick, bool secondTick)
+        static void Tick(CombatantState unit, CombatUnitStatsBook? statsBook, ICombatActionRecorder? recorder,
+            double at, bool regenTick, bool secondTick)
         {
             var buffs = unit.Buffs;
+            var totalHealed = 0d;
+            var totalMpRestored = 0d;
+            var tianleiUpkeep = 0d;
+            var xueshaUpkeep = 0d;
             // 每秒威胁成长：单位最大气血 × Σ(点数×层数)/100 直接累进基础威胁（与 threatGain 同通道）；
             // 与灵力回复同口径——倒地单位照常累积，复活后仇恨不回退。负值配置按减仇恨递减、0 托底。
             // 周期效果保持逐 Buff 列表序累加（面板值参与同一累加链，聚合缓存先求和会改变浮点结合序）。
@@ -110,38 +116,77 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                     var hpBefore = unit.Hitpoints;
                     unit.Hitpoints = Math.Clamp(unit.Hitpoints + hpPerSecond, 0, unit.Stats.MaxHitpoints);
                     if (unit.Hitpoints > hpBefore)
-                        statsBook?.RecordHealing(unit, autoRegen: true, unit.Hitpoints - hpBefore);
+                    {
+                        var healed = unit.Hitpoints - hpBefore;
+                        totalHealed += healed;
+                        statsBook?.RecordHealing(unit, autoRegen: true, healed);
+                    }
                     unit.SyncDerivedStacks();
                 }
             }
-            if (!regenTick) return;
-            // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
-            // 收口公式（总纲 §20.3）：(固定回复合计) × (1 + Σ后段比率)。
-            double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
-            double hpPost = 0, mpPost = 0;
-            for (var i = 0; i < buffs.Count; i++)
+            if (regenTick)
             {
-                Accumulate(buffs[i], BuffEffectChannel.HpRegen, ref hp, BuffEffectChannel.HpRegenPostRatio, ref hpPost);
-                Accumulate(buffs[i], BuffEffectChannel.MpRegen, ref mp, BuffEffectChannel.MpRegenPostRatio, ref mpPost);
+                // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
+                // 收口公式（总纲 §20.3）：(固定回复合计) × (1 + Σ后段比率)。
+                double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
+                double hpPost = 0, mpPost = 0;
+                for (var i = 0; i < buffs.Count; i++)
+                {
+                    Accumulate(buffs[i], BuffEffectChannel.HpRegen, ref hp, BuffEffectChannel.HpRegenPostRatio, ref hpPost);
+                    Accumulate(buffs[i], BuffEffectChannel.MpRegen, ref mp, BuffEffectChannel.MpRegenPostRatio, ref mpPost);
+                }
+                hp *= 1 + hpPost;
+                mp *= 1 + mpPost;
+                // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
+                if (unit.IsAlive && hp != 0)
+                {
+                    var hitpointsBefore = unit.Hitpoints;
+                    unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
+                    // 周期回复计「自动回复」；负向回复（减益跳血）不归属任何单位，不入账。
+                    if (unit.Hitpoints > hitpointsBefore)
+                    {
+                        var healed = unit.Hitpoints - hitpointsBefore;
+                        totalHealed += healed;
+                        statsBook?.RecordHealing(unit, autoRegen: true, healed);
+                    }
+                    unit.SyncDerivedStacks();
+                }
+                if (mp != 0)
+                {
+                    var mpBefore = unit.Manapoints;
+                    unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
+                    if (unit.Manapoints > mpBefore)
+                        totalMpRestored += unit.Manapoints - mpBefore;
+                }
+                // 阵盘维持消耗：天雷阵每5秒扣除 1% 最大法力，血煞阵每5秒扣除 1% 最大气血（保底1点防猝死）。
+                if (unit.IsAlive && unit.BuffStacks("formation.tianlei") > 0)
+                {
+                    var mpBefore = unit.Manapoints;
+                    unit.Manapoints = Math.Max(0, unit.Manapoints - unit.Stats.MaxManapoints * 0.01);
+                    tianleiUpkeep = mpBefore - unit.Manapoints;
+                }
+                if (unit.IsAlive && unit.BuffStacks("formation.xuesha") > 0)
+                {
+                    var hpBefore = unit.Hitpoints;
+                    unit.Hitpoints = Math.Max(1, unit.Hitpoints - unit.Stats.MaxHitpoints * 0.01);
+                    xueshaUpkeep = hpBefore - unit.Hitpoints;
+                }
             }
-            hp *= 1 + hpPost;
-            mp *= 1 + mpPost;
-            // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
-            if (unit.IsAlive && hp != 0)
+            if (recorder is not null && (totalHealed > 1e-9 || totalMpRestored > 1e-9 || tianleiUpkeep > 1e-9 || xueshaUpkeep > 1e-9))
             {
-                var hitpointsBefore = unit.Hitpoints;
-                unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
-                // 周期回复计「自动回复」；负向回复（减益跳血）不归属任何单位，不入账。
-                if (unit.Hitpoints > hitpointsBefore)
-                    statsBook?.RecordHealing(unit, autoRegen: true, unit.Hitpoints - hitpointsBefore);
-                unit.SyncDerivedStacks();
+                recorder.BeginAction(at, unit, DuelRecordActionKind.Periodic);
+                try
+                {
+                    if (totalHealed > 1e-9) recorder.RecordHeal(unit, unit, DuelRecordEffectKind.Heal, totalHealed);
+                    if (totalMpRestored > 1e-9) recorder.RecordMana(unit, unit, DuelRecordEffectKind.ManaRestore, totalMpRestored);
+                    if (tianleiUpkeep > 1e-9) recorder.RecordUpkeep(unit, tianleiUpkeep, "item.tianlei-formation-disk");
+                    if (xueshaUpkeep > 1e-9) recorder.RecordUpkeep(unit, xueshaUpkeep, "item.xuesha-formation-disk");
+                }
+                finally
+                {
+                    recorder.EndAction();
+                }
             }
-            if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
-            // 阵盘维持消耗：天雷阵每5秒扣除 1% 最大法力，血煞阵每5秒扣除 1% 最大气血（保底1点防猝死）。
-            if (unit.IsAlive && unit.BuffStacks("formation.tianlei") > 0)
-                unit.Manapoints = Math.Max(0, unit.Manapoints - unit.Stats.MaxManapoints * 0.01);
-            if (unit.IsAlive && unit.BuffStacks("formation.xuesha") > 0)
-                unit.Hitpoints = Math.Max(1, unit.Hitpoints - unit.Stats.MaxHitpoints * 0.01);
         }
 
         /// <summary>把单个 Buff 上指定通道的层数放大值累进目标（按 Buff 实例列表序，与逐字段累加同序）。</summary>
@@ -308,8 +353,8 @@ public sealed class CombatOutcomeSystem : YuoSystem<CombatEncounterComponent>, I
         var encounter = context.Encounter;
         encounter.Outcome = (AnyAlive(encounter.PlayerAllies), AnyAlive(encounter.Enemies)) switch
         {
-            // 原地复活待触发期间全灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
-            (false, _) when double.IsFinite(encounter.NextAllyRespawnAtSeconds) => CombatOutcome.Running,
+            // 原地复活待触发期间全灭不是终局（秘境全员团灭即败模式除外）：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when !encounter.WipeEndsBattle && double.IsFinite(encounter.NextAllyRespawnAtSeconds) => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,

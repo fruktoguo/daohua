@@ -15,6 +15,9 @@ public interface IActionParticipationRuntime
     /// <summary>会话资产已确定提交后的缓存失效提示；订阅者不得等待玩家写锁。</summary>
     event Action<Guid>? WalletChanged;
 
+    /// <summary>会话因自然终局（如秘境达到目标次数、全员团灭或体力不足）提交结束后的异步通知，参数为 (partyId, sessionId, endReason, memberIds)。</summary>
+    event Func<Guid, string, string, IReadOnlyList<Guid>, ValueTask>? SessionNaturallyEnded;
+
     /// <summary>存在感变更后按最新在线名册结清旧模式并切换库存来源。</summary>
     ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default);
 

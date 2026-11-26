@@ -104,6 +104,9 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
+        "dungeonIds": [
+          "dungeon.starfall-ancient-ruin"
+        ],
         "buildableTemplate": "all"
       },
       {

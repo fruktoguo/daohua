@@ -113,5 +113,27 @@
       "item.demon-dan"
     ],
     "level": 12
+  },
+  {
+    "id": "equipment.changhu-pendant",
+    "name": "伥虎镇魂佩",
+    "description": "青云秘晶镇妖魂，气血绵延护道心。\n以追忆·青云古涧所产青云秘晶配古兽灵骨精雕的镇魂玉佩，固本培元，气血法力生生不息。",
+    "slot": "trinket",
+    "tier": 1,
+    "quality": 2,
+    "baseStatRatios": {
+      "maxHitpoints": 0.08,
+      "physicalArmor": 0.06
+    },
+    "flatStats": {
+      "maxHitpoints": 14,
+      "hitpointRegen": 2.5,
+      "manapointRegen": 1.5,
+      "physicalDamageReductionPoints": 2
+    },
+    "enhanceProtectionItems": [
+      "item.qingyun-secret-crystal"
+    ],
+    "level": 12
   }
 ]

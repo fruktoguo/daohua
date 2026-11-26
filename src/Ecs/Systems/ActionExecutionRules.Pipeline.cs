@@ -150,7 +150,7 @@ internal static partial class ActionExecutionRules
                 && action.Expedition is { } expedition
                 && !CombatActionRules.ExpeditionServedHere(e.Player, definition, expedition, e.Catalog);
             if (!TryStartAction(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Cursor, e.Core)) continue;
-            if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
+            if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon)
             {
                 e.PreparedAction = action;
                 e.Definition = definition;
@@ -168,7 +168,7 @@ internal static partial class ActionExecutionRules
                         : e.Entity.World.GetEntity(playerCombat.EncounterEntityId)?.GetComponent<CombatEncounterComponent>();
                     if (e.Battle is null)
                     {
-                        var encounter = e.Catalog.CombatEncounters[action.Expedition.EncounterId];
+                        var encounter = CombatActionRules.ResolveEncounter(e.Catalog, action.Expedition.EncounterId);
                         var restored = CombatActionRules.RestoreCombatBattle(e.Player, action, encounter, e.Catalog);
                         e.Battle = AttachCombat(e, restored, e.Cursor.AddSecondsExact(-restored.ElapsedSeconds));
                     }

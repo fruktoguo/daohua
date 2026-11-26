@@ -548,5 +548,53 @@
     "sellPrice": 50,
     "subCategory": "special",
     "level": 1
+  },
+  {
+    "id": "item.qingyun-secret-crystal",
+    "name": "青云秘晶",
+    "description": "追忆·青云古涧通关独占灵晶。\n自云海灵涧深脉凝结的澄澈青晶，灵韵醇厚，用于锻造「伥虎镇魂佩」或作为其强化保护材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 120,
+    "isTradable": true,
+    "subCategory": "exoticMaterial",
+    "level": 12
+  },
+  {
+    "id": "item.boundary-spirit-shard",
+    "name": "断界灵魄晶",
+    "description": "追忆·古道断界通关独占灵晶。\n古关界隙崩裂处沉积的玄金灵魄结晶，质重如山，用于锻造「金背撼岳甲」或作为其强化保护材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 260,
+    "isTradable": true,
+    "subCategory": "exoticMaterial",
+    "level": 16
+  },
+  {
+    "id": "item.starfall-astral-core",
+    "name": "星陨玄核",
+    "description": "追忆·星陨古墟通关独占奇珍。\n天外陨星落入古墟凝炼出的紫金玄核，星辉不息，用于锻造「星陨镇灵冠」或作为其强化保护材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 3,
+    "sellPrice": 580,
+    "isTradable": true,
+    "subCategory": "exoticMaterial",
+    "level": 24
+  },
+  {
+    "id": "item.wumeng-sword-soul",
+    "name": "剑冢凝魄石",
+    "description": "追忆·雾梦剑冢通关独占奇珍。\n沉潭千载古剑剑意汇聚凝结而成的青冥剑魄石，寒锋凛然，用于锻造「雾隐青冥剑」或作为其强化保护材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 3,
+    "sellPrice": 1200,
+    "isTradable": true,
+    "subCategory": "exoticMaterial",
+    "level": 30
   }
 ]

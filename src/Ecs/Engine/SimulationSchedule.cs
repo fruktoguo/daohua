@@ -121,7 +121,7 @@ public static class SimulationSchedule
             else
             {
                 var definition = gameData.Actions.Get(action.Intent.ActionId);
-                if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Travel)
+                if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon or ActionExecutionKind.Travel)
                 {
                     // 刚入队尚未初始化 Expedition/Travel 子状态时立即唤醒完成首帧建档。
                     Consider(0);

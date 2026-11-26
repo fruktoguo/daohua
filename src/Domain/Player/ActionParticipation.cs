@@ -54,7 +54,10 @@ public sealed partial record ActionParticipantSnapshot(
     InternalArtSnapshot? InternalArt = null,
     CombatRespawnPolicy RespawnPolicy = CombatRespawnPolicy.Immediate,
     string? RespawnTargetPlayerId = null,
-    IReadOnlyDictionary<string, JsonElement[]>? ConsumableTriggers = null)
+    IReadOnlyDictionary<string, JsonElement[]>? ConsumableTriggers = null,
+    bool AssistMode = false,
+    int InitialTiliValue = 0,
+    double InitialTiliUpdatedAtUnixSeconds = 0)
 {
     /// <summary>成员快照持久化不变量校验。</summary>
     public bool IsValid => Guid.TryParse(PlayerId, out var id) && id != Guid.Empty
@@ -65,6 +68,8 @@ public sealed partial record ActionParticipantSnapshot(
         && double.IsFinite(InitialHitpoints) && InitialHitpoints >= 0
         && double.IsFinite(InitialManapoints) && InitialManapoints >= 0
         && double.IsFinite(RegenCarrySeconds) && RegenCarrySeconds >= 0 && RegenCarrySeconds < 5
+        && InitialTiliValue >= 0 && InitialTiliValue <= DungeonEnergyRules.MaxEnergy
+        && double.IsFinite(InitialTiliUpdatedAtUnixSeconds) && InitialTiliUpdatedAtUnixSeconds >= 0
         && Stats is not null
         && Skills is not null && Skills.Count <= 16 && Skills.All(slot => slot is not null)
         && (ExternalBuffs is null || ExternalBuffs.All(pair =>
@@ -192,9 +197,15 @@ public sealed record ActionParticipationSpec(
     public double MonsterWeakenRatio { get; init; }
 
     /// <summary>
-    /// 讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5；决定怪物属性指数放大、经验/掉落加成与斗法匹配区间。
+    /// 讨伐或追忆副本难度等级：野外讨伐为 0~5（默认 0，T1~T5），追忆副本为 0~10（虚境·普通 ~ 现世·帝阶）。
     /// </summary>
     public int Difficulty { get; init; }
+
+    /// <summary>追忆副本 ID（仅追忆副本会话非空；野外讨伐恒为 null）。</summary>
+    public string? DungeonId { get; init; }
+
+    /// <summary>追忆副本连刷目标次数（1~99 或 -1 刷至任一付费成员体力耗尽；默认 1）。</summary>
+    public int DungeonRepeatCount { get; init; } = 1;
 
     /// <summary>会话规格持久化不变量。</summary>
     public bool IsValid => ActionId.IsValid
@@ -204,7 +215,11 @@ public sealed record ActionParticipationSpec(
         && double.IsFinite(SearchSpeedPoints) && SearchSpeedPoints >= 0
         && double.IsFinite(MonsterWeakenRatio) && MonsterWeakenRatio >= 0
         && double.IsFinite(StartedAtUnixSeconds) && StartedAtUnixSeconds >= 0
-        && Difficulty >= 0 && Difficulty <= 5
+        && (DungeonId is null
+            ? Difficulty is >= 0 and <= 5
+            : !string.IsNullOrWhiteSpace(DungeonId) && DungeonId.Length <= 128
+                && DungeonDifficultyRules.IsValid(Difficulty) && !PvpEnabled
+                && (DungeonRepeatCount == -1 || DungeonRepeatCount is >= 1 and <= 99))
         && Members is { Count: >= 1 and <= 5 } && Members.All(member => member is not null && member.IsValid)
         && Members.Select(member => Guid.Parse(member.PlayerId)).Distinct().Count() == Members.Count;
 

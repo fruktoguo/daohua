@@ -215,7 +215,7 @@ public static class EcsActionSession
         if (IsComplete(e)) return e.Target;
         if (NeedsPreparation(e)) throw new InvalidOperationException("必须先运行行动准备阶段。");
         if (e.Waiting) return e.WindowEnd;
-        if (e.Definition!.ExecutionKind == ActionExecutionKind.CombatEncounter)
+        if (e.Definition!.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon)
         {
             if (e.Battle is not null)
             {
@@ -259,7 +259,8 @@ public static class EcsActionSession
     /// <summary>搜寻与复活阶段只在自己的边界执行；其它玩家的 tick 不切碎浮点预算。</summary>
     public static void AdvanceCombatPreparation(EcsActionExecutionComponent e)
     {
-        if (e.PreparedAction is not { } action || e.Definition is not { ExecutionKind: ActionExecutionKind.CombatEncounter } definition
+        if (e.PreparedAction is not { } action
+            || e.Definition is not { ExecutionKind: ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon } definition
             || e.Battle is not null || e.FrameTarget < NextBoundaryAt(e)) return;
         var step = CombatActionRules.AdvanceCombatPreparation(e.Player, action, definition, e.Catalog,
             e.WorkingWallet, e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.DuelAdvance);
@@ -335,7 +336,7 @@ public static class EcsActionSession
             state.Outcome, e.BattleEvents, state.Sequence, e.BattleDeaths, e.BattleRespawns,
             e.BattleAllyDeaths, e.BattleAllyRespawns);
         e.RemainingSeconds = CombatActionRules.CompleteCombatAdvance(e.Player, action, definition,
-            e.Catalog.CombatEncounters[state.EncounterId], e.Catalog, state, result,
+            CombatActionRules.ResolveEncounter(e.Catalog, state.EncounterId), e.Catalog, state, result,
             e.WindowStart, e.WindowEnd, e.RemainingSeconds, e.Core, e.WorkingWallet);
         e.Cursor = e.WindowStart.AddSecondsExact(e.WindowElapsedSeconds - e.RemainingSeconds);
         var combat = e.Entity.GetComponent<PlayerCombatComponent>()!;

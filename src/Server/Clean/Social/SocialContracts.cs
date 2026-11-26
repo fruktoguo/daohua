@@ -26,21 +26,35 @@ public sealed record FriendRecord(Guid FriendId, string DisplayName);
 /// <param name="PlayerId">成员玩家 ID。</param>
 /// <param name="DisplayName">成员道号。</param>
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）。</param>
-public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false, bool DouDiZhuReady = false, double SpiritStones = 0);
+/// <param name="DouDiZhuReady">斗地主就绪标记。</param>
+/// <param name="SpiritStones">成员灵石余额。</param>
+/// <param name="AssistMode">秘境助战模式开关（true 表示零耗体且无收益）。</param>
+public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName, bool Ready = false, bool DouDiZhuReady = false, double SpiritStones = 0, bool AssistMode = false);
 
-/// <summary>队伍档案（招募标签口径，不参与行动/战斗结算）。</summary>
+/// <summary>队伍档案（招募标签与活动配置）。</summary>
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
-/// <param name="ActivityKind">目标类型：any/combat/exploration/cultivation。</param>
+/// <param name="ActivityKind">目标类型：any/combat/dungeon/exploration/cultivation 等。</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限。</param>
 /// <param name="MinValuation">身家门槛；0 表示不设门槛。</param>
 /// <param name="IsPublic">是否进入组队大厅。</param>
 /// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
 /// 仅 activityKind='combat' 可为 true、仅队长可改、会话创建时冻结进参与规格。</param>
-/// <param name="Difficulty">队伍设定的讨伐难度（0~5，默认 0）。</param>
-public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic, bool PvpEnabled, int Difficulty = 0)
+/// <param name="Difficulty">队伍设定的讨伐/秘境难度（野外 0~5，秘境 0~11，默认 0）。</param>
+/// <param name="DungeonId">秘境配置 ID（仅 activityKind='dungeon' 有效，其余为空串）。</param>
+/// <param name="DungeonRepeatCount">秘境连刷次数（-1 表示刷至体力耗尽，1~99 表示指定把数，默认 1）。</param>
+public sealed record PartyProfileRecord(
+    string Name,
+    string ActivityKind,
+    string NodeId,
+    double MinValuation,
+    bool IsPublic,
+    bool PvpEnabled,
+    int Difficulty = 0,
+    string DungeonId = "",
+    int DungeonRepeatCount = 1)
 {
     /// <summary>默认档案：不限目标、无门槛、不公开、不斗法（邀请制自建队伍沿用）。</summary>
-    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false, false, 0);
+    public static readonly PartyProfileRecord Default = new("", "any", "", 0, false, false, 0, "", 1);
 }
 
 /// <summary>队伍与其成员。</summary>
@@ -75,7 +89,9 @@ public sealed record PartySessionRecord(
     DateTimeOffset? EndedAt = null,
     string? EndReason = null,
     bool PvpEnabled = false,
-    int Difficulty = 0);
+    int Difficulty = 0,
+    string? DungeonId = null,
+    int DungeonRepeatCount = 1);
 
 /// <summary>48h 离线逐出结果：一条被删除的成员行。</summary>
 /// <param name="PlayerId">被逐出玩家 ID。</param>
@@ -359,6 +375,12 @@ public interface ISocialRepository
 
     /// <summary>切换本人队伍就绪标记（party.ready/unready）；玩家不在队伍中返回 false。</summary>
     ValueTask<bool> TrySetPartyMemberReadyAsync(Guid playerId, bool ready, CancellationToken cancellationToken = default);
+
+    /// <summary>切换本人秘境助战模式开关（party.assist）；玩家不在队伍中返回 false。</summary>
+    ValueTask<bool> TrySetPartyMemberAssistAsync(Guid playerId, bool assistMode, CancellationToken cancellationToken = default);
+
+    /// <summary>复位整队全员就绪标记为 false（秘境自然终局时防止立即重开）。</summary>
+    ValueTask ResetPartyMembersReadyAsync(Guid partyId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 调整开启槽位（party.slots，队长专用）：2~5 且不得低于当前队员数，

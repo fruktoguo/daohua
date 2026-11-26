@@ -536,16 +536,36 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             ?? throw new JsonException("行动载荷为空。");
                         if (!Guid.TryParse(request.RequestId, out var actionRequestId) || actionRequestId != requestId)
                             throw new DomainException(DomainErrorCode.InvalidArgument, "请求标识不一致。");
-                        var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount,
-                            request.TargetNodeId, request.Parameters, request.PvpEnabled, Difficulty: CombatDifficultyRules.Clamp(request.Difficulty))
+                        var actionId = new ActionId(request.ActionId);
+                        var hasActionDefinition = gameData.Actions.TryGet(actionId, out var actionDefinition);
+                        var isDungeonAction = hasActionDefinition && actionDefinition!.ExecutionKind == ActionExecutionKind.Dungeon;
+                        var clampedDifficulty = isDungeonAction
+                            ? DungeonDifficultyRules.Clamp(request.Difficulty)
+                            : CombatDifficultyRules.Clamp(request.Difficulty);
+                        var effectivePvpEnabled = isDungeonAction ? false : request.PvpEnabled;
+                        var intent = new ActionIntent(actionId, request.RepeatCount,
+                            request.TargetNodeId, request.Parameters, effectivePvpEnabled, Difficulty: clampedDifficulty)
                             with { TargetItemId = request.TargetItemId, AuxItemId = request.AuxItemId };
                         // 行动参与会话由组织适配器投递，客户端只能入队普通行动。
                         // 参与期间仍禁止手动进入斗法撮合。
                         // 会话进行中禁止斗法撮合（总纲 §21.13：阵容冻结期间不可进入斗法）。
-                        if (request.PvpEnabled && IsActionParticipationActive(before.State))
+                        if (effectivePvpEnabled && IsActionParticipationActive(before.State))
                             return new PlayerCommandResult(false, "IN_PARTY_EXPEDITION", "组队讨伐进行中，无法参与斗法撮合。", before);
-                        if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
+                        if (hasActionDefinition)
                         {
+                            // 秘境入队前置体力检查：若体力不足以开启 1 把，立刻拦截返回清晰提示。
+                            if (isDungeonAction)
+                            {
+                                var requiredTili = DungeonDifficultyRules.EnergyCost(clampedDifficulty);
+                                var tiliNowUnix = _simulationClock.UtcNow.ToUnixTimeMilliseconds() / 1000d;
+                                var currentTili = DungeonEnergyRules.Compute(
+                                    before.State.Progression.TiliValue,
+                                    before.State.Progression.TiliUpdatedAtUnixSeconds,
+                                    tiliNowUnix).Current;
+                                if (currentTili < requiredTili)
+                                    return new PlayerCommandResult(false, "INSUFFICIENT_TILI",
+                                        $"体力不足（当前 {currentTili} 点，挑战该难度追忆副本需要 {requiredTili} 点）。", before);
+                            }
                             // 行动/配方须满足对应 T 级解锁等级要求（如 T2 需 18 级；境界与技艺等级二者满足其一即放行）
                             var techniqueId = actionDefinition.Technique;
                             var techniqueLevel = !string.IsNullOrEmpty(techniqueId)
@@ -1610,7 +1630,20 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                             || visibleElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "隐私设置参数无效。", before);
                         var visible = visibleElement.GetBoolean();
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetPublicLoadoutVisible(visible));
+                        var inspectPrice = 0d;
+                        if (payload.TryGetProperty("loadoutInspectPrice", out var priceElement)
+                            && priceElement.ValueKind != JsonValueKind.Null)
+                        {
+                            if (priceElement.ValueKind != JsonValueKind.Number || !priceElement.TryGetDouble(out inspectPrice))
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "配装查阅价格无效。", before);
+                        }
+                        if (!double.IsFinite(inspectPrice) || inspectPrice < 0d
+                            || inspectPrice > PlayerSettingsState.MaxLoadoutInspectPrice
+                            || Math.Floor(inspectPrice) != inspectPrice)
+                        {
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "配装查阅价格须为 0 至 100,000 的整数灵石。", before);
+                        }
+                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetLoadoutPrivacy(visible, inspectPrice));
                         break;
                     }
                     case "player.unlock_avatar":

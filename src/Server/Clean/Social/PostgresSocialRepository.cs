@@ -146,12 +146,12 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         batch.BatchCommands.Add(Command(
             "SELECT party_id FROM social.party_members WHERE player_id = $1", playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake, dungeon_id, dungeon_repeat_count
             FROM social.parties
             WHERE party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             """, playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready, COALESCE(b.quantity, 0)
+            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready, COALESCE(b.quantity, 0), m.assist_mode
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             LEFT JOIN economy.player_asset_balances b ON b.player_id = m.player_id
@@ -217,7 +217,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             leaderId = reader.GetGuid(0);
             profile = new PartyProfileRecord(
                 reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.GetDouble(4), reader.GetBoolean(5), reader.GetBoolean(6), reader.GetInt16(9));
+                reader.GetDouble(4), reader.GetBoolean(5), reader.GetBoolean(6), reader.GetInt16(9),
+                reader.GetString(11), reader.GetInt32(12));
             partyCreatedAt = reader.GetFieldValue<DateTimeOffset>(7);
             openSlots = reader.GetInt16(8);
             doudizhuStake = reader.GetDouble(10);
@@ -226,7 +227,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var members = new List<PartyMemberRecord>();
         await reader.NextResultAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3), reader.GetDouble(4)));
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3), reader.GetDouble(4), reader.GetBoolean(5)));
 
         await reader.NextResultAsync(cancellationToken);
         var invitation = await reader.ReadAsync(cancellationToken)
@@ -370,7 +371,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var openSlots = 0;
         var doudizhuStake = 10d;
         await using (var partyCommand = new NpgsqlCommand("""
-            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake, dungeon_id, dungeon_repeat_count
             FROM social.parties WHERE party_id = $1
             """, connection))
         {
@@ -380,13 +381,14 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             leaderId = partyReader.GetGuid(0);
             profile = new PartyProfileRecord(
                 partyReader.GetString(1), partyReader.GetString(2), partyReader.GetString(3),
-                partyReader.GetDouble(4), partyReader.GetBoolean(5), partyReader.GetBoolean(6), partyReader.GetInt16(9));
+                partyReader.GetDouble(4), partyReader.GetBoolean(5), partyReader.GetBoolean(6), partyReader.GetInt16(9),
+                partyReader.GetString(11), partyReader.GetInt32(12));
             createdAt = partyReader.GetFieldValue<DateTimeOffset>(7);
             openSlots = partyReader.GetInt16(8);
             doudizhuStake = partyReader.GetDouble(10);
         }
         await using var membersCommand = new NpgsqlCommand("""
-            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready
+            SELECT m.player_id, p.display_name, m.ready, m.doudizhu_ready, m.assist_mode
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = $1
@@ -396,7 +398,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var members = new List<PartyMemberRecord>();
         await using var reader = await membersCommand.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3)));
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3), 0, reader.GetBoolean(4)));
         return new PartyRecord(partyId, leaderId, profile, createdAt, members, openSlots, doudizhuStake);
     }
 
@@ -407,8 +409,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var party = new NpgsqlCommand("""
-            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, difficulty, open_slots, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, difficulty, open_slots, dungeon_id, dungeon_repeat_count, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
             """, connection, transaction))
         {
             party.Parameters.Add(new NpgsqlParameter { Value = partyId });
@@ -419,8 +421,10 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             party.Parameters.Add(new NpgsqlParameter { Value = profile.MinValuation });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.IsPublic });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.PvpEnabled });
-            party.Parameters.Add(new NpgsqlParameter { Value = profile.Difficulty });
+            party.Parameters.Add(new NpgsqlParameter { Value = (short)profile.Difficulty });
             party.Parameters.Add(new NpgsqlParameter { Value = (short)SocialRuntime.DefaultOpenSlots });
+            party.Parameters.Add(new NpgsqlParameter { Value = profile.DungeonId });
+            party.Parameters.Add(new NpgsqlParameter { Value = profile.DungeonRepeatCount });
             party.Parameters.Add(new NpgsqlParameter { Value = now });
             await party.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -443,7 +447,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var command = new NpgsqlCommand("""
             UPDATE social.parties
             SET name = $2, activity_kind = $3, node_id = $4, min_valuation = $5, is_public = $6,
-                pvp_enabled = $7, difficulty = $8, updated_at = $9
+                pvp_enabled = $7, difficulty = $8, dungeon_id = $9, dungeon_repeat_count = $10, updated_at = $11
             WHERE party_id = $1
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = partyId });
@@ -453,7 +457,9 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         command.Parameters.Add(new NpgsqlParameter { Value = profile.MinValuation });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.IsPublic });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.PvpEnabled });
-        command.Parameters.Add(new NpgsqlParameter { Value = profile.Difficulty });
+        command.Parameters.Add(new NpgsqlParameter { Value = (short)profile.Difficulty });
+        command.Parameters.Add(new NpgsqlParameter { Value = profile.DungeonId });
+        command.Parameters.Add(new NpgsqlParameter { Value = profile.DungeonRepeatCount });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
@@ -1038,7 +1044,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var parties = new List<(PartyRecord Seed, List<PartyMemberRecord> Members)>();
         await using (var command = new NpgsqlCommand("""
-            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake
+            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, pvp_enabled, created_at, open_slots, difficulty, doudizhu_stake, dungeon_id, dungeon_repeat_count
             FROM social.parties
             WHERE is_public
               AND ($1 = '' OR $1 = 'any' OR activity_kind = 'any' OR activity_kind = $1)
@@ -1055,7 +1061,8 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             {
                 var profile = new PartyProfileRecord(
                     reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                    reader.GetDouble(5), reader.GetBoolean(6), reader.GetBoolean(7), reader.GetInt16(10));
+                    reader.GetDouble(5), reader.GetBoolean(6), reader.GetBoolean(7), reader.GetInt16(10),
+                    reader.GetString(12), reader.GetInt32(13));
                 parties.Add((new PartyRecord(
                     reader.GetGuid(0), reader.GetGuid(1), profile,
                     reader.GetFieldValue<DateTimeOffset>(8), [], reader.GetInt16(9), reader.GetDouble(11)), []));
@@ -1065,7 +1072,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         var ids = parties.Select(p => p.Seed.PartyId).ToArray();
         var membersByParty = parties.ToDictionary(p => p.Seed.PartyId, p => p.Members);
         await using (var command = new NpgsqlCommand("""
-            SELECT m.party_id, m.player_id, p.display_name, m.ready, m.doudizhu_ready
+            SELECT m.party_id, m.player_id, p.display_name, m.ready, m.doudizhu_ready, m.assist_mode
             FROM social.party_members m
             JOIN identity.players p ON p.player_id = m.player_id
             WHERE m.party_id = ANY($1)
@@ -1075,7 +1082,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             command.Parameters.Add(new NpgsqlParameter { Value = ids });
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
-                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4)));
+                membersByParty[reader.GetGuid(0)].Add(new PartyMemberRecord(reader.GetGuid(1), reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4), 0, reader.GetBoolean(5)));
         }
         return parties
             .Select(p => p.Seed with { Members = p.Members })
@@ -1234,6 +1241,27 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = ready });
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>切换本人秘境助战模式开关（party.assist）。</summary>
+    public async ValueTask<bool> TrySetPartyMemberAssistAsync(Guid playerId, bool assistMode, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE social.party_members SET assist_mode = $2 WHERE player_id = $1", connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        command.Parameters.Add(new NpgsqlParameter { Value = assistMode });
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>复位整队全员就绪标记为 false（秘境自然终局时调用）。</summary>
+    public async ValueTask ResetPartyMembersReadyAsync(Guid partyId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE social.party_members SET ready = false WHERE party_id = $1", connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = partyId });
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1444,7 +1472,9 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
             reader.IsDBNull(5) ? null : reader.GetString(5),
             root.TryGetProperty("pvpEnabled", out var pvp) && pvp.ValueKind == JsonValueKind.True,
-            root.TryGetProperty("difficulty", out var diff) && diff.TryGetInt32(out var d) ? d : 0);
+            root.TryGetProperty("difficulty", out var diff) && diff.TryGetInt32(out var d) ? d : 0,
+            root.TryGetProperty("dungeonId", out var did) && did.ValueKind == JsonValueKind.String ? did.GetString() : null,
+            root.TryGetProperty("dungeonRepeatCount", out var drc) && drc.TryGetInt32(out var rc) ? rc : 1);
     }
 
     /// <summary>

@@ -65,7 +65,7 @@ internal sealed class CombatTraitListeners(CombatEncounterState encounter)
     {
         var isAlly = listener.Order < encounter.PlayerAllies.Count;
         foreach (var checker in listener.Checkers)
-            checker.Refresh(listener.Unit, isAlly ? allies : enemies, isAlly ? enemies : allies);
+            checker.Refresh(encounter, listener.Unit, isAlly ? allies : enemies, isAlly ? enemies : allies);
     }
 
     private readonly record struct Listener(CombatantState Unit, int Order, CombatAliveCountTraitChecker[] Checkers);
@@ -95,7 +95,7 @@ internal abstract class CombatAliveCountTraitChecker(string traitId, string buff
     internal string BuffId { get; } = buffId;
     internal int Order { get; } = order;
 
-    internal void Refresh(CombatantState unit, double own, double opponents)
+    internal void Refresh(CombatEncounterState encounter, CombatantState unit, double own, double opponents)
     {
         var stacks = unit.IsAlive ? ResolveStacks(own, opponents) : 0;
         var existing = unit.Buffs.FirstOrDefault(buff => buff.BuffId == BuffId);
@@ -108,6 +108,8 @@ internal abstract class CombatAliveCountTraitChecker(string traitId, string buff
         if (existing?.Stacks == stacks && existing.EffectValue(BuffEffectChannel.DamageBonusPoints) == value) return;
         unit.SetBuff(new CombatBuffState(BuffId, CombatTraitRules.BattleLifetimeSeconds, stacks, name,
             ResetOnWave: true, Effects: Effects(value)));
+        encounter.ActionRecorder?.RecordBuff(unit, unit, BuffId, stacks,
+            DuelRecordActionKind.Trait, encounter.ElapsedSeconds, TraitId);
     }
 
     internal void Remove(CombatantState unit) => unit.RemoveBuffsWhere(buff => buff.BuffId == BuffId);

@@ -382,6 +382,12 @@
   color: #ffebd9;
 }
 
+.world-map-node-badge.is-dungeon {
+  border: 1px solid rgba(232, 214, 154, 0.92);
+  background: linear-gradient(180deg, rgba(154, 114, 34, 0.96), rgba(96, 68, 18, 0.98));
+  color: #fff6dc;
+}
+
 /* 可选地标图像框：有图节点呈现「折角灵境图像 + 下方翻倍古风牌匾」双形态 */
 .world-map-node-media {
   position: relative;
@@ -4327,10 +4333,122 @@
 /* 头部右侧敌我页签与标题同排 */
 .combat-stats-panel .battle-report-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+}
+
+.combat-stats-title-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.combat-stats-tab-badge {
+  font-style: normal;
+  font-size: 10px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(212, 175, 55, 0.2);
+  color: var(--gold-bright);
+}
+
+.duel-records-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.duel-records-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.duel-records-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.duel-records-placeholder {
+  flex: 1 1 auto;
+}
+
+.duel-records-refresh {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.duel-records-list-wrap {
+  max-height: 52vh;
+  overflow-y: auto;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: rgba(12, 10, 8, 0.22);
+}
+
+.duel-records-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.duel-record-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 2px 4px;
+  border-left: 2px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.duel-record-row.is-ally {
+  border-left-color: var(--jade);
+}
+
+.duel-record-row.is-enemy {
+  border-left-color: var(--danger);
+}
+
+.duel-record-time {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.duel-record-seq {
+  flex: 0 0 auto;
+  color: var(--gold);
+  font-size: 10px;
+  min-width: 24px;
+}
+
+.duel-record-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.duel-record-truncated {
+  margin: 6px 0 2px;
+  font-size: 10px;
+  color: var(--amber);
+  text-align: center;
 }
 
 .combat-stats-tabs button {
@@ -4482,6 +4600,64 @@
 .battle-report-staged-group + .battle-report-staged-group {
   padding-top: 6px;
   border-top: 1px dashed rgba(148, 103, 189, 0.25);
+}
+
+/* 斗法暂存区共享头部：左标题与状态徽章，右到期倒计时（窄栏自动换行） */
+.staged-loot-card {
+  border-radius: 3px;
+}
+
+.inventory-staged-loot {
+  margin-bottom: 10px;
+}
+
+.staged-loot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.staged-loot-title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.staged-loot-title-hint {
+  color: #c9a2e8;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(201, 162, 232, 0.45);
+  cursor: help;
+}
+
+.staged-loot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 138, 212, 0.45);
+  background: rgba(148, 103, 189, 0.16);
+  color: #d8bcf2;
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.staged-loot-badge.is-frozen {
+  border-color: rgba(239, 108, 108, 0.5);
+  background: rgba(239, 108, 108, 0.16);
+  color: #fca5a5;
+}
+
+.staged-loot-countdown {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .battle-report-history {

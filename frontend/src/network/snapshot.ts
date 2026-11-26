@@ -270,11 +270,13 @@ function mapExecutionKind(value: unknown, fallback?: QueueEntry['executionKind']
     if (value === 0) return 'timed'
     if (value === 1) return 'combat-encounter'
     if (value === 2) return 'travel'
+    if (value === 3) return 'dungeon'
   }
   if (typeof value !== 'string') throw new Error('行动 executionKind 字段无效。')
   switch (value.trim().toLowerCase().replaceAll('_', '-')) {
     case 'timed': return 'timed'
     case 'travel': return 'travel'
+    case 'dungeon': return 'dungeon'
     case 'combat-encounter':
     case 'combatencounter': return 'combat-encounter'
     default: throw new Error('行动 executionKind 字段无效。')
@@ -569,6 +571,11 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     playerThreat,
     playerBuffs: mapCombatBuffs(row.playerBuffs, `行动 ${actionId} 的 playerBuffs`),
     encounterId,
+    dungeonId: optionalString(row.dungeonId, `行动 ${actionId} 的 dungeonId`),
+    dungeonTotalWaves: row.dungeonTotalWaves === null || row.dungeonTotalWaves === undefined
+      ? null
+      : finiteInteger(row.dungeonTotalWaves, `行动 ${actionId} 的 dungeonTotalWaves`),
+    dungeonEnergyCharged: typeof row.dungeonEnergyCharged === 'boolean' ? row.dungeonEnergyCharged : null,
     duel: mapExpeditionDuel(row.duel, actionId),
     allies,
     selfIndex,
@@ -837,6 +844,12 @@ function mapStats(value: unknown): Stats {
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
       : [],
+    tiliValue: typeof row.tiliValue === 'number' && Number.isFinite(row.tiliValue) ? Math.trunc(row.tiliValue) : undefined,
+    tiliUpdatedAtUnixSeconds: typeof row.tiliUpdatedAtUnixSeconds === 'number' && Number.isFinite(row.tiliUpdatedAtUnixSeconds) ? row.tiliUpdatedAtUnixSeconds : undefined,
+    tiliCurrent: typeof row.tiliCurrent === 'number' && Number.isFinite(row.tiliCurrent) ? Math.trunc(row.tiliCurrent) : undefined,
+    tiliMax: typeof row.tiliMax === 'number' && Number.isFinite(row.tiliMax) ? Math.trunc(row.tiliMax) : undefined,
+    tiliNextRecoverySeconds: typeof row.tiliNextRecoverySeconds === 'number' && Number.isFinite(row.tiliNextRecoverySeconds) ? row.tiliNextRecoverySeconds : undefined,
+    tiliFullRecoverySeconds: typeof row.tiliFullRecoverySeconds === 'number' && Number.isFinite(row.tiliFullRecoverySeconds) ? row.tiliFullRecoverySeconds : undefined,
   }
 }
 
@@ -1120,6 +1133,9 @@ function mapWorld(value: unknown): WorldState {
     buildingEffects: mapWorldBuildingEffects(row.buildingEffects),
     availableActionIds: requiredStrings(row.availableActionIds, 'world.availableActionIds'),
     encounterIds: requiredStrings(row.encounterIds, 'world.encounterIds'),
+    dungeonIds: Array.isArray(row.dungeonIds)
+      ? row.dungeonIds.filter((id): id is string => typeof id === 'string')
+      : [],
     npcs: mapNearbyEntities(row.npcs),
     buildings: mapNearbyEntities(row.buildings),
     nodeBuildings: mapNodeBuildings(row.nodeBuildings),
@@ -1244,6 +1260,7 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
     dayIndex: numberValue(row.dayIndex),
     duelWins: numberValue(row.duelWins),
     duelLosses: numberValue(row.duelLosses),
+    duelRecordCount: numberValue(row.duelRecordCount),
     // 行动内战斗单位统计：仅进行中行动账本携带；kind 契约数值枚举 0/1/2 容错字符串形态。
     combatants: arrayValue(row.combatants).flatMap((item, index) => {
       const entry = object(item)
@@ -1446,6 +1463,9 @@ export async function decodePlayerSnapshotDto(
     tutorialStep: numberValue(settings.tutorialStep, 0),
     ...mapSettingsRespawn(settings),
     publicLoadoutVisible: typeof settings.publicLoadoutVisible === 'boolean' ? settings.publicLoadoutVisible : true,
+    loadoutInspectPrice: typeof settings.loadoutInspectPrice === 'number' && Number.isFinite(settings.loadoutInspectPrice) && settings.loadoutInspectPrice > 0
+      ? Math.floor(settings.loadoutInspectPrice)
+      : 0,
   }
 }
 
@@ -1515,6 +1535,9 @@ export async function decodePlayerSnapshotDeltaDto(
     }))
     if (typeof settings.publicLoadoutVisible === 'boolean') {
       patch.publicLoadoutVisible = settings.publicLoadoutVisible
+    }
+    if (typeof settings.loadoutInspectPrice === 'number' && Number.isFinite(settings.loadoutInspectPrice)) {
+      patch.loadoutInspectPrice = settings.loadoutInspectPrice > 0 ? Math.floor(settings.loadoutInspectPrice) : 0
     }
   }
   if (sections.has('progression')) {

@@ -177,6 +177,9 @@
         "encounterIds": [
           "encounter.cloud-peak"
         ],
+        "dungeonIds": [
+          "dungeon.qingyun-secret-gorge"
+        ],
         "buildableTemplate": "all"
       }
     ],

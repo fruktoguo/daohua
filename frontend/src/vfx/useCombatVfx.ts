@@ -395,7 +395,7 @@ export function useCombatVfx(
     ): void {
       if (!playbackActive) return
       const current = state.queue.entries[0] ?? null
-      const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
+      const isCombat = current?.type === 'combat' && (current.executionKind === 'combat-encounter' || current.executionKind === 'dungeon')
       const expedition = isCombat ? (current.expedition ?? null) : null
       const entryId = isCombat ? (current?.entryId ?? null) : null
       const phase = expedition?.phase ?? null
@@ -761,7 +761,7 @@ export function useCombatVfx(
       if (state.playerId !== playerId) return
       const current = state.queue.entries[0] ?? null
       const expedition =
-        current?.type === 'combat' && current.executionKind === 'combat-encounter'
+        current?.type === 'combat' && (current.executionKind === 'combat-encounter' || current.executionKind === 'dungeon')
           ? (current.expedition ?? null)
           : null
       if (!expedition || (expedition.phase !== 'combat' && expedition.phase !== 'duel')) return

@@ -62,6 +62,9 @@
         "encounterIds": [
           "encounter.sword-abyss"
         ],
+        "dungeonIds": [
+          "dungeon.wumeng-sword-tomb"
+        ],
         "buildableTemplate": "all"
       }
     ],

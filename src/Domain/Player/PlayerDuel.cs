@@ -175,6 +175,11 @@ public sealed class PlayerBattleReport
     /// 行动出队归档时清空即弃，不进入归档战报。
     /// </summary>
     public CombatUnitStatsBook CombatStats { get; } = new();
+    /// <summary>
+    /// 行动内 PVP 斗法紧凑行动记录（最新在前，最多保留 20 场）；
+    /// 随行动实例账本持久化，行动出队归档时清空即弃，不进入归档战报。
+    /// </summary>
+    public List<DuelBattleRecordDocument> DuelRecords { get; } = [];
 
     /// <summary>是否存在任何可记录内容；空账本归档时丢弃。</summary>
     public bool HasContent => Experience > 0 || Foundation != 0 || CombatExperience > 0
@@ -277,6 +282,7 @@ public sealed class PlayerBattleReport
         DuelWins = 0;
         DuelLosses = 0;
         CombatStats.Clear();
+        DuelRecords.Clear();
         DayIndex = dayIndex;
         StartedAtUnixSeconds = atUnixSeconds;
         EndedAtUnixSeconds = atUnixSeconds;
@@ -458,7 +464,9 @@ public sealed record PlayerBattleReportDocument(
     /// <summary>斗法缴获物品明细。</summary>
     IReadOnlyList<PlayerReportItem>? DuelItemsGained = null,
     /// <summary>斗法损失物品明细。</summary>
-    IReadOnlyList<PlayerReportItem>? DuelItemsLost = null);
+    IReadOnlyList<PlayerReportItem>? DuelItemsLost = null,
+    /// <summary>行动内 PVP 斗法紧凑记录（仅行动实例账本持久化承载，归档战报恒为 null）。</summary>
+    IReadOnlyList<DuelBattleRecordDocument>? DuelRecords = null);
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(
@@ -655,11 +663,14 @@ public sealed partial class PlayerAggregate
         Duel.CooldownUntilUnixSeconds = nowUnix + settings.DefeatCooldownSeconds;
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, nowUnix,
             new PlayerStatsDelta { DuelLosses = 1, Deaths = 1 });
+        var forfeitedDuel = duel with { Resolved = true, Forfeited = true, ViewerOutcome = CombatOutcome.EnemyWon };
+        if (_actions.Count > 0)
+            ActionReportBook.RecordDuelBattle(this, _actions[0].Id, forfeitedDuel, nowUnix, expedition!.BattleElapsedSeconds);
         Progression.TotalDefeats += 1;
         Progression.DuelLosses += 1;
         _actions[0].Expedition = expedition! with
         {
-            Duel = duel with { Resolved = true, Forfeited = true, ViewerOutcome = CombatOutcome.EnemyWon }
+            Duel = forfeitedDuel
         };
         MarkDirty(PlayerSectionKind.Duel);
         MarkDirty(PlayerSectionKind.Progression);

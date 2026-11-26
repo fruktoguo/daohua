@@ -9,18 +9,18 @@
     "element": "metal",
     "cooldownMilliseconds": 18000,
     "castMilliseconds": 1000,
-    "damageRatio": 1.8,
-    "flatDamage": 20,
+    "damageRatio": 2.4,
+    "flatDamage": 35,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 10.0,
+    "manaCost": 10,
     "rootAttribute": "agility",
     "discipline": "spell"
   },
@@ -34,19 +34,19 @@
     "element": "fire",
     "cooldownMilliseconds": 16000,
     "castMilliseconds": 1000,
-    "damageRatio": 0.8,
-    "flatDamage": 10,
+    "damageRatio": 1.05,
+    "flatDamage": 16,
     "hitCount": 3,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 10.0,
+    "manaCost": 10,
     "rootAttribute": "agility",
     "discipline": "spell"
   },
@@ -61,12 +61,12 @@
     "cooldownMilliseconds": 55000,
     "castMilliseconds": 200,
     "targetType": "self",
-    "damageRatio": 0.0,
-    "threatGain": 500.0,
+    "damageRatio": 0,
+    "threatGain": 500,
     "buff": {
       "buffId": "buff.taunt",
       "name": "嘲讽",
-      "durationSeconds": 60.0,
+      "durationSeconds": 60,
       "threatPoints": 400,
       "threatPerSecondMaxHpPoints": 10
     },
@@ -75,11 +75,11 @@
         "dependency": "self",
         "condition": "buff-stacks",
         "comparator": "equal",
-        "value": 0.0,
+        "value": 0,
         "buffId": "buff.taunt"
       }
     ],
-    "manaCost": 20.0,
+    "manaCost": 20,
     "rootAttribute": "stamina",
     "discipline": "spell"
   },
@@ -94,18 +94,18 @@
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 2000,
     "targetType": "allEnemies",
-    "damageRatio": 1.2,
-    "flatDamage": 40,
+    "damageRatio": 1.6,
+    "flatDamage": 65,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 40.0,
+    "manaCost": 40,
     "rootAttribute": "agility",
     "discipline": "spell"
   },
@@ -119,23 +119,22 @@
     "element": "metal",
     "cooldownMilliseconds": 36000,
     "castMilliseconds": 2000,
-    "damageRatio": 3.0,
-    "flatDamage": 50,
+    "damageRatio": 3.6,
+    "flatDamage": 80,
     "chainOnKillCount": 2,
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 30.0,
+    "manaCost": 30,
     "rootAttribute": "agility",
     "discipline": "spell"
-  }
-  ,
+  },
   {
     "id": "ability.sui-gang",
     "name": "碎罡",
@@ -147,32 +146,32 @@
     "cooldownMilliseconds": 60000,
     "castMilliseconds": 3000,
     "targetType": "self",
-    "damageRatio": 0.0,
+    "damageRatio": 0,
     "flatDamage": 0,
     "buffs": [
       {
         "buffId": "buff.sui-gang",
         "name": "碎罡",
-        "durationSeconds": 20.0,
-        "resistancePoints": -400.0,
+        "durationSeconds": 20,
+        "resistancePoints": -400,
         "stackPolicy": "maxKeep"
       },
       {
         "buffId": "buff.sha-li",
         "name": "煞力",
-        "durationSeconds": 20.0,
-        "attackPower": 1.0,
-        "resistancePerStack": 1.0,
+        "durationSeconds": 20,
+        "attackPower": 1,
+        "resistancePerStack": 1,
         "resistanceStackRatio": 0.3,
         "stackPolicy": "maxKeep"
       },
       {
         "buffId": "buff.gang-feng",
         "name": "罡锋",
-        "durationSeconds": 20.0,
-        "accuracy": 1.0,
-        "critical": 1.0,
-        "missingHitpointsPerStack": 5.0,
+        "durationSeconds": 20,
+        "accuracy": 1,
+        "critical": 1,
+        "missingHitpointsPerStack": 5,
         "stackPolicy": "maxKeep"
       }
     ],
@@ -181,11 +180,11 @@
         "dependency": "self",
         "condition": "buff-stacks",
         "comparator": "equal",
-        "value": 0.0,
+        "value": 0,
         "buffId": "buff.sui-gang"
       }
     ],
-    "manaCost": 0.0,
+    "manaCost": 0,
     "rootAttribute": "stamina",
     "discipline": "spell"
   },
@@ -199,8 +198,8 @@
     "element": "metal",
     "cooldownMilliseconds": 8000,
     "castMilliseconds": 500,
-    "damageRatio": 1.0,
-    "flatDamage": 10,
+    "damageRatio": 1.6,
+    "flatDamage": 40,
     "yixingMorphName": "踏云",
     "yixingMorphTargetType": "allEnemies",
     "defaultTriggers": [
@@ -208,11 +207,11 @@
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 10.0,
+    "manaCost": 10,
     "rootAttribute": "agility",
     "discipline": "spell"
   },
@@ -227,29 +226,29 @@
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 500,
     "targetType": "targetEnemy",
-    "damageRatio": 2.4,
-    "flatDamage": 100,
+    "damageRatio": 2.8,
+    "flatDamage": 120,
     "resetCooldownOnYixingKill": true,
     "selfBuff": {
       "buffId": "buff.yixing",
       "name": "移形",
-      "durationSeconds": 5.0,
+      "durationSeconds": 5,
       "maxStacks": 99,
       "resetOnWave": true,
       "noLevelGrowth": true,
       "skipIfHasYixing": true,
-      "evasionPostRatio": 1.0
+      "evasionPostRatio": 1
     },
     "defaultTriggers": [
       {
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 20.0,
+    "manaCost": 20,
     "rootAttribute": "agility",
     "discipline": "spell"
   },
@@ -264,29 +263,29 @@
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 1500,
     "targetType": "allEnemies",
-    "damageRatio": 1.2,
-    "flatDamage": 50,
+    "damageRatio": 1.6,
+    "flatDamage": 80,
     "selfBuffs": [
       {
         "buffId": "buff.yixing",
         "name": "移形",
-        "durationSeconds": 5.0,
+        "durationSeconds": 5,
         "maxStacks": 99,
         "resetOnWave": true,
         "noLevelGrowth": true,
-        "evasionPostRatio": 1.0
+        "evasionPostRatio": 1
       },
       {
         "buffId": "buff.shibukedang",
         "name": "势不可挡",
-        "durationSeconds": 5.0,
+        "durationSeconds": 5,
         "baseStacks": 5,
         "maxStacks": 5,
         "stackPolicy": "maxKeep",
         "resetOnWave": true,
         "noLevelGrowth": true,
-        "damageAbsorptionPoints": 20.0,
-        "decayStacksPerSecond": 1.0
+        "damageAbsorptionPoints": 20,
+        "decayStacksPerSecond": 1
       }
     ],
     "defaultTriggers": [
@@ -294,11 +293,11 @@
         "dependency": "target-enemy",
         "condition": "current-hp",
         "comparator": "greater-than",
-        "value": 1.0,
+        "value": 1,
         "buffId": null
       }
     ],
-    "manaCost": 35.0,
+    "manaCost": 35,
     "rootAttribute": "stamina",
     "discipline": "spell"
   }

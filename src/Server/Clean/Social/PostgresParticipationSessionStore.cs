@@ -59,6 +59,8 @@ public sealed class PostgresParticipationSessionStore(NpgsqlDataSource dataSourc
                 WHEN EXISTS (
                     SELECT 1 FROM social.party_members m WHERE m.party_id = s.party_id AND NOT m.ready
                 ) THEN 'member-unready'
+                WHEN COALESCE(p.dungeon_id, '') <> COALESCE(s.spec ->> 'dungeonId', '') THEN 'dungeon-changed'
+                WHEN p.difficulty <> COALESCE((s.spec ->> 'difficulty')::smallint, 0) THEN 'difficulty-changed'
                 ELSE NULL
             END, s.spec ->> 'nodeId', NULLIF(p.node_id, ''), p.leader_id
             FROM social.party_sessions s

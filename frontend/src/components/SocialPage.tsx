@@ -1,4 +1,5 @@
 import { ZongmenPage } from './ZongmenPage'
+import { GuidePage } from './GuidePage'
 import { DouDiZhuTable } from './doudizhu/DouDiZhuTable'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
@@ -6,6 +7,16 @@ import { PARTY_OPEN_SLOTS_DEFAULT, PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, u
 import { formatNumber } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { getDifficultyBracket } from '../game/combatDifficulty'
+import {
+  MAX_DUNGEON_DIFFICULTY,
+  TILI_MAX,
+  getDefaultDifficultyForMode,
+  getDungeonDifficultiesByMode,
+  getDungeonDifficultyMeta,
+  getDungeonEnergyCost,
+  getDungeonMode,
+  type DungeonMode,
+} from '../game/dungeonRules'
 import { useT } from '../i18n'
 import { requestJson } from '../network/apiClient'
 import { gameClient } from '../network/gameClient'
@@ -23,10 +34,11 @@ import { ItemReference } from './ItemDisplay'
 import type { RespawnPolicy } from '../game/types'
 import { buildPartyChatMarkup } from '../game/chatMarkup'
 import { shareToChat } from '../game/chatShare'
-/** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
+/** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 讨伐/秘境/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
   PartyActivityKind.Any,
   PartyActivityKind.Combat,
+  PartyActivityKind.Dungeon,
   PartyActivityKind.Exploration,
   PartyActivityKind.Cultivation,
   PartyActivityKind.Alchemy,
@@ -35,6 +47,20 @@ const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
   PartyActivityKind.Formation,
   PartyActivityKind.Enhancement,
 ]
+
+/** 队伍秘境连刷把数下拉固定选项（-1 表示刷至体力耗尽） */
+const DUNGEON_REPEAT_OPTIONS: readonly number[] = [-1, 1, 3, 5, 10]
+
+/** 队伍档案表单通用形态 */
+interface PartyProfileFormState {
+  activityKind: PartyActivityKindType
+  nodeId: string
+  minValuation: string
+  isPublic: boolean
+  difficulty: number
+  dungeonId: string
+  dungeonRepeatCount: number
+}
 
 /** 身家门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
 function parseMinValuation(raw: string): number {
@@ -54,22 +80,29 @@ function useDefaultNodeId(): string {
 }
 
 /** 表单节点字段默认值口径：activityKind 固定讨伐，nodeId 跟随玩家当前节点。 */
-const DEFAULT_PROFILE_FORM = { activityKind: PartyActivityKind.Combat as PartyActivityKindType, minValuation: '', isPublic: true, difficulty: 0 }
+const DEFAULT_PROFILE_FORM: Omit<PartyProfileFormState, 'nodeId'> = {
+  activityKind: PartyActivityKind.Combat as PartyActivityKindType,
+  minValuation: '',
+  isPublic: true,
+  difficulty: 0,
+  dungeonId: '',
+  dungeonRepeatCount: -1,
+}
 
 /**
  * 目标节点「跟随当前位置」表单态：返回 {value, onChange} 直接对接 PartyProfileFields。
  * 用户未手动选择过节点时展示并提交玩家当前节点（挂载瞬间可能在途中/快照未装载，
  * 初始值会停在空串，不能用 useState 一次性固化）；手动选择（含「不限」）后以手选值为准。
  */
-function useCurrentNodeField(form: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number },
-  setForm: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }) => void,
-): { nodeId: string; onChange: (next: typeof form) => void } {
+function useCurrentNodeField(form: PartyProfileFormState,
+  setForm: (next: PartyProfileFormState) => void,
+): { nodeId: string; onChange: (next: PartyProfileFormState) => void } {
   const defaultNodeId = useDefaultNodeId()
   const [touched, setTouched] = useState(false)
-  const nodeId = touched ? form.nodeId : defaultNodeId
-  const onChange = (next: typeof form): void => {
-    // 手选回当前节点视为恢复跟随；其余节点值差异（含选「不限」）锁手选
-    setTouched(next.nodeId !== defaultNodeId)
+  const nodeId = touched || form.activityKind === PartyActivityKind.Dungeon ? form.nodeId : defaultNodeId
+  const onChange = (next: PartyProfileFormState): void => {
+    // 秘境模式由秘境绑定节点，其余模式手选回当前节点视为恢复跟随
+    setTouched(next.activityKind === PartyActivityKind.Dungeon || next.nodeId !== defaultNodeId)
     setForm(next)
   }
   return { nodeId, onChange }
@@ -155,13 +188,17 @@ const PartyProfileFields = memo(function PartyProfileFields({
   value,
   onChange,
   showPublic = false,
+  isFilterMode = false,
 }: {
-  value: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }
-  onChange: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean; difficulty: number }) => void
+  value: PartyProfileFormState
+  onChange: (next: PartyProfileFormState) => void
   showPublic?: boolean
+  isFilterMode?: boolean
 }): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
+  const dungeons = useGameStore(state => state.dungeons)
+  const isDungeon = value.activityKind === PartyActivityKind.Dungeon
   // 区域选项：不限 + 全部地图区域。
   const regionOptions = useMemo(() => [
     { id: '', label: t('social.field.anyRegion') },
@@ -179,39 +216,138 @@ const PartyProfileFields = memo(function PartyProfileFields({
     if (!region) return [{ id: '', label: t('social.field.anyNode') }]
     return region.nodes.map(node => ({ id: node.nodeId, label: node.name }))
   }, [maps, regionId, t])
+  const dungeonOptions = useMemo(() => {
+    const base = dungeons.map(dg => ({ id: dg.dungeonId, label: dg.name }))
+    if (isFilterMode) return [{ id: '', label: t('social.field.anyNode') }, ...base]
+    return base
+  }, [dungeons, isFilterMode, t])
+  const currentDungeonMode = getDungeonMode(value.difficulty ?? 0)
+  const dungeonModeOptions = useMemo(() => [
+    { id: 'virtual', label: t('combat.dungeon.mode.virtual') },
+    { id: 'reality', label: t('combat.dungeon.mode.reality') },
+  ], [t])
+  const dungeonDifficultyOptions = useMemo(
+    () => getDungeonDifficultiesByMode(currentDungeonMode).map(meta => ({
+      id: String(meta.level),
+      label: t('social.dungeon.lobbyDiffCost', {
+        difficulty: t(`combat.dungeon.difficulty.${meta.key}`),
+        cost: meta.energyCost,
+      }),
+    })),
+    [currentDungeonMode, t],
+  )
+  const dungeonRepeatOptions = useMemo(
+    () => DUNGEON_REPEAT_OPTIONS.map(n => ({
+      id: String(n),
+      label: n === -1 ? t('social.field.dungeonRepeatInfinite') : t('social.field.dungeonRepeatCount', { count: n }),
+    })),
+    [t],
+  )
+
+  const handleActivityChange = (nextKind: PartyActivityKindType): void => {
+    if (nextKind === PartyActivityKind.Dungeon) {
+      const targetDungeon = dungeons.find(d => d.dungeonId === value.dungeonId) ?? (isFilterMode ? undefined : dungeons[0])
+      onChange({
+        ...value,
+        activityKind: nextKind,
+        dungeonId: targetDungeon?.dungeonId ?? '',
+        nodeId: targetDungeon?.nodeId ?? '',
+        difficulty: Math.max(0, Math.min(MAX_DUNGEON_DIFFICULTY, value.difficulty ?? 0)),
+        dungeonRepeatCount: value.dungeonRepeatCount || -1,
+      })
+      return
+    }
+    onChange({
+      ...value,
+      activityKind: nextKind,
+      dungeonId: '',
+      difficulty: Math.max(0, Math.min(5, value.difficulty ?? 0)),
+    })
+  }
+
   return (
     <div className="party-fields">
       <div className="party-field">
         <span>{t('social.field.activity')}</span>
         <DropdownSelect
           label={t('social.field.activity')}
-          onSelect={id => onChange({ ...value, activityKind: id as PartyActivityKindType })}
+          onSelect={id => handleActivityChange(id as PartyActivityKindType)}
           options={ACTIVITY_OPTIONS.map(kind => ({ id: kind, label: t(`social.activity.${kind}`) }))}
           value={value.activityKind}
         />
       </div>
-      <div className="party-field">
-        <span>{t('social.field.region')}</span>
-        <DropdownSelect
-          label={t('social.field.region')}
-          onSelect={id => {
-            // 同区域重选不动当前地点；跨区域切换落到该区域首节点（不限 → nodeId 空串）。
-            if (id === regionId) return
-            onChange({ ...value, nodeId: maps.find(map => map.mapId === id)?.nodes[0]?.nodeId ?? '' })
-          }}
-          options={regionOptions}
-          value={regionId}
-        />
-      </div>
-      <div className="party-field">
-        <span>{t('social.field.node')}</span>
-        <DropdownSelect
-          label={t('social.field.node')}
-          onSelect={id => onChange({ ...value, nodeId: id })}
-          options={nodeOptions}
-          value={value.nodeId}
-        />
-      </div>
+      {isDungeon ? (
+        <>
+          <div className="party-field">
+            <span>{t('social.field.dungeon')}</span>
+            <DropdownSelect
+              label={t('social.field.dungeon')}
+              onSelect={id => {
+                const dg = dungeons.find(d => d.dungeonId === id)
+                onChange({ ...value, dungeonId: id, nodeId: dg?.nodeId ?? '' })
+              }}
+              options={dungeonOptions}
+              value={value.dungeonId}
+            />
+          </div>
+          {!isFilterMode && (
+            <>
+              <div className="party-field">
+                <span>{t('combat.dungeon.modeSelectLabel')}</span>
+                <DropdownSelect
+                  label={t('combat.dungeon.modeSelectLabel')}
+                  onSelect={id => onChange({ ...value, difficulty: getDefaultDifficultyForMode(id as DungeonMode) })}
+                  options={dungeonModeOptions}
+                  value={currentDungeonMode}
+                />
+              </div>
+              <div className="party-field">
+                <span>{t('social.field.difficulty')}</span>
+                <DropdownSelect
+                  label={t('social.field.difficulty')}
+                  onSelect={id => onChange({ ...value, difficulty: Number(id) })}
+                  options={dungeonDifficultyOptions}
+                  value={String(value.difficulty ?? 0)}
+                />
+              </div>
+              <div className="party-field">
+                <span>{t('social.field.dungeonRepeat')}</span>
+                <DropdownSelect
+                  label={t('social.field.dungeonRepeat')}
+                  onSelect={id => onChange({ ...value, dungeonRepeatCount: Number(id) })}
+                  options={dungeonRepeatOptions}
+                  value={String(value.dungeonRepeatCount ?? -1)}
+                />
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="party-field">
+            <span>{t('social.field.region')}</span>
+            <DropdownSelect
+              label={t('social.field.region')}
+              onSelect={id => {
+                // 同区域重选不动当前地点；跨区域切换落到该区域首节点（不限 → nodeId 空串）。
+                if (id === regionId) return
+                onChange({ ...value, nodeId: maps.find(map => map.mapId === id)?.nodes[0]?.nodeId ?? '' })
+              }}
+              options={regionOptions}
+              value={regionId}
+            />
+          </div>
+          <div className="party-field">
+            <span>{t('social.field.node')}</span>
+            <DropdownSelect
+              label={t('social.field.node')}
+              onSelect={id => onChange({ ...value, nodeId: id })}
+              options={nodeOptions}
+              value={value.nodeId}
+            />
+          </div>
+        </>
+      )}
       {value.activityKind === PartyActivityKind.Combat && (
         <div className="party-field">
           <span>{t('social.field.difficulty')}</span>
@@ -288,6 +424,7 @@ const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: Read
       activityKind: form.activityKind,
       nodeId: nodeField.nodeId,
       minValuation: parseMinValuation(form.minValuation),
+      ...(form.activityKind === PartyActivityKind.Dungeon ? { dungeonId: form.dungeonId || null, difficulty: form.difficulty, dungeonRepeatCount: form.dungeonRepeatCount } : {}),
     }
     gameClient.sendSocialAction('party.match.set', undefined, undefined, { party })
   }
@@ -323,12 +460,21 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
   const myValuationBreakdown = useSocialStore(state => state.myValuationBreakdown)
   const myPartyId = useSocialStore(state => state.party?.partyId ?? null)
   const myPlayerId = useGameStore(state => state.playerId)
+  const dungeons = useGameStore(state => state.dungeons)
   const isLeader = useSocialStore(state => {
     const party = state.party
     return party !== null && party.leaderId === myPlayerId
   })
   // 大厅是浏览工具：筛选默认「不限」全量展示，与创建/匹配表单的「战斗+当前地点」默认区分。
-  const [filter, setFilter] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, nodeId: '', minValuation: '', isPublic: true, difficulty: 0 })
+  const [filter, setFilter] = useState<PartyProfileFormState>({
+    activityKind: PartyActivityKind.Any as PartyActivityKindType,
+    nodeId: '',
+    minValuation: '',
+    isPublic: true,
+    difficulty: 0,
+    dungeonId: '',
+    dungeonRepeatCount: -1,
+  })
 
   const refresh = (): void => {
     gameClient.requestPartyLobby({
@@ -347,7 +493,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
     <section className="party-card">
       <h3>{t('social.lobby.heading')}</h3>
       <p className="party-card-desc">{t('social.lobby.desc')}</p>
-      <PartyProfileFields onChange={setFilter} value={filter} />
+      <PartyProfileFields isFilterMode onChange={setFilter} value={filter} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={refresh} type="button">{t('social.action.refreshLobby')}</button>
         {myValuation !== null && (
@@ -367,6 +513,24 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
               <div className="party-lobby-entry-head">
                 <strong>{entry.name}</strong>
                 <span className="badge">{t(`social.activity.${entry.activityKind}`)}</span>
+                {entry.activityKind === PartyActivityKind.Dungeon && entry.dungeonId && (() => {
+                  const dg = dungeons.find(d => d.dungeonId === entry.dungeonId)
+                  const diffMeta = getDungeonDifficultyMeta(entry.difficulty ?? 0)
+                  return (
+                    <>
+                      <span className="party-lobby-node">{dg?.name ?? entry.dungeonId}</span>
+                      <span className={`dungeon-diff-pill dungeon-diff-tone--${diffMeta.styleTone}`}>
+                        {t('social.dungeon.lobbyDiffCost', {
+                          difficulty: t('combat.dungeon.fullDifficultyLabel', {
+                            mode: t(`combat.dungeon.mode.${diffMeta.mode}`),
+                            tier: t(`combat.dungeon.difficulty.${diffMeta.key}`),
+                          }),
+                          cost: diffMeta.energyCost,
+                        })}
+                      </span>
+                    </>
+                  )
+                })()}
                 <span className="party-lobby-node">{nodeLabel(entry.nodeId, nodeNames, t('social.field.anyNode'))}</span>
                 <span className="party-lobby-count">
                   {entry.openSlots != null
@@ -454,6 +618,7 @@ const CreateSection = memo(function CreateSection(): React.JSX.Element {
   const nodeField = useCurrentNodeField(form, setForm)
 
   const submit = (): void => {
+    const isDungeon = form.activityKind === PartyActivityKind.Dungeon
     const party: PartyProfileDto = {
       name: name.trim() || null,
       activityKind: form.activityKind,
@@ -461,6 +626,7 @@ const CreateSection = memo(function CreateSection(): React.JSX.Element {
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
       difficulty: form.difficulty ?? 0,
+      ...(isDungeon ? { dungeonId: form.dungeonId || null, dungeonRepeatCount: form.dungeonRepeatCount } : {}),
     }
     gameClient.sendSocialAction('party.create', undefined, undefined, { party })
   }
@@ -536,18 +702,21 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
   const party = useSocialStore(state => state.party)
   const setPartySlots = useSocialStore(state => state.setPartySlots)
   const [name, setName] = useState(party?.name ?? '')
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<PartyProfileFormState>({
     activityKind: (party?.activityKind ?? PartyActivityKind.Any) as PartyActivityKindType,
     nodeId: party?.nodeId ?? '',
     minValuation: party && party.minValuation > 0 ? String(party.minValuation) : '',
     isPublic: party?.isPublic ?? true,
     difficulty: party?.difficulty ?? 0,
+    dungeonId: party?.dungeonId ?? '',
+    dungeonRepeatCount: party?.dungeonRepeatCount ?? -1,
   })
   // 会话进行中调整槽位需二次确认（§21.13：阵容锁定，变动即散场）
   const [pendingSlots, setPendingSlots] = useState<number | null>(null)
   if (!party) return null
 
   const submit = (): void => {
+    const isDungeon = form.activityKind === PartyActivityKind.Dungeon
     const partyPatch: PartyProfileDto = {
       name: name.trim() || null,
       activityKind: form.activityKind,
@@ -555,6 +724,7 @@ const LeaderProfileModal = memo(function LeaderProfileModal({ onClose }: {
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
       difficulty: form.difficulty ?? 0,
+      ...(isDungeon ? { dungeonId: form.dungeonId || null, dungeonRepeatCount: form.dungeonRepeatCount } : {}),
     }
     gameClient.sendSocialAction('party.update', undefined, undefined, { party: partyPatch })
     onClose()
@@ -670,6 +840,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const t = useT()
   const party = useSocialStore(state => state.party)
   const myPlayerId = useGameStore(state => state.playerId)
+  const dungeons = useGameStore(state => state.dungeons)
   const nodeDuelCombatTeamCount = useGameStore(state => state.nodeDuelCombatTeamCount)
   const nodeDuelCombatTeamsByBracket = useGameStore(state => state.nodeDuelCombatTeamsByBracket)
   const partyBracket = getDifficultyBracket(party?.difficulty ?? 0)
@@ -679,10 +850,20 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   const setPartyDifficulty = (difficulty: number): void => {
     gameClient.sendSocialAction('party.update', undefined, undefined, { party: { difficulty } })
   }
+  const setPartyDungeon = (dungeonId: string): void => {
+    const dg = dungeons.find(d => d.dungeonId === dungeonId)
+    gameClient.sendSocialAction('party.update', undefined, undefined, {
+      party: { activityKind: PartyActivityKind.Dungeon, dungeonId, nodeId: dg?.nodeId ?? party?.nodeId ?? '' },
+    })
+  }
+  const setPartyDungeonRepeat = (dungeonRepeatCount: number): void => {
+    gameClient.sendSocialAction('party.update', undefined, undefined, { party: { dungeonRepeatCount } })
+  }
   const friends = useSocialStore(state => state.friends)
   const readyParty = useSocialStore(state => state.readyParty)
   const unreadyParty = useSocialStore(state => state.unreadyParty)
   const setPartyPvp = useSocialStore(state => state.setPartyPvp)
+  const setPartyAssist = useSocialStore(state => state.setPartyAssist)
   const requestPlayerCard = useSocialStore(state => state.requestPlayerCard)
   const [editing, setEditing] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -692,6 +873,16 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
   if (!party) return null
 
   const isLeader = party.leaderId === myPlayerId
+  const isDungeonParty = party.activityKind === PartyActivityKind.Dungeon
+  const activeDungeonDef = isDungeonParty && party.dungeonId
+    ? dungeons.find(d => d.dungeonId === party.dungeonId)
+    : undefined
+  const dungeonDifficulty = party.difficulty ?? 0
+  const dungeonDiffMeta = isDungeonParty ? getDungeonDifficultyMeta(dungeonDifficulty) : null
+  const dungeonEnergyCost = isDungeonParty ? getDungeonEnergyCost(dungeonDifficulty) : 0
+  const hasPayingMember = isDungeonParty
+    ? party.members.some(m => !m.assistMode && (m.tiliCurrent ?? TILI_MAX) >= dungeonEnergyCost)
+    : true
   const memberIds = new Set(party.members.map(member => member.playerId))
   const invitableFriends = friends.filter(friend => !memberIds.has(friend.playerId))
   // 同图共战（§21.13）：开启槽位即队伍容量；会话进行中阵容冻结，本人参战开关转为「退出斗法」散场确认。
@@ -719,6 +910,72 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
           <span className="party-actions-group">
             {isLeader && (
               <button onClick={() => setEditing(true)} type="button">{t('social.action.editProfile')}</button>
+            )}
+            {isDungeonParty && (
+              <>
+                <label className="party-difficulty-select" title={t('social.field.dungeon')}>
+                  <span className="party-difficulty-label">{t('social.field.dungeon')}</span>
+                  <select
+                    aria-label={t('social.field.dungeon')}
+                    className="difficulty-select"
+                    disabled={!isLeader}
+                    onChange={event => setPartyDungeon(event.target.value)}
+                    value={party.dungeonId ?? ''}
+                  >
+                    {dungeons.map(dg => (
+                      <option key={dg.dungeonId} value={dg.dungeonId}>{dg.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="party-difficulty-select" title={t('combat.dungeon.modeSelectLabel')}>
+                  <span className="party-difficulty-label">{t('combat.dungeon.modeSelectLabel')}</span>
+                  <select
+                    aria-label={t('combat.dungeon.modeSelectLabel')}
+                    className="difficulty-select"
+                    disabled={!isLeader}
+                    onChange={event => setPartyDifficulty(getDefaultDifficultyForMode(event.target.value as DungeonMode))}
+                    value={getDungeonMode(dungeonDifficulty)}
+                  >
+                    <option value="virtual">{t('combat.dungeon.mode.virtual')}</option>
+                    <option value="reality">{t('combat.dungeon.mode.reality')}</option>
+                  </select>
+                </label>
+                <label className="party-difficulty-select" title={t('social.field.difficulty')}>
+                  <span className="party-difficulty-label">{t('social.field.difficulty')}</span>
+                  <select
+                    aria-label={t('social.field.difficulty')}
+                    className="difficulty-select"
+                    disabled={!isLeader}
+                    onChange={event => setPartyDifficulty(Number(event.target.value))}
+                    value={dungeonDifficulty}
+                  >
+                    {getDungeonDifficultiesByMode(getDungeonMode(dungeonDifficulty)).map(meta => (
+                      <option key={meta.level} value={meta.level}>
+                        {t('social.dungeon.lobbyDiffCost', {
+                          difficulty: t(`combat.dungeon.difficulty.${meta.key}`),
+                          cost: meta.energyCost,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="party-difficulty-select" title={t('social.field.dungeonRepeat')}>
+                  <span className="party-difficulty-label">{t('social.field.dungeonRepeat')}</span>
+                  <select
+                    aria-label={t('social.field.dungeonRepeat')}
+                    className="difficulty-select"
+                    disabled={!isLeader}
+                    onChange={event => setPartyDungeonRepeat(Number(event.target.value))}
+                    value={party.dungeonRepeatCount ?? -1}
+                  >
+                    {DUNGEON_REPEAT_OPTIONS.map(n => (
+                      <option key={n} value={n}>
+                        {n === -1 ? t('social.field.dungeonRepeatInfinite') : t('social.field.dungeonRepeatCount', { count: n })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
             )}
             {party.activityKind === 'combat' && (
               <>
@@ -786,11 +1043,15 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
         <p className="party-meta">
           {t(`social.activity.${party.activityKind}`)}
           {party.activityKind === 'combat' && ` (${(party.difficulty ?? 0) > 0 ? `T${party.difficulty}` : t('app.action.difficultyDefault')})`}
+          {isDungeonParty && activeDungeonDef && ` · ${activeDungeonDef.name}`}
+          {isDungeonParty && dungeonDiffMeta && ` (${t('combat.dungeon.fullDifficultyLabel', { mode: t(`combat.dungeon.mode.${dungeonDiffMeta.mode}`), tier: t(`combat.dungeon.difficulty.${dungeonDiffMeta.key}`) })} · ${t('social.dungeon.costPerRun', { cost: dungeonEnergyCost })})`}
+          {isDungeonParty && ` · ${(party.dungeonRepeatCount ?? -1) < 0 ? t('social.dungeon.metaRepeatInfinite') : t('social.dungeon.metaRepeatCount', { count: party.dungeonRepeatCount ?? 1 })}`}
           {' · '}{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}
           {' · '}{party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
           {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatNumber(party.minValuation) })}`}
           {' · '}{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}
         </p>
+        {isDungeonParty && <p className="party-card-desc">{t('social.dungeon.noPvpNote')}</p>}
         {/* 复活时机策略属本人设置：队内人人可改自己那条，不受队长权限限制。 */}
         <RespawnPolicyField members={party.members} myPlayerId={myPlayerId} />
       </section>
@@ -800,6 +1061,9 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
           <span className="badge">{t('social.ready.count', { ready: readyCount, count: party.members.length })}</span>
           <span className="party-card-desc">{t('social.ready.hint')}</span>
         </div>
+        {isDungeonParty && !hasPayingMember && (
+          <p className="party-dungeon-warn" role="alert">{t('social.dungeon.allAssistWarn')}</p>
+        )}
         <ul className="party-slot-grid">
           {slotMembers.map((member, index) => member === null ? (
             <li className="party-slot" key={`empty-${index}`}>
@@ -859,14 +1123,50 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                   <ValuationHoverTarget breakdown={member.valuationBreakdown} valuation={member.valuation}>
                     <span className="party-member-valuation" style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
                   </ValuationHoverTarget>
+                  {isDungeonParty && (
+                    <div className="party-dungeon-tili-row" onClick={event => event.stopPropagation()}>
+                      {(() => {
+                        const memberTili = member.tiliCurrent ?? 0
+                        const memberMax = member.tiliMax ?? TILI_MAX
+                        const tiliShort = memberTili < dungeonEnergyCost
+                        return (
+                          <>
+                            <span className={`party-tili-badge${tiliShort ? ' is-short' : ''}`}>
+                              <Icon name="bolt" size={11} />
+                              {t('social.dungeon.tiliBadge', { current: memberTili, max: memberMax })}
+                            </span>
+                            {member.assistMode ? (
+                              <span className="party-assist-badge">{t('social.dungeon.assistBadge')}</span>
+                            ) : tiliShort ? (
+                              <span className="party-assist-badge">{t('social.dungeon.tiliShortBadge')}</span>
+                            ) : null}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
                 </div>
-                {/* 就绪勾选是卡内独立控件：拦截冒泡避免误触角色卡。 */}
+                {/* 就绪勾选与秘境助战勾选是卡内独立控件：拦截冒泡避免误触角色卡。 */}
                 <div className="party-slot-foot" onClick={event => event.stopPropagation()}>
                   {member.playerId === myPlayerId ? (
-                    <label className="party-slot-ready">
-                      <input checked={member.ready} onChange={toggleSelfReady} type="checkbox" />
-                      <span>{t('social.ready.status')}</span>
-                    </label>
+                    <>
+                      <label className="party-slot-ready">
+                        <input checked={member.ready} onChange={toggleSelfReady} type="checkbox" />
+                        <span>{t('social.ready.status')}</span>
+                      </label>
+                      {isDungeonParty && (
+                        <FloatingTooltip placement="top" title={t('social.dungeon.assistToggleHint')} tone="qi">
+                          <label className="party-slot-assist">
+                            <input
+                              checked={Boolean(member.assistMode)}
+                              onChange={event => setPartyAssist(event.target.checked)}
+                              type="checkbox"
+                            />
+                            <span>{t('social.dungeon.assistToggleLabel')}</span>
+                          </label>
+                        </FloatingTooltip>
+                      )}
+                    </>
                   ) : (
                     <span className={`party-ready-tag${member.ready ? ' is-ready' : ''}`}>
                       {member.ready ? t('social.ready.status') : t('social.ready.notReady')}
@@ -1188,6 +1488,7 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
     <section className={`panel social-page${isZongmen ? ' is-zongmen' : ''}${isDoudizhuTable ? ' is-doudizhu-table' : ''}`}>
       {socialSubTab === 'party' && <PartyPage />}
       {isZongmen && <div className="social-page-body"><ZongmenPage /></div>}
+      {socialSubTab === 'guide' && <div className="social-page-body"><GuidePage /></div>}
       {socialSubTab === 'invite' && <div className="social-page-body"><InviteView /></div>}
     </section>
   )

@@ -30,7 +30,9 @@ public sealed record ActionParticipationMemberSettlement(
     long DroppedEventCount = 0,
     double? EndsAtUnixSeconds = null,
     IReadOnlyList<DuelStagedItem>? StagedItems = null,
-    IReadOnlyList<SessionConsumableSlot>? ConsumableSlots = null);
+    IReadOnlyList<SessionConsumableSlot>? ConsumableSlots = null,
+    int? TiliValue = null,
+    double? TiliUpdatedAtUnixSeconds = null);
 
 /// <summary>
 /// 队伍会话的恢复检查点：冻结输入与唯一远征态共同恢复战斗，成员不持有可执行副本。
@@ -54,7 +56,9 @@ public sealed record ActionParticipationSessionDocument(
     double ModeSinceUnixSeconds = 0,
     double NextConsumableEvaluationAtUnixSeconds = 0,
     double OfflineBatchBoundaryUnixSeconds = 0,
-    IReadOnlyList<SessionConsumableBalance>? OfflineReserves = null);
+    IReadOnlyList<SessionConsumableBalance>? OfflineReserves = null,
+    IReadOnlyList<int>? MemberTiliValues = null,
+    IReadOnlyList<double>? MemberTiliUpdatedAtUnixSeconds = null);
 
 /// <summary>会话库存来源；在线只用工作钱包，离线只用检查点储备。</summary>
 public enum ActionParticipationInventoryMode

@@ -734,7 +734,7 @@ public sealed record CombatantSnapshot(
 public sealed class CombatEncounterState
 {
     private CombatEncounterState(string encounterId, long seed, IReadOnlyList<CombatantState> playerAllies,
-        int selfIndex, IReadOnlyList<CombatantState> enemies, double playerRespawnSeconds)
+        int selfIndex, IReadOnlyList<CombatantState> enemies, double playerRespawnSeconds, bool wipeEndsBattle = false)
     {
         EncounterId = encounterId;
         Seed = seed;
@@ -742,6 +742,7 @@ public sealed class CombatEncounterState
         SelfIndex = selfIndex;
         Enemies = enemies;
         PlayerRespawnSeconds = playerRespawnSeconds;
+        WipeEndsBattle = wipeEndsBattle;
         TraitListeners = new CombatTraitListeners(this);
     }
 
@@ -778,9 +779,14 @@ public sealed class CombatEncounterState
     public double Sequence { get; internal set; }
     /// <summary>
     /// 团灭分流：原地复活读条秒数（战斗时钟口径）。&gt; 0 时友方阵亡不终局，各单位各自进入躺尸窗口；
-    /// 0 表示团灭即败（斗法/副本类遭遇），玩家方全灭立即 EnemyWon 终局。
+    /// 0 表示团灭即败（斗法类遭遇），玩家方全灭立即 EnemyWon 终局。
     /// </summary>
     public double PlayerRespawnSeconds { get; }
+    /// <summary>
+    /// 秘境全员团灭即败标记（总纲 §30.4.2）：为 true 时保留队友存活期间的战内倒地复活读条，
+    /// 但任意时刻只要我方全体盟友同时倒地（<see cref="IsAllAlliesDowned"/> 为 true），不再等待复活读条，立即判定终局失败。
+    /// </summary>
+    public bool WipeEndsBattle { get; }
     /// <summary>
     /// 本机成员的原地复活截止点（战斗时钟秒）：阵亡瞬间置为 ElapsedSeconds + PlayerRespawnSeconds，
     /// 起身后回到 +∞。全员倒地窗口内双方不出手，回复/冷却/到期照常推进。
@@ -825,6 +831,11 @@ public sealed class CombatEncounterState
     /// null 时全部结算点零成本旁路。不进入快照——簿本体随 duel 分段独立持久化。
     /// </summary>
     internal CombatUnitStatsBook? StatsBook { get; set; }
+    /// <summary>
+    /// 斗法紧凑行动录制器（运行时）：仅斗法推演期间挂载，PVE 恒为 null 零成本旁路。
+    /// 只观察已结算结果，不参与任何随机数或状态裁决。
+    /// </summary>
+    public ICombatActionRecorder? ActionRecorder { get; set; }
     /// <summary>本机成员当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
@@ -913,8 +924,8 @@ public sealed class CombatEncounterState
     /// 开局动作决策由战斗引擎侧 <c>DeterministicCombatEngine.Start</c> / <c>DecideInitialActions</c> 完成。
     /// </summary>
     public static CombatEncounterState Create(string encounterId, long seed, CombatantTemplate player,
-        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
-        => CreateAllied(encounterId, seed, [player], 0, enemies, playerRespawnSeconds);
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0, bool wipeEndsBattle = false)
+        => CreateAllied(encounterId, seed, [player], 0, enemies, playerRespawnSeconds, wipeEndsBattle);
 
     /// <summary>
     /// 创建多盟友遭遇但不决策首次出手（组队共战/召唤物）：
@@ -923,7 +934,7 @@ public sealed class CombatEncounterState
     /// </summary>
     public static CombatEncounterState CreateAllied(string encounterId, long seed,
         IReadOnlyList<CombatantTemplate> allies, int selfIndex,
-        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0, bool wipeEndsBattle = false)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
@@ -958,7 +969,7 @@ public sealed class CombatEncounterState
             CombatTraitRules.ApplyBattleStartTraits(allyStates[i]);
         for (var i = 0; i < enemyStates.Length; i++)
             CombatTraitRules.ApplyBattleStartTraits(enemyStates[i]);
-        var encounter = new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds);
+        var encounter = new CombatEncounterState(encounterId, seed, allyStates, selfIndex, enemyStates, playerRespawnSeconds, wipeEndsBattle);
         encounter.InitializeTraitListeners();
         return encounter;
     }
@@ -975,7 +986,8 @@ public sealed class CombatEncounterState
         CombatOutcome outcome,
         double sequence = 0,
         double playerRespawnSeconds = 0,
-        double playerRespawnAtSeconds = double.PositiveInfinity)
+        double playerRespawnAtSeconds = double.PositiveInfinity,
+        bool wipeEndsBattle = false)
     {
         if (!double.IsFinite(playerRespawnAtSeconds) && playerRespawnAtSeconds != double.PositiveInfinity)
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点无效。");
@@ -984,7 +996,7 @@ public sealed class CombatEncounterState
             RespawnAtSeconds = double.IsFinite(playerRespawnAtSeconds) ? playerRespawnAtSeconds : null
         };
         return RestoreAllied(encounterId, seed, [player], [snapshot], 0, enemies, enemySnapshots,
-            elapsedSeconds, outcome, sequence, playerRespawnSeconds);
+            elapsedSeconds, outcome, sequence, playerRespawnSeconds, wipeEndsBattle);
     }
 
     /// <summary>
@@ -1002,10 +1014,11 @@ public sealed class CombatEncounterState
         double elapsedSeconds,
         CombatOutcome outcome,
         double sequence = 0,
-        double playerRespawnSeconds = 0)
+        double playerRespawnSeconds = 0,
+        bool wipeEndsBattle = false)
     {
         // 恢复路径跳过开局决策：全部出手状态由快照逐字段回填，避免重复预扣灵力。
-        var encounter = CreateAllied(encounterId, seed, allies, selfIndex, enemies, playerRespawnSeconds);
+        var encounter = CreateAllied(encounterId, seed, allies, selfIndex, enemies, playerRespawnSeconds, wipeEndsBattle);
         if (allySnapshots is null || allySnapshots.Count != allies.Count
             || enemySnapshots is null || enemySnapshots.Count != enemies.Count
             || !double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
@@ -1035,8 +1048,8 @@ public sealed class CombatEncounterState
             respawnPending |= double.IsFinite(encounter.PlayerAllies[i].RespawnAtSeconds);
         var expectedOutcome = (alliesAlive, encounter.Enemies.Any(static e => e.IsAlive)) switch
         {
-            // 倒地等待原地复活不是终局：存活敌人或已被跳死全灭都保持 Running，起身后统一裁定。
-            (false, _) when respawnPending => CombatOutcome.Running,
+            // 倒地等待原地复活不是终局（秘境全员团灭即败模式除外）：存活敌人或已被跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when !wipeEndsBattle && respawnPending => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,
@@ -1262,6 +1275,12 @@ public sealed record CombatExpeditionState(
     /// 成员顺序按 MemberIndex 对应参与规格 Members 序列，本机成员仍由 PlayerState/Player* 镜像承载。
     /// </summary>
     public IReadOnlyList<ExpeditionAllyState>? Allies { get; init; }
+    /// <summary>秘境副本 ID（仅秘境行动携带；野外遭遇恒为 null，可缺省解码）。</summary>
+    public string? DungeonId { get; init; }
+    /// <summary>秘境总波数（标准为 10；仅秘境行动携带，可缺省解码）。</summary>
+    public int? DungeonTotalWaves { get; init; }
+    /// <summary>本局秘境是否已于第 1 波开局扣除体力（用于跨波与重启幂等防重复扣费；开启下把时归 false）。</summary>
+    public bool DungeonEnergyCharged { get; init; }
     /// <summary>
     /// 最近一次推进产生的基础战斗事件流（命中/闪避/破招/拆招/暴击），用于快照下发前端战场浮字与打击反馈。
     /// 仅作为快照下发的瞬时表现通道，不参与存档持久化与确定性状态比较。
@@ -1294,7 +1313,10 @@ public sealed record CombatExpeditionState(
             && IsPinned == other.IsPinned
             && OriginNodeId == other.OriginNodeId
             && SelfIndex == other.SelfIndex
-            && EqualityComparer<IReadOnlyList<ExpeditionAllyState>>.Default.Equals(Allies, other.Allies);
+            && EqualityComparer<IReadOnlyList<ExpeditionAllyState>>.Default.Equals(Allies, other.Allies)
+            && DungeonId == other.DungeonId
+            && DungeonTotalWaves == other.DungeonTotalWaves
+            && DungeonEnergyCharged == other.DungeonEnergyCharged;
     }
 
     public override int GetHashCode()
@@ -1322,6 +1344,9 @@ public sealed record CombatExpeditionState(
         hash.Add(OriginNodeId);
         hash.Add(SelfIndex);
         hash.Add(Allies);
+        hash.Add(DungeonId);
+        hash.Add(DungeonTotalWaves);
+        hash.Add(DungeonEnergyCharged);
         return hash.ToHashCode();
     }
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
@@ -1351,6 +1376,8 @@ public sealed record CombatExpeditionState(
         && SelfIndex >= 0 && SelfIndex <= 4
         && (Allies is null || Allies.All(ally => ally.MemberIndex != SelfIndex))
         && (OriginNodeId is null || (OriginNodeId.Length is > 0 and <= 128))
+        && (DungeonId is null || (DungeonId.Length is > 0 and <= 128))
+        && (DungeonTotalWaves is null || DungeonTotalWaves >= 1)
         // 倒地复活读条：Combat 相位为战斗时钟绝对截止点；组队会话波间搜寻相位携带剩余秒数
         // 跨波续计（AdvancePreparationResources 逐段递减、入场时再折算回战斗时钟），
         // InitialSearch/Search 相位同样允许非空；Respawning/Duel 相位仍不得携带。

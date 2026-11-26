@@ -313,7 +313,7 @@ public static class DeterministicCombatEngine
     /// <summary>
     /// 雷击符类打击伤害（总纲 §20.2）：无命中/破招/格挡/暴击掷点、不消耗随机通道；
     /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口。
-    /// 调用方在构造打击属性时已把技能增幅并入 AttackPower（与技能命中同口径）。
+    /// 物品打击与阵盘反击非玩家自身技能，AttackPower 不并入技能增幅（总纲 §7.7.1 技能增幅作用域）。
     /// </summary>
     internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
     {
@@ -322,7 +322,7 @@ public static class DeterministicCombatEngine
         var rawDamage = attack.AttackPower;
         // 第一层：大类抗性平方穿甲（与 ResolveHit 同式）。
         var damage = rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1));
-        // 第二层：攻方分类增伤（Linear）：大类 × 五行 × 总增伤 × 技能增幅。
+        // 第二层：攻方分类增伤（Linear）：大类 × 五行 × 总增伤。
         damage *= PercentValue.Multiplier(
             attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalDamageBonusPoints : attack.SpellDamageBonusPoints,
             PercentCurveMode.Linear);

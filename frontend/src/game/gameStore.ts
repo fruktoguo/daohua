@@ -3,11 +3,11 @@ import { create } from 'zustand'
 import { gameClient } from '../network/gameClient'
 import { getT, hasTranslation, useI18nStore } from '../i18n'
 import { AUTO_USE_BARS, AUTO_USE_BAR_SLOT_COUNT, findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
-import { localizeAbilities, localizeActions, localizeBuildings, localizeEncounters, localizeEquipment, localizeItems, localizeMaps } from './catalogLocalization'
+import { localizeAbilities, localizeActions, localizeBuildings, localizeDungeons, localizeEncounters, localizeEquipment, localizeItems, localizeMaps } from './catalogLocalization'
 import { mergeBattleReportHistory } from './battleReportStore'
 import { ingestStagedEnhancements } from './enhancementRecordStore'
 import { useUiStore } from '../uiStore'
-import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from './types'
+import type { ActionDefinition, AutoUseBarType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, DungeonDefinition, ItemDefinition, MarketItemStats, PlayerPatch, PlayerSnapshot, QueueState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from './types'
 import { DEFAULT_TRIGGER_SPEC } from './types'
 
 /** 服务端原始目录缓存：语言切换时基于权威原值即时重算本地化视图 */
@@ -16,6 +16,7 @@ const rawCatalogCache: {
   items: readonly ItemDefinition[] | null
   abilities: readonly CombatAbilityDefinition[] | null
   encounters: readonly CombatEncounterDefinition[] | null
+  dungeons: readonly DungeonDefinition[] | null
   equipment: readonly CombatEquipmentDefinition[] | null
   maps: readonly WorldMapDefinition[] | null
   buildings: readonly BuildingDefinition[] | null
@@ -24,6 +25,7 @@ const rawCatalogCache: {
   items: null,
   abilities: null,
   encounters: null,
+  dungeons: null,
   equipment: null,
   maps: null,
   buildings: null,
@@ -81,6 +83,8 @@ interface GameStore {
   respawnTargetPlayerId: PlayerSnapshot['respawnTargetPlayerId']
   /** 是否对非队友公开角色配装明细（默认 true；对同队成员恒开放） */
   publicLoadoutVisible: boolean
+  /** 非公开配装时的付费查阅价格（0 表示完全隐藏，正整数表示支付灵石查阅至当日零点） */
+  loadoutInspectPrice: number
   /** 行动队列状态（当前执行、等待列表、自动消耗槽位） */
   queue: PlayerSnapshot['queue']
   /** 背包物品列表 */
@@ -107,6 +111,8 @@ interface GameStore {
   abilities: readonly CombatAbilityDefinition[]
   /** 全量遭遇战/野怪目录 */
   encounters: readonly CombatEncounterDefinition[]
+  /** 全量秘境副本目录 */
+  dungeons: readonly DungeonDefinition[]
   /** 全量装备配置目录 */
   equipment: readonly CombatEquipmentDefinition[]
   /** 全量大地图世界配置目录 */
@@ -156,6 +162,8 @@ interface GameStore {
   setAbilities: (abilities: readonly CombatAbilityDefinition[]) => void
   /** 更新战斗遭遇目录 */
   setEncounters: (encounters: readonly CombatEncounterDefinition[]) => void
+  /** 更新秘境副本目录 */
+  setDungeons: (dungeons: readonly DungeonDefinition[]) => void
   /** 更新装备目录 */
   setEquipment: (equipment: readonly CombatEquipmentDefinition[]) => void
   /** 更新世界地图目录 */
@@ -253,6 +261,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     respawnPolicy: 'immediate',
     respawnTargetPlayerId: null,
     publicLoadoutVisible: true,
+    loadoutInspectPrice: 0,
   }
 }
 
@@ -350,6 +359,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   respawnPolicy: initial.respawnPolicy,
   respawnTargetPlayerId: initial.respawnTargetPlayerId,
   publicLoadoutVisible: initial.publicLoadoutVisible,
+  loadoutInspectPrice: initial.loadoutInspectPrice,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -363,6 +373,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   items: [],
   abilities: [],
   encounters: [],
+  dungeons: [],
   equipment: [],
   maps: [],
   buildings: [],
@@ -429,6 +440,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     rawCatalogCache.encounters = encounters
     set({ encounters: localizeEncounters(encounters, getT()) })
   },
+  setDungeons: (dungeons) => {
+    rawCatalogCache.dungeons = dungeons
+    set({ dungeons: localizeDungeons(dungeons, getT()) })
+  },
   setEquipment: (equipment) => {
     rawCatalogCache.equipment = equipment
     set({ equipment: localizeEquipment(equipment, getT()) })
@@ -488,6 +503,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       respawnPolicy: snapshot.respawnPolicy,
       respawnTargetPlayerId: snapshot.respawnTargetPlayerId,
       publicLoadoutVisible: snapshot.publicLoadoutVisible,
+      loadoutInspectPrice: snapshot.loadoutInspectPrice,
     })
     // 刷新自动进详情：首个权威快照且行动队列非空时，直接切到「详情」页查看当前行动统计与战况。
     if (isFirstSnapshot && snapshot.queue.entries.length > 0) {
@@ -555,6 +571,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? state.respawnTargetPlayerId
         : patch.respawnTargetPlayerId,
       publicLoadoutVisible: patch.publicLoadoutVisible ?? state.publicLoadoutVisible,
+      loadoutInspectPrice: patch.loadoutInspectPrice ?? state.loadoutInspectPrice,
     })
   },
   toSnapshotView: () => {
@@ -585,6 +602,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       respawnPolicy: state.respawnPolicy,
       respawnTargetPlayerId: state.respawnTargetPlayerId,
       publicLoadoutVisible: state.publicLoadoutVisible,
+      loadoutInspectPrice: state.loadoutInspectPrice,
     }
   },
   resetGameStore: () => set({
@@ -619,6 +637,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     respawnPolicy: initial.respawnPolicy,
     respawnTargetPlayerId: initial.respawnTargetPlayerId,
     publicLoadoutVisible: initial.publicLoadoutVisible,
+    loadoutInspectPrice: initial.loadoutInspectPrice,
     marketStats: {},
   }),
 }))
@@ -640,6 +659,7 @@ if (typeof useI18nStore?.subscribe === 'function') {
     if (rawCatalogCache.items) patch.items = localizeItems(rawCatalogCache.items, t)
     if (rawCatalogCache.abilities) patch.abilities = localizeAbilities(rawCatalogCache.abilities, t)
     if (rawCatalogCache.encounters) patch.encounters = localizeEncounters(rawCatalogCache.encounters, t)
+    if (rawCatalogCache.dungeons) patch.dungeons = localizeDungeons(rawCatalogCache.dungeons, t)
     if (rawCatalogCache.equipment) patch.equipment = localizeEquipment(rawCatalogCache.equipment, t)
     if (rawCatalogCache.maps) patch.maps = localizeMaps(rawCatalogCache.maps, t)
     if (rawCatalogCache.buildings) patch.buildings = localizeBuildings(rawCatalogCache.buildings, t)

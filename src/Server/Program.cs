@@ -218,6 +218,8 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Redeem.PostgresRedeemRepository>();
     builder.Services.AddSingleton<Server.Clean.Redeem.RedeemRuntime>();
     builder.Services.AddSingleton<Server.Clean.Leaderboards.LeaderboardRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.PostgresGuideRepository>();
+    builder.Services.AddSingleton<Server.Clean.Social.GuideRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.IPlayerPresenceStatsService, Server.Clean.Social.PlayerPresenceStatsService>();
     builder.Services.AddSingleton<Server.Clean.Social.PostgresStickerRepository>();
     // 会话准入默认开放语义；构建期注入的私有准入模块（IHostModuleStartup 实现）随后发现并覆盖注册。
@@ -319,6 +321,8 @@ if (processRole == ServerProcessRole.Api)
     marketRuntime.WalletCredited += playerRuntimeAdapter.NotifyMarketWalletCredited;
     app.Services.GetRequiredService<Server.Clean.Social.IActionParticipationRuntime>().WalletChanged +=
         playerRuntimeAdapter.NotifyMarketWalletCredited;
+    app.Services.GetRequiredService<Server.Clean.Social.IActionParticipationRuntime>().SessionNaturallyEnded +=
+        app.Services.GetRequiredService<Server.Clean.Social.SocialRuntime>().HandleSessionNaturallyEndedAsync;
     app.Services.GetRequiredService<Server.Clean.Social.SocialRuntime>().WalletChanged +=
         playerRuntimeAdapter.NotifyMarketWalletCredited;
     // 断线宽限到期卸载的玩家若仍在有人在线的会话名册中，重新常驻（总纲18 §14.6）；
@@ -412,6 +416,7 @@ if (processRole == ServerProcessRole.Api)
                 {
                     ActionExecutionKind.CombatEncounter => "combat-encounter",
                     ActionExecutionKind.Travel => "travel",
+                    ActionExecutionKind.Dungeon => "dungeon",
                     _ => "timed"
                 },
                 combatEncounterId = action.CombatEncounterId,
@@ -475,6 +480,10 @@ if (processRole == ServerProcessRole.Api)
     catalog.MapCatalogGet("/encounters", (GameDataCatalog gameData) =>
     {
         return StaticGameCatalogMapper.Encounters(gameData);
+    });
+    catalog.MapCatalogGet("/dungeons", (GameDataCatalog gameData) =>
+    {
+        return StaticGameCatalogMapper.Dungeons(gameData);
     });
     catalog.MapCatalogGet("/buildings", (GameDataCatalog gameData) =>
     {
@@ -797,10 +806,11 @@ if (processRole == ServerProcessRole.Api)
 
     app.MapGet("/api/v1/zongmen", async (ClaimsPrincipal user, string? search,
         Server.Clean.Social.PostgresZongmenRepository zongmen,
-        Server.Clean.Social.OnlinePresenceRegistry presence, CancellationToken ct) =>
+        Server.Clean.Social.OnlinePresenceRegistry presence,
+        Server.Clean.IPlayerSimulationClock clock, CancellationToken ct) =>
     {
         if (!Guid.TryParse(user.FindFirstValue("player_id"), out var playerId)) return Results.Unauthorized();
-        return Results.Ok(await zongmen.StateAsync(playerId, presence, search ?? "", ct));
+        return Results.Ok(await zongmen.StateAsync(playerId, presence, search ?? "", ct, clock.UtcNow));
     }).RequireAuthorization().RequireRateLimiting("command");
 
     // 邀请总览：本人邀请码 + 被邀请人进度列表；低频拉取，不走 WebSocket 帧。
@@ -827,6 +837,7 @@ if (processRole == ServerProcessRole.Api)
     }).RequireAuthorization().RequireRateLimiting("command");
     Server.Clean.Leaderboards.LeaderboardEndpoints.Map(app);
     Server.Clean.Social.MailEndpoints.Map(app);
+    Server.Clean.Social.GuideEndpoints.Map(app);
     Server.Clean.Checkin.CheckinEndpoints.Map(app);
     Server.Clean.Redeem.RedeemEndpoints.Map(app);
     Server.Clean.Social.StickerEndpoints.Map(app);
@@ -840,6 +851,7 @@ if (processRole == ServerProcessRole.Api)
         var snapshot = await runtime.LoadAsync(playerId, ct);
         return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData));
     }).RequireRateLimiting("command");
+    DuelRecordEndpoints.Map(players);
     SimulatorEndpoints.Map(players);
     players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {

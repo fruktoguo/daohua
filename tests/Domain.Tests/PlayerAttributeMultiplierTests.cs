@@ -183,6 +183,25 @@ public sealed class PlayerAttributeMultiplierTests
     }
 
     [Fact]
+    public void SpellDpsEquipment_SkillBonusIsHalfOfSpellDamageBonus()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var checkedCount = 0;
+        foreach (var (id, raw) in catalog.RawEquipments)
+        {
+            if (!raw.TryGetProperty("flatStats", out var flat)
+                || !flat.TryGetProperty("spellDamageBonusPoints", out var spellBonusProp))
+                continue;
+            var spellBonus = spellBonusProp.GetDouble();
+            Assert.True(flat.TryGetProperty("skillBonusPoints", out var skillBonusProp),
+                $"{id} 配置了 spellDamageBonusPoints={spellBonus}，必须同步配置半额 skillBonusPoints。");
+            Assert.Equal(spellBonus * 0.5, skillBonusProp.GetDouble(), precision: 9);
+            checkedCount++;
+        }
+        Assert.Equal(20, checkedCount);
+    }
+
+    [Fact]
     public void PlayerDefense_DoublesRealmAndRootFlatsButNotRatiosOrEquipment()
     {
         var catalog = GameDataCatalog.LoadEmbedded();

@@ -7,14 +7,29 @@ import type {
   CombatantDefinition,
   CombatEncounterDefinition,
   CombatEquipmentDefinition,
+  DungeonDefinition,
   ItemDefinition,
 } from './types'
+import { getDungeonDifficultyMeta } from './dungeonRules'
 import type { FloatingAsideCard } from '../components/FloatingPopover'
 
 /**
  * 物品来源大类
  */
-export type ItemSourceKind = 'monster' | 'crafting' | 'gathering' | 'pack' | 'general'
+export type ItemSourceKind = 'monster' | 'dungeon' | 'crafting' | 'gathering' | 'pack' | 'general'
+
+/**
+ * 追忆副本通关产出条目
+ */
+export interface ItemDungeonSource {
+  dungeonId: string
+  dungeonName: string
+  kind: 'guaranteed' | 'rare'
+  minQuantity: number
+  maxQuantity: number
+  dropChance: number
+  minDifficulty: number
+}
 
 /**
  * 妖兽掉落条目
@@ -69,6 +84,7 @@ export interface ItemGeneralSource {
 export interface ItemSourcesResult {
   itemId: string
   monsters: ItemMonsterSource[]
+  dungeons: ItemDungeonSource[]
   crafting: ItemActionSource[]
   gatherings: ItemActionSource[]
   packs: ItemPackSource[]
@@ -132,8 +148,10 @@ const STATIC_PACK_RULES: readonly StaticPackRule[] = [
  */
 let cachedEncountersRef: readonly CombatEncounterDefinition[] | null = null
 let cachedActionsRef: readonly ActionDefinition[] | null = null
+let cachedDungeonsRef: readonly DungeonDefinition[] | null = null
 
 let monsterDropsIndex: Map<string, ItemMonsterSource[]> = new Map()
+let dungeonLootIndex: Map<string, ItemDungeonSource[]> = new Map()
 let craftingYieldsIndex: Map<string, ItemActionSource[]> = new Map()
 let gatheringYieldsIndex: Map<string, ItemActionSource[]> = new Map()
 
@@ -195,13 +213,16 @@ function extractAllMonsters(encounters: readonly CombatEncounterDefinition[]): A
  */
 function rebuildIndexIfNeeded(
   encounters: readonly CombatEncounterDefinition[],
-  actions: readonly ActionDefinition[]
+  actions: readonly ActionDefinition[],
+  dungeons: readonly DungeonDefinition[] = []
 ): void {
-  if (encounters === cachedEncountersRef && actions === cachedActionsRef) {
+  const safeDungeons = Array.isArray(dungeons) ? dungeons : []
+  if (encounters === cachedEncountersRef && actions === cachedActionsRef && safeDungeons === cachedDungeonsRef) {
     return
   }
 
   const nextMonsterMap = new Map<string, ItemMonsterSource[]>()
+  const nextDungeonMap = new Map<string, ItemDungeonSource[]>()
   const nextCraftingMap = new Map<string, ItemActionSource[]>()
   const nextGatheringMap = new Map<string, ItemActionSource[]>()
 
@@ -289,11 +310,32 @@ function rebuildIndexIfNeeded(
     list.sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
   }
 
+  // 3. 扫描秘境通关战利品
+  for (const dungeon of safeDungeons) {
+    if (!Array.isArray(dungeon.clearLootTable)) continue
+    for (const loot of dungeon.clearLootTable) {
+      if (!loot.itemId) continue
+      const existing = nextDungeonMap.get(loot.itemId) ?? []
+      existing.push({
+        dungeonId: dungeon.dungeonId,
+        dungeonName: dungeon.name || dungeon.dungeonId,
+        kind: loot.kind,
+        minQuantity: loot.minQuantity,
+        maxQuantity: loot.maxQuantity,
+        dropChance: loot.dropChance,
+        minDifficulty: loot.minDifficulty,
+      })
+      nextDungeonMap.set(loot.itemId, existing)
+    }
+  }
+
   monsterDropsIndex = nextMonsterMap
+  dungeonLootIndex = nextDungeonMap
   craftingYieldsIndex = nextCraftingMap
   gatheringYieldsIndex = nextGatheringMap
   cachedEncountersRef = encounters
   cachedActionsRef = actions
+  cachedDungeonsRef = safeDungeons
 }
 
 /**
@@ -301,7 +343,7 @@ function rebuildIndexIfNeeded(
  */
 export function resolveItemSources(itemId: string): ItemSourcesResult {
   const store = useGameStore.getState()
-  rebuildIndexIfNeeded(store.encounters, store.actions)
+  rebuildIndexIfNeeded(store.encounters, store.actions, store.dungeons ?? [])
 
   const isSpiritStone =
     itemId === 'currency.spirit-stone' ||
@@ -313,6 +355,7 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
   const isStorageBagItem = itemId.startsWith('item.storage-bag.')
 
   const rawMonsters = monsterDropsIndex.get(itemId) ?? []
+  const dungeons = dungeonLootIndex.get(itemId) ?? []
   const crafting = craftingYieldsIndex.get(itemId) ?? []
   const gatherings = gatheringYieldsIndex.get(itemId) ?? []
 
@@ -393,6 +436,7 @@ export function resolveItemSources(itemId: string): ItemSourcesResult {
   return {
     itemId,
     monsters,
+    dungeons,
     crafting,
     gatherings,
     packs: isSpiritStone || isGongde ? [] : packs, // 灵石和功德已收录进 generals，避免重复展示
@@ -542,6 +586,44 @@ function ItemSourcesAsideContent({
         </div>
       )}
 
+      {/* 2b. 追忆副本通关独占产出 */}
+      {sources.dungeons.length > 0 && (
+        <div className="daohua-source-aside-group">
+          <div className="daohua-source-aside-group-title">
+            <span className="daohua-source-aside-badge daohua-source-aside-badge--gold">
+              {t('game.itemSources.categoryDungeon')}
+            </span>
+          </div>
+          <div className="daohua-source-aside-item-list">
+            {sources.dungeons.map((d, idx) => {
+              const diffMeta = getDungeonDifficultyMeta(d.minDifficulty)
+              const modeLabel = t(`combat.dungeon.mode.${diffMeta.mode}`)
+              const tierLabel = t(`combat.dungeon.difficulty.${diffMeta.key}`)
+              const diffLabel = `${modeLabel}·${tierLabel}`
+              const rateText = d.kind === 'guaranteed'
+                ? t('game.itemSources.dungeonGuaranteed')
+                : t('game.itemSources.dungeonRareFrom', {
+                    difficulty: diffLabel,
+                    rate: formatDropChance(d.dropChance),
+                  })
+              return (
+                <div className="daohua-source-aside-row" key={`${d.dungeonId}-${idx}`}>
+                  <div className="daohua-source-aside-row-left">
+                    <span className="daohua-source-aside-name is-boss">{d.dungeonName}</span>
+                  </div>
+                  <div className="daohua-source-aside-row-right">
+                    <span className="daohua-source-aside-rate">{rateText}</span>
+                    <span className="daohua-source-aside-amount">
+                      {formatQuantityRange(d.minQuantity, d.maxQuantity)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 3. 技艺配方制造 */}
       {sources.crafting.length > 0 && (
         <div className="daohua-source-aside-group">
@@ -644,6 +726,7 @@ export function resolveItemSourcesAsideCard(
   const hasAnySources =
     sources.generals.length > 0 ||
     sources.monsters.length > 0 ||
+    sources.dungeons.length > 0 ||
     sources.crafting.length > 0 ||
     sources.gatherings.length > 0 ||
     sources.packs.length > 0
@@ -658,6 +741,7 @@ export function resolveItemSourcesAsideCard(
   let routeCount = 0
   if (sources.generals.length > 0) routeCount += sources.generals.length
   if (sources.monsters.length > 0) routeCount += 1
+  if (sources.dungeons.length > 0) routeCount += sources.dungeons.length
   if (sources.crafting.length > 0) routeCount += sources.crafting.length
   if (sources.gatherings.length > 0) routeCount += sources.gatherings.length
   if (sources.packs.length > 0) routeCount += sources.packs.length

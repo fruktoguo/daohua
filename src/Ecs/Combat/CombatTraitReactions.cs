@@ -10,7 +10,7 @@ internal static class CombatTraitReactions
     internal static void OnHit(CombatHitContext context)
     {
         if (!context.Hit || !context.Attacker.IsAlive) return;
-        ApplyRanhun(context.Attacker, context.Target, context.AttackStats.Element, context.ActualDamage, context.AtSeconds);
+        ApplyRanhun(context.Attacker, context.Target, context.AttackStats.Element, context.ActualDamage, context.AtSeconds, context.Encounter);
         var attacker = context.Attacker;
         if (!CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.XuyiTraitId)) return;
         var buff = attacker.Buffs.FirstOrDefault(current => current.BuffId == CombatTraitRules.XuyiBuffId);
@@ -25,34 +25,43 @@ internal static class CombatTraitReactions
 
         void Burst(CombatantState target, bool primary)
         {
+            var wasAlive = target.IsAlive;
+            var strikeElement = primary ? CombatElement.None : CombatTraitRules.ResolveDamageElement(attacker.Stats.Traits, CombatElement.None);
             var damage = primary ? buff.Stacks : DeterministicCombatEngine.ResolveStrikeDamage(
-                CombatDamageSettlement.StrikeStats(attacker, buff.Stacks, CombatDamageKind.Physical,
-                    CombatTraitRules.ResolveDamageElement(attacker.Stats.Traits, CombatElement.None)),
+                CombatDamageSettlement.StrikeStats(attacker, buff.Stacks, CombatDamageKind.Physical, strikeElement),
                 target);
             var settled = CombatDamageSettlement.Apply(context.Encounter, attacker, target, damage, accumulateXuyi: false);
             attacker.Threat += settled.Damage;
             context.Encounter.StatsBook?.RecordHit(attacker, target, primary ? CombatDamageKind.True : CombatDamageKind.Physical, settled.Damage, primary ? 0 : Math.Max(0, buff.Stacks - settled.Damage));
+            context.Encounter.ActionRecorder?.RecordDamage(attacker, target, DuelRecordEffectKind.TraitBurst,
+                primary ? CombatDamageKind.True : CombatDamageKind.Physical,
+                strikeElement, DuelRecordHitMark.Hit, settled.Damage, CombatTraitRules.XuyiTraitId,
+                targetDowned: wasAlive && !target.IsAlive);
             context.Emit(new CombatEvent(context.AtSeconds, attacker.Id, target.Id, settled.Damage, true,
                 primary ? CombatDamageKind.True : CombatDamageKind.Physical, target.Hitpoints) { AbilityId = CombatTraitRules.XuyiTraitId });
         }
     }
 
     /// <summary>向目标直接追加指定层数的燃烧状态，并刷新到期时间与伤害归属。</summary>
-    internal static void AddRanhunStacks(CombatantState attacker, CombatantState target, double stacks, double at)
+    internal static void AddRanhunStacks(CombatantState attacker, CombatantState target, double stacks, double at,
+        CombatEncounterState? encounter = null)
     {
         if (stacks <= 0 || !target.IsAlive) return;
         var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
         target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
             "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
+        encounter?.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, stacks,
+            DuelRecordActionKind.Trait, at, CombatTraitRules.RanhunTraitId);
     }
 
     /// <summary>按实际扣血叠层，最后施加者取得同一燃烧状态的伤害归属。</summary>
-    internal static void ApplyRanhun(CombatantState attacker, CombatantState target, CombatElement element, double actual, double at)
+    internal static void ApplyRanhun(CombatantState attacker, CombatantState target, CombatElement element, double actual, double at,
+        CombatEncounterState? encounter = null)
     {
         if (actual <= 0 || !target.IsAlive || element != CombatElement.Fire
             || !CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.RanhunTraitId)) return;
         var stacks = Math.Max(1, Math.Floor(actual * 0.02 * CombatTraitRules.LevelScale(attacker, CombatTraitRules.RanhunTraitId)));
-        AddRanhunStacks(attacker, target, stacks, at);
+        AddRanhunStacks(attacker, target, stacks, at, encounter);
     }
 
     /// <summary>整秒自然边界结算火属性术法持续伤害，不回流命中触发器。</summary>
@@ -65,11 +74,26 @@ internal static class CombatTraitReactions
             if (power <= 0 || buff.ExpiresAtSeconds + 1e-9 < at) continue;
             var source = encounter.PlayerAllies.Concat(encounter.Enemies).FirstOrDefault(unit => unit.Id == buff.SourceUnitId)
                 ?? throw new DomainException(DomainErrorCode.InvariantViolation, "持续伤害缺少战斗来源。");
+            var wasAlive = target.IsAlive;
             var attack = CombatDamageSettlement.StrikeStats(source, power, CombatDamageKind.Spell, CombatElement.Fire);
             var damage = DeterministicCombatEngine.ResolveStrikeDamage(attack, target);
             var settled = CombatDamageSettlement.Apply(encounter, source, target, damage);
             source.Threat += settled.Damage;
             encounter.StatsBook?.RecordHit(source, target, CombatDamageKind.Spell, settled.Damage, Math.Max(0, power - settled.Damage));
+            if (encounter.ActionRecorder is { } recorder)
+            {
+                recorder.BeginAction(at, source, DuelRecordActionKind.Trait, CombatTraitRules.RanhunTraitId);
+                try
+                {
+                    recorder.RecordDamage(source, target, DuelRecordEffectKind.Damage,
+                        CombatDamageKind.Spell, CombatElement.Fire, DuelRecordHitMark.Hit,
+                        settled.Damage, CombatTraitRules.RanhunTraitId, targetDowned: wasAlive && !target.IsAlive);
+                }
+                finally
+                {
+                    recorder.EndAction();
+                }
+            }
             (events ??= []).Add(new CombatEvent(at, source.Id, target.Id, settled.Damage, true, CombatDamageKind.Spell, target.Hitpoints)
                 { AbilityId = CombatTraitRules.RanhunTraitId, AttackerManapointsAfter = source.Manapoints, TargetManapointsAfter = target.Manapoints });
             // 积蓄意可能修改目标 Buff 列表；燃魂当前仅一条，收尾后返回避免枚举失效。

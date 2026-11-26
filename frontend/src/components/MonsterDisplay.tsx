@@ -64,6 +64,8 @@ export interface MonsterDisplayTargetProps {
   footer?: ReactNode
   /** 讨伐历练难度等级（0~5）：用于动态联动预览向上取整后的怪物属性、经验与掉落加成 */
   difficulty?: number
+  /** 若传入的 monster 已预先完成难度与动态等级缩放（如追忆副本），跳过野外难度二次缩放 */
+  preScaled?: boolean
 }
 
 /**
@@ -247,6 +249,7 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
   description,
   footer,
   difficulty = 0,
+  preScaled = false,
 }: MonsterDisplayTargetProps): React.JSX.Element {
   const t = useT()
   const encounters = useGameStore(state => state.encounters)
@@ -279,13 +282,14 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
     : (resolved.category ? getEnemyTypeLabel(resolved.category, resolved.element, t) : null)
 
   // 5. 明细行构建：出没节奏、击杀修为收益、施展功法名录、掉落物图元胶囊行
-  const expMult = getDifficultyExperienceMultiplier(difficulty)
+  const expMult = preScaled ? 1 : getDifficultyExperienceMultiplier(difficulty)
   const displayExp = Math.round(resolved.experience * expMult)
   const rewardParts = [
     displayExp > 0 ? `${t('combat.report.experience')} +${formatInteger(displayExp)}` : null,
   ].filter((part): part is string => part !== null)
   const activeSkills = resolved.skills
     .filter((slot): slot is { abilityId: string; level?: number } => Boolean(slot.abilityId))
+  const displayDrops = preScaled ? resolved.drops : scaleMonsterDrops(resolved.drops, difficulty)
 
   const lines = [
     ...(intervalHint ? [`${t('combat.nearby.statInterval')}：${intervalHint}`] : []),
@@ -306,12 +310,12 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
           </span>,
         ]
       : []),
-    ...(resolved.drops.length > 0
+    ...(displayDrops.length > 0
       ? [
           <span key="drops">
             {t('combat.map.monsterDrops')}：
             <span className="world-monster-drops-row">
-              {scaleMonsterDrops(resolved.drops, difficulty).map(drop => (
+              {displayDrops.map(drop => (
                 <ItemDropReference drop={drop} key={drop.itemId} />
               ))}
             </span>
@@ -320,9 +324,8 @@ export const MonsterInfoCard = memo(function MonsterInfoCard({
       : []),
   ]
 
-  // 6. 战斗属性网格：标准六维战斗属性（气血/灵力/物攻/术攻/护甲/抗性）
   // 6. 战斗属性网格：标准六维战斗属性（气血/灵力/物攻/术攻/护甲/抗性，按难度缩放并向上取整）
-  const attrs = scaleMonsterAttributes(resolved.attributes, difficulty)
+  const attrs = preScaled ? resolved.attributes : scaleMonsterAttributes(resolved.attributes, difficulty)
   const stats = [
     { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip value={attrs.maxHitpoints} /> },
     { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip value={attrs.maxManapoints} /> },

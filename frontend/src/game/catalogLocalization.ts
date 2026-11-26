@@ -6,6 +6,7 @@ import type {
   CombatEncounterDefinition,
   CombatEquipmentDefinition,
   CombatantDefinition,
+  DungeonDefinition,
   ItemDefinition,
   NearbyEntity,
   WorldMapDefinition,
@@ -120,5 +121,18 @@ export function localizeMaps(maps: readonly WorldMapDefinition[], t: TFunction):
     name: tr(t, `game.map.${map.mapId}.name`, map.name),
     description: tr(t, `game.map.${map.mapId}.description`, map.description),
     nodes: map.nodes.map(node => localizeWorldNode(node, t)),
+  }))
+}
+
+/** 本地化秘境副本目录（含秘境名、描述与各波次妖兽名） */
+export function localizeDungeons(dungeons: readonly DungeonDefinition[], t: TFunction): DungeonDefinition[] {
+  return dungeons.map(dungeon => ({
+    ...dungeon,
+    name: tr(t, `game.dungeon.${dungeon.dungeonId}.name`, dungeon.name),
+    description: tr(t, `game.dungeon.${dungeon.dungeonId}.description`, dungeon.description),
+    waves: dungeon.waves.map(wave => ({
+      ...wave,
+      enemies: wave.enemies.map(enemy => localizeCombatant(enemy, t)),
+    })),
   }))
 }

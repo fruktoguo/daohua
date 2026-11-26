@@ -81,6 +81,7 @@ function normalizeStoredReport(report: BattleReport): BattleReport {
     itemsLost: storedArray(report.itemsLost),
     duelItemsGained: storedArray(report.duelItemsGained),
     duelItemsLost: storedArray(report.duelItemsLost),
+    duelRecordCount: storedNumber(report.duelRecordCount),
     cycles: storedNumber(report.cycles),
     encounters: storedNumber(report.encounters),
     normalKills: storedNumber(report.normalKills),

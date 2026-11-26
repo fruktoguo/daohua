@@ -312,6 +312,130 @@ public static class StaticGameCatalogMapper
                 .ToArray()
         }).ToArray();
 
+    /// <summary>
+    /// 追忆副本静态目录投影：包含节点绑定、基准等级、最低怪原始等级、10 波固定阵容（展开怪物完整摘要及同构权重）、通关基准奖励与专属产出表；
+    /// 首项附带 1..127 级期望面板与击杀经验锚点供前端现世模式零请求同源推导 Hover 具体属性。
+    /// </summary>
+    /// <param name="catalog">当前激活配表。</param>
+    public static IReadOnlyList<object> Dungeons(GameDataCatalog catalog)
+    {
+        var levelAnchors = BuildDungeonLevelAnchors(catalog);
+        return catalog.Dungeons.Values
+            .OrderBy(dungeon => dungeon.BaseLevel)
+            .ThenBy(dungeon => dungeon.Id, StringComparer.Ordinal)
+            .Select((dungeon, index) => (object)new
+            {
+                dungeonId = dungeon.Id,
+                name = dungeon.Name,
+                description = dungeon.Description,
+                nodeId = dungeon.NodeId,
+                tier = dungeon.Tier,
+                baseLevel = dungeon.BaseLevel,
+                minMonsterLevel = dungeon.MinMonsterLevel,
+                recommendedValuation = dungeon.RecommendedValuation,
+                waveRestSeconds = dungeon.WaveRestSeconds,
+                totalWaves = dungeon.TotalWaves,
+                waves = dungeon.Waves.Select(wave => new
+                {
+                    waveNumber = wave.WaveIndex,
+                    kind = wave.Kind switch
+                    {
+                        DungeonWaveKind.Elite => "elite",
+                        DungeonWaveKind.Boss => "boss",
+                        _ => "normal"
+                    },
+                    enemyIds = wave.EnemyIds,
+                    enemies = wave.EnemyIds.Select(id => ResolveDungeonMonster(catalog, id)).ToArray()
+                }).ToArray(),
+                baseRewards = new
+                {
+                    experience = dungeon.BaseRewards.Experience,
+                    spiritStones = dungeon.BaseRewards.SpiritStones
+                },
+                clearLootTable = dungeon.ClearLootTable.Select(entry => new
+                {
+                    itemId = entry.ItemId.Value,
+                    kind = entry.Kind,
+                    minQuantity = entry.MinQuantity,
+                    maxQuantity = entry.MaxQuantity,
+                    dropChance = entry.DropChance,
+                    minDifficulty = entry.MinDifficulty
+                }).ToArray(),
+                affixes = dungeon.Affixes,
+                levelAnchors = index == 0 ? levelAnchors : null
+            }).ToArray();
+    }
+
+    private static object[]? BuildDungeonLevelAnchors(GameDataCatalog catalog)
+    {
+        if (catalog.ExpectedAttributes is null || catalog.BaseAttributes is null) return null;
+        var rows = new object[DungeonDifficultyRules.MaxMonsterLevel];
+        for (var lvl = 1; lvl <= DungeonDifficultyRules.MaxMonsterLevel; lvl++)
+        {
+            var anchor = catalog.ExpectedAttributes.At(lvl);
+            var tier = catalog.BaseAttributes.TierAt(lvl);
+            rows[lvl - 1] = new
+            {
+                level = lvl,
+                tier,
+                hp = anchor.Hp,
+                mp = anchor.Mp,
+                ad = anchor.Ad,
+                ap = anchor.Ap,
+                armor = anchor.Armor,
+                mr = anchor.Mr,
+                acc = anchor.Acc,
+                eva = anchor.Eva,
+                crit = anchor.Crit,
+                cavoid = anchor.Cavoid,
+                breakPt = anchor.BreakPt,
+                parry = anchor.Parry,
+                killExpNormal = catalog.RealmProgression?.MonsterKillExperience(lvl, CombatMonsterRank.Minion) ?? 0,
+                killExpElite = catalog.RealmProgression?.MonsterKillExperience(lvl, CombatMonsterRank.Elite) ?? 0,
+                killExpBoss = catalog.RealmProgression?.MonsterKillExperience(lvl, CombatMonsterRank.Boss) ?? 0
+            };
+        }
+        return rows;
+    }
+
+    private static object ResolveDungeonMonster(GameDataCatalog catalog, string id)
+    {
+        if (!catalog.Monsters.TryGetValue(id, out var monster)
+            || !catalog.CombatMonsters.TryGetValue(id, out var definition))
+            return EmptyMonster(id, id);
+        var stats = definition.Stats;
+        JsonElement? weights = monster.TryGetProperty("weights", out var w) && w.ValueKind == JsonValueKind.Object ? w.Clone() : null;
+        JsonElement? modifiers = monster.TryGetProperty("modifiers", out var m) && m.ValueKind == JsonValueKind.Object ? m.Clone() : null;
+        var explicitExperience = monster.TryGetProperty("experience", out _);
+        return new
+        {
+            enemyId = id,
+            name = ReadString(monster, "name", id),
+            visual = monster.TryGetProperty("visual", out var visual) ? visual.Clone() : JsonSerializer.SerializeToElement(new { renderer = "text", source = "?" }),
+            style = NormalizeEnum(ReadString(monster, "style", "body")),
+            category = NormalizeEnum(ReadString(monster, "category", "physical")),
+            element = NormalizeEnum(ReadString(monster, "element", "none")),
+            rank = NormalizeEnum(ReadString(monster, "rank", "normal")),
+            level = definition.Level,
+            tier = catalog.BaseAttributes?.TierAt(definition.Level) ?? 1,
+            budgetCost = definition.BudgetCost,
+            attributes = ProtocolSnapshotMapper.ToAttributesDto(stats),
+            experience = definition.Experience,
+            explicitExperience,
+            weights,
+            modifiers,
+            drops = ResolveMonsterDrops(definition),
+            skills = definition.Skills.Select(skill => new
+            {
+                abilityId = skill.Ability.TryGetProperty("id", out var abilityIdElement)
+                    ? abilityIdElement.GetString() ?? string.Empty
+                    : string.Empty,
+                level = skill.Level,
+                triggers = skill.Triggers.Select(trigger => trigger.Clone()).ToArray(),
+            }).Where(skill => skill.abilityId.Length > 0).ToArray()
+        };
+    }
+
     private static object ToNode(JsonElement node, GameDataCatalog catalog)
     {
         var encounterIds = ReadStringArray(node, "encounterIds");
@@ -337,6 +461,7 @@ public static class StaticGameCatalogMapper
                 : (object?)null,
             availableActionIds = ReadStringArray(node, "availableActionIds"),
             encounterIds,
+            dungeonIds = ReadStringArray(node, "dungeonIds"),
             npcs = ReadEntities(node, "npcs"),
             buildings = ReadEntities(node, "buildings"),
             minBudget = ReadDoubleNullable(node, "minBudget"),

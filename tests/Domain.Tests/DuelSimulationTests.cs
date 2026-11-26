@@ -777,6 +777,67 @@ public sealed class DuelSimulationTests
         Assert.True(formationSlot.RemainingDurationSeconds > 0 && formationSlot.RemainingDurationSeconds < 300);
     }
 
+    /// <summary>
+    /// 斗法雷击符打击不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）：
+    /// 同一镜像面板下技能增幅 0 与 100 两次剧本推演，雷击符事件伤害必须完全一致。
+    /// 修复前增幅误入原始威力乘位（600→1200），本对照必现。
+    /// </summary>
+    [Fact]
+    public void DuelTalismanStrikeIgnoresSkillBonusPoints()
+    {
+        var talismanId = new ItemId("item.leiji-talisman");
+        static System.Text.Json.JsonElement ParseJson(string json)
+            => System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+        var items = new Dictionary<ItemId, ItemDefinition>
+        {
+            [talismanId] = new(talismanId, "雷击符", "", true, 0,
+                new ConsumableDefinition(new HashSet<string> { "combat" },
+                    Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
+                "talisman"),
+        };
+        var rawItems = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            [talismanId.Value] = ParseJson("""
+                {"id":"item.leiji-talisman","name":"雷击符","kind":"consumable","category":"talisman",
+                 "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+                 "strike":{"manaCostRatio":0.05,"manaDamageRatio":0.2,"spellAttackRatio":2.0,"element":"wood"}}}
+                """),
+        };
+        var catalog = CreateCatalog(items: items, rawItems: rawItems);
+
+        double FirstTalismanDamage(double skillBonusPoints)
+        {
+            var (initiator, _) = PreparePendingSeeker(catalog, "甲");
+            var (defender, _) = PreparePendingSeeker(catalog, "乙");
+            var matchUnix = initiator.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
+            initiator.ConfigureAutoUse("combat", 0, talismanId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+            var initiatorWallet = new AssetWallet(initiator.PlayerId);
+            initiatorWallet.Restore([new AssetBalance(initiator.PlayerId, new AssetKey(talismanId), 5, 0)]);
+            var initiatorMirror = initiator.BuildDuelMirror(catalog, initiatorWallet, matchUnix) with
+            {
+                Stats = CombatantStats.Create(10_000, 100, 0, 1.5, accuracy: 10) with
+                {
+                    MaxManapoints = 1_000,
+                    SpellAttack = 200,
+                    SkillBonusPoints = skillBonusPoints
+                }
+            };
+            var defenderMirror = defender.BuildDuelMirror(catalog, nowUnixSeconds: matchUnix) with
+            {
+                Stats = CombatantStats.Create(3_000, 20, 0, 0.5, accuracy: 10) with { MaxManapoints = 500 }
+            };
+            var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, 42, catalog.Duel, catalog);
+            var strikeEvent = script.Events.First(ev => ev.AbilityId == talismanId.Value && ev.AttackerIsInitiator && ev.Damage > 0);
+            return strikeEvent.Damage;
+        }
+
+        var withoutBonus = FirstTalismanDamage(0);
+        var withBonus = FirstTalismanDamage(100);
+        Assert.True(withoutBonus > 0, "雷击符应已激活并造成伤害，否则对照无效。");
+        Assert.Equal(withoutBonus, withBonus, 9);
+    }
+
     private static double NowUnix() => Baseline.ToUnixTimeMilliseconds() / 1000d;
 
     private static (PlayerAggregate Player, Guid PlayerId) PreparePendingSeeker(GameDataCatalog catalog, string name)

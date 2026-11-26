@@ -85,6 +85,7 @@ export function getQueueEstimateDependencies(
   if (
     entry.type === 'combat' ||
     entry.executionKind === 'combat-encounter' ||
+    entry.executionKind === 'dungeon' ||
     entry.executionKind === 'travel'
   ) {
     return { needsInventory: false, needsFoundation: false, isExcluded: true }

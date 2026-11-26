@@ -59,6 +59,9 @@
         "encounterIds": [
           "encounter.boundary-pass"
         ],
+        "dungeonIds": [
+          "dungeon.trail-boundary-rift"
+        ],
         "buildableTemplate": "all"
       }
     ],

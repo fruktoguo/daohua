@@ -1284,7 +1284,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const onBadgedNode = Boolean(
     (world.nodeId && gatewayNodeIds.has(world.nodeId)) ||
       (currentNodeObj &&
-        ((currentNodeObj.bossEnemies?.length ?? 0) > 0 || (currentNodeObj.eliteEnemies?.length ?? 0) > 0)),
+        ((currentNodeObj.bossEnemies?.length ?? 0) > 0 ||
+          (currentNodeObj.eliteEnemies?.length ?? 0) > 0)),
   )
 
   return (

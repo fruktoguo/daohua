@@ -327,9 +327,26 @@ public static class PlayerActionQueueRules
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
         var definition = catalog.Get(intent.ActionId);
+        // 追忆副本禁用斗法开关并放宽难度范围至 0..10；普通野外讨伐保持 0..5。
+        if (definition.ExecutionKind == ActionExecutionKind.Dungeon)
+        {
+            intent = intent with
+            {
+                PvpEnabled = false,
+                Difficulty = Domain.Combat.DungeonDifficultyRules.Clamp(intent.Difficulty)
+            };
+        }
+        else if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
+        {
+            intent = intent with
+            {
+                Difficulty = Domain.Combat.CombatDifficultyRules.Clamp(intent.Difficulty)
+            };
+        }
         // 强化行动轮次时长由目标等级派生（5+t 恒正），配表 durationSeconds 为 0 不构成死循环。
         if (!isParticipation && intent.RepeatCount == -1 && definition.DurationSeconds <= 0
             && definition.ExecutionKind != ActionExecutionKind.CombatEncounter
+            && definition.ExecutionKind != ActionExecutionKind.Dungeon
             && definition.Kind != ActionKind.Enhancement)
             throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");
         return intent;

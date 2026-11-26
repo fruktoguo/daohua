@@ -528,6 +528,8 @@ export const PartyActivityKind = {
   Formation: 'formation',
   /** 强化 */
   Enhancement: 'enhancement',
+  /** 秘境副本 */
+  Dungeon: 'dungeon',
 } as const
 /** PartyActivityKind 常量表对应的值联合类型（队伍目标类型） */
 export type PartyActivityKind = (typeof PartyActivityKind)[keyof typeof PartyActivityKind]
@@ -564,6 +566,8 @@ export const SocialAction = {
   PartyUnready: 'party.unready',
   /** 队长设置开启槽位数（party 载荷携带 openSlots，2~5，不得低于当前队员数） */
   PartySlots: 'party.slots',
+  /** 切换本人秘境助战模式开关（assistMode 必填；免耗体力且无收益） */
+  PartyAssist: 'party.assist',
   DouDiZhuStake: 'doudizhu.stake',
   DouDiZhuReady: 'doudizhu.ready',
   DouDiZhuUnready: 'doudizhu.unready',
@@ -599,6 +603,10 @@ export interface PartyProfileDto {
   openSlots?: number | null
   /** 斗地主底注；仅队长通过 doudizhu.stake 设置 */
   douDiZhuStake?: number | null
+  /** 秘境配置 ID（仅 activityKind='dungeon' 有效） */
+  dungeonId?: string | null
+  /** 秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数） */
+  dungeonRepeatCount?: number | null
 }
 
 /** SocialAction 社交指令请求载荷 */
@@ -620,6 +628,8 @@ export interface SocialActionDto {
   bidAction?: 'pass' | 'call' | 'rob' | null
   cards?: number[] | null
   interaction?: string | null
+  /** 秘境助战开关；仅 party.assist 使用 */
+  assistMode?: boolean | null
 }
 
 /** 好友条目 */
@@ -666,6 +676,12 @@ export interface PartyMemberDto {
   douDiZhuReady?: boolean
   /** 队伍内展示的当前可用灵石余额。 */
   spiritStones: number
+  /** 秘境助战开关（true 表示免耗体力且无收益） */
+  assistMode?: boolean
+  /** 当前秘境有效体力 */
+  tiliCurrent?: number
+  /** 秘境体力上限（1680） */
+  tiliMax?: number
 }
 
 /** 斗地主公共牌局状态与本人私有手牌。 */
@@ -725,6 +741,8 @@ export interface PartySessionDto {
   startedAtUnixMilliseconds: number
   /** 在场成员玩家 ID 名单（倒地未离场仍计入） */
   memberIds: string[]
+  /** 秘境配置 ID（仅秘境会话非空） */
+  dungeonId?: string | null
 }
 
 /** 队伍状态 */
@@ -748,12 +766,16 @@ export interface PartyDto {
   /** 进行中的组队讨伐会话；无会话为 null */
   activeSession?: PartySessionDto | null
   members: PartyMemberDto[]
-  /** 队伍设定的讨伐难度等级（0~5） */
+  /** 队伍设定的讨伐/秘境难度等级（野外 0~5，秘境 0~11） */
   difficulty: number
   /** 队长设置的斗地主底注，默认 10 灵石 */
   douDiZhuStake?: number
   /** 当前或最近一局斗地主；本人手牌按观者私有投影下发 */
   douDiZhuGame?: DouDiZhuGameDto | null
+  /** 秘境配置 ID（仅 activityKind='dungeon' 有效） */
+  dungeonId?: string
+  /** 秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数） */
+  dungeonRepeatCount?: number
 }
 
 /** 同节点在线修士条目 */
@@ -838,6 +860,8 @@ export interface PartyLobbyEntryDto {
   openSlots?: number | null
   createdAtUnixMilliseconds: number
   members: PartyLobbyMemberDto[]
+  dungeonId?: string
+  difficulty?: number
 }
 
 /** 大厅「匹配中」散人条目 */
@@ -968,6 +992,10 @@ export interface PlayerCardDto {
   currentReport?: BattleReport | null
   /** 对非队友隐藏 copyable 配装明细（玩家在隐私设置关闭公开配装时下发 true） */
   loadoutHidden?: boolean
+  /** 当 loadoutHidden 为 true 且目标开启付费查阅时下发所需灵石价格；完全隐藏时为 null/undefined */
+  loadoutInspectPrice?: number | null
+  /** 当查询方通过当日付费查阅获得可见权时，下发北京时间当日结束零点的 Unix 秒时间戳 */
+  loadoutUnlockedUntilUnixSeconds?: number | null
 }
 
 /** 全服排行榜单榜摘要元数据（GET /api/v1/leaderboards） */
@@ -1273,8 +1301,17 @@ export function createRequestId(): string {
   return crypto.randomUUID()
 }
 
+/** 宗门成员三态存在感标识（由服务端按权威最大离线挂机时长裁定）。 */
+export type ZongmenMemberPresenceStatus = 'online' | 'idle' | 'offline'
 /** 宗门独立读投影；字段与 Protocol/ZongmenContracts.cs 一致。 */
-export interface ZongmenMemberDto { playerId: string; displayName: string; role: number; online: boolean }
+export interface ZongmenMemberDto {
+  playerId: string
+  displayName: string
+  role: number
+  online: boolean
+  presenceStatus?: ZongmenMemberPresenceStatus
+  offlineDurationSeconds?: number | null
+}
 export interface ZongmenRequestDto { zongmenId: string; zongmenName: string; playerId: string; displayName: string; kind: string }
 export interface ZongmenSummaryDto { zongmenId: string; name: string; prefix: string; memberCount: number; capacity: number; anchorNodeId: string }
 export interface ZongmenDto {
@@ -1297,4 +1334,111 @@ export interface RedeemCodeResponseDto {
   title: string
   code: string
   rewards: RedeemRewardDto[]
+}
+
+/** 攻略作者在个人排行榜（除宗门榜外）的上榜荣誉头衔投影。 */
+export interface GuideRankBadgeDto {
+  boardId: string
+  kind: string
+  techniqueId?: string | null
+  rank: number
+}
+
+/** 当前修士在道友攻略板块的发帖资格与每日额度摘要。 */
+export interface GuidePermissionsDto {
+  canCreate: boolean
+  isRanked: boolean
+  isBot: boolean
+  dailyLimit: number
+  todayPublishedCount: number
+  rankedBoards: GuideRankBadgeDto[]
+}
+
+/** 道友攻略列表卡片摘要 DTO。 */
+export interface GuidePostSummaryDto {
+  postId: string
+  authorId: string
+  authorName: string
+  authorAvatar: string
+  authorRealmLevel: number
+  authorZongmenPrefix?: string | null
+  authorTopRank?: GuideRankBadgeDto | null
+  title: string
+  excerpt: string
+  unlockPrice: number
+  isUnlocked: boolean
+  likedByMe: boolean
+  viewCount: number
+  likeCount: number
+  tipperCount: number
+  totalRewardStones: number
+  hotScore: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 道友攻略列表响应 DTO（GET /api/v1/guides）。 */
+export interface GuideListResponseDto {
+  sort: 'hot' | 'reward'
+  mineOnly: boolean
+  totalCount: number
+  permissions: GuidePermissionsDto
+  items: GuidePostSummaryDto[]
+}
+
+/** 道友攻略完整详情 DTO（GET /api/v1/guides/{postId}）；locked=true 时 body 为 null。 */
+export interface GuidePostDetailDto {
+  postId: string
+  authorId: string
+  authorName: string
+  authorAvatar: string
+  authorRealmLevel: number
+  authorZongmenPrefix?: string | null
+  authorTopRank?: GuideRankBadgeDto | null
+  title: string
+  summary: string
+  body: string | null
+  unlockPrice: number
+  locked: boolean
+  isUnlocked: boolean
+  likedByMe: boolean
+  myTippedStones: number
+  viewCount: number
+  likeCount: number
+  tipperCount: number
+  totalRewardStones: number
+  hotScore: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GuidePostUpsertPayload {
+  title: string
+  summary: string
+  body: string
+  unlockPrice: number
+}
+
+export interface SetGuideLikeResponseDto {
+  postId: string
+  liked: boolean
+  likeCount: number
+  hotScore: number
+}
+
+export interface TipGuidePostResponseDto {
+  postId: string
+  paidStones: number
+  authorReceivedStones: number
+  myTippedStones: number
+  tipperCount: number
+  totalRewardStones: number
+  hotScore: number
+}
+
+export interface UnlockPlayerLoadoutResponseDto {
+  targetPlayerId: string
+  paidStones: number
+  targetReceivedStones: number
+  unlockedUntilUnixSeconds: number
 }

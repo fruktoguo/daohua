@@ -42,7 +42,7 @@
       "spellAttack": 15,
       "accuracy": 10,
       "spellDamageBonusPoints": 5,
-      "skillBonusPoints": 5
+      "skillBonusPoints": 2.5
     },
     "level": 1
   },
@@ -59,7 +59,7 @@
       "manapointRegen": 2,
       "healingBonusPoints": 50,
       "spellDamageBonusPoints": 5,
-      "skillBonusPoints": 5
+      "skillBonusPoints": 2.5
     },
     "level": 1
   },
@@ -109,7 +109,7 @@
       "spellAttack": 18,
       "accuracy": 12,
       "spellDamageBonusPoints": 6,
-      "skillBonusPoints": 6
+      "skillBonusPoints": 3
     },
     "level": 9
   },
@@ -127,7 +127,7 @@
       "manapointRegen": 2.5,
       "healingBonusPoints": 60,
       "spellDamageBonusPoints": 6,
-      "skillBonusPoints": 6
+      "skillBonusPoints": 3
     },
     "level": 9
   },
@@ -180,7 +180,7 @@
       "spellAttack": 24,
       "accuracy": 16,
       "spellDamageBonusPoints": 15,
-      "skillBonusPoints": 15
+      "skillBonusPoints": 7.5
     },
     "level": 18
   },
@@ -199,7 +199,7 @@
       "manapointRegen": 3,
       "healingBonusPoints": 75,
       "spellDamageBonusPoints": 15,
-      "skillBonusPoints": 15
+      "skillBonusPoints": 7.5
     },
     "level": 18
   },
@@ -238,12 +238,35 @@
       "spellAttack": 29,
       "accuracy": 19,
       "spellDamageBonusPoints": 20,
-      "skillBonusPoints": 20,
+      "skillBonusPoints": 10,
       "cooldownReductionPoints": 15
     },
     "enhanceProtectionItems": [
       "item.demon-core"
     ],
     "level": 24
+  },
+  {
+    "id": "equipment.wuyin-spirit-sword",
+    "name": "雾隐青冥剑",
+    "description": "沉潭剑魄铸青冥，一剑霜寒破九重。\n融雾梦剑冢千载凝魄石重炼的古道灵剑，剑气凛冽如霜，会心一击锋芒无匹。",
+    "slot": "weapon",
+    "tier": 3,
+    "quality": 3,
+    "baseStatRatios": {
+      "physicalAttack": 0.3,
+      "spellAttack": 0.08
+    },
+    "flatStats": {
+      "physicalAttack": 34,
+      "accuracy": 22,
+      "criticalChance": 10,
+      "physicalDamageBonusPoints": 22,
+      "criticalDamageBonusPoints": 15
+    },
+    "enhanceProtectionItems": [
+      "item.wumeng-sword-soul"
+    ],
+    "level": 30
   }
 ]

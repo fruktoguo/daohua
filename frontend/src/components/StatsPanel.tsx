@@ -6,6 +6,7 @@ import { useT } from '../i18n'
 import { ItemReference } from './ItemDisplay'
 import { ReportBlock } from './reportSections'
 import { ReportBriefSection } from './ReportBriefSection'
+import { StagedLootSection } from './StagedLootSection'
 
 export type StatsViewMode = 'brief' | 'detailed'
 
@@ -17,7 +18,7 @@ export type StatsViewMode = 'brief' | 'detailed'
  *    - 简要：基于已流逝时长换算为平均每日灵石收益估值、战斗频次/轮次效率、每小时修为与战斗经验速率；
  *    - 详细：保留既有行动账本结构（遭遇/击杀/死亡/斗法/物品得失/修为底蕴六维经验明细）；
  * 2. 队伍协同：队伍有其他队友时，顶栏支持在「本人」与「队友」间自由切换查看各自行动收益；
- * 3. 斗法暂存区：仅在查看本人且队首为勾选斗法的战斗行动时保留展示。
+ * 3. 斗法暂存区：查看本人时只要 duel.stagedItems 非空即持续展示（不受队首是否仍勾选斗法限制）。
  */
 export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const t = useT()
@@ -26,7 +27,6 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const duel = useGameStore(state => state.duel)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
-  const headEntry = useGameStore(state => state.queue.entries[0])
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
 
@@ -71,15 +71,8 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const current = isSelf ? duel.currentReport : (teammateEntry?.report ?? null)
   const isLoadingTeammate = !isSelf && Boolean(teammateEntry?.loading && !teammateEntry.report)
 
-  // 暂存区仅在「查看本人」且「队首为勾选斗法的战斗行动」且存在暂存物品时展示
-  const pvpArmed = isSelf && Boolean(headEntry && headEntry.executionKind === 'combat-encounter' && headEntry.pvpEnabled)
-  const stagedTotals = new Map<string, number>()
-  if (isSelf) {
-    for (const item of duel.stagedItems) {
-      stagedTotals.set(item.itemId, (stagedTotals.get(item.itemId) ?? 0) + item.quantity)
-    }
-  }
-  const showStaged = pvpArmed && stagedTotals.size > 0
+  // 只要查看本人且存在待入袋暂存物品即持续展示，即使已关闭斗法或切去其他行动也不隐藏
+  const showStaged = isSelf && duel.stagedItems.length > 0
 
   const duelGained = (isSelf ? current?.duelItemsGained : null) ?? []
   const duelLost = (isSelf ? current?.duelItemsLost : null) ?? []
@@ -193,16 +186,7 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
           )}
           {isSelf && hasDuelSection && (
             <div className="battle-report-staged">
-              {showStaged && (
-                <div className="battle-report-staged-group">
-                  <span className="battle-report-staged-title">{t('combat.report.stagedTitle')}</span>
-                  <div className="battle-report-staged-list">
-                    {[...stagedTotals].map(([itemId, quantity]) => (
-                      <ItemReference amount={quantity} itemId={itemId} key={itemId} />
-                    ))}
-                  </div>
-                </div>
-              )}
+              {showStaged && <StagedLootSection variant="inline" />}
               {showDuelResults && (
                 <div className="battle-report-staged-group">
                   <div className="battle-report-item-columns">

@@ -44,12 +44,16 @@ public static class DuelScriptEngine
         var encounter = CombatEncounterState.Create("duel", seed,
             new CombatantTemplate(initiator.Stats, initiator.Skills),
             [new CombatantTemplate(defender.Stats, defender.Skills)]);
-        // 撮合推演期间挂接一份私有统计簿：同一条战斗结算管线顺路产出双方各自的
-        // 战斗单位统计，随剧本下发后只把本方一侧并入行动账本（对方队伍数据不入账）。
+        // 撮合推演期间挂接一份私有统计簿与紧凑行动录制器：
+        // 同一条战斗结算管线顺路产出双方各自的单位统计与斗法行动记录。
         var statsBook = new CombatUnitStatsBook();
         encounter.StatsBook = statsBook;
         statsBook.Register("player", "");
         statsBook.Register("enemy:0", "");
+        var recorder = new DuelActionRecorder(initiator, defender);
+        encounter.ActionRecorder = recorder;
+        RecordBattleStartTraits(recorder, encounter.Player);
+        RecordBattleStartTraits(recorder, encounter.Enemies[0]);
 
         if (initiator.ExternalBuffs is { Count: > 0 } initExternal)
         {
@@ -66,8 +70,8 @@ public static class DuelScriptEngine
         var defConsumables = BuildConsumableRuntime(defender, gameData);
         var hasConsumables = initConsumables is not null || defConsumables is not null;
 
-        if (initConsumables is not null) InjectActiveSustainedBuffs(encounter.Player, initConsumables, 0);
-        if (defConsumables is not null) InjectActiveSustainedBuffs(encounter.Enemies[0], defConsumables, 0);
+        if (initConsumables is not null) InjectActiveSustainedBuffs(encounter.Player, initConsumables, 0, recorder);
+        if (defConsumables is not null) InjectActiveSustainedBuffs(encounter.Enemies[0], defConsumables, 0, recorder);
 
         var events = new List<DuelScriptEvent>();
         var initiatorHp = initiator.Stats.MaxHitpoints;
@@ -121,13 +125,22 @@ public static class DuelScriptEngine
         }
 
         var outcome = encounter.Outcome == CombatOutcome.Running ? CombatOutcome.Draw : encounter.Outcome;
+        var defenderOutcome = outcome switch
+        {
+            CombatOutcome.PlayerWon => CombatOutcome.EnemyWon,
+            CombatOutcome.EnemyWon => CombatOutcome.PlayerWon,
+            var other => other
+        };
+        var duration = Math.Max(encounter.ElapsedSeconds, 1e-9);
         var initiatorStats = statsBook.Entries.Where(unit => unit.UnitKey == "player")
             .Select(ToDocument).ToArray();
         var defenderStats = statsBook.Entries.Where(unit => unit.UnitKey == "enemy:0")
             .Select(unit => ToDocument(unit) with { UnitKey = "player", Kind = CombatStatUnitKind.Self })
             .ToArray();
-        return new DuelScript(outcome, Math.Max(encounter.ElapsedSeconds, 1e-9), events,
-            initiator.StagedItems, defender.StagedItems, initiatorStats, defenderStats);
+        return new DuelScript(outcome, duration, events,
+            initiator.StagedItems, defender.StagedItems, initiatorStats, defenderStats,
+            recorder.BuildRecord(outcome, duration, viewerIsInitiator: true),
+            recorder.BuildRecord(defenderOutcome, duration, viewerIsInitiator: false));
     }
 
     private static DuelConsumableRuntime? BuildConsumableRuntime(DuelCombatant combatant, GameDataCatalog? gameData)
@@ -176,16 +189,48 @@ public static class DuelScriptEngine
         return runtime.SustainedSlots.Count > 0 || runtime.InstantSlots.Count > 0 ? runtime : null;
     }
 
-    private static void InjectActiveSustainedBuffs(CombatantState unit, DuelConsumableRuntime runtime, double elapsed)
+    private static void RecordBattleStartTraits(DuelActionRecorder recorder, CombatantState unit)
+    {
+        for (var i = 0; i < unit.Buffs.Count; i++)
+        {
+            var buff = unit.Buffs[i];
+            var traitId = buff.BuffId switch
+            {
+                CombatTraitRules.UnseenBuffId => CombatTraitRules.UnseenTraitId,
+                "buff.chujian" => CombatTraitRules.FirstSightTraitId,
+                "buff.yusuzebuda" => CombatTraitRules.HasteTraitId,
+                "buff.woyaodashige" => CombatTraitRules.OutnumberedTraitId,
+                "buff.dantiaowang" => CombatTraitRules.DuelKingTraitId,
+                _ => null
+            };
+            if (traitId is not null)
+                recorder.RecordBuff(unit, unit, buff.BuffId, buff.Stacks, DuelRecordActionKind.Trait, 0, traitId);
+        }
+    }
+
+    private static void InjectActiveSustainedBuffs(CombatantState unit, DuelConsumableRuntime runtime, double elapsed,
+        ICombatActionRecorder? recorder = null)
     {
         foreach (var slot in runtime.SustainedSlots)
         {
             if (slot.SustainedExpiresAtSeconds <= elapsed + 1e-9) continue;
-            InjectSustainedSlotBuffs(unit, slot, slot.SustainedExpiresAtSeconds);
+            var actionKind = string.Equals(slot.Item.SubCategory, AutoUseBar.Formation, StringComparison.Ordinal)
+                ? DuelRecordActionKind.Formation
+                : DuelRecordActionKind.Item;
+            recorder?.BeginAction(elapsed, unit, actionKind, slot.Item.Id.Value);
+            try
+            {
+                InjectSustainedSlotBuffs(unit, slot, slot.SustainedExpiresAtSeconds, recorder);
+            }
+            finally
+            {
+                recorder?.EndAction();
+            }
         }
     }
 
-    private static void InjectSustainedSlotBuffs(CombatantState unit, DuelSlotRuntime slot, double expiresAtSeconds)
+    private static void InjectSustainedSlotBuffs(CombatantState unit, DuelSlotRuntime slot, double expiresAtSeconds,
+        ICombatActionRecorder? recorder = null)
     {
         if (!slot.RawConsumable.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array)
             return;
@@ -195,6 +240,7 @@ public static class DuelScriptEngine
             var effects = BuffEffectParser.Parse(buff, 1.0);
             unit.SetBuff(new CombatBuffState(buffId, expiresAtSeconds, 1,
                 JsonRead.Text(buff, "name") ?? buffId, ResetOnWave: true, Effects: effects));
+            recorder?.RecordBuff(unit, unit, buffId, 1);
         }
     }
 
@@ -297,7 +343,18 @@ public static class DuelScriptEngine
 
                     runtime.Balances[itemId] = runtime.Balances.GetValueOrDefault(itemId) - 1d;
                     slot.SustainedExpiresAtSeconds = encounter.ElapsedSeconds + slot.Consumable.DurationSeconds;
-                    InjectSustainedSlotBuffs(caster, slot, slot.SustainedExpiresAtSeconds);
+                    var sustainedActionKind = string.Equals(slot.Item.SubCategory, AutoUseBar.Formation, StringComparison.Ordinal)
+                        ? DuelRecordActionKind.Formation
+                        : DuelRecordActionKind.Item;
+                    encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, caster, sustainedActionKind, itemId);
+                    try
+                    {
+                        InjectSustainedSlotBuffs(caster, slot, slot.SustainedExpiresAtSeconds, encounter.ActionRecorder);
+                    }
+                    finally
+                    {
+                        encounter.ActionRecorder?.EndAction();
+                    }
                     events.Add(new DuelScriptEvent(
                         encounter.ElapsedSeconds,
                         isInitiator,
@@ -334,11 +391,11 @@ public static class DuelScriptEngine
                         var manaCost = strike.ManaCostRatio * caster.Stats.MaxManapoints;
                         if (!opponent.IsAlive || caster.Manapoints < manaCost - 1e-9) continue;
                         var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, strike.Element);
+                        // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
                         var strikeStats = caster.Stats with
                         {
-                            AttackPower = (strike.ManaDamageRatio * caster.Stats.MaxManapoints
-                                + strike.SpellAttackRatio * caster.Stats.SpellAttack)
-                                * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
+                            AttackPower = strike.ManaDamageRatio * caster.Stats.MaxManapoints
+                                + strike.SpellAttackRatio * caster.Stats.SpellAttack,
                             DamageKind = CombatDamageKind.Spell,
                             Element = strikeElement
                         };
@@ -348,10 +405,29 @@ public static class DuelScriptEngine
                                 + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints)
                         };
                         var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, opponent);
+                        var wasOpponentAlive = opponent.IsAlive;
                         caster.Manapoints = Math.Max(0, caster.Manapoints - manaCost);
                         var settled = CombatDamageSettlement.Apply(encounter, caster, opponent, damage);
                         damage = settled.Damage;
-                        CombatTraitReactions.ApplyRanhun(caster, opponent, strikeElement, settled.Actual, encounter.ElapsedSeconds);
+                        if (encounter.ActionRecorder is { } strikeRecorder)
+                        {
+                            strikeRecorder.BeginAction(encounter.ElapsedSeconds, caster, DuelRecordActionKind.Item, itemId);
+                            try
+                            {
+                                strikeRecorder.RecordDamage(caster, opponent, DuelRecordEffectKind.Damage,
+                                    CombatDamageKind.Spell, strikeElement, DuelRecordHitMark.Hit,
+                                    damage, itemId, targetDowned: wasOpponentAlive && !opponent.IsAlive);
+                                CombatTraitReactions.ApplyRanhun(caster, opponent, strikeElement, settled.Actual, encounter.ElapsedSeconds, encounter);
+                            }
+                            finally
+                            {
+                                strikeRecorder.EndAction();
+                            }
+                        }
+                        else
+                        {
+                            CombatTraitReactions.ApplyRanhun(caster, opponent, strikeElement, settled.Actual, encounter.ElapsedSeconds);
+                        }
                         statsBook.RecordHit(caster.Id, opponent.Id, CombatDamageKind.Spell,
                             damage, Math.Max(0, strikeStats.AttackPower - damage));
 
@@ -393,22 +469,35 @@ public static class DuelScriptEngine
                     if (!hasBuffs && hpRestore == 0 && mpRestore == 0) continue;
 
                     var hpBefore = caster.Hitpoints;
+                    var mpBefore = caster.Manapoints;
                     caster.Hitpoints = Math.Min(caster.Stats.MaxHitpoints, caster.Hitpoints + hpRestore);
                     caster.Manapoints = Math.Min(caster.Stats.MaxManapoints, caster.Manapoints + mpRestore);
                     var healed = caster.Hitpoints - hpBefore;
+                    var mpRestored = caster.Manapoints - mpBefore;
                     if (healed > 0)
                         statsBook.RecordHealing(caster.Id, "", autoRegen: false, healed);
-                    if (hasBuffs)
+                    encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, caster, DuelRecordActionKind.Item, itemId);
+                    try
                     {
-                        foreach (var buff in buffsEl.EnumerateArray())
+                        if (healed > 0) encounter.ActionRecorder?.RecordHeal(caster, caster, DuelRecordEffectKind.Heal, healed, itemId);
+                        if (mpRestored > 0) encounter.ActionRecorder?.RecordMana(caster, caster, DuelRecordEffectKind.ManaRestore, mpRestored, itemId);
+                        if (hasBuffs)
                         {
-                            var buffId = buff.GetProperty("buffId").GetString()!;
-                            var duration = JsonRead.Number(buff, "durationSeconds");
-                            if (duration <= 0) continue;
-                            var effects = BuffEffectParser.Parse(buff, 1.0);
-                            caster.SetBuff(new CombatBuffState(buffId, encounter.ElapsedSeconds + duration, 1,
-                                JsonRead.Text(buff, "name") ?? buffId, ResetOnWave: true, Effects: effects));
+                            foreach (var buff in buffsEl.EnumerateArray())
+                            {
+                                var buffId = buff.GetProperty("buffId").GetString()!;
+                                var duration = JsonRead.Number(buff, "durationSeconds");
+                                if (duration <= 0) continue;
+                                var effects = BuffEffectParser.Parse(buff, 1.0);
+                                caster.SetBuff(new CombatBuffState(buffId, encounter.ElapsedSeconds + duration, 1,
+                                    JsonRead.Text(buff, "name") ?? buffId, ResetOnWave: true, Effects: effects));
+                                encounter.ActionRecorder?.RecordBuff(caster, caster, buffId, 1);
+                            }
                         }
+                    }
+                    finally
+                    {
+                        encounter.ActionRecorder?.EndAction();
                     }
 
                     runtime.Balances[itemId] = runtime.Balances.GetValueOrDefault(itemId) - 1d;

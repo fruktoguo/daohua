@@ -1,0 +1,182 @@
+[
+  {
+    "id": "dungeon.qingyun-secret-gorge",
+    "name": "追忆·青云古涧",
+    "description": "云巅草庐绝崖云海之下留存的上古灵涧残影，十重妖雾缭绕，关底百载伥虎携魔猿镇守灵晶古脉。",
+    "nodeId": "node.cloud-peak",
+    "tier": 1,
+    "baseLevel": 12,
+    "recommendedValuation": [1500, 3000, 6000, 12000, 24000, 48000, 95000, 190000, 380000, 750000, 1500000],
+    "waveRestSeconds": 5,
+    "waves": [
+      { "waveIndex": 1, "kind": "normal", "enemyIds": ["enemy.demonized-rabbit", "enemy.wood-spirit"] },
+      { "waveIndex": 2, "kind": "normal", "enemyIds": ["enemy.wood-spirit", "enemy.water-spirit", "enemy.fire-spirit"] },
+      { "waveIndex": 3, "kind": "elite", "enemyIds": ["enemy.armored-bear", "enemy.wood-spirit"] },
+      { "waveIndex": 4, "kind": "normal", "enemyIds": ["enemy.fire-spirit", "enemy.water-spirit", "enemy.demonized-rabbit"] },
+      { "waveIndex": 5, "kind": "normal", "enemyIds": ["enemy.fire-spirit", "enemy.fire-spirit", "enemy.wood-spirit"] },
+      { "waveIndex": 6, "kind": "elite", "enemyIds": ["enemy.demon-ape", "enemy.fire-spirit"] },
+      { "waveIndex": 7, "kind": "normal", "enemyIds": ["enemy.green-wolf", "enemy.water-spirit"] },
+      { "waveIndex": 8, "kind": "normal", "enemyIds": ["enemy.green-wolf", "enemy.fire-spirit", "enemy.wood-spirit"] },
+      { "waveIndex": 9, "kind": "elite", "enemyIds": ["enemy.demon-ape", "enemy.armored-bear"] },
+      { "waveIndex": 10, "kind": "boss", "enemyIds": ["enemy.chang-tiger", "enemy.demon-ape"] }
+    ],
+    "baseRewards": {
+      "experience": 6000,
+      "spiritStones": 300
+    },
+    "clearLootTable": [
+      {
+        "itemId": "item.qingyun-secret-crystal",
+        "kind": "guaranteed",
+        "minQuantity": 2,
+        "maxQuantity": 3,
+        "dropChance": 1.0,
+        "minDifficulty": 0
+      },
+      {
+        "itemId": "equipment.changhu-pendant",
+        "kind": "rare",
+        "minQuantity": 1,
+        "maxQuantity": 1,
+        "dropChance": 0.02,
+        "minDifficulty": 3
+      }
+    ],
+    "affixes": []
+  },
+  {
+    "id": "dungeon.trail-boundary-rift",
+    "name": "追忆·古道断界",
+    "description": "断界古关石门之后定格的幽暗峡隙旧景，妖狼潮汐与铁甲岩獠层层扼守，撼地金背猿在古道尽头裂土咆哮。",
+    "nodeId": "node.boundary-pass",
+    "tier": 1,
+    "baseLevel": 16,
+    "recommendedValuation": [4000, 8000, 16000, 32000, 64000, 128000, 250000, 500000, 1000000, 2000000, 4000000],
+    "waveRestSeconds": 5,
+    "waves": [
+      { "waveIndex": 1, "kind": "normal", "enemyIds": ["enemy.green-wolf", "enemy.green-wolf"] },
+      { "waveIndex": 2, "kind": "normal", "enemyIds": ["enemy.green-wolf", "enemy.tide-spirit"] },
+      { "waveIndex": 3, "kind": "elite", "enemyIds": ["enemy.iron-boar", "enemy.green-wolf"] },
+      { "waveIndex": 4, "kind": "normal", "enemyIds": ["enemy.tide-spirit", "enemy.tide-spirit", "enemy.green-wolf"] },
+      { "waveIndex": 5, "kind": "normal", "enemyIds": ["enemy.rift-wolf", "enemy.green-wolf", "enemy.tide-spirit"] },
+      { "waveIndex": 6, "kind": "elite", "enemyIds": ["enemy.iron-boar", "enemy.tide-spirit", "enemy.green-wolf"] },
+      { "waveIndex": 7, "kind": "normal", "enemyIds": ["enemy.rift-wolf", "enemy.rift-wolf"] },
+      { "waveIndex": 8, "kind": "normal", "enemyIds": ["enemy.rift-wolf", "enemy.tide-spirit", "enemy.tide-spirit"] },
+      { "waveIndex": 9, "kind": "elite", "enemyIds": ["enemy.iron-boar", "enemy.iron-boar"] },
+      { "waveIndex": 10, "kind": "boss", "enemyIds": ["enemy.golden-ape-boss", "enemy.iron-boar"] }
+    ],
+    "baseRewards": {
+      "experience": 14000,
+      "spiritStones": 600
+    },
+    "clearLootTable": [
+      {
+        "itemId": "item.boundary-spirit-shard",
+        "kind": "guaranteed",
+        "minQuantity": 2,
+        "maxQuantity": 3,
+        "dropChance": 1.0,
+        "minDifficulty": 0
+      },
+      {
+        "itemId": "equipment.golden-ape-cloak",
+        "kind": "rare",
+        "minQuantity": 1,
+        "maxQuantity": 1,
+        "dropChance": 0.02,
+        "minDifficulty": 3
+      }
+    ],
+    "affixes": []
+  },
+  {
+    "id": "dungeon.starfall-ancient-ruin",
+    "name": "追忆·星陨古墟",
+    "description": "坠星天坑核心星火灼穿地脉留下的古墟往昔，尸煞邪修与坠魔祭司簇拥天外坠星兽镇压星核奇珍。",
+    "nodeId": "node.meteor-crater",
+    "tier": 2,
+    "baseLevel": 24,
+    "recommendedValuation": [15000, 30000, 60000, 120000, 240000, 480000, 950000, 1900000, 3800000, 7500000, 15000000],
+    "waveRestSeconds": 5,
+    "waves": [
+      { "waveIndex": 1, "kind": "normal", "enemyIds": ["enemy.rift-wolf", "enemy.star-flame-crow"] },
+      { "waveIndex": 2, "kind": "normal", "enemyIds": ["enemy.star-flame-crow", "enemy.star-flame-crow", "enemy.rift-wolf"] },
+      { "waveIndex": 3, "kind": "elite", "enemyIds": ["enemy.blade-corpse", "enemy.rift-wolf"] },
+      { "waveIndex": 4, "kind": "normal", "enemyIds": ["enemy.plunder-cultivator", "enemy.star-flame-crow"] },
+      { "waveIndex": 5, "kind": "normal", "enemyIds": ["enemy.plunder-cultivator", "enemy.plunder-cultivator", "enemy.rift-wolf"] },
+      { "waveIndex": 6, "kind": "elite", "enemyIds": ["enemy.fallen-devil-priest", "enemy.star-flame-crow"] },
+      { "waveIndex": 7, "kind": "normal", "enemyIds": ["enemy.plunder-cultivator", "enemy.star-flame-crow", "enemy.star-flame-crow"] },
+      { "waveIndex": 8, "kind": "normal", "enemyIds": ["enemy.plunder-cultivator", "enemy.plunder-cultivator", "enemy.star-flame-crow"] },
+      { "waveIndex": 9, "kind": "elite", "enemyIds": ["enemy.blade-corpse", "enemy.fallen-devil-priest"] },
+      { "waveIndex": 10, "kind": "boss", "enemyIds": ["enemy.falling-star-beast", "enemy.fallen-devil-priest"] }
+    ],
+    "baseRewards": {
+      "experience": 42000,
+      "spiritStones": 1500
+    },
+    "clearLootTable": [
+      {
+        "itemId": "item.starfall-astral-core",
+        "kind": "guaranteed",
+        "minQuantity": 2,
+        "maxQuantity": 3,
+        "dropChance": 1.0,
+        "minDifficulty": 0
+      },
+      {
+        "itemId": "equipment.starfall-crown",
+        "kind": "rare",
+        "minQuantity": 1,
+        "maxQuantity": 1,
+        "dropChance": 0.02,
+        "minDifficulty": 3
+      }
+    ],
+    "affixes": []
+  },
+  {
+    "id": "dungeon.wumeng-sword-tomb",
+    "name": "追忆·雾梦剑冢",
+    "description": "沉溺于剑冢沉潭底部的上古剑修遗冢旧忆，瘴雾锁水、寒鳄鬼车纵横十重剑阵，雾隐剑魄在渊底静候问剑之人。",
+    "nodeId": "node.sword-abyss",
+    "tier": 3,
+    "baseLevel": 30,
+    "recommendedValuation": [40000, 80000, 160000, 320000, 640000, 1280000, 2500000, 5000000, 10000000, 20000000, 40000000],
+    "waveRestSeconds": 5,
+    "waves": [
+      { "waveIndex": 1, "kind": "normal", "enemyIds": ["enemy.marsh-water-puppet", "enemy.venom-flame-toad"] },
+      { "waveIndex": 2, "kind": "normal", "enemyIds": ["enemy.marsh-water-puppet", "enemy.venom-flame-toad", "enemy.crimson-thorn-lizard"] },
+      { "waveIndex": 3, "kind": "elite", "enemyIds": ["enemy.abyss-black-croc", "enemy.marsh-water-puppet"] },
+      { "waveIndex": 4, "kind": "normal", "enemyIds": ["enemy.venom-flame-toad", "enemy.crimson-thorn-lizard", "enemy.crimson-thorn-lizard"] },
+      { "waveIndex": 5, "kind": "normal", "enemyIds": ["enemy.marsh-water-puppet", "enemy.crimson-thorn-lizard", "enemy.venom-flame-toad"] },
+      { "waveIndex": 6, "kind": "elite", "enemyIds": ["enemy.nine-head-guiche", "enemy.venom-flame-toad"] },
+      { "waveIndex": 7, "kind": "normal", "enemyIds": ["enemy.crimson-thorn-lizard", "enemy.crimson-thorn-lizard", "enemy.venom-flame-toad"] },
+      { "waveIndex": 8, "kind": "normal", "enemyIds": ["enemy.marsh-water-puppet", "enemy.crimson-thorn-lizard", "enemy.crimson-thorn-lizard"] },
+      { "waveIndex": 9, "kind": "elite", "enemyIds": ["enemy.abyss-black-croc", "enemy.nine-head-guiche"] },
+      { "waveIndex": 10, "kind": "boss", "enemyIds": ["enemy.mist-sword-wraith", "enemy.nine-head-guiche"] }
+    ],
+    "baseRewards": {
+      "experience": 110000,
+      "spiritStones": 3200
+    },
+    "clearLootTable": [
+      {
+        "itemId": "item.wumeng-sword-soul",
+        "kind": "guaranteed",
+        "minQuantity": 2,
+        "maxQuantity": 3,
+        "dropChance": 1.0,
+        "minDifficulty": 0
+      },
+      {
+        "itemId": "equipment.wuyin-spirit-sword",
+        "kind": "rare",
+        "minQuantity": 1,
+        "maxQuantity": 1,
+        "dropChance": 0.02,
+        "minDifficulty": 3
+      }
+    ],
+    "affixes": []
+  }
+]

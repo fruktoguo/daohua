@@ -16,6 +16,49 @@ namespace DaoHua.Ecs.Systems;
 internal static class CombatActionRules
 {
     private const long DropQuantityChannelSalt = unchecked((long)0x9E3779B97F4A7C15UL);
+    private const long DungeonMemberSeedSalt = unchecked((long)0x517CC1B727220A95UL);
+    private const long DungeonClearLootSalt = unchecked((long)0xA0761D6478BD642FUL);
+    private const long DungeonRareRollSalt = unchecked((long)0xE7037ED1A0B428DBUL);
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DungeonDefinition, CombatEncounterDefinition> s_dungeonEncounterCache = new();
+
+    /// <summary>
+    /// 统一解析战斗遭遇或秘境副本的遭遇壳定义：野外遭遇直查 CombatEncounters，秘境副本按只读缓存派生。
+    /// </summary>
+    public static CombatEncounterDefinition ResolveEncounter(GameDataCatalog gameData, string encounterId)
+    {
+        if (gameData.CombatEncounters.TryGetValue(encounterId, out var encounter))
+            return encounter;
+        if (gameData.Dungeons.TryGetValue(encounterId, out var dungeon))
+        {
+            return s_dungeonEncounterCache.GetValue(dungeon, static d => new CombatEncounterDefinition(
+                d.Id,
+                d.Name,
+                1,
+                1,
+                1,
+                DungeonDefinition.InitialSearchSeconds,
+                Math.Max(1.0, d.WaveRestSeconds),
+                DungeonDefinition.InBattleRespawnSeconds,
+                [],
+                [],
+                [],
+                d.TotalWaves,
+                3,
+                PartyWipeRule.Defeat));
+        }
+        throw new DomainException(DomainErrorCode.NotFound, $"远征状态引用的遭遇或秘境 {encounterId} 不存在。");
+    }
+
+    /// <summary>尝试解析远征对应的秘境副本定义。</summary>
+    public static bool TryGetDungeon(CombatExpeditionState? expedition, GameDataCatalog gameData, out DungeonDefinition dungeon)
+    {
+        if (expedition?.DungeonId is { Length: > 0 } dungeonId
+            && gameData.Dungeons.TryGetValue(dungeonId, out dungeon!))
+            return true;
+        dungeon = null!;
+        return false;
+    }
 
     /// <summary>只推进一次搜寻读条，不创建战斗实体；返回实际消耗的秒数。</summary>
     internal static double AdvanceCombatSearchPhase(IPlayerActionState action, double availableSeconds)
@@ -41,12 +84,27 @@ internal static class CombatActionRules
         if (action.Expedition is not null) return;
         // 行动账本在搜寻阶段即建立：搜寻期的自然回复/药品激活等战外结算也要计入本次行动统计。
         player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
+        if (definition.ExecutionKind == ActionExecutionKind.Dungeon
+            && gameData.Dungeons.TryGetValue(definition.Id.Value, out var dungeon))
+        {
+            var dungeonEncounter = ResolveEncounter(gameData, dungeon.Id);
+            var diff = DungeonDifficultyRules.Clamp(action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty);
+            action.Expedition = CreateSearchState(player, action, dungeonEncounter, CombatExpeditionPhase.InitialSearch, gameData) with
+            {
+                DungeonId = dungeon.Id,
+                DungeonTotalWaves = dungeon.TotalWaves,
+                DungeonEnergyCharged = false,
+                IsPinned = true,
+                OriginNodeId = dungeon.NodeId
+            };
+            mutations.AddEvent(new SimulationEvent(at, "combat.search.started",
+                $"准备挑战追忆副本：{dungeon.Name}（{DungeonDifficultyRules.DisplayName(diff)}）。", definition.Id));
+            return;
+        }
         if (action.Participation?.Spec is { } spec)
         {
             // 行动参与会话：遭遇与首波种子由共享剧本钉死，不走节点池与完成轮次派生（总纲 §21.13）。
-            var pinned = gameData.CombatEncounters.TryGetValue(spec.EncounterId, out var found)
-                ? found
-                : throw new DomainException(DomainErrorCode.NotFound, $"参与会话遭遇 {spec.EncounterId} 不存在。");
+            var pinned = ResolveEncounter(gameData, spec.EncounterId);
             action.Expedition = CreateSearchState(player, action, pinned, CombatExpeditionPhase.InitialSearch, gameData);
             mutations.AddEvent(new SimulationEvent(at, "combat.search.started", $"参与搜寻：{pinned.Name}。", definition.Id));
             return;
@@ -134,11 +192,11 @@ internal static class CombatActionRules
                 from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds), initialization);
             foreach (var entry in initialization.Events) (events ??= new()).Add(entry);
             expedition = action.Expedition!;
-            encounter = gameData.CombatEncounters[expedition.EncounterId];
+            encounter = ResolveEncounter(gameData, expedition.EncounterId);
         }
-        else if (!gameData.CombatEncounters.TryGetValue(expedition.EncounterId, out encounter!))
+        else
         {
-            throw new DomainException(DomainErrorCode.NotFound, $"远征状态引用的遭遇 {expedition.EncounterId} 不存在。");
+            encounter = ResolveEncounter(gameData, expedition.EncounterId);
         }
 
         if (!expedition.IsValid)
@@ -225,9 +283,9 @@ internal static class CombatActionRules
             if (updated.PhaseElapsedSeconds + 1e-9 < updated.PhaseDurationSeconds) return null;
 
             var seed = updated.Seed;
-            // 斗法入场判定：勾选斗法且不在失败冷却中时，每次进入战斗先判定遭遇计数。
+            // 斗法入场判定：勾选斗法且不在失败冷却中时，每次进入战斗先判定遭遇计数（秘境副本全程禁用斗法干扰）。
             var duelSettings = gameData.Duel;
-            if (action.Intent.PvpEnabled)
+            if (action.Intent.PvpEnabled && updated.DungeonId is null)
             {
                 var entryAtUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
                 if (player.Duel.CooldownUntilUnixSeconds <= entryAtUnix)
@@ -467,16 +525,43 @@ internal static class CombatActionRules
             selfIndex, spec, waveEnemies, gameData, downedEvents, ref downedCursor, double.MaxValue,
             ref waveNames, ref events);
         if (combatResult.Outcome == CombatOutcome.Running) return;
+        var isDungeon = TryGetDungeon(updatedBattle, gameData, out var dungeon);
+        var dungeonDifficulty = isDungeon ? DungeonDifficultyRules.Clamp(spec?.Difficulty ?? action.Intent.Difficulty) : 0;
+        var finishAtUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         // 战斗终局：会话随终局文档替换自然失效，提前释放避免下一波误命中守卫。
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
         {
-            // 团灭即败（defeat 分支）：计入生平败走，拆场进入复活点读条，波次重置回第 1 波。
+            // 团灭即败（defeat 分支 / 秘境全员团灭）：计入生平败走。
             // 原地复活遭遇的阵亡不经此分支——引擎保持 Running 直至起身续战。
             player.Progression.TotalDefeats += 1;
             player.MarkDirty(PlayerSectionKind.Progression);
-            player.RecordStats(action.Id,
-                from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
-                new PlayerStatsDelta { Deaths = 1 });
+            player.RecordStats(action.Id, finishAtUnix, new PlayerStatsDelta { Deaths = 1 });
+            if (isDungeon)
+            {
+                // 追忆副本全员团灭即败（总纲 §30.4.2）：开局已扣体力不返还，直接终止本次与连刷（不再原地复活复刷）。
+                if (player.Resources.Hitpoints <= 0)
+                {
+                    player.Resources.Hitpoints = 1;
+                    player.MarkDirty(PlayerSectionKind.Combat);
+                }
+                AddCombatEvent(ref events, from, target, remainingSeconds, "dungeon.failed",
+                    $"追忆副本挑战失败：{dungeon.Name}（{DungeonDifficultyRules.DisplayName(dungeonDifficulty)}，第 {updatedBattle.WaveNumber}/{dungeon.TotalWaves} 波），体力不予返还。",
+                    definition.Id);
+                if (spec is null)
+                {
+                    action.RemainingRepeats = 0;
+                    player.FinishActionRound(action.Id, loopable: false, finishAtUnix);
+                }
+                else
+                {
+                    action.Expedition = updatedBattle with
+                    {
+                        PlayerHitpoints = Math.Max(1, player.Resources.Hitpoints),
+                        PlayerRespawnAtSeconds = null
+                    };
+                }
+                return;
+            }
             // 组队散场保留全员倒地镜像供复活读条展示；读条完成时统一重置满状态。
             // 致死一击事件随复活相位保留：倒地跳字/受击反馈与终局结算同属一次补算步进，
             // 丢弃后客户端从 combat→respawn 的快照里永远看不到最后一击。
@@ -502,11 +587,127 @@ internal static class CombatActionRules
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
         }
 
+        var killAtUnix = finishAtUnix;
+        var killSeed = updatedBattle.Seed;
+        if (isDungeon)
+        {
+            var isAssist = spec is not null && spec.Members[expedition.SelfIndex].AssistMode;
+            var maxPartyRealmLevel = spec is { Members.Count: > 0 } ? spec.Members.Max(m => m.RealmLevel) : player.Progression.RealmLevel;
+            var memberSeedOffset = unchecked(expedition.SelfIndex * DungeonMemberSeedSalt);
+            double dNormalKills = 0, dEliteKills = 0, dBossKills = 0;
+            foreach (var enemy in waveEnemies)
+            {
+                var monster = gameData.ResolveDungeonMonster(dungeon, enemy.EnemyId, dungeonDifficulty, maxPartyRealmLevel);
+                if (!isAssist)
+                {
+                    ApplyDungeonMonsterRewards(player, monster, killSeed ^ memberSeedOffset, killAtUnix, gameData,
+                        action.Id, ref deltas, spec, expedition.SelfIndex, dungeonDifficulty);
+                }
+                killSeed = DeterministicSequence.NextSeed(killSeed);
+                switch (monster.Rank)
+                {
+                    case CombatMonsterRank.Elite:
+                        player.Progression.EliteKills += 1;
+                        dEliteKills += 1;
+                        break;
+                    case CombatMonsterRank.Boss:
+                        player.Progression.BossKills += 1;
+                        dBossKills += 1;
+                        break;
+                    default:
+                        player.Progression.NormalKills += 1;
+                        dNormalKills += 1;
+                        break;
+                }
+                if (!player.Progression.DefeatedMonsterIds.Contains(enemy.EnemyId))
+                    player.Progression.DefeatedMonsterIds.Add(enemy.EnemyId);
+            }
+
+            var isFinalWave = updatedBattle.WaveNumber >= dungeon.TotalWaves;
+            player.RecordStats(action.Id, killAtUnix, new PlayerStatsDelta
+            {
+                Cycles = isFinalWave ? 1 : 0,
+                NormalKills = dNormalKills,
+                EliteKills = dEliteKills,
+                BossKills = dBossKills
+            });
+            player.MarkDirty(PlayerSectionKind.Loadout);
+            player.MarkDirty(PlayerSectionKind.Progression);
+            player.MarkDirty(PlayerSectionKind.Combat);
+            player.MarkDirty(PlayerSectionKind.ActionQueue);
+            waveNames ??= FormatWaveMonsterNames(waveEnemies, gameData);
+
+            var remainingSelfOnDungeonWave = spec is not null && !battleState.Player.IsAlive && double.IsFinite(battleState.PlayerRespawnAtSeconds)
+                ? Math.Max(0, battleState.PlayerRespawnAtSeconds - battleState.ElapsedSeconds) : (double?)null;
+
+            if (!isFinalWave)
+            {
+                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won",
+                    $"击破追忆副本第 {updatedBattle.WaveNumber}/{dungeon.TotalWaves} 波：{waveNames}。", definition.Id);
+                action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
+                    gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1,
+                    allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
+                {
+                    DungeonId = dungeon.Id,
+                    DungeonTotalWaves = dungeon.TotalWaves,
+                    DungeonEnergyCharged = true,
+                    RecentEvents = updatedBattle.RecentEvents,
+                    PlayerRespawnAtSeconds = remainingSelfOnDungeonWave
+                };
+                return;
+            }
+
+            // 第 10 波关底通关：非助战付费成员额外领取追忆副本通关修为、灵石与通关独占特殊材料/专属装备。
+            if (!isAssist)
+            {
+                ApplyDungeonClearRewards(player, dungeon, dungeonDifficulty, maxPartyRealmLevel,
+                    killSeed ^ memberSeedOffset ^ DungeonClearLootSalt, killAtUnix, gameData,
+                    action.Id, ref deltas, spec, expedition.SelfIndex);
+            }
+            completedActions += 1;
+            completedRepeats += 1;
+            PlayerActionQueueRules.RecordCompletedRound(action);
+            player.Progression.CompletedActions += 1;
+            AddCombatEvent(ref events, from, target, remainingSeconds, "dungeon.cleared",
+                $"追忆副本通关：{dungeon.Name}（{DungeonDifficultyRules.DisplayName(dungeonDifficulty)}）！", definition.Id);
+
+            if (spec is null)
+            {
+                if (action.RemainingRepeats == 0)
+                {
+                    player.FinishActionRound(action.Id, loopable: false, killAtUnix);
+                    return;
+                }
+                var nextEnergy = DungeonEnergyRules.Compute(player.Progression.TiliValue,
+                    player.Progression.TiliUpdatedAtUnixSeconds, killAtUnix);
+                var nextCost = DungeonDifficultyRules.EnergyCost(dungeonDifficulty);
+                if (nextEnergy.Current < nextCost)
+                {
+                    AddCombatEvent(ref events, from, target, remainingSeconds, "dungeon.energy_insufficient",
+                        $"体力不足（当前 {nextEnergy.Current}/{nextCost}），已自动结束连续挑战 {dungeon.Name}。", definition.Id);
+                    action.RemainingRepeats = 0;
+                    player.FinishActionRound(action.Id, loopable: false, killAtUnix);
+                    return;
+                }
+            }
+
+            // 开启下一把连刷（重置至第 1 波且未扣费，下把开局时实扣体力；组队由会话引擎二次裁决把数与全队体力）。
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch,
+                gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1,
+                allies: spec is not null ? CarryAlliesToSearch(battleState) : null) with
+            {
+                DungeonId = dungeon.Id,
+                DungeonTotalWaves = dungeon.TotalWaves,
+                DungeonEnergyCharged = false,
+                RecentEvents = updatedBattle.RecentEvents,
+                PlayerRespawnAtSeconds = remainingSelfOnDungeonWave
+            };
+            return;
+        }
+
 
         // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
         var pvpEnabled = action.Intent.PvpEnabled;
-        var killAtUnix = from.AddSecondsExact((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
-        var killSeed = updatedBattle.Seed;
         var difficulty = spec?.Difficulty ?? action.Intent.Difficulty;
         foreach (var enemy in waveEnemies)
         {
@@ -673,15 +874,25 @@ internal static class CombatActionRules
     {
         var expedition = action.Expedition!;
         var waveEnemies = expedition.Enemies!;
-        // 快照恢复按恢复时点的建筑投影重解析削弱（与玩家面板「随输入漂移、越界钳制」口径一致）。
-        var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var isDungeon = TryGetDungeon(expedition, gameData, out var dungeon);
+        // 快照恢复按恢复时点的建筑投影重解析削弱（与玩家面板「随输入漂移、越界钳制」口径一致）；追忆副本独立双轴缩放不吃封魔阵削弱。
+        var weaken = isDungeon ? 0 : player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         var difficulty = action.Participation?.Spec?.Difficulty ?? action.Intent.Difficulty;
+        var restoreMaxRealmLevel = action.Participation?.Spec is { Members.Count: > 0 } restoreSpec
+            ? restoreSpec.Members.Max(m => m.RealmLevel)
+            : player.Progression.RealmLevel;
         var templates = waveEnemies.Select(enemy =>
         {
-            var monster = gameData.CombatMonsters[enemy.EnemyId];
-            var scaledStats = CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty);
-            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(scaledStats, weaken), monster.Skills, monster.Id, monster.Rank);
+            var monster = isDungeon
+                ? gameData.ResolveDungeonMonster(dungeon, enemy.EnemyId, difficulty, restoreMaxRealmLevel)
+                : gameData.CombatMonsters[enemy.EnemyId];
+            var scaledStats = isDungeon
+                ? DungeonDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty)
+                : NodeBuildingRules.WeakenMonsterStats(CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty), weaken);
+            return new CombatantTemplate(scaledStats, monster.Skills, monster.Id, monster.Rank);
         }).ToArray();
+        var respawnSeconds = isDungeon ? DungeonDefinition.InBattleRespawnSeconds : InBattleRespawnSeconds(encounter);
+        var wipeEndsBattle = isDungeon;
         var selfSnapshot = expedition.PlayerState ?? new CombatantSnapshot(
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
             expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat);
@@ -721,7 +932,8 @@ internal static class CombatActionRules
                 expedition.BattleElapsedSeconds,
                 expedition.Outcome,
                 SumAllyAttackCounts(allySnapshots) + SumEnemyAttackCounts(waveEnemies),
-                InBattleRespawnSeconds(encounter));
+                respawnSeconds,
+                wipeEndsBattle);
             for (var i = 0; i < spec.Members.Count; i++)
             {
                 var memberBuffs = spec.Members[i].ExternalBuffs;
@@ -744,8 +956,9 @@ internal static class CombatActionRules
                 expedition.BattleElapsedSeconds,
                 expedition.Outcome,
                 expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
-                InBattleRespawnSeconds(encounter),
-                expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
+                respawnSeconds,
+                expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity,
+                wipeEndsBattle);
             // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
             battleState.Player.ExternalBuffStacks = buffId
                 => ActionExecutionRules.SumUnmergedActiveBuffStacks(battleState.Player, player.Buffs.Active, buffId);
@@ -803,12 +1016,14 @@ internal static class CombatActionRules
         if (waveNumber < 1)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗波次无效。");
 
-        // 首波使用遭遇固定搜寻读条；波间搜寻按寻敌速度点数除数缩短（行动速度通道与水灵根加成）。
-        // 参与会话寻敌速度取共享剧本定格的全体在场成员算术平均值（组队协同普惠），单人直接取自身寻敌速度。
+        // 首波使用遭遇固定搜寻读条；波间搜寻按寻敌速度点数除数缩短（秘境副本波间休整采用配表固定时长）。
+        var isDungeon = gameData.Dungeons.TryGetValue(encounter.Id, out var dungeon);
         var searchSpeedPoints = spec?.SearchSpeedPoints ?? player.ResolveAttributes(gameData).SearchSpeedPoints;
-        var duration = phase == CombatExpeditionPhase.InitialSearch
-            ? encounter.SearchSeconds
-            : encounter.RespawnSeconds * PercentValue.Multiplier(searchSpeedPoints, PercentCurveMode.NonLinear);
+        var duration = isDungeon
+            ? (phase == CombatExpeditionPhase.InitialSearch ? DungeonDefinition.InitialSearchSeconds : dungeon!.WaveRestSeconds)
+            : (phase == CombatExpeditionPhase.InitialSearch
+                ? encounter.SearchSeconds
+                : encounter.RespawnSeconds * PercentValue.Multiplier(searchSpeedPoints, PercentCurveMode.NonLinear));
         if (!double.IsFinite(duration) || duration <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻时长无效。");
         var selfIndex = spec?.SelfIndexOf(player.PlayerId) ?? 0;
@@ -828,11 +1043,13 @@ internal static class CombatActionRules
             waveNumber,
             null)
         {
-            OriginNodeId = spec?.NodeId ?? player.World.NodeId,
-            // 组队远征钉死（会话剧本供给）+ 本机成员下标 + 盟友镜像。
-            IsPinned = spec is not null,
+            OriginNodeId = isDungeon ? dungeon!.NodeId : spec?.NodeId ?? player.World.NodeId,
+            // 秘境与组队远征钉死（不走节点池重锚）+ 本机成员下标 + 盟友镜像。
+            IsPinned = isDungeon || spec is not null,
             SelfIndex = selfIndex,
-            Allies = spec is null || spec.Members.Count == 1 ? null : allies ?? BuildAllyCarry(spec, selfIndex)
+            Allies = spec is null || spec.Members.Count == 1 ? null : allies ?? BuildAllyCarry(spec, selfIndex),
+            DungeonId = isDungeon ? dungeon!.Id : null,
+            DungeonTotalWaves = isDungeon ? dungeon!.TotalWaves : null
         };
     }
 
@@ -878,18 +1095,68 @@ internal static class CombatActionRules
                 && completedSearch.PhaseElapsedSeconds + 1e-9 < completedSearch.PhaseDurationSeconds))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗搜寻尚未完成，不能进入战斗。");
         var spec = action.Participation?.Spec;
-        var partySize = spec?.Members.Count ?? 1;
-        var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters,
-            completedSearch.Seed, completedSearch.WaveNumber, partySize);
-        // 节点封魔阵类削弱：怪物模板按当前节点建筑投影折减气血上限与双攻双防（单人取本机投影，会话取经 spec 冻结注入）。
-        var weaken = player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
+        var isDungeon = TryGetDungeon(completedSearch, gameData, out var dungeon);
         var difficulty = spec?.Difficulty ?? action.Intent.Difficulty;
+        Dictionary<AssetKey, double>? deltas = null;
+        SimulationEventTail? events = null;
+
+        // 秘境单人开局实扣体力（总纲 §30.2.2）：每把第 1 波入场前立即实扣，不足则直接结束行动不空转；失败/撤退不返还。
+        // 组队秘境由 ActionParticipationSessionEngine 在全队准备边界统一实扣并已将 DungeonEnergyCharged 置 true。
+        if (isDungeon && spec is null && !completedSearch.DungeonEnergyCharged)
+        {
+            var dungeonDiff = DungeonDifficultyRules.Clamp(difficulty);
+            var energyCost = DungeonDifficultyRules.EnergyCost(dungeonDiff);
+            var entryUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
+            if (!DungeonEnergyRules.TryConsume(player.Progression.TiliValue,
+                    player.Progression.TiliUpdatedAtUnixSeconds, energyCost, entryUnix,
+                    out var nextTili, out var nextTiliAt))
+            {
+                var currentEnergy = DungeonEnergyRules.Compute(player.Progression.TiliValue,
+                    player.Progression.TiliUpdatedAtUnixSeconds, entryUnix).Current;
+                AddCombatEventAt(ref events, entryAt, "dungeon.energy_insufficient",
+                    $"体力不足（当前 {currentEnergy}/{energyCost}），无法进入 {dungeon.Name}（{DungeonDifficultyRules.DisplayName(dungeonDiff)}）。",
+                    definition.Id);
+                action.RemainingRepeats = 0;
+                player.FinishActionRound(action.Id, loopable: false, entryUnix);
+                return new CombatEntryPreparation(null, completedSearch,
+                    deltas ?? new Dictionary<AssetKey, double>(), events?.View ?? [], true);
+            }
+            player.Progression.TiliValue = nextTili;
+            player.Progression.TiliUpdatedAtUnixSeconds = nextTiliAt;
+            player.MarkDirty(PlayerSectionKind.Progression);
+            completedSearch = completedSearch with { DungeonEnergyCharged = true };
+            AddCombatEventAt(ref events, entryAt, "dungeon.started",
+                $"消耗 {energyCost} 点体力，踏入 {dungeon.Name}（{DungeonDifficultyRules.DisplayName(dungeonDiff)}）！",
+                definition.Id);
+        }
+
+        var partySize = spec?.Members.Count ?? 1;
+        IReadOnlyList<CombatMonsterDefinition> wave;
+        if (isDungeon)
+        {
+            var maxPartyRealmLevel = spec is { Members.Count: > 0 } ? spec.Members.Max(m => m.RealmLevel) : player.Progression.RealmLevel;
+            var waveDef = dungeon.GetWave(completedSearch.WaveNumber);
+            var resolvedWave = new CombatMonsterDefinition[waveDef.EnemyIds.Count];
+            for (var i = 0; i < waveDef.EnemyIds.Count; i++)
+                resolvedWave[i] = gameData.ResolveDungeonMonster(dungeon, waveDef.EnemyIds[i], difficulty, maxPartyRealmLevel);
+            wave = resolvedWave;
+        }
+        else
+        {
+            wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters,
+                completedSearch.Seed, completedSearch.WaveNumber, partySize);
+        }
+        // 节点封魔阵类削弱：仅野外遭遇生效；秘境强度严格由「副本基础配表 × 难度双轴倍率」唯一决定。
+        var weaken = isDungeon ? 0 : player.World.EffectiveNodeBuildingEffects.MonsterWeakenRatio;
         var enemyTemplates = wave.Select(monster =>
         {
-            var scaledStats = CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty);
-            return new CombatantTemplate(NodeBuildingRules.WeakenMonsterStats(scaledStats, weaken), monster.Skills, monster.Id, monster.Rank);
+            var scaledStats = isDungeon
+                ? DungeonDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty)
+                : NodeBuildingRules.WeakenMonsterStats(CombatDifficultyRules.ScaleMonsterStats(monster.Stats, difficulty), weaken);
+            return new CombatantTemplate(scaledStats, monster.Skills, monster.Id, monster.Rank);
         }).ToArray();
-        var respawnSeconds = InBattleRespawnSeconds(encounter);
+        var respawnSeconds = isDungeon ? DungeonDefinition.InBattleRespawnSeconds : InBattleRespawnSeconds(encounter);
+        var wipeEndsBattle = isDungeon;
         CombatEncounterState battle;
         if (spec is not null)
         {
@@ -900,7 +1167,7 @@ internal static class CombatActionRules
             for (var i = 0; i < spec.Members.Count; i++)
                 allyTemplates[i] = new CombatantTemplate(spec.Members[i].Stats, spec.Members[i].Skills);
             battle = CombatEncounterState.CreateAllied(encounter.Id, completedSearch.Seed,
-                allyTemplates, selfIndex, enemyTemplates, respawnSeconds);
+                allyTemplates, selfIndex, enemyTemplates, respawnSeconds, wipeEndsBattle);
             var carried = completedSearch.Allies;
             for (var i = 0; i < spec.Members.Count; i++)
             {
@@ -1000,7 +1267,8 @@ internal static class CombatActionRules
                 new CombatantTemplate(player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
                     SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities, player.Loadout.AbilityTriggers)),
                 enemyTemplates,
-                respawnSeconds);
+                respawnSeconds,
+                wipeEndsBattle);
             battle.Player.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
             battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
             var entryUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
@@ -1013,8 +1281,6 @@ internal static class CombatActionRules
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
         AttachCombatStats(player, action, battle, spec, gameData);
 
-        Dictionary<AssetKey, double>? deltas = null;
-        SimulationEventTail? events = null;
         var waveNames = string.Join("、", wave.Select(monster => monster.Name));
         if (battle.Player.Hitpoints <= 0 && spec is null)
         {
@@ -1077,7 +1343,11 @@ internal static class CombatActionRules
         action.ProgressSeconds = 0;
         action.Expedition = combatState;
         player.RecordStats(action.Id, atUnix, new PlayerStatsDelta { Encounters = 1 });
-        AddCombatEventAt(ref events, entryAt, "combat.started", $"遭遇妖兽：{waveNames}。", definition.Id);
+        AddCombatEventAt(ref events, entryAt, "combat.started",
+            isDungeon
+                ? $"追忆第 {completedSearch.WaveNumber}/{dungeon.TotalWaves} 波：遭遇 {waveNames}。"
+                : $"遭遇妖兽：{waveNames}。",
+            definition.Id);
         return new CombatEntryPreparation(battle, combatState,
             deltas ?? new Dictionary<AssetKey, double>(), events?.View ?? [], false);
     }
@@ -1275,6 +1545,8 @@ internal static class CombatActionRules
         var nowUnix = endUnix;
         var duelSettings = gameData.Duel;
         player.Duel.ActiveDuelId = null;
+        if (!playback.Forfeited || playback.ViewerOutcome == CombatOutcome.PlayerWon)
+            ActionReportBook.RecordDuelBattle(player, action.Id, playback, nowUnix, playback.Forfeited ? playbackTo : null);
         IReadOnlyList<CombatEvent>? recentTail = tailCombatEvents is { Count: > 0 } ? tailCombatEvents : null;
         switch (playback.ViewerOutcome)
         {
@@ -1662,6 +1934,182 @@ internal static class CombatActionRules
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 秘境单波怪物独立奖励结算（总纲 §30.2.2 / §30.5.2）：
+    /// 每名非助战付费成员独立获取 100% 完整怪物经验（乘 Total(d) 与通用野外组队 MWI 等级差惩罚）与独立掷骰的常规掉落，
+    /// 不按队伍人数平分，也不与其他队员争抢归属；绝不进入斗法暂存区。
+    /// </summary>
+    private static void ApplyDungeonMonsterRewards(
+        IPlayerResourceContext player,
+        CombatMonsterDefinition monster,
+        long seed,
+        double killAtUnixSeconds,
+        GameDataCatalog gameData,
+        Guid actionInstanceId,
+        ref Dictionary<AssetKey, double>? deltas,
+        ActionParticipationSpec? spec,
+        int selfIndex,
+        int difficulty)
+    {
+        var attributes = player.ResolveAttributes(gameData);
+        var totalMult = DungeonDifficultyRules.TotalRewardMultiplier(difficulty);
+        var levelMalus = spec is not null ? spec.LevelMalusFor(selfIndex) : 0;
+        if (monster.Experience > 0)
+        {
+            var experience = monster.Experience * totalMult * (1.0 - levelMalus);
+            CreditDungeonExperience(player, attributes, experience, killAtUnixSeconds, gameData, actionInstanceId);
+        }
+
+        var dropBonus = Math.Max(0, 1 + (spec is not null ? spec.Members[selfIndex].DropBonusPoints : attributes.DropBonusPoints) / 100d);
+        var rareRateMult = DungeonDifficultyRules.RareDropRateMultiplier(difficulty);
+        foreach (var drop in monster.DropTable)
+        {
+            if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
+            var roll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+            var quantityRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
+            seed = DeterministicSequence.NextSeed(seed);
+
+            if (drop.DropChance >= 1.0 - 1e-9)
+            {
+                var baseQty = Math.Clamp(Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity + 1) * quantityRoll),
+                    drop.MinQuantity, drop.MaxQuantity);
+                var scaled = baseQty * totalMult;
+                var floorQty = Math.Floor(scaled);
+                var frac = scaled - floorQty;
+                var extraRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DungeonRareRollSalt)) % 1_000_000UL) / 1_000_000d;
+                var quantity = floorQty + (extraRoll < frac ? 1.0 : 0.0);
+                if (quantity <= 0) continue;
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), drop.ItemId, quantity);
+                player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
+            }
+            else
+            {
+                var effectiveChance = Math.Min(1.0, drop.DropChance * rareRateMult * dropBonus);
+                if (roll > effectiveChance) continue;
+                var quantity = Math.Clamp(Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity + 1) * quantityRoll),
+                    drop.MinQuantity, drop.MaxQuantity);
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), drop.ItemId, quantity);
+                player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
+            }
+        }
+    }
+
+    /// <summary>
+    /// 追忆副本第 10 波通关独占奖励结算（总纲 §30.5.1）：
+    /// 发放通关修为（现世按目标基准等级抬升后乘 Total(d) 与通用 MWI 等级差惩罚）、通关灵石（乘 Total(d)，不受等级差折减），
+    /// 以及 clearLootTable 中的通关独占特殊材料与低概率专属装备成品（掉率严格仅按难度等阶增减）。
+    /// </summary>
+    private static void ApplyDungeonClearRewards(
+        IPlayerResourceContext player,
+        DungeonDefinition dungeon,
+        int difficulty,
+        int maxPartyRealmLevel,
+        long seed,
+        double clearAtUnixSeconds,
+        GameDataCatalog gameData,
+        Guid actionInstanceId,
+        ref Dictionary<AssetKey, double>? deltas,
+        ActionParticipationSpec? spec,
+        int selfIndex)
+    {
+        var attributes = player.ResolveAttributes(gameData);
+        var totalMult = DungeonDifficultyRules.TotalRewardMultiplier(difficulty);
+        var levelMalus = spec is not null ? spec.LevelMalusFor(selfIndex) : 0;
+        var baseRewards = gameData.ResolveDungeonClearRewards(dungeon, difficulty, maxPartyRealmLevel);
+
+        if (baseRewards.Experience > 0)
+        {
+            var clearExp = baseRewards.Experience * totalMult * (1.0 - levelMalus);
+            CreditDungeonExperience(player, attributes, clearExp, clearAtUnixSeconds, gameData, actionInstanceId);
+        }
+
+        if (baseRewards.SpiritStones > 0)
+        {
+            var stones = Math.Round(baseRewards.SpiritStones * totalMult);
+            if (stones > 0)
+            {
+                var stoneId = new ItemId("currency.spirit-stone");
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), stoneId, stones);
+                player.RecordStats(actionInstanceId, clearAtUnixSeconds, new PlayerStatsDelta { GainedItem = stoneId, GainedQuantity = stones });
+            }
+        }
+
+        var energyScale = DungeonDifficultyRules.EnergyCostScale(difficulty);
+        var rareRateMult = DungeonDifficultyRules.RareDropRateMultiplier(difficulty);
+        foreach (var entry in dungeon.ClearLootTable)
+        {
+            if (difficulty < entry.MinDifficulty || !entry.ItemId.IsValid) continue;
+            seed = DeterministicSequence.NextSeed(seed);
+
+            if (string.Equals(entry.Kind, "guaranteed", StringComparison.Ordinal) || entry.DropChance >= 1.0 - 1e-9)
+            {
+                var qtyRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
+                var baseQty = Math.Clamp(Math.Floor(entry.MinQuantity + (entry.MaxQuantity - entry.MinQuantity + 1) * qtyRoll),
+                    entry.MinQuantity, entry.MaxQuantity);
+                var scaled = baseQty * totalMult;
+                var floorQty = Math.Floor(scaled);
+                var frac = scaled - floorQty;
+                var fracRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DungeonRareRollSalt)) % 1_000_000UL) / 1_000_000d;
+                var finalQty = floorQty + (fracRoll < frac ? 1.0 : 0.0);
+                if (finalQty <= 0) continue;
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), entry.ItemId, finalQty);
+                player.RecordStats(actionInstanceId, clearAtUnixSeconds, new PlayerStatsDelta { GainedItem = entry.ItemId, GainedQuantity = finalQty });
+            }
+            else
+            {
+                // 耗体份额抽次 × 效率加成掉率：整数次必抽 + 小数份额按概率追加 1 抽，每抽单次概率封顶 100%。
+                var effectiveChance = Math.Min(1.0, entry.DropChance * rareRateMult);
+                var guaranteedRolls = (int)Math.Floor(energyScale);
+                var extraChance = energyScale - guaranteedRolls;
+                var extraRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DungeonRareRollSalt)) % 1_000_000UL) / 1_000_000d;
+                var totalRolls = guaranteedRolls + (extraRoll < extraChance ? 1 : 0);
+                double totalWon = 0;
+                for (var r = 0; r < totalRolls; r++)
+                {
+                    seed = DeterministicSequence.NextSeed(seed);
+                    var hitRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+                    if (hitRoll > effectiveChance) continue;
+                    var qtyRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
+                    var qty = Math.Clamp(Math.Floor(entry.MinQuantity + (entry.MaxQuantity - entry.MinQuantity + 1) * qtyRoll),
+                        entry.MinQuantity, entry.MaxQuantity);
+                    totalWon += qty;
+                }
+                if (totalWon <= 0) continue;
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), entry.ItemId, totalWon);
+                player.RecordStats(actionInstanceId, clearAtUnixSeconds, new PlayerStatsDelta { GainedItem = entry.ItemId, GainedQuantity = totalWon });
+            }
+        }
+    }
+
+    private static void CreditDungeonExperience(
+        IPlayerResourceContext player,
+        PlayerAttributes attributes,
+        double experience,
+        double atUnixSeconds,
+        GameDataCatalog gameData,
+        Guid actionInstanceId)
+    {
+        if (experience <= 0) return;
+        var cultivationBonus = attributes.CultivationExpBonusPoints + attributes.CombatExpBonusPoints;
+        var cultivationExp = cultivationBonus != 0
+            ? Math.Max(0, experience * (1 + cultivationBonus / 100d))
+            : experience;
+        var expCap = gameData.RealmProgression is null
+            ? double.PositiveInfinity
+            : HeavenGateRules.ResolveExpCapWithLinggen(player.Progression.RealmLevel,
+                player.Progression.HeavenGate.EffectiveValues, player.Progression.HeavenGate.Entered,
+                gameData.RealmProgression);
+        var creditedExp = player.Progression.CreditExperience(cultivationExp, expCap, combatExperience: experience);
+        player.RecordStats(actionInstanceId, atUnixSeconds, new PlayerStatsDelta
+        {
+            Experience = creditedExp,
+            Foundation = cultivationExp - creditedExp,
+            CombatExperience = experience,
+            CultivationExperience = cultivationExp
+        });
+        DistributeRootExp(player, experience, gameData, actionInstanceId, atUnixSeconds);
     }
 
     /// <summary>通用稀有掉落判定独立盐位。</summary>

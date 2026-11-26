@@ -10,6 +10,7 @@ import { InventoryItemCell } from './InventoryItemCell'
 import { EquipmentPanel } from './EquipmentPanel'
 import { AbilitiesPanel } from './AbilitiesPanel'
 import { PartyLoadoutLock } from './PartyLoadoutLock'
+import { StagedLootSection } from './StagedLootSection'
 
 /**
  * 储物袋（背包）物品网格展示面板：
@@ -83,6 +84,7 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '', loc
   }, [sortedGroups, equippedList, queueEntries, items, equipment])
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>
+      <StagedLootSection className="inventory-staged-loot" variant="card" />
       {groups.map(group => (
         <section className="inventory-group" key={group.key}>
           <div className="inventory-group-header">

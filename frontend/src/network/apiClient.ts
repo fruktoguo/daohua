@@ -1,10 +1,13 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, DungeonDefinition, ItemDefinition, MapNodeBuilding, MarketBook, MarketItemStats, MarketOrder, MarketVariantSummary, PlayerDuelRecordsResponseDto, ShopState, TriggerBuffOption, TriggerSpec, WorldMapDefinition } from '../game/types'
 import type { SimulatorEnvironmentDto, SimulatorProfileDto } from '../game/simulator/simulatorTypes'
 import {
   createRequestId,
   type CheckinClaimResponseDto,
   type CheckinStatusDto,
+  type GuideListResponseDto,
+  type GuidePostDetailDto,
+  type GuidePostUpsertPayload,
   type LeaderboardIndexDto,
   type LeaderboardSnapshotDto,
   type MailClaimResponseDto,
@@ -13,6 +16,9 @@ import {
   type MailListResponseDto,
   type MailReadResponseDto,
   type RedeemCodeResponseDto,
+  type SetGuideLikeResponseDto,
+  type TipGuidePostResponseDto,
+  type UnlockPlayerLoadoutResponseDto,
 } from './protocol'
 import { getApiUrl, getHttpBase } from './apiUrl'
 
@@ -41,6 +47,7 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   actions: ActionDefinition[]
   maps: WorldMapDefinition[]
   encounters: CombatEncounterDefinition[]
+  dungeons: DungeonDefinition[]
   items: ItemDefinition[]
   equipment: CombatEquipmentDefinition[]
   abilities: CombatAbilityDefinition[]
@@ -55,6 +62,7 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
       requestJsonDetailed<ActionDefinition[]>('/api/v1/catalog/actions', init),
       requestJsonDetailed<WorldMapDefinition[]>('/api/v1/catalog/maps', init),
       requestJsonDetailed<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', init),
+      requestJsonDetailed<DungeonDefinition[]>('/api/v1/catalog/dungeons', init),
       requestJsonDetailed<ItemDefinition[]>('/api/v1/catalog/items', init),
       requestJsonDetailed<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', init),
       requestJsonDetailed<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', init),
@@ -78,15 +86,15 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
     if (!fingerprint) throw new Error('游戏配表版本不一致，请稍后重试。')
   }
   signal?.throwIfAborted()
-  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec]
+  const [actions, maps, encounters, dungeons, items, equipment, baseAttributes, abilities, buildings, buffs, triggerSpec]
     = batch.map(entry => entry.data) as [
-      ActionDefinition[], WorldMapDefinition[], CombatEncounterDefinition[], ItemDefinition[],
+      ActionDefinition[], WorldMapDefinition[], CombatEncounterDefinition[], DungeonDefinition[], ItemDefinition[],
       CombatEquipmentDefinition[], BaseAttributeAnchor[], CombatAbilityDefinition[],
       BuildingDefinition[], TriggerBuffOption[], TriggerSpec,
     ]
   registerBaseAttributeAnchors(baseAttributes)
   catalogFingerprint = fingerprint
-  return { actions, maps, encounters, items, equipment, abilities, buildings, buffs, triggerSpec }
+  return { actions, maps, encounters, dungeons, items, equipment, abilities, buildings, buffs, triggerSpec }
 }
 
 /**
@@ -95,6 +103,14 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
  */
 export async function fetchNodeBuildingIndex(signal?: AbortSignal): Promise<Record<string, MapNodeBuilding[]>> {
   return requestJson<Record<string, MapNodeBuilding[]>>('/api/v1/world/node-buildings', { signal })
+}
+
+/** 按需拉取当前行动内的 PVP 斗法紧凑记录（WS 快照已剥离明细以节省流量）。 */
+export async function fetchPlayerDuelRecords(
+  playerId: string,
+  signal?: AbortSignal,
+): Promise<PlayerDuelRecordsResponseDto> {
+  return requestJson<PlayerDuelRecordsResponseDto>(`/api/v1/players/${encodeURIComponent(playerId)}/duel-records`, { signal })
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {
@@ -549,4 +565,87 @@ export function redeemGiftCode(code: string): Promise<RedeemCodeResponseDto> {
     method: 'POST',
     body: JSON.stringify({ code }),
   })
+}
+
+/** 拉取道友攻略列表（支持热度 hot / 打赏 reward 排序及本人发布筛选） */
+export function fetchGuideList(
+  sort: 'hot' | 'reward',
+  mineOnly = false,
+  limit = 50,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<GuideListResponseDto> {
+  const query = new URLSearchParams({
+    sort,
+    mine: mineOnly ? 'true' : 'false',
+    limit: String(limit),
+    offset: String(offset),
+  })
+  return requestJson<GuideListResponseDto>(`/api/v1/guides?${query.toString()}`, { signal })
+}
+
+/** 拉取单篇攻略详情（已解锁时服务端自动去重记录阅读） */
+export function fetchGuideDetail(postId: string, signal?: AbortSignal): Promise<GuidePostDetailDto> {
+  return requestJson<GuidePostDetailDto>(`/api/v1/guides/${encodeURIComponent(postId)}`, { signal })
+}
+
+/** 发布新攻略（要求个人榜 Top 50 且当日未发帖） */
+export function createGuidePost(payload: GuidePostUpsertPayload): Promise<GuidePostDetailDto> {
+  return requestJson<GuidePostDetailDto>('/api/v1/guides', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 编辑本人已发布的攻略 */
+export function updateGuidePost(postId: string, payload: GuidePostUpsertPayload): Promise<GuidePostDetailDto> {
+  return requestJson<GuidePostDetailDto>(`/api/v1/guides/${encodeURIComponent(postId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 删除本人已发布的攻略（当日已耗额度不退回） */
+export function deleteGuidePost(postId: string): Promise<{ deleted: boolean; postId: string }> {
+  return requestJson<{ deleted: boolean; postId: string }>(`/api/v1/guides/${encodeURIComponent(postId)}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 点赞或取消点赞攻略 */
+export function setGuidePostLike(postId: string, liked: boolean): Promise<SetGuideLikeResponseDto> {
+  return requestJson<SetGuideLikeResponseDto>(`/api/v1/guides/${encodeURIComponent(postId)}/like`, {
+    method: 'POST',
+    body: JSON.stringify({ liked }),
+  })
+}
+
+/** 支付灵石永久解锁付费攻略正文 */
+export function unlockGuidePost(postId: string, expectedPrice: number): Promise<GuidePostDetailDto> {
+  return requestJson<GuidePostDetailDto>(`/api/v1/guides/${encodeURIComponent(postId)}/unlock`, {
+    method: 'POST',
+    body: JSON.stringify({ requestId: createRequestId(), expectedPrice }),
+  })
+}
+
+/** 向攻略打赏灵石 */
+export function tipGuidePost(postId: string, amount: number): Promise<TipGuidePostResponseDto> {
+  return requestJson<TipGuidePostResponseDto>(`/api/v1/guides/${encodeURIComponent(postId)}/tip`, {
+    method: 'POST',
+    body: JSON.stringify({ requestId: createRequestId(), amount }),
+  })
+}
+
+/** 支付灵石解锁查阅目标玩家的角色名片配装（维持至北京时间当日结束零点） */
+export function unlockPlayerCardLoadout(
+  targetPlayerId: string,
+  expectedPrice: number,
+): Promise<UnlockPlayerLoadoutResponseDto> {
+  return requestJson<UnlockPlayerLoadoutResponseDto>(
+    `/api/v1/players/${encodeURIComponent(targetPlayerId)}/unlock-loadout`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ requestId: createRequestId(), expectedPrice }),
+    },
+  )
 }

@@ -540,3 +540,91 @@
       VALUES (65, now()) ON CONFLICT (version) DO NOTHING;
   ```
 - 【离线脚本 / 人工步骤】：无。
+
+## v65 -> v66
+
+- **变更日期**：2026-11-24 20:12:00
+- **关联任务**：`TASK-20261124-02`（道友攻略板块与配装付费查阅系统）
+- **数据库版本**：`PostgresSchema.Version` 65 -> 66
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `45 -> 46`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0066_v65_to_v66.sql`（支持目标版本幂等重试）
+- **存量处理结论**：幂等创建 7 张 `social.*` 表并授权 `daohua_api`，推进三处玩家存档标签 `45 -> 46`，登记 `schema_version = 66`
+
+### 1. 变了什么
+- 【库结构/权限】在 `social` schema 下新增 7 张表及索引：`social.guide_posts`、`social.guide_daily_quotas`、`social.guide_post_views`、`social.guide_post_likes`、`social.guide_post_unlocks`、`social.guide_post_tips`、`social.loadout_inspect_grants`；在 `deploy/postgres-local-roles.sql` 与迁移脚本中将属主归于 `daohua_bootstrap` 并向 `daohua_api` 授予 `SELECT, INSERT, UPDATE, DELETE`；`PostgresRetentionWorker` 将 `'guide.reward'`、`'privacy.inspect'` 纳入 30 天白名单账本留存，并定期清理超期授权/每日额度/软删除帖子。
+- 【存档载荷】玩家八分段 `settings`（`PlayerSettingsState` / `SettingsDocument`）新增 `loadoutInspectPrice: double = 0`（非公开配装时的付费查阅价格，additive 可缺省解码为 `0` 即完全隐藏）。
+- 【配表/持久化语义】无配表 ID 删改。
+
+### 2. 是否需要处理存量数据
+- **仅需建表授权并推进存档标签**：旧 `v45` 存档载荷不含 `loadoutInspectPrice` 时缺省解码为 `0`，原本公开的角色维持公开，原本隐藏的角色维持完全隐藏，无需重写 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0066_v65_to_v66.sql` 要点】：
+  ```sql
+  -- 1) CREATE TABLE IF NOT EXISTS social.guide_posts / guide_daily_quotas / guide_post_views /
+  --    guide_post_likes / guide_post_unlocks / guide_post_tips / loadout_inspect_grants 及索引；
+  -- 2) ALTER TABLE OWNER TO daohua_bootstrap + GRANT SELECT, INSERT, UPDATE, DELETE TO daohua_api；
+  -- 3) 推进存档标签：
+  UPDATE game.player_state_heads SET schema_version = 46 WHERE schema_version = 45;
+  UPDATE game.player_state_sections SET schema_version = 46 WHERE schema_version = 45;
+  UPDATE platform.section_flush_queue SET schema_version = 46 WHERE schema_version = 45;
+  INSERT INTO platform.schema_version(version, applied_at)
+      VALUES (66, now()) ON CONFLICT (version) DO NOTHING;
+  ```
+- 【离线脚本 / 人工步骤】：无。
+
+
+## v66 -> v67
+
+- **变更日期**：2026-11-25 17:45:00
+- **关联任务**：`TASK-20261125-01`（追忆副本系统全栈实现）
+- **数据库版本**：`PostgresSchema.Version` 66 -> 67
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `46 -> 47`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0067_v66_to_v67.sql`（支持目标版本幂等重试）
+- **存量处理结论**：幂等升级 `social.parties`、`social.party_members`、`social.party_seekers` 约束与列，推进三处玩家存档标签 `46 -> 47`，登记 `schema_version = 67`
+
+### 1. 变了什么
+- 【库结构/权限】
+  - `social.parties`：`activity_kind` CHECK 新增 `'dungeon'`，`difficulty` CHECK 由 `0..5` 放宽为 `0..10`（虚境 3 档 + 现世 8 阶共 11 档），新增列 `dungeon_id varchar(128) NOT NULL DEFAULT ''` 与 `dungeon_repeat_count integer NOT NULL DEFAULT 1 CHECK (dungeon_repeat_count = -1 OR (dungeon_repeat_count >= 1 AND dungeon_repeat_count <= 99))`；
+  - `social.party_members`：新增列 `assist_mode boolean NOT NULL DEFAULT false`（追忆副本助战标记）；
+  - `social.party_seekers`：`activity_kind` CHECK 新增 `'dungeon'`。角色权限无变更（既有表授权自动覆盖新列）。
+- 【存档载荷】
+  - `progression`（`PlayerProgressionState`）新增 `tiliValue: int = 0`、`tiliUpdatedAtUnixSeconds: double = 0`（均为 additive 可缺省解码；旧存档解码得 `tiliUpdatedAtUnixSeconds = 0` 时，首次查询自动按首日初始额度 `240` 点激活）；
+  - `actionQueue`（`CombatExpeditionState`）新增 `dungeonId: string? = null`、`dungeonTotalWaves: int? = null`、`dungeonEnergyCharged: bool = false`（均为 additive 可缺省解码）。
+- 【配表/持久化语义】新增 `config/game-data/dungeons/dungeons.json`、4 种秘境专属特殊材料、4 件秘境专属装备与 4 条锻造配方，未删改任何既有配表 ID。
+
+### 2. 是否需要处理存量数据
+- **仅需升级表约束/加列并推进存档标签**：旧 `v46` 存档缺失体力锚点时按 `InitialEnergy = 240` 自动初始化，既有行动与队伍数据保持默认语义，无需重写存量 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0067_v66_to_v67.sql` 要点】：
+  - 动态移除旧 `social.parties` / `social.party_seekers` 的 `activity_kind`/`difficulty` CHECK 约束并重建新约束，幂等 `ADD COLUMN IF NOT EXISTS` 补齐 `dungeon_id`/`dungeon_repeat_count`/`assist_mode`；
+  - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `46 -> 47`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (67, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。
+
+
+## v67 -> v68
+
+- **变更日期**：2026-11-25 22:10:00
+- **关联任务**：`TASK-20261125-02`（战斗统计新增紧凑 PVP 斗法记录）
+- **数据库版本**：`PostgresSchema.Version` 67 -> 68
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `47 -> 48`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0068_v67_to_v68.sql`（支持目标版本幂等重试）
+- **存量处理结论**：无 DDL/权限变更，仅推进三处玩家存档标签 `47 -> 48` 并登记 `schema_version = 68`
+
+### 1. 变了什么
+- 【库结构/权限】无。
+- 【存档载荷】
+  - `duel`（`PlayerBattleReportDocument`）新增 `duelRecords: DuelBattleRecordDocument[]? = null`（当前行动内最近 20 场 PVP 斗法紧凑记录，additive 可缺省解码为 `null`）；
+  - `actionQueue`（`DuelPlaybackState`）新增 `viewerRecord: DuelBattleRecordDocument? = null`（进行中斗法视角紧凑记录，additive 可缺省解码为 `null`）。
+- 【配表/持久化语义】无。
+
+### 2. 是否需要处理存量数据
+- **仅需推进存档标签**：旧 `v47` 存档缺失 `duelRecords` / `viewerRecord` 时缺省解码为 `null`，无需重写存量 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0068_v67_to_v68.sql` 要点】：
+  - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `47 -> 48`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (68, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。

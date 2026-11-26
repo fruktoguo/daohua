@@ -554,6 +554,11 @@ public sealed class ParticipationAdapterIntegrationTests
             add => fixture.Runtime.WalletChanged += value;
             remove => fixture.Runtime.WalletChanged -= value;
         }
+        public event Func<Guid, string, string, IReadOnlyList<Guid>, ValueTask>? SessionNaturallyEnded
+        {
+            add => fixture.Runtime.SessionNaturallyEnded += value;
+            remove => fixture.Runtime.SessionNaturallyEnded -= value;
+        }
         public ValueTask SynchronizePresenceAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default) =>
             fixture.Runtime.SynchronizePresenceAsync(playerId, at, cancellationToken);
         public ValueTask<IAsyncDisposable> PrepareConnectionAsync(Guid playerId, DateTimeOffset at, CancellationToken cancellationToken = default) =>

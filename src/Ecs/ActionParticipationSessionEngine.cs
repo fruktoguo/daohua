@@ -21,6 +21,9 @@ public sealed class ActionParticipationSessionEngine
     private readonly GameDataCatalog _catalog;
     private readonly PlayerAggregate[] _members;
     private readonly SettlementCollector[] _collectors;
+    private readonly int[] _memberTiliValues;
+    private readonly double[] _memberTiliUpdatedAt;
+    private string? _naturalEndReason;
     private CombatEncounterState? _battle;
     private SessionConsumableSlot[]? _consumables;
     /// <summary>与 _consumables 平行的槽位唤醒掩码（TASK-20261112-15）：构建台账时按冻结条件编译。</summary>
@@ -43,6 +46,10 @@ public sealed class ActionParticipationSessionEngine
 
     /// <summary>实际战斗推进调用次数；用于诊断同场战斗是否被重复计算。</summary>
     public long CombatAdvanceCount { get; private set; }
+    /// <summary>会话因业务规则自然结束时的权威原因（如秘境通关、全员团灭、连刷体力不足）；未自然结束为 null。</summary>
+    public string? NaturalEndReason => _naturalEndReason;
+    /// <summary>会话是否已进入终局态。</summary>
+    public bool IsEnded => _endsAt is not null;
     /// <summary>消耗品判定调用次数（一次调用扫全部槽位）。</summary>
     public long ConsumableEvaluationCount { get; private set; }
     /// <summary>消耗品实际激活次数。</summary>
@@ -82,9 +89,13 @@ public sealed class ActionParticipationSessionEngine
         _offlineBatchBoundary = spec.StartedAtUnixSeconds;
         _members = new PlayerAggregate[spec.Members.Count];
         _collectors = new SettlementCollector[spec.Members.Count];
+        _memberTiliValues = new int[spec.Members.Count];
+        _memberTiliUpdatedAt = new double[spec.Members.Count];
         for (var i = 0; i < _members.Length; i++)
         {
             var frozen = spec.Members[i];
+            _memberTiliValues[i] = frozen.InitialTiliValue;
+            _memberTiliUpdatedAt[i] = frozen.InitialTiliUpdatedAtUnixSeconds;
             var id = new PlayerId(Guid.Parse(frozen.PlayerId));
             // 容器只持有会话冻结输入和结算工作态；此处账号标识不承担任何认证或持久化职责。
             var member = PlayerAggregate.Create(id, new AccountId(id.Value), frozen.DisplayName,
@@ -337,13 +348,24 @@ public sealed class ActionParticipationSessionEngine
         engine.Canonical.Resources.Manapoints = document.Expedition!.PlayerManapoints;
         for (var i = 0; i < engine._members.Length; i++)
             engine._members[i].Resources.RegenCarrySeconds = document.MemberRegenCarrySeconds[i];
+        if (document.MemberTiliValues is { Count: > 0 } tiliValues
+            && document.MemberTiliUpdatedAtUnixSeconds is { Count: > 0 } tiliTimes
+            && tiliValues.Count == engine._members.Length
+            && tiliTimes.Count == engine._members.Length)
+        {
+            for (var i = 0; i < engine._members.Length; i++)
+            {
+                engine._memberTiliValues[i] = tiliValues[i];
+                engine._memberTiliUpdatedAt[i] = tiliTimes[i];
+            }
+        }
         engine.Canonical.Combat.Skills = document.Skills;
         engine.Canonical.Combat.Buffs = document.Buffs ?? PlayerCombatBuffState.Empty;
         var stats = engine.Canonical.Duel.ReportFor(engine.Action.Id)!.CombatStats;
         foreach (var row in document.CombatStats) stats.Import(row);
         if (document.EndsAtUnixSeconds is null && document.Expedition.Phase == CombatExpeditionPhase.Combat)
             engine._battle = CombatActionRules.RestoreCombatBattle(engine.Canonical, engine.Action,
-                catalog.CombatEncounters[document.Expedition.EncounterId], catalog);
+                CombatActionRules.ResolveEncounter(catalog, document.Expedition.EncounterId), catalog);
         foreach (var collector in engine._collectors) collector.Reset();
         engine.SynchronizeViews();
         return engine;
@@ -461,7 +483,7 @@ public sealed class ActionParticipationSessionEngine
             var windowEnd = cursor.AddTicks(ticks);
             var remaining = (windowEnd - cursor).TotalSeconds;
             var transitions = 0;
-            while (remaining > 1e-9)
+            while (remaining > 1e-9 && _naturalEndReason is null)
             {
                 if (++transitions > SimulationEngine.MaxTransitionsPerAdvance)
                     throw new DomainException(DomainErrorCode.InvariantViolation, "队伍会话超过单窗口转换上限。");
@@ -469,6 +491,18 @@ public sealed class ActionParticipationSessionEngine
                     remaining = AdvanceBattle(cursor, windowEnd, remaining);
                 else
                     remaining = AdvancePreparation(cursor, windowEnd, remaining);
+            }
+            if (_naturalEndReason is not null)
+            {
+                var stoppedAt = windowEnd.AddSecondsExact(-Math.Max(0, remaining));
+                if (stoppedAt < cursor) stoppedAt = cursor;
+                cursor = stoppedAt;
+                _advancedAt = cursor;
+                FlushBattle();
+                SynchronizeViews();
+                ending = true;
+                target = cursor;
+                break;
             }
             cursor = windowEnd;
             _advancedAt = cursor;
@@ -547,7 +581,9 @@ public sealed class ActionParticipationSessionEngine
                 collector.Assets.Select(pair => new AssetDelta(member.PlayerId, pair.Key, pair.Value, "simulation")).ToArray(),
                 collector.Events.View.ToArray(), ProjectStats(canonicalStats, i), collector.Events.Dropped, _endsAt,
                 collector.StagedItems.Count > 0 ? collector.StagedItems.ToArray() : null,
-                _consumables?.Where(row => row.MemberIndex == i).ToArray());
+                _consumables?.Where(row => row.MemberIndex == i).ToArray(),
+                _spec.DungeonId is not null ? _memberTiliValues[i] : null,
+                _spec.DungeonId is not null ? _memberTiliUpdatedAt[i] : null);
             collector.Reset();
         }
         return results;
@@ -560,6 +596,22 @@ public sealed class ActionParticipationSessionEngine
         var expedition = Action.Expedition!;
         var preparationSeconds = Math.Min(remaining,
             Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds));
+        // 秘境组队每把第 1 波即将开打时，原子检验并实扣全部非助战付费成员体力；任一不足则平滑停止连刷。
+        if (_spec.DungeonId is { } dungeonId
+            && expedition.Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
+            && expedition.WaveNumber == 1
+            && !expedition.DungeonEnergyCharged
+            && expedition.PhaseElapsedSeconds + remaining + 1e-9 >= expedition.PhaseDurationSeconds)
+        {
+            var entryAt = from.AddSecondsExact((target - from).TotalSeconds - (remaining - preparationSeconds));
+            if (!TryChargeDungeonStartEnergy(dungeonId, entryAt))
+            {
+                AdvancePreparationResources(preparationSeconds);
+                SynchronizeViews();
+                return Math.Max(0, remaining - preparationSeconds);
+            }
+            Action.Expedition = Action.Expedition! with { DungeonEnergyCharged = true };
+        }
         AdvancePreparationResources(preparationSeconds);
         var step = CombatActionRules.AdvanceCombatPreparation(Canonical, Action,
             _catalog.Actions.Get(_spec.ActionId), _catalog, null, from, target, remaining, mutation);
@@ -710,11 +762,11 @@ public sealed class ActionParticipationSessionEngine
             var manaCost = s.ManaCostRatio * caster.Stats.MaxManapoints;
             if (target is null || caster.Manapoints < manaCost - 1e-9) return false;
             var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, s.Element);
+            // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）。
             var strikeStats = caster.Stats with
             {
-                AttackPower = (s.ManaDamageRatio * caster.Stats.MaxManapoints
-                    + s.SpellAttackRatio * caster.Stats.SpellAttack)
-                    * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear),
+                AttackPower = s.ManaDamageRatio * caster.Stats.MaxManapoints
+                    + s.SpellAttackRatio * caster.Stats.SpellAttack,
                 DamageKind = CombatDamageKind.Spell,
                 Element = strikeElement
             };
@@ -1114,9 +1166,10 @@ public sealed class ActionParticipationSessionEngine
     private double AdvanceBattle(DateTimeOffset from, DateTimeOffset target, double remaining)
     {
         var definition = _catalog.Actions.Get(_spec.ActionId);
-        var encounter = _catalog.CombatEncounters[Action.Expedition!.EncounterId];
+        var encounter = CombatActionRules.ResolveEncounter(_catalog, Action.Expedition!.EncounterId);
         _battle ??= CombatActionRules.RestoreCombatBattle(Canonical, Action, encounter, _catalog);
         var before = CombatActionRules.CaptureCombatState(_battle, Action.Expedition!);
+        var completedRepeatsBefore = Action.CompletedRepeats;
         // 事件驱动：每个自然边界结算落地后同刻复查消耗品（伤害/治疗/增益落地即时响应），
         // 回调只读推进上下文、判定写战内单位；派发次序与随机流与基线完全一致。
         CombatAdvanceResult result;
@@ -1158,10 +1211,88 @@ public sealed class ActionParticipationSessionEngine
             if (member.Resources.RegenCarrySeconds >= 5 - 1d / TimeSpan.TicksPerSecond)
                 member.Resources.RegenCarrySeconds = 0;
         }
-        if (_battle.Outcome != CombatOutcome.Running) _battle = null;
+        var outcome = _battle.Outcome;
+        if (outcome != CombatOutcome.Running) _battle = null;
+        if (_spec.DungeonId is { } dungeonId && outcome != CombatOutcome.Running)
+        {
+            var endAt = from.AddSecondsExact((target - from).TotalSeconds - next);
+            if (outcome != CombatOutcome.PlayerWon)
+            {
+                _naturalEndReason = "dungeon-wiped";
+            }
+            else if (Action.CompletedRepeats > completedRepeatsBefore)
+            {
+                if (_spec.DungeonRepeatCount > 0 && Action.CompletedRepeats >= _spec.DungeonRepeatCount)
+                {
+                    _naturalEndReason = "dungeon-completed";
+                }
+                else if (!HasSufficientEnergyForNextDungeonRun(dungeonId, endAt, out var shortMembers))
+                {
+                    var dungeon = _catalog.Dungeons[dungeonId];
+                    var cost = DungeonDifficultyRules.EnergyCost(_spec.Difficulty);
+                    var msg = shortMembers.Count > 0
+                        ? $"成员 {string.Join("、", shortMembers)} 体力不足（需 {cost} 点），已平滑结束连续挑战 {dungeon.Name}。"
+                        : $"队内已无足够体力的付费成员，已平滑结束连续挑战 {dungeon.Name}。";
+                    foreach (var collector in _collectors)
+                        collector.Events.Add(new SimulationEvent(endAt, "dungeon.energy_insufficient", msg, _spec.ActionId));
+                    _naturalEndReason = "dungeon-energy-insufficient";
+                }
+            }
+        }
         FlushBattle();
         SynchronizeViews();
         return next;
+    }
+
+    private bool TryChargeDungeonStartEnergy(string dungeonId, DateTimeOffset at)
+    {
+        var dungeon = _catalog.Dungeons[dungeonId];
+        var cost = DungeonDifficultyRules.EnergyCost(_spec.Difficulty);
+        var nowUnix = ToUnix(at);
+        if (!HasSufficientEnergyForNextDungeonRun(dungeonId, at, out var shortMembers))
+        {
+            var msg = shortMembers.Count > 0
+                ? $"成员 {string.Join("、", shortMembers)} 体力不足（需 {cost} 点），无法开启 {dungeon.Name}。"
+                : $"队内缺少付费成员，无法开启 {dungeon.Name}。";
+            foreach (var collector in _collectors)
+                collector.Events.Add(new SimulationEvent(at, "dungeon.energy_insufficient", msg, _spec.ActionId));
+            _naturalEndReason = "dungeon-energy-insufficient";
+            return false;
+        }
+        var diffName = DungeonDifficultyRules.DisplayName(_spec.Difficulty);
+        for (var i = 0; i < _members.Length; i++)
+        {
+            if (_spec.Members[i].AssistMode)
+            {
+                _collectors[i].Events.Add(new SimulationEvent(at, "dungeon.started",
+                    $"以助战身份踏入 {dungeon.Name}（{diffName}），不消耗体力且不获得收益。", _spec.ActionId));
+                continue;
+            }
+            if (!DungeonEnergyRules.TryConsume(_memberTiliValues[i], _memberTiliUpdatedAt[i], cost, nowUnix,
+                    out var nextVal, out var nextAt))
+                throw new DomainException(DomainErrorCode.InvariantViolation, "秘境开局校验通过但体力扣费失败。");
+            _memberTiliValues[i] = nextVal;
+            _memberTiliUpdatedAt[i] = nextAt;
+            _collectors[i].Events.Add(new SimulationEvent(at, "dungeon.started",
+                $"消耗 {cost} 点体力，踏入 {dungeon.Name}（{diffName}）！", _spec.ActionId));
+        }
+        return true;
+    }
+
+    private bool HasSufficientEnergyForNextDungeonRun(string dungeonId, DateTimeOffset at, out List<string> insufficientMembers)
+    {
+        insufficientMembers = [];
+        var cost = DungeonDifficultyRules.EnergyCost(_spec.Difficulty);
+        var nowUnix = ToUnix(at);
+        var paidCount = 0;
+        for (var i = 0; i < _members.Length; i++)
+        {
+            if (_spec.Members[i].AssistMode) continue;
+            paidCount++;
+            var current = DungeonEnergyRules.Compute(_memberTiliValues[i], _memberTiliUpdatedAt[i], nowUnix).Current;
+            if (current < cost) insufficientMembers.Add(_spec.Members[i].DisplayName);
+        }
+        return paidCount > 0 && insufficientMembers.Count == 0;
     }
 
     /// <summary>导出唯一可恢复状态；全部成员的血蓝/技能镜像位于同一远征态中。</summary>
@@ -1177,7 +1308,9 @@ public sealed class ActionParticipationSessionEngine
                 .ThenBy(pair => pair.Key.Asset.ItemId.Value, StringComparer.Ordinal)
                 .ThenBy(pair => pair.Key.Asset.Variant, StringComparer.Ordinal)
                 .Select(pair => new SessionConsumableBalance(pair.Key.MemberIndex, pair.Key.Asset.ItemId.Value,
-                    pair.Key.Asset.Variant, pair.Value)).ToArray());
+                    pair.Key.Asset.Variant, pair.Value)).ToArray(),
+            _spec.DungeonId is not null ? _memberTiliValues.ToArray() : null,
+            _spec.DungeonId is not null ? _memberTiliUpdatedAt.ToArray() : null);
     }
 
     /// <summary>读取成员展示投影，不推进时钟或产生结算。</summary>

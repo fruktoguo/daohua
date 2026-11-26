@@ -21,6 +21,7 @@ public static class CombatTriggerMath
         context.Attacker.Hitpoints += healing;
         // 气血汲取按攻击方归属计入「其他治疗」输出。
         context.Encounter.StatsBook?.RecordHealing(context.Attacker, autoRegen: false, healing);
+        context.Encounter.ActionRecorder?.RecordHeal(context.Attacker, context.Attacker, DuelRecordEffectKind.HpDrain, healing);
         context.Emit(new CombatEvent(context.AtSeconds, context.Attacker.Id, context.Attacker.Id,
             0, true, context.AttackStats.DamageKind, context.Attacker.Hitpoints)
         { AbilityId = context.AbilityId, Healing = healing });
@@ -36,6 +37,7 @@ public static class CombatTriggerMath
         context.Target.Manapoints -= drained;
         context.Attacker.Manapoints = Math.Min(context.Attacker.Stats.MaxManapoints,
             context.Attacker.Manapoints + drained);
+        context.Encounter.ActionRecorder?.RecordMana(context.Attacker, context.Target, DuelRecordEffectKind.ManaDrain, drained);
     }
 
     /// <summary>伤害反弹：受击方把实收伤害按比例弹回攻击方；衍生伤害直接落账并计入受击方威胁值。</summary>
@@ -45,11 +47,15 @@ public static class CombatTriggerMath
         if (points <= 0) return;
         var reflected = context.Damage * points / 100;
         if (reflected <= 0) return;
+        var wasAttackerAlive = context.Attacker.IsAlive;
         reflected = CombatDamageSettlement.Apply(context.Encounter, context.Target, context.Attacker, reflected).Damage;
         context.Target.Threat += reflected;
         // 反伤按受击方输出、攻击方实收入账；反弹伤害不再走减免链，减免记 0。
         context.Encounter.StatsBook?.RecordHit(context.Target, context.Attacker,
             context.AttackStats.DamageKind, reflected, 0);
+        context.Encounter.ActionRecorder?.RecordDamage(context.Target, context.Attacker, DuelRecordEffectKind.Reflect,
+            context.AttackStats.DamageKind, CombatElement.None, DuelRecordHitMark.Hit, reflected,
+            targetDowned: wasAttackerAlive && !context.Attacker.IsAlive);
         context.Emit(new CombatEvent(context.AtSeconds, context.Target.Id, context.Attacker.Id,
             reflected, true, context.AttackStats.DamageKind, context.Attacker.Hitpoints));
     }
@@ -106,12 +112,16 @@ public static class CombatTriggerMath
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
+                        var wasTargetAlive = context.Target.IsAlive;
                         var targetHpBefore = context.Target.Hitpoints;
                         damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
-                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds);
+                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds, encounter);
                         ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Spell, actualDamage, 0);
+                        encounter.ActionRecorder?.RecordDamage(ally, context.Target, DuelRecordEffectKind.FormationStrike,
+                            CombatDamageKind.Spell, strikeElement, DuelRecordHitMark.Hit, actualDamage,
+                            "item.tianlei-formation-disk", targetDowned: wasTargetAlive && !context.Target.IsAlive);
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
                             actualDamage, true, CombatDamageKind.Spell, context.Target.Hitpoints)
                         {
@@ -146,10 +156,11 @@ public static class CombatTriggerMath
                     var damage = Math.Max(0, DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, context.Target));
                     if (damage > 0)
                     {
+                        var wasTargetAlive = context.Target.IsAlive;
                         var targetHpBefore = context.Target.Hitpoints;
                         damage = CombatDamageSettlement.Apply(encounter, ally, context.Target, damage).Damage;
                         var actualDamage = targetHpBefore - context.Target.Hitpoints;
-                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds);
+                        CombatTraitReactions.ApplyRanhun(ally, context.Target, strikeElement, actualDamage, context.AtSeconds, encounter);
 
                         var heal = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, actualDamage * PercentValue.Multiplier(ally.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear));
                         if (heal > 0)
@@ -160,6 +171,11 @@ public static class CombatTriggerMath
 
                         ally.Threat += actualDamage;
                         encounter.StatsBook?.RecordHit(ally, context.Target, CombatDamageKind.Physical, actualDamage, 0);
+                        encounter.ActionRecorder?.RecordDamage(ally, context.Target, DuelRecordEffectKind.FormationStrike,
+                            CombatDamageKind.Physical, strikeElement, DuelRecordHitMark.Hit, actualDamage,
+                            "item.xuesha-formation-disk", targetDowned: wasTargetAlive && !context.Target.IsAlive);
+                        if (heal > 0)
+                            encounter.ActionRecorder?.RecordHeal(ally, ally, DuelRecordEffectKind.HpDrain, heal, "item.xuesha-formation-disk");
                         context.Emit(new CombatEvent(context.AtSeconds, ally.Id, context.Target.Id,
                             actualDamage, true, CombatDamageKind.Physical, context.Target.Hitpoints)
                         {

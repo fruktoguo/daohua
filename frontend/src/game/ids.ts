@@ -580,7 +580,7 @@ export function isActionUnlocked(
   realmLevel: number,
   techniqueLevel = 0,
 ): boolean {
-  if (action.type === 'combat' || action.executionKind === 'combat-encounter') return true
+  if (action.type === 'combat' || action.executionKind === 'combat-encounter' || action.executionKind === 'dungeon') return true
   if (actionLevel <= 1 || realmLevel >= actionLevel) return true
   if ((action.foundationCostRatio ?? 0) > 0) return false
   return Boolean(action.technique && techniqueLevel >= actionLevel)
@@ -1096,6 +1096,10 @@ export const EQUIPMENT_BASE_SELL_PRICES: Readonly<Record<string, number>> = {
   'equipment.songfeng-zither': 2188,
   'equipment.duanchen-blade': 122080,
   'equipment.demon-core-staff': 159480,
+  'equipment.changhu-pendant': 6600,
+  'equipment.golden-ape-cloak': 23400,
+  'equipment.starfall-crown': 97400,
+  'equipment.wuyin-spirit-sword': 194000,
 }
 
 /**
@@ -1432,6 +1436,15 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.mingsha-crown': { glyph: '冠', tone: 'cyan', rarity: 'mystic', level: 22, subCategory: 'head' },
   'equipment.fentian-greaves': { glyph: '裤', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'legs' },
   'equipment.demon-core-staff': { glyph: '武', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'weapon' },
+  // 秘境副本专属通关特殊材料与核心装备
+  'item.qingyun-secret-crystal': { glyph: '晶', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'exoticMaterial' },
+  'item.boundary-spirit-shard': { glyph: '晶', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'exoticMaterial' },
+  'item.starfall-astral-core': { glyph: '核', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'exoticMaterial' },
+  'item.wumeng-sword-soul': { glyph: '石', tone: 'cyan', rarity: 'mystic', level: 30, subCategory: 'exoticMaterial' },
+  'equipment.changhu-pendant': { glyph: '佩', tone: 'green', rarity: 'yellow', level: 12, subCategory: 'trinket' },
+  'equipment.golden-ape-cloak': { glyph: '甲', tone: 'green', rarity: 'yellow', level: 16, subCategory: 'armor' },
+  'equipment.starfall-crown': { glyph: '冠', tone: 'cyan', rarity: 'mystic', level: 24, subCategory: 'head' },
+  'equipment.wuyin-spirit-sword': { glyph: '武', tone: 'cyan', rarity: 'mystic', level: 30, subCategory: 'weapon' },
   // 一阶野外材料与秘籍（配表 items/manuals 全量对齐，防止未登记条目丢失图标与品类）
   'item.rock-fang': { glyph: '牙', tone: 'gray', rarity: 'mundane', level: 14, subCategory: 'exoticMaterial' },
   'item.water-spirit-core': { glyph: '水', tone: 'gray', rarity: 'mundane', level: 11, subCategory: 'exoticMaterial' },

@@ -117,6 +117,11 @@ public sealed partial class PlayerAggregate
         Resources.Hitpoints = settlement.Hitpoints;
         Resources.Manapoints = settlement.Manapoints;
         Resources.RegenCarrySeconds = settlement.RegenCarrySeconds;
+        if (settlement.TiliValue is { } tiliValue && settlement.TiliUpdatedAtUnixSeconds is { } tiliUpdatedAt)
+        {
+            Progression.TiliValue = Math.Clamp(tiliValue, 0, DungeonEnergyRules.MaxEnergy);
+            Progression.TiliUpdatedAtUnixSeconds = tiliUpdatedAt;
+        }
         Combat.Skills = settlement.Skills;
         Combat.Buffs = settlement.Buffs ?? PlayerCombatBuffState.Empty;
         if (settlement.ConsumableSlots is { } consumableSlots)
@@ -262,7 +267,9 @@ public sealed partial class PlayerAggregate
                 : Loadout.ConsumableTriggers.ToDictionary(
                     pair => pair.Key,
                     pair => pair.Value.Select(trigger => trigger.Clone()).ToArray(),
-                    StringComparer.Ordinal));
+                    StringComparer.Ordinal),
+            InitialTiliValue: Progression.TiliValue,
+            InitialTiliUpdatedAtUnixSeconds: Progression.TiliUpdatedAtUnixSeconds);
     }
 
     /// <summary>
@@ -395,6 +402,8 @@ public sealed partial record ActionParticipantSnapshot
             InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog),
             RespawnPolicy: state.Settings.RespawnPolicy,
             RespawnTargetPlayerId: state.Settings.RespawnTargetPlayerId?.ToString("D"),
-            ConsumableTriggers: loadout.ConsumableTriggers);
+            ConsumableTriggers: loadout.ConsumableTriggers,
+            InitialTiliValue: state.Progression.TiliValue,
+            InitialTiliUpdatedAtUnixSeconds: state.Progression.TiliUpdatedAtUnixSeconds);
     }
 }

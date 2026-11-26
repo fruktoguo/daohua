@@ -142,6 +142,8 @@ interface SocialStore {
    * 会话存续期间修改由服务端裁决散场重建。非队长/非讨伐/同值不派发，返回 false。
    */
   setPartyPvp: (pvpEnabled: boolean) => boolean
+  /** 切换本人秘境助战模式开关（party.assist 社交指令；免耗体力且无收益） */
+  setPartyAssist: (assistMode: boolean) => boolean
   /** 设置队伍斗地主底注；非队长、负数及非有限数不派发。 */
   setDouDiZhuStake: (stake: number) => boolean
   /** 切换本人独立的斗地主准备状态。 */
@@ -348,6 +350,13 @@ export const useSocialStore = create<SocialStore>((set, get) => ({
     if (party.activityKind !== 'combat') return false
     if (party.pvpEnabled === pvpEnabled) return false
     return gameClient.sendSocialAction('party.update', undefined, undefined, { party: { pvpEnabled } })
+  },
+  setPartyAssist: assistMode => {
+    const party = get().party
+    if (!party) return false
+    const self = party.members.find(member => member.playerId === gameClient.playerId)
+    if (self && Boolean(self.assistMode) === assistMode) return false
+    return gameClient.sendSocialAction('party.assist', undefined, undefined, { assistMode })
   },
   setDouDiZhuStake: stake => {
     const party = get().party

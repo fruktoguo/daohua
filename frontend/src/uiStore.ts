@@ -37,8 +37,8 @@ export type HelpJumpTarget =
 /** 图鉴顶级分类：材料 vs 制造 vs 建筑 vs 技能 vs 怪物 vs 特质 */
 export type CodexCategory = 'material' | 'crafting' | 'building' | 'ability' | 'monster' | 'trait'
 
-/** 同道页子选项卡：队伍、宗门与邀请。 */
-export type SocialSubTab = 'party' | 'zongmen' | 'invite'
+/** 同道页子选项卡：队伍、宗门、攻略与邀请。 */
+export type SocialSubTab = 'party' | 'zongmen' | 'guide' | 'invite'
 
 /** 队伍面板顶部页签：队伍管理与斗地主对弈。 */
 export type PartyGameSubTab = 'party' | 'doudizhu'

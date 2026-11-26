@@ -509,7 +509,7 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <param name="PvpEnabled">斗法开关：玩家同意参与 PVP 匹配，仅对战斗遭遇行动生效</param>
 /// <param name="TargetItemId">目标物品标识，可选；强化行动必填目标装备</param>
 /// <param name="AuxItemId">辅助物品标识，可选；强化行动用于指定护符等辅助消耗品</param>
-/// <param name="Difficulty">讨伐难度等级（0~5）：默认 0，T1~T5 为 1~5</param>
+/// <param name="Difficulty">讨伐/秘境难度等级：野外 0~5（默认 0，T1~T5 为 1~5），秘境 0~11（普通/困难/噩梦/现世/凡阶~帝阶）</param>
 /// <param name="Priority">优先插队开关：为 true 时将行动直接插到队首（Index 0），原队首行动挂起，后续队列完整保留</param>
 public sealed record ActionIntentRequest(
     string RequestId,
@@ -935,13 +935,15 @@ public static class PartyActivityKinds
     public const string Formation = "formation";
     /// <summary>强化</summary>
     public const string Enhancement = "enhancement";
+    /// <summary>秘境副本</summary>
+    public const string Dungeon = "dungeon";
 
     /// <summary>判定是否为受支持的目标类型。</summary>
     /// <param name="kind">目标类型标识。</param>
     /// <returns>受支持返回 true。</returns>
     public static bool IsSupported(string? kind) => kind is
         Any or Combat or Exploration or Cultivation or
-        Alchemy or Forging or Talisman or Formation or Enhancement;
+        Alchemy or Forging or Talisman or Formation or Enhancement or Dungeon;
 }
 
 /// <summary>社交指令动作标识常量。</summary>
@@ -985,6 +987,8 @@ public static class SocialActions
     public const string PartyUnready = "party.unready";
     /// <summary>调整开启槽位（队长；Party 载荷内 openSlots 必填，2~5 且不得低于当前人数）</summary>
     public const string PartySlots = "party.slots";
+    /// <summary>切换秘境助战模式（成员本人；AssistMode 必填；助战免耗体力且无收益）</summary>
+    public const string PartyAssist = "party.assist";
     /// <summary>队长设置斗地主底注。</summary>
     public const string DouDiZhuStake = "doudizhu.stake";
     /// <summary>成员本人切换斗地主准备状态。</summary>
@@ -1014,7 +1018,7 @@ public static class SocialActions
         PartyInvite or PartyAccept or PartyDecline or PartyLeave or
         PartyCreate or PartyUpdate or PartyDisband or PartyKick or PartyJoin or
         PartyMatchSet or PartyMatchClear or PartyShare or
-        PartyReady or PartyUnready or PartySlots or DouDiZhuStake or DouDiZhuReady or DouDiZhuUnready
+        PartyReady or PartyUnready or PartySlots or PartyAssist or DouDiZhuStake or DouDiZhuReady or DouDiZhuUnready
         or DouDiZhuStart or DouDiZhuBid or DouDiZhuPlay or DouDiZhuPass or DouDiZhuHost or DouDiZhuUnhost or DouDiZhuInteract;
 }
 
@@ -1027,7 +1031,10 @@ public static class SocialActions
 /// <param name="PvpEnabled">队伍斗法开关（总纲 §7.10.4）：整队作为一个匹配单位参与 PVP 撮合；
 /// 仅 activityKind='combat' 可为 true、仅队长经 <c>party.update</c> 修改，会话存续期间修改触发散场重建</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；仅 <c>party.slots</c> 消费，create/update/match.set 忽略</param>
-/// <param name="Difficulty">讨伐难度等级（0~5）</param>
+/// <param name="Difficulty">讨伐/秘境难度等级（野外 0~5，秘境 0~11）</param>
+/// <param name="DouDiZhuStake">斗地主底注</param>
+/// <param name="DungeonId">秘境配置 ID（仅 activityKind='dungeon' 有效）</param>
+/// <param name="DungeonRepeatCount">秘境连刷次数（-1 表示刷至付费成员体力耗尽，1~99 表示指定把数）</param>
 public sealed record PartyProfileDto(
     string? Name = null,
     string? ActivityKind = null,
@@ -1037,7 +1044,9 @@ public sealed record PartyProfileDto(
     bool? PvpEnabled = null,
     int? OpenSlots = null,
     int? Difficulty = null,
-    double? DouDiZhuStake = null);
+    double? DouDiZhuStake = null,
+    string? DungeonId = null,
+    int? DungeonRepeatCount = null);
 
 /// <summary>客户端社交指令请求。</summary>
 /// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
@@ -1047,6 +1056,7 @@ public sealed record PartyProfileDto(
 /// <param name="PartyId">目标队伍 ID；仅 <c>party.join</c> 使用</param>
 /// <param name="Channel">目标传音频道；仅 <c>party.share</c> 使用</param>
 /// <param name="Party">队伍档案补丁；<c>party.create</c>/<c>party.update</c>/<c>party.match.set</c>/<c>party.slots</c> 使用</param>
+/// <param name="AssistMode">秘境助战模式开关；仅 <c>party.assist</c> 使用</param>
 public sealed record SocialActionDto(
     string RequestId,
     string Action,
@@ -1059,7 +1069,8 @@ public sealed record SocialActionDto(
     long? GameVersion = null,
     string? BidAction = null,
     IReadOnlyList<int>? Cards = null,
-    string? Interaction = null);
+    string? Interaction = null,
+    bool? AssistMode = null);
 
 /// <summary>好友条目。</summary>
 /// <param name="PlayerId">好友玩家 ID</param>
@@ -1091,7 +1102,21 @@ public sealed record ValuationBreakdownDto(
 /// <param name="Ready">组队讨伐就绪标记（总纲 §21.13）</param>
 /// <param name="RealmLevel">成员境界等级</param>
 /// <param name="LevelMalus">成员受到的队伍等级惩罚比率（0~0.9）</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation, bool Ready, int RealmLevel = 1, double LevelMalus = 0, string Avatar = "player", ValuationBreakdownDto? ValuationBreakdown = null, bool DouDiZhuReady = false, double SpiritStones = 0);
+public sealed record PartyMemberDto(
+    string PlayerId,
+    string DisplayName,
+    bool Online,
+    double Valuation,
+    bool Ready,
+    int RealmLevel = 1,
+    double LevelMalus = 0,
+    string Avatar = "player",
+    ValuationBreakdownDto? ValuationBreakdown = null,
+    bool DouDiZhuReady = false,
+    double SpiritStones = 0,
+    bool AssistMode = false,
+    int TiliCurrent = 0,
+    int TiliMax = 1680);
 
 /// <summary>斗地主牌桌中一手公开出牌/过牌记录。</summary>
 public sealed record DouDiZhuPlayDto(int Seat, IReadOnlyList<int> Cards, bool IsPass, long Version);
@@ -1147,7 +1172,8 @@ public sealed record PartySessionDto(
     string EncounterId,
     string NodeId,
     IReadOnlyList<string> MemberIds,
-    long StartedAtUnixMilliseconds);
+    long StartedAtUnixMilliseconds,
+    string? DungeonId = null);
 
 /// <summary>队伍状态。</summary>
 /// <param name="PartyId">队伍唯一标识</param>
@@ -1161,7 +1187,11 @@ public sealed record PartySessionDto(
 /// <param name="Members">成员列表（含队长）</param>
 /// <param name="OpenSlots">开启槽位（2~5，总纲 §21.13）；成员数达到槽位且全员就绪位于目标节点时自动开战</param>
 /// <param name="ActiveSession">进行中的组队讨伐会话；无会话为 null（散场即随下次状态推送消失）</param>
-/// <param name="Difficulty">队伍设定的讨伐难度等级（0~5）</param>
+/// <param name="Difficulty">队伍设定的讨伐/秘境难度等级（野外 0~5，秘境 0~11）</param>
+/// <param name="DouDiZhuStake">斗地主底注</param>
+/// <param name="DouDiZhuGame">当前斗地主牌局投影</param>
+/// <param name="DungeonId">秘境配置 ID（仅 activityKind='dungeon' 有效）</param>
+/// <param name="DungeonRepeatCount">秘境连刷次数（-1 表示刷至耗尽，1~99 表示指定把数）</param>
 public sealed record PartyDto(
     string PartyId,
     string LeaderId,
@@ -1176,7 +1206,9 @@ public sealed record PartyDto(
     PartySessionDto? ActiveSession = null,
     int Difficulty = 0,
     double DouDiZhuStake = 10,
-    DouDiZhuGameDto? DouDiZhuGame = null);
+    DouDiZhuGameDto? DouDiZhuGame = null,
+    string DungeonId = "",
+    int DungeonRepeatCount = 1);
 
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>
@@ -1254,7 +1286,9 @@ public sealed record PartyLobbyEntryDto(
     double MinValuation,
     long CreatedAtUnixMilliseconds,
     IReadOnlyList<PartyLobbyMemberDto> Members,
-    int OpenSlots = 3);
+    int OpenSlots = 3,
+    string DungeonId = "",
+    int Difficulty = 0);
 
 /// <summary>大厅「匹配中」散人条目。</summary>
 /// <param name="PlayerId">散人玩家 ID</param>
@@ -1351,7 +1385,9 @@ public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, dou
 /// <param name="TechniqueLevels">生活技艺等级表</param>
 /// <param name="ValuationBreakdown">身家构成明细</param>
 /// <param name="CurrentReport">队友协同收益战报</param>
-/// <param name="LoadoutHidden">当目标关闭非同队配装可见且查询方非本人/非同队时为 true，配装字段已置空</param>
+/// <param name="LoadoutHidden">当目标关闭非同队配装可见且查询方非本人/非同队/未付费解锁时为 true，配装字段已置空</param>
+/// <param name="LoadoutInspectPrice">当 LoadoutHidden 为 true 且目标开启付费查阅（正整数灵石）时下发查阅价格；完全隐藏时为 null</param>
+/// <param name="LoadoutUnlockedUntilUnixSeconds">当查询方通过当日付费查阅获得可见权时，下发北京时间当日结束零点的 Unix 秒时间戳</param>
 public sealed record PlayerCardDto(
     string RequestId,
     string PlayerId,
@@ -1375,7 +1411,9 @@ public sealed record PlayerCardDto(
     IReadOnlyDictionary<string, int>? TechniqueLevels = null,
     ValuationBreakdownDto? ValuationBreakdown = null,
     object? CurrentReport = null,
-    bool LoadoutHidden = false);
+    bool LoadoutHidden = false,
+    double? LoadoutInspectPrice = null,
+    double? LoadoutUnlockedUntilUnixSeconds = null);
 
 /// <summary>全服排行榜固定榜别标识与动态技艺榜前缀。</summary>
 public static class LeaderboardBoardIds

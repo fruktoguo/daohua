@@ -805,6 +805,76 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Contains(result.Events, entry => entry.Code == "auto-use.activated");
     }
 
+    /// <summary>
+    /// 雷击符打击不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）：
+    /// 物品打击非玩家自身技能，穿戴 100 点技能增幅装备与裸身相比，敌人承伤必须完全一致。
+    /// 修复前技能增幅误入原始威力乘位（20→40），穿甲后差异约 19 点，本对照必现。
+    /// </summary>
+    [Fact]
+    public void StrikeTalismanIgnoresSkillBonusPoints()
+    {
+        double RunEnemyHitpoints(bool withSkillBonusCharm)
+        {
+            var strike = new ItemId("item.test-strike");
+            var charm = new ItemId("equipment.test-charm");
+            var strikeJson = """
+                {"id":"item.test-strike","name":"测试雷符","kind":"consumable","category":"talisman",
+                 "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+                 "strike":{"manaCostRatio":0.05,"manaDamageRatio":0.2,"spellAttackRatio":2.0,"element":"wood"}}}
+                """;
+            var actions = new ActionCatalog([
+                new ActionDefinition(new ActionId("combat.test"), "讨伐测试", ActionKind.Combat, 0,
+                    new Dictionary<ItemId, double>(), [],
+                    ExecutionKind: ActionExecutionKind.CombatEncounter, CombatEncounterId: "encounter.test")
+            ]);
+            var items = new Dictionary<ItemId, ItemDefinition>
+            {
+                [strike] = new(strike, "测试雷符", "", true, 0,
+                    new ConsumableDefinition(new HashSet<string> { "combat" },
+                        Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
+                        CooldownSeconds: 60),
+                    "talisman"),
+            };
+            var rawItems = new Dictionary<string, JsonElement> { [strike.Value] = Json(strikeJson) };
+            var rawEquipments = new Dictionary<string, JsonElement>
+            {
+                [charm.Value] = Json("""{"id":"equipment.test-charm","name":"测试法符","slot":"accessory","flatStats":{"skillBonusPoints":100}}""")
+            };
+            var monster = new CombatMonsterDefinition("enemy.test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
+                CombatantStats.Create(100_000, 0, 0, 2), [], []);
+            var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1, 1, 1, 180,
+                [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0);
+            // 锚点表必须存在：缺失时面板走兜底分支，装备 flatStats 完全不参与解析，对照形同虚设。
+            var catalog = new GameDataCatalog("test-1", "test-fingerprint", actions,
+                items: items, rawItems: rawItems, rawEquipments: rawEquipments,
+                combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
+                combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
+                baseAttributes: new BaseAttributeCatalog(
+                    [new BaseAttributeAnchor(1, 1000, 100, 10, 0, 0, 0, 100, 0, 0, 0, 0, 0, 2, 1)]));
+            var player = CreatePlayer("符修");
+            var wallet = CreateWallet(player, (new AssetKey(strike), 1));
+            if (withSkillBonusCharm)
+                player.Loadout.EquippedItemIds.Add(charm);
+            player.ConfigureAutoUse("combat", 0, strike.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+            player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+            var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), catalog, wallet);
+            result.AssetDeltas.ToList().ForEach(wallet.Apply);
+            // 雷击符必须真实激活扣件（否则对照形同虚设）。
+            Assert.Equal(0, wallet.Get(new AssetKey(strike)));
+            Assert.Contains(result.Events, entry => entry.Code == "auto-use.activated");
+            if (withSkillBonusCharm)
+                Assert.Equal(100, PlayerAttributeResolver.Resolve(player, catalog).SkillBonusPoints, 9);
+            var enemyState = player.Actions[0].Expedition?.Enemies?[0].State;
+            Assert.NotNull(enemyState);
+            return enemyState!.Hitpoints;
+        }
+
+        var withoutBonus = RunEnemyHitpoints(false);
+        var withBonus = RunEnemyHitpoints(true);
+        Assert.Equal(withoutBonus, withBonus, 9);
+    }
+
     /// <summary>雷击符灵力不足时不激活：不扣件、不进入冷却、敌人快照不动。</summary>
     [Fact]
     public void StrikeTalismanSkipsWhenManaInsufficient()

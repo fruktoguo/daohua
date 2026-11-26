@@ -33,6 +33,13 @@ import { COMBAT_RESOURCE_EFFECT_LIMIT, collectScheduledCombatEvents, combatHitDe
 import { computeArenaFormationScale, resolveOccupiedRows } from '../game/combatScale'
 
 import { scaleMonsterAttributes, scaleMonsterDrops } from '../game/combatDifficulty'
+import {
+  extractDungeonLevelAnchors,
+  getDungeonDifficultyMeta,
+  resolveDungeonMonsterForDisplay,
+  scaleDungeonMonsterAttributes,
+  scaleDungeonMonsterDrops,
+} from '../game/dungeonRules'
 /** 战斗详情与顶栏共用当前语言的队列名称解析，空闲时沿用调用方文案。 */
 function resolveQueueEntryDisplayName(
   entry: QueueEntry | null | undefined,
@@ -2277,6 +2284,7 @@ export const CombatArena = memo(function CombatArena({
   const world = useGameStore(hidden ? () => FROZEN_WORLD : state => state.world)
   const maps = useGameStore(state => state.maps)
   const encounters = useGameStore(state => state.encounters)
+  const dungeons = useGameStore(state => state.dungeons)
   const queue = useGameStore(hidden ? () => FROZEN_QUEUE_ENTRIES : state => state.queue.entries)
   const queuePaused = useGameStore(state => state.queue.paused)
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
@@ -2325,11 +2333,26 @@ export const CombatArena = memo(function CombatArena({
   const alliesFormationRef = useRef<HTMLDivElement | null>(null)
 
   const current = queue[0] ?? null
-  const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
+  const isCombat = current?.type === 'combat' && (current.executionKind === 'combat-encounter' || current.executionKind === 'dungeon')
   const isTravel = current !== null && (current.executionKind === 'travel' || current.actionId === 'world.travel')
   const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
   const currentDifficulty = expedition?.difficulty ?? current?.difficulty ?? 0
+  const activeDungeonId = expedition?.dungeonId ?? (current?.executionKind === 'dungeon' ? current.actionId : null)
+  const activeDungeon = useMemo(
+    () => (activeDungeonId ? dungeons.find(d => d.dungeonId === activeDungeonId) ?? null : null),
+    [activeDungeonId, dungeons],
+  )
+  const dungeonLevelAnchors = useMemo(() => extractDungeonLevelAnchors(dungeons), [dungeons])
+  const realmLevel = useGameStore(state => state.stats.realmLevel) ?? 1
+  const party = useSocialStore(state => state.party)
+  const maxPartyRealmLevel = useMemo(() => {
+    if (party && party.members.length > 0 && current && hasActionParticipation(current)) {
+      return Math.max(realmLevel, ...party.members.map(m => m.realmLevel ?? 1))
+    }
+    return Math.max(1, realmLevel)
+  }, [party, current, realmLevel])
+  const dungeonCachePrefix = activeDungeonId ? `d:lv${maxPartyRealmLevel}:` : ''
   // 统计入口随战斗行动存亡：行动出队/切换为非战斗行动时自动收起已开弹窗
   useEffect(() => {
     if (!isCombat) setStatsOpen(false)
@@ -2341,7 +2364,7 @@ export const CombatArena = memo(function CombatArena({
     const loadoutCache = inspectedLoadoutCacheRef.current
     for (const enemy of expedition?.enemies ?? []) {
       if (enemy.attributes) {
-        cache.set(`enemy:${enemy.enemyId}:${currentDifficulty}`, enemy.attributes)
+        cache.set(`enemy:${dungeonCachePrefix}${enemy.enemyId}:${currentDifficulty}`, enemy.attributes)
         setInspectedSnapshot(prev => {
           if (prev && prev.role === 'enemy' && prev.enemyId === enemy.enemyId) {
             const staticAttr = findCombatantInCatalog(encounters, maps, enemy.enemyId)?.attributes
@@ -2739,16 +2762,36 @@ export const CombatArena = memo(function CombatArena({
   const handleInspectEnemy = useCallback((entry: EnemyDisplayState, index: number) => {
     gameClient.sendUnitInspect({ side: 'enemy', index })
     const staticCombatant = entry.enemyId ? findCombatantInCatalog(encounters, maps, entry.enemyId) : undefined
-    const scaledStaticAttributes = staticCombatant?.attributes
-      ? scaleMonsterAttributes(staticCombatant.attributes, currentDifficulty)
+    const dungeonEnemyDef = activeDungeon && entry.enemyId
+      ? activeDungeon.waves.flatMap(w => w.enemies).find(e => e.enemyId === entry.enemyId)
+      : undefined
+    const resolvedDungeonMonster = activeDungeon && (dungeonEnemyDef ?? staticCombatant)
+      ? resolveDungeonMonsterForDisplay(
+          dungeonEnemyDef ?? staticCombatant!,
+          activeDungeon,
+          currentDifficulty,
+          maxPartyRealmLevel,
+          dungeonLevelAnchors,
+        )
       : null
+    const scaledStaticAttributes = resolvedDungeonMonster?.attributes
+      ?? (staticCombatant?.attributes
+        ? (activeDungeonId
+          ? scaleDungeonMonsterAttributes(staticCombatant.attributes, currentDifficulty)
+          : scaleMonsterAttributes(staticCombatant.attributes, currentDifficulty))
+        : null)
     const cachedAttr = inspectedAttributesCacheRef.current.get(
       entry.enemyId !== null
-        ? `enemy:${entry.enemyId}:${currentDifficulty}`
+        ? `enemy:${dungeonCachePrefix}${entry.enemyId}:${currentDifficulty}`
         : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`
     )
     const initialAttributes = entry.attributes ?? cachedAttr ?? scaledStaticAttributes ?? null
-    const drops = staticCombatant?.drops ? scaleMonsterDrops(staticCombatant.drops, currentDifficulty) : []
+    const drops = resolvedDungeonMonster?.drops
+      ?? (staticCombatant?.drops
+        ? (activeDungeonId
+          ? scaleDungeonMonsterDrops(staticCombatant.drops, currentDifficulty)
+          : scaleMonsterDrops(staticCombatant.drops, currentDifficulty))
+        : [])
     let loadout: UnitLoadoutView | null = null
     if (entry.enemyId !== null) {
       loadout = { skills: staticCombatant?.skills ?? [] }
@@ -2773,7 +2816,7 @@ export const CombatArena = memo(function CombatArena({
       drops,
       enemyId: entry.enemyId ?? null,
     })
-  }, [encounters, maps, expedition?.duel, activeEncounterId, currentDifficulty])
+  }, [encounters, maps, expedition?.duel, activeEncounterId, currentDifficulty, activeDungeonId, activeDungeon, maxPartyRealmLevel, dungeonLevelAnchors, dungeonCachePrefix])
 
   const handleCloseInspect = useCallback(() => {
     setInspectedSnapshot(null)
@@ -2870,6 +2913,53 @@ export const CombatArena = memo(function CombatArena({
           </div>
         )}
       </div>
+      {/* 秘境副本专属十波进度横幅：展示秘境名、难度品质色、波次与十格灯珠 */}
+      {activeDungeonId && expedition && (() => {
+        const totalWaves = expedition.dungeonTotalWaves ?? activeDungeon?.totalWaves ?? 10
+        const currentWave = Math.max(1, Math.min(totalWaves, expedition.waveNumber ?? 1))
+        const diffMeta = getDungeonDifficultyMeta(currentDifficulty)
+        const currentWaveDef = activeDungeon?.waves.find(w => w.waveNumber === currentWave)
+        const isRest = phase === 'search' || phase === 'initial-search'
+        return (
+          <div aria-label={t('combat.dungeon.arenaBarAria')} className="arena-dungeon-banner">
+            <div className="arena-dungeon-head">
+              <Icon name="gate" size={15} />
+              <span className="arena-dungeon-title">
+                {activeDungeon?.name ?? resolveQueueEntryDisplayName(current, current?.actionName, world, maps)}
+              </span>
+              <span className={`dungeon-diff-pill dungeon-diff-tone--${diffMeta.styleTone}`}>
+                {t('combat.dungeon.fullDifficultyLabel', {
+                  mode: t(`combat.dungeon.mode.${diffMeta.mode}`),
+                  tier: t(`combat.dungeon.difficulty.${diffMeta.key}`),
+                })}
+              </span>
+              <span className="arena-dungeon-wave-label">
+                {t('combat.dungeon.arenaWaveText', { wave: currentWave, total: totalWaves })}
+              </span>
+              {currentWaveDef && (
+                <span className={`dungeon-wave-kind is-${currentWaveDef.kind}`}>
+                  {t(`combat.dungeon.waveKind.${currentWaveDef.kind}`)}
+                </span>
+              )}
+              {isRest && <span className="arena-dungeon-rest-tag">{t('combat.dungeon.arenaRestHint')}</span>}
+            </div>
+            <div aria-hidden="true" className="arena-dungeon-pips">
+              {Array.from({ length: totalWaves }, (_, i) => {
+                const waveNo = i + 1
+                const def = activeDungeon?.waves[i]
+                const kind = def?.kind ?? (waveNo === totalWaves ? 'boss' : waveNo % 3 === 0 ? 'elite' : 'normal')
+                const stateClass = waveNo < currentWave ? 'is-done' : waveNo === currentWave ? 'is-active' : ''
+                return (
+                  <span
+                    className={`arena-dungeon-pip is-${kind}${stateClass ? ` ${stateClass}` : ''}`}
+                    key={waveNo}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方)；
             组队讨伐时按 allies 成员序铺满阵列，selfIndex 对应格复用玩家完整展示态 */}

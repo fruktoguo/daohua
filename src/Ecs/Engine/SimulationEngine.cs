@@ -552,7 +552,7 @@ public static partial class SimulationEngine
                 continue;
             blockedActions?.Clear();
             var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon;
-            if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
+            if (definition.ExecutionKind is ActionExecutionKind.CombatEncounter or ActionExecutionKind.Dungeon)
             {
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
@@ -709,8 +709,7 @@ public static partial class SimulationEngine
             return;
         }
         var expedition = action.Expedition;
-        if (!gameData.CombatEncounters.TryGetValue(expedition.EncounterId, out var encounter))
-            throw new DomainException(DomainErrorCode.NotFound, $"远征状态引用的遭遇 {expedition.EncounterId} 不存在。");
+        var encounter = Systems.CombatActionRules.ResolveEncounter(gameData, expedition.EncounterId);
         if (expedition.Phase != CombatExpeditionPhase.Combat
             || expedition.Enemies is not { Count: > 0 } waveEnemies)
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");

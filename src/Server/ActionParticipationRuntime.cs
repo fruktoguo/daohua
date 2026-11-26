@@ -52,6 +52,9 @@ public sealed class ActionParticipationRuntime(
     /// <inheritdoc />
     public event Action<Guid>? WalletChanged;
 
+    /// <inheritdoc />
+    public event Func<Guid, string, string, IReadOnlyList<Guid>, ValueTask>? SessionNaturallyEnded;
+
     public async ValueTask CreateAsync(Guid partyId, ActionParticipationSpec spec, CancellationToken cancellationToken = default)
     {
         await EnsureRelationsRestoredAsync(cancellationToken);
@@ -561,6 +564,7 @@ public sealed class ActionParticipationRuntime(
             ActionParticipationSessionDocument nextDocument;
             DateTimeOffset? nextBoundary = null;
             IReadOnlyList<AssetBalanceRecord> balances;
+            var naturallyEnded = false;
             if (!compatible)
             {
                 var finalization = ActionParticipationSessionEngine.FinalizeIncompatibleCheckpoint(document);
@@ -579,6 +583,11 @@ public sealed class ActionParticipationRuntime(
                 var engine = ActionParticipationSessionEngine.Restore(document, gameData);
                 engine.SetWorkingWallet(ToWorkingWallet(balances));
                 settlements = endReason is null ? engine.AdvanceTo(target) : engine.EndAt(target);
+                if (endReason is null && engine.IsEnded)
+                {
+                    endReason = engine.NaturalEndReason ?? "session-ended";
+                    naturallyEnded = true;
+                }
                 if (endReason is null)
                 {
                     if (onlineMode) engine.SwitchToOnline();
@@ -586,12 +595,12 @@ public sealed class ActionParticipationRuntime(
                     else if (replenishOffline) engine.ReplenishOfflineReserve();
                 }
                 nextDocument = engine.Export();
-                nextBoundary = onlineMode ? engine.NextVisibleBoundaryUtc : null;
+                nextBoundary = (onlineMode && endReason is null) ? engine.NextVisibleBoundaryUtc : null;
                 deltas = engine.TakeAssetDeltas();
             }
             var stateJson = JsonSerializer.Serialize(nextDocument, PersistenceJson.Options);
             var lastSimulatedAt = AtUnixSeconds(nextDocument.AdvancedAtUnixSeconds);
-            DateTimeOffset? endedAt = endReason is null ? null : target;
+            DateTimeOffset? endedAt = endReason is null ? null : (naturallyEnded ? lastSimulatedAt : target);
             try
             {
                 if (!await store.CommitAdvanceAsync(sessionId, previous.Version, stateJson, lastSimulatedAt,
@@ -645,6 +654,29 @@ public sealed class ActionParticipationRuntime(
             }
             BumpInboxGeneration(memberIds);
             NotifyWalletChanges(deltas);
+            if (naturallyEnded && endReason is not null && SessionNaturallyEnded is { } endedHandler)
+            {
+                var endedPartyId = previous.PartyId;
+                var endedSessionId = sessionId;
+                var endedReasonCopy = endReason;
+                var endedMembersCopy = memberIds;
+                // 异步解耦派发，绝不在持有 SessionGate 时逆向竞争队伍门。
+                _ = Task.Run(async () =>
+                {
+                    foreach (Func<Guid, string, string, IReadOnlyList<Guid>, ValueTask> subscriber in endedHandler.GetInvocationList())
+                    {
+                        try
+                        {
+                            await subscriber(endedPartyId, endedSessionId, endedReasonCopy, endedMembersCopy).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "组队会话自然终局回调异常 party={PartyId} session={SessionId} reason={Reason}",
+                                endedPartyId, endedSessionId, endedReasonCopy);
+                        }
+                    }
+                });
+            }
             return nextBoundary;
         }
         throw new InvalidOperationException($"会话检查点或工作钱包持续冲突 session={sessionId}，整批未发布。");

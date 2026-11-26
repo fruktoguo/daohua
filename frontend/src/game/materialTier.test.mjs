@@ -31,7 +31,11 @@ const rareEquipmentIds = new Set([
   'equipment.duanchen-blade',
   'equipment.mingsha-crown',
   'equipment.fentian-greaves',
-  'equipment.demon-core-staff'
+  'equipment.demon-core-staff',
+  'equipment.changhu-pendant',
+  'equipment.golden-ape-cloak',
+  'equipment.starfall-crown',
+  'equipment.wuyin-spirit-sword'
 ])
 
 const gatherYields = new Set()
@@ -113,7 +117,7 @@ test('材料品阶：常规物品与装备制造只允许消耗凡品材料', ()
 })
 
 test('材料品阶：专属特殊装备锻造必须消耗对应稀有材料', () => {
-  assert.equal(rareEquipmentInputs.size, rareEquipmentIds.size, '全部 7 件特殊装备必须拥有锻造配方')
+  assert.equal(rareEquipmentInputs.size, rareEquipmentIds.size, '全部专属特殊装备必须拥有锻造配方')
   for (const [equipId, inputs] of rareEquipmentInputs) {
     const rareInputs = inputs.filter(id => (materialById.get(id)?.tier ?? 1) >= 2)
     assert.equal(rareInputs.length, 1, `${equipId} 锻造配方必须且只能消耗 1 种稀有材料`)

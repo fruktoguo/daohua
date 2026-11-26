@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Combat;
 using Domain.GameData;
 using Domain.Social;
 using Protocol;
@@ -36,6 +37,7 @@ public sealed class SocialRuntime
     private const int MaxPartyNameLength = 32;
 
     private readonly PostgresZongmenRepository? _zongmen;
+    private readonly PostgresGuideRepository? _guides;
     private readonly ISocialRepository _repository;
     private readonly OnlinePresenceRegistry _presence;
     private readonly PartyValuationService _valuation;
@@ -101,9 +103,11 @@ public sealed class SocialRuntime
         IPlayerStateRepository? sections = null,
         IAssetBalanceRepository? assetBalances = null,
         NodeBuildingRegistry? nodeBuildings = null,
-        PostgresZongmenRepository? zongmen = null)
+        PostgresZongmenRepository? zongmen = null,
+        PostgresGuideRepository? guides = null)
     {
         _zongmen = zongmen;
+        _guides = guides;
         _repository = repository;
         _presence = presence;
         _valuation = valuation;
@@ -206,6 +210,38 @@ public sealed class SocialRuntime
         }
         var leaderName = party?.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName;
         var serverNow = _clock.UtcNow;
+        var serverNowUnix = serverNow.ToUnixTimeMilliseconds() / 1000d;
+        var tiliMap = new Dictionary<Guid, int>();
+        if (party is { Members.Count: > 0 })
+        {
+            var isDungeonParty = party.Profile.ActivityKind == PartyActivityKinds.Dungeon;
+            foreach (var member in party.Members)
+            {
+                if (_players?.TryGetLoaded(member.PlayerId) is { } loaded)
+                {
+                    var prog = loaded.State.Progression;
+                    tiliMap[member.PlayerId] = DungeonEnergyRules.Compute(prog.TiliValue, prog.TiliUpdatedAtUnixSeconds, serverNowUnix).Current;
+                }
+                else if (isDungeonParty && _sections is not null)
+                {
+                    // 秘境队伍未装载成员按需读取持久化真源推算当前体力，避免展示失真。
+                    var bundle = await _sections.LoadAsync(member.PlayerId, cancellationToken);
+                    if (bundle is not null && (bundle.Head.StateVersion > 0 || bundle.Sections.Count > 0))
+                    {
+                        var prog = SectionCodec.DecodeAggregate(bundle).Progression;
+                        tiliMap[member.PlayerId] = DungeonEnergyRules.Compute(prog.TiliValue, prog.TiliUpdatedAtUnixSeconds, serverNowUnix).Current;
+                    }
+                    else
+                    {
+                        tiliMap[member.PlayerId] = DungeonEnergyRules.InitialEnergy;
+                    }
+                }
+                else
+                {
+                    tiliMap[member.PlayerId] = DungeonEnergyRules.InitialEnergy;
+                }
+            }
+        }
 
         var result = new SocialStateDto(
             requestId,
@@ -235,16 +271,22 @@ public sealed class SocialRuntime
                         member.DouDiZhuReady,
                         _players?.TryGetLoaded(member.PlayerId)?.Assets is { } liveAssets
                             ? (liveAssets.FirstOrDefault(asset => asset.AssetId == "currency.spirit-stone" && asset.Variant.Length == 0)?.Quantity ?? 0)
-                            : member.SpiritStones))],
+                            : member.SpiritStones,
+                        member.AssistMode,
+                        tiliMap.GetValueOrDefault(member.PlayerId, DungeonEnergyRules.InitialEnergy),
+                        DungeonEnergyRules.MaxEnergy))],
                     party.OpenSlots,
                     snapshot.PartySession is { } session
                         ? new PartySessionDto(session.SessionId, session.EncounterId, session.NodeId,
                             [.. session.MemberIds.Select(id => id.ToString("D"))],
-                            session.StartedAt.ToUnixTimeMilliseconds())
+                            session.StartedAt.ToUnixTimeMilliseconds(),
+                            session.DungeonId)
                         : null,
                     party.Profile.Difficulty,
                     party.DouDiZhuStake,
-                    snapshot.DouDiZhuGame is { } game ? ToDouDiZhuDto(game, playerId, serverNow) : null),
+                    snapshot.DouDiZhuGame is { } game ? ToDouDiZhuDto(game, playerId, serverNow) : null,
+                    party.Profile.DungeonId,
+                    party.Profile.DungeonRepeatCount),
             invitation is null
                 ? null
                 : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
@@ -338,7 +380,9 @@ public sealed class SocialRuntime
                 party.Profile.MinValuation,
                 party.CreatedAt.ToUnixTimeMilliseconds(),
                 memberDtos,
-                party.OpenSlots));
+                party.OpenSlots,
+                party.Profile.DungeonId,
+                party.Profile.Difficulty));
         }
 
         var seekerDtos = new List<PartyLobbySeekerDto>(seekers.Count);
@@ -407,6 +451,30 @@ public sealed class SocialRuntime
         }
 
         var canViewLoadout = isSelf || isTeammate || state.Settings.PublicLoadoutVisible;
+        double? loadoutInspectPrice = null;
+        double? loadoutUnlockedUntilUnixSeconds = null;
+        if (!canViewLoadout && _guides is not null)
+        {
+            var grantExpiresAt = await _guides.GetActiveLoadoutInspectGrantAsync(playerId, targetId, _clock.UtcNow, cancellationToken);
+            if (grantExpiresAt is { } expiresAt)
+            {
+                canViewLoadout = true;
+                loadoutUnlockedUntilUnixSeconds = expiresAt.ToUnixTimeMilliseconds() / 1000d;
+            }
+        }
+        if (!canViewLoadout)
+        {
+            var configuredPrice = PlayerSettingsState.NormalizeLoadoutInspectPrice(
+                state.Settings.LoadoutInspectPrice, state.Settings.PublicLoadoutVisible);
+            if (configuredPrice > 0d)
+            {
+                var targetFlags = _guides is null ? null : await _guides.GetPlayerFlagsAsync(targetId, cancellationToken);
+                if (targetFlags is null || !targetFlags.Value.IsBot)
+                {
+                    loadoutInspectPrice = configuredPrice;
+                }
+            }
+        }
         var core = state.Loadout.CoreAttributes;
         var levels = core.Levels(_gameData.RealmProgression);
         var valuation = await _valuation.ComputeBreakdownAsync(targetId, cancellationToken);
@@ -477,8 +545,12 @@ public sealed class SocialRuntime
             Attributes: attributes,
             TechniqueLevels: techniqueLevels,
             ValuationBreakdown: valuation.ToDto(),
-            CurrentReport: canViewLoadout ? state.Duel.CurrentReport : null,
-            LoadoutHidden: !canViewLoadout);
+            CurrentReport: canViewLoadout && state.Duel.CurrentReport is { } report
+                ? report with { DuelRecords = null }
+                : null,
+            LoadoutHidden: !canViewLoadout,
+            LoadoutInspectPrice: loadoutInspectPrice,
+            LoadoutUnlockedUntilUnixSeconds: loadoutUnlockedUntilUnixSeconds);
     }
 
     /// <summary>执行一条社交指令。</summary>
@@ -834,6 +906,20 @@ public sealed class SocialRuntime
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
                 return SocialOutcome.Ok;
             }
+            case SocialActions.PartyAssist:
+            {
+                if (action.AssistMode is not { } assistMode)
+                    return new SocialOutcome(SocialFailure.InvalidPartyProfile);
+                if (!await _repository.TrySetPartyMemberAssistAsync(playerId, assistMode, cancellationToken))
+                    return new SocialOutcome(SocialFailure.NotInParty);
+                if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is { } ownedPartyId)
+                {
+                    await ArbitratePartySessionAsync(ownedPartyId, "member-assist-changed", cancellationToken);
+                    if (await _repository.GetPartyAsync(ownedPartyId, cancellationToken) is { } refreshed)
+                        await NotifyAsync([.. refreshed.Members.Select(member => member.PlayerId)], playerId);
+                }
+                return SocialOutcome.Ok;
+            }
             case SocialActions.DouDiZhuStake:
             case SocialActions.DouDiZhuReady:
             case SocialActions.DouDiZhuUnready:
@@ -1164,14 +1250,59 @@ public sealed class SocialRuntime
         }
 
         var difficulty = baseline.Difficulty;
-        if (patch?.Difficulty is { } rawDiff)
+        var dungeonId = baseline.DungeonId;
+        var dungeonRepeatCount = baseline.DungeonRepeatCount;
+        if (activity == PartyActivityKinds.Dungeon)
         {
-            if (rawDiff is < 0 or > 5) return false;
-            difficulty = rawDiff;
+            if (patch?.DungeonId is { } rawDungeonId)
+                dungeonId = rawDungeonId.Trim();
+            else if (full)
+                dungeonId = string.Empty;
+            if (dungeonId.Length == 0 || !_gameData.Dungeons.TryGetValue(dungeonId, out var dungeon))
+                return false;
+            // 秘境节点由配表单源绑定，强制对齐防跨节点误开。
+            nodeId = dungeon.NodeId;
+            if (patch?.Difficulty is { } rawDiff)
+            {
+                if (rawDiff is < DungeonDifficultyRules.MinDifficulty or > DungeonDifficultyRules.MaxDifficulty)
+                    return false;
+                difficulty = rawDiff;
+            }
+            else if (full)
+            {
+                difficulty = 0;
+            }
+            if (patch?.DungeonRepeatCount is { } rawRepeat)
+            {
+                if (rawRepeat != -1 && rawRepeat is < 1 or > 99) return false;
+                dungeonRepeatCount = rawRepeat;
+            }
+            else if (full || (dungeonRepeatCount != -1 && dungeonRepeatCount is < 1 or > 99))
+            {
+                dungeonRepeatCount = 1;
+            }
         }
-        else if (full) difficulty = 0;
+        else
+        {
+            dungeonId = string.Empty;
+            dungeonRepeatCount = 1;
+            if (patch?.Difficulty is { } rawDiff)
+            {
+                if (rawDiff is < 0 or > 5) return false;
+                difficulty = rawDiff;
+            }
+            else if (full)
+            {
+                difficulty = 0;
+            }
+            else if (difficulty > 5)
+            {
+                // 从高阶秘境切回野外活动时，自动回落至野外难度上限内。
+                difficulty = CombatDifficultyRules.Clamp(difficulty);
+            }
+        }
 
-        result = new PartyProfileRecord(name, activity, nodeId, minValuation, isPublic, pvpEnabled, difficulty);
+        result = new PartyProfileRecord(name, activity, nodeId, minValuation, isPublic, pvpEnabled, difficulty, dungeonId, dungeonRepeatCount);
         return true;
     }
 
@@ -1357,16 +1488,22 @@ public sealed class SocialRuntime
         }
         if (session is not null)
         {
-            // 会话存续要求名册冻结：成员变动/目标节点漂移/斗法开关漂移/满槽就绪失任一条件即散场。
+            // 会话存续要求名册冻结：成员变动/目标节点漂移/斗法开关漂移/秘境与难度漂移/助战模式变更/满槽就绪失任一条件即散场。
             var stillTarget = await ResolveReadyTargetNodeAsync(party, cancellationToken);
             var rosterIntact = session.MemberIds.Count == party.Members.Count
                 && party.Members.All(member => session.MemberIds.Contains(member.PlayerId));
+            var expectedDungeonId = party.Profile.ActivityKind == PartyActivityKinds.Dungeon ? party.Profile.DungeonId : string.Empty;
+            var sessionDungeonId = session.DungeonId ?? string.Empty;
+            var dungeonDrift = !string.Equals(expectedDungeonId, sessionDungeonId, StringComparison.Ordinal)
+                || (expectedDungeonId.Length > 0 && session.DungeonRepeatCount != party.Profile.DungeonRepeatCount)
+                || (sessionDungeonId.Length > 0 && reason == "member-assist-changed");
             if (forceDissolve
                 || stillTarget is null
                 || !rosterIntact
                 || !string.Equals(stillTarget, session.NodeId, StringComparison.Ordinal)
                 || session.PvpEnabled != party.Profile.PvpEnabled
-                || session.Difficulty != party.Profile.Difficulty)
+                || session.Difficulty != party.Profile.Difficulty
+                || dungeonDrift)
                 await DissolveSessionAsync(session, reason, cancellationToken);
             return;
         }
@@ -1411,30 +1548,55 @@ public sealed class SocialRuntime
     private async ValueTask StartSessionAsync(PartyRecord party, string targetNode, CancellationToken cancellationToken)
     {
         var startedAt = _clock.UtcNow;
-        if (!_gameData.WorldGraph.TryGetNode(targetNode, out var node) || node.EncounterIds.Count == 0)
-        {
-            _logger.LogWarning("组队讨伐开战放弃：目标节点 {NodeId} 不在世界图或无遭遇池（队伍 {PartyId}）。", targetNode, party.PartyId);
-            return;
-        }
-        if (party.Profile.ActivityKind is not ("any" or "combat"))
-        {
-            _logger.LogInformation("行动参与开战跳过：队伍目标类型 {ActivityKind} 不是讨伐（队伍 {PartyId}）。", party.Profile.ActivityKind, party.PartyId);
-            return;
-        }
-        var action = _gameData.Actions.All
-            .Where(definition => definition.Kind == ActionKind.Combat
-                && definition.ExecutionKind == ActionExecutionKind.CombatEncounter
-                && (definition.AllowedNodeIds is null || definition.AllowedNodeIds.Contains(targetNode))
-                && (definition.ExcludedNodeIds is null || !definition.ExcludedNodeIds.Contains(targetNode)))
-            .OrderBy(definition => definition.Id.Value, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (action is null)
-        {
-            _logger.LogWarning("行动参与开战放弃：目标节点 {NodeId} 没有可用讨伐行动（队伍 {PartyId}）。", targetNode, party.PartyId);
-            return;
-        }
+        var isDungeon = party.Profile.ActivityKind == PartyActivityKinds.Dungeon;
+        DungeonDefinition? dungeon = null;
+        ActionDefinition? action;
+        string encounterId;
         var seed = Random.Shared.NextInt64(long.MaxValue);
-        var encounterId = node.EncounterIds[(int)(seed % node.EncounterIds.Count)];
+
+        if (isDungeon)
+        {
+            if (string.IsNullOrEmpty(party.Profile.DungeonId)
+                || !_gameData.Dungeons.TryGetValue(party.Profile.DungeonId, out dungeon)
+                || !string.Equals(dungeon.NodeId, targetNode, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("组队秘境开战放弃：秘境 {DungeonId} 不存在或与目标节点 {NodeId} 不匹配（队伍 {PartyId}）。",
+                    party.Profile.DungeonId, targetNode, party.PartyId);
+                return;
+            }
+            if (!_gameData.Actions.TryGet(new ActionId(dungeon.Id), out action))
+            {
+                _logger.LogWarning("组队秘境开战放弃：配表缺少秘境行动 {DungeonId}（队伍 {PartyId}）。", dungeon.Id, party.PartyId);
+                return;
+            }
+            encounterId = dungeon.Id;
+        }
+        else
+        {
+            if (!_gameData.WorldGraph.TryGetNode(targetNode, out var node) || node.EncounterIds.Count == 0)
+            {
+                _logger.LogWarning("组队讨伐开战放弃：目标节点 {NodeId} 不在世界图或无遭遇池（队伍 {PartyId}）。", targetNode, party.PartyId);
+                return;
+            }
+            if (party.Profile.ActivityKind is not ("any" or "combat"))
+            {
+                _logger.LogInformation("行动参与开战跳过：队伍目标类型 {ActivityKind} 不是讨伐或秘境（队伍 {PartyId}）。", party.Profile.ActivityKind, party.PartyId);
+                return;
+            }
+            action = _gameData.Actions.All
+                .Where(definition => definition.Kind == ActionKind.Combat
+                    && definition.ExecutionKind == ActionExecutionKind.CombatEncounter
+                    && (definition.AllowedNodeIds is null || definition.AllowedNodeIds.Contains(targetNode))
+                    && (definition.ExcludedNodeIds is null || !definition.ExcludedNodeIds.Contains(targetNode)))
+                .OrderBy(definition => definition.Id.Value, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (action is null)
+            {
+                _logger.LogWarning("行动参与开战放弃：目标节点 {NodeId} 没有可用讨伐行动（队伍 {PartyId}）。", targetNode, party.PartyId);
+                return;
+            }
+            encounterId = node.EncounterIds[(int)(seed % node.EncounterIds.Count)];
+        }
         var sessionId = $"action:{Guid.NewGuid():N}";
 
         // 逐成员冻结面板：已装载成员经所有权通道采集最新内存态并强制落盘；
@@ -1473,19 +1635,45 @@ public sealed class SocialRuntime
 
         // 冻结采集完成后再定统一开场边界，避免成员装载时钟晚于会话开始。
         startedAt = _clock.UtcNow;
-        // 封魔阵类节点削弱随开打定格冻结进会话规格（总纲 §9.4）：各成员共享同一公共输入。
-        var monsterWeakenRatio = _nodeBuildings is null ? 0
+        var startedAtUnix = startedAt.ToUnixTimeMilliseconds() / 1000d;
+
+        if (isDungeon)
+        {
+            // 秘境助战判定：显式开启助战或当前体力低于本档耗体的成员自动以助战位参战（零耗体零收益），
+            // 全队至少需保留 1 名付费成员才允许开局。
+            var dungeonDiff = DungeonDifficultyRules.Clamp(party.Profile.Difficulty);
+            var energyCost = DungeonDifficultyRules.EnergyCost(dungeonDiff);
+            var payingCount = 0;
+            for (var i = 0; i < party.Members.Count; i++)
+            {
+                var snap = snapshots[i]!;
+                var tili = DungeonEnergyRules.Compute(snap.InitialTiliValue, snap.InitialTiliUpdatedAtUnixSeconds, startedAtUnix).Current;
+                var effectiveAssist = party.Members[i].AssistMode || tili < energyCost;
+                if (!effectiveAssist) payingCount++;
+                snapshots[i] = snap with { AssistMode = effectiveAssist };
+            }
+            if (payingCount == 0)
+            {
+                _logger.LogInformation("组队秘境开战跳过：队伍 {PartyId} 无体力充足的非助战成员（需 {Cost} 点体力）。", party.PartyId, energyCost);
+                return;
+            }
+        }
+
+        // 封魔阵类节点削弱随开打定格冻结进会话规格（总纲 §9.4）：秘境独立于野外建筑，恒为 0。
+        var monsterWeakenRatio = isDungeon || _nodeBuildings is null ? 0
             : (await _nodeBuildings.EffectsForAsync(targetNode, startedAt, cancellationToken)).MonsterWeakenRatio;
         var spec = new ActionParticipationSpec(
             sessionId, encounterId, targetNode, seed,
             snapshots.Average(member => member!.SearchSpeedPoints),
-            startedAt.ToUnixTimeMilliseconds() / 1000d,
+            startedAtUnix,
             [.. snapshots.Select(member => member!)])
         {
             ActionId = action.Id,
-            PvpEnabled = party.Profile.PvpEnabled,
+            PvpEnabled = isDungeon ? false : party.Profile.PvpEnabled,
             MonsterWeakenRatio = monsterWeakenRatio,
-            Difficulty = party.Profile.Difficulty
+            Difficulty = isDungeon ? DungeonDifficultyRules.Clamp(party.Profile.Difficulty) : party.Profile.Difficulty,
+            DungeonId = dungeon?.Id,
+            DungeonRepeatCount = isDungeon ? party.Profile.DungeonRepeatCount : 1
         };
         if (!spec.IsValid)
         {
@@ -1544,6 +1732,39 @@ public sealed class SocialRuntime
         await ReconcileResidentMembersAsync(cancellationToken);
         await NotifyAsync([.. session.MemberIds]);
         _logger.LogInformation("组队讨伐会话 {SessionId} 散场：{Reason}。", session.SessionId, reason);
+    }
+
+    /// <summary>
+    /// 会话自然终局回调（秘境通关达目标把数、全员团灭或付费成员体力不足）：
+    /// 在队伍门内复位全员就绪标记（防止下次仲裁立即重开造成死循环），再逐成员拉起终局结算消费并推送最新社交状态。
+    /// </summary>
+    public async ValueTask HandleSessionNaturallyEndedAsync(Guid partyId, string sessionId, string reason, IReadOnlyList<Guid> memberIds)
+    {
+        try
+        {
+            using (var gateLease = await _partyGates.AcquireAsync(partyId, CancellationToken.None))
+            {
+                await _repository.ResetPartyMembersReadyAsync(partyId, CancellationToken.None);
+            }
+            foreach (var memberId in memberIds)
+            {
+                try
+                {
+                    await ApplySessionMutationAsync(memberId, null, CancellationToken.None);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(exception, "组队会话自然终局成员收尾失败：成员 {PlayerId}（会话 {SessionId}）。", memberId, sessionId);
+                }
+            }
+            await ReconcileResidentMembersAsync(CancellationToken.None);
+            await NotifyAsync(memberIds);
+            _logger.LogInformation("组队秘境会话 {SessionId} 自然结束：{Reason}，已复位队伍 {PartyId} 全员就绪状态。", sessionId, reason, partyId);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "处理组队会话自然终局回调失败：队伍 {PartyId} 会话 {SessionId}。", partyId, sessionId);
+        }
     }
 
 

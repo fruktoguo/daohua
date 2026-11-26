@@ -194,6 +194,12 @@ public sealed class PlayerProgression
     /// <summary>筑基期专属根基状态：半步筑基满修为后解锁常驻凝练，百分比提升全六维。</summary>
     public PlayerGenjiState Genji { get; } = new();
 
+    /// <summary>秘境副本周清体力锚点值（0..1680，与 TiliUpdatedAtUnixSeconds 联合懒恢复推导）。</summary>
+    public int TiliValue { get; set; }
+
+    /// <summary>秘境体力锚点时刻（Unix 秒；&lt;= 0 表示未初始化旧存档，首次读取自动按初始 240 点激活）。</summary>
+    public double TiliUpdatedAtUnixSeconds { get; set; }
+
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
 
@@ -329,6 +335,8 @@ public sealed class PlayerProgression
         HeavenGate.Apply(state.HeavenGateRolled, state.HeavenGateConfirmed, state.HeavenGateEntered, state.HeavenGateRerollCount);
         Genji.Apply(state.GenjiPoints, state.GenjiUnlocked);
         Genji.RestoreVersion(genjiVersion);
+        TiliValue = state.TiliValue;
+        TiliUpdatedAtUnixSeconds = state.TiliUpdatedAtUnixSeconds;
         StagedEnhancements.Clear();
         if (state.StagedEnhancements is { Count: > 0 } staged)
         {
@@ -558,10 +566,26 @@ public sealed class PlayerSettingsState
     /// 目标不在队伍中时同样按直接复活处理，不改写玩家设置。
     /// </summary>
     public Guid? RespawnTargetPlayerId { get; set; }
+    /// <summary>角色名片付费查阅装配的价格上限（100,000 灵石）。</summary>
+    public const double MaxLoadoutInspectPrice = 100_000d;
     /// <summary>
     /// 角色名片配装对非同队修士是否可见（默认开放）；对本人与当前同队成员恒定可见。
     /// </summary>
     public bool PublicLoadoutVisible { get; set; } = true;
+    /// <summary>
+    /// 当关闭公开配装（<see cref="PublicLoadoutVisible"/> 为 false）时，非同队修士支付多少灵石可查阅本人配装（维持至北京时间当日零点）；
+    /// 0 表示完全隐藏（不允许付费查阅），正整数（1..100,000）表示启用付费查阅。
+    /// </summary>
+    public double LoadoutInspectPrice { get; set; }
+
+    /// <summary>将外部输入的查阅价格归一化为合法非负整数（越界或非有限值回落 0）。</summary>
+    public static double NormalizeLoadoutInspectPrice(double rawPrice, bool publicLoadoutVisible)
+    {
+        if (publicLoadoutVisible || !double.IsFinite(rawPrice) || rawPrice <= 0d)
+            return 0d;
+        var rounded = Math.Floor(rawPrice);
+        return rounded > MaxLoadoutInspectPrice ? MaxLoadoutInspectPrice : rounded;
+    }
 
     /// <summary>检查形象是否已解锁（女剑修与男剑修恒为已解锁）。</summary>
     public bool IsAvatarUnlocked(string? avatar)
@@ -892,6 +916,8 @@ public sealed partial class PlayerAggregate
             Presence = PresenceState.Online,
             StateVersion = 1
         };
+        aggregate.Progression.TiliValue = DungeonEnergyRules.InitialEnergy;
+        aggregate.Progression.TiliUpdatedAtUnixSeconds = now.ToUniversalTime().ToUnixTimeMilliseconds() / 1000d;
         aggregate.MarkDirty(PlayerSectionKind.Progression);
         aggregate.MarkDirty(PlayerSectionKind.World);
         aggregate.MarkDirty(PlayerSectionKind.Combat);
@@ -1181,9 +1207,27 @@ public sealed partial class PlayerAggregate
 
     /// <summary>调整非同队修士是否可见本人的配装详情（对本人与同队成员恒定可见）。</summary>
     public void SetPublicLoadoutVisible(bool visible)
+        => SetLoadoutPrivacy(visible, 0d);
+
+    /// <summary>
+    /// 调整角色名片配装隐私与付费查阅价格：
+    /// 公开模式下强制清零查阅价格；非公开模式下允许设为 0（完全隐藏）或 1..100,000 整数灵石（付费查阅至当日零点）。
+    /// </summary>
+    public void SetLoadoutPrivacy(bool publicLoadoutVisible, double loadoutInspectPrice)
     {
-        if (Settings.PublicLoadoutVisible == visible) return;
-        Settings.PublicLoadoutVisible = visible;
+        if (!double.IsFinite(loadoutInspectPrice) || loadoutInspectPrice < 0d
+            || loadoutInspectPrice > PlayerSettingsState.MaxLoadoutInspectPrice
+            || Math.Floor(loadoutInspectPrice) != loadoutInspectPrice)
+        {
+            throw new DomainException(DomainErrorCode.InvalidArgument, "配装查阅价格必须为 0 至 100,000 之间的整数灵石。");
+        }
+
+        var normalizedPrice = publicLoadoutVisible ? 0d : loadoutInspectPrice;
+        if (Settings.PublicLoadoutVisible == publicLoadoutVisible && Settings.LoadoutInspectPrice.Equals(normalizedPrice))
+            return;
+
+        Settings.PublicLoadoutVisible = publicLoadoutVisible;
+        Settings.LoadoutInspectPrice = normalizedPrice;
         Touch(PlayerSectionKind.Settings);
     }
 

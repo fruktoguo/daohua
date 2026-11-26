@@ -1,3 +1,4 @@
+using Domain.Combat;
 using Domain.Simulation;
 
 namespace Domain.Player;
@@ -45,8 +46,9 @@ public static class ActionReportBook
     public static void ArchiveActionReport(IPlayerResourceContext player, Guid instanceId, double endedAtUnixSeconds, int maxBattleReports)
     {
         if (!player.Duel.ActionReports.Remove(instanceId, out var report)) return;
-        // 战斗单位统计随行动结束即弃：不进入归档战报与历史持久化。
+        // 战斗单位统计与斗法行动记录随行动结束即弃：不进入归档战报与历史持久化。
         report.CombatStats.Clear();
+        report.DuelRecords.Clear();
         report.EndedAtUnixSeconds = endedAtUnixSeconds;
         report.MarkExportDirty();
         if (report.HasContent)
@@ -66,6 +68,29 @@ public static class ActionReportBook
     {
         if (player.Duel.ReportFor(actionInstanceId) is not { CombatStats.Dirty: true } report) return;
         report.CombatStats.ClearDirty();
+        report.MarkExportDirty();
+        player.MarkDirty(PlayerSectionKind.Duel);
+    }
+
+    /// <summary>
+    /// 登记一场 PVP 斗法的紧凑行动记录至当前行动实例账本：按 DuelId 幂等防重，
+    /// 最新插入头部并滚动裁剪至 20 场上限；弃战场景可传 maxAtSeconds 截断未发生的未来行动。
+    /// </summary>
+    public static void RecordDuelBattle(IPlayerResourceContext player, Guid actionInstanceId,
+        DuelPlaybackState playback, double endedAtUnixSeconds, double? maxAtSeconds = null)
+    {
+        if (playback.ViewerRecord is not { } viewerRecord) return;
+        if (player.Duel.ReportFor(actionInstanceId) is not { } report) return;
+        for (var i = 0; i < report.DuelRecords.Count; i++)
+        {
+            if (string.Equals(report.DuelRecords[i].DuelId, playback.DuelId, StringComparison.Ordinal))
+                return;
+        }
+        var entry = viewerRecord.ForViewerSlice(playback.ViewerOutcome, playback.Forfeited, endedAtUnixSeconds, maxAtSeconds);
+        report.DuelRecords.Insert(0, entry);
+        while (report.DuelRecords.Count > DuelBattleRecordLimits.MaxRecordsPerAction)
+            report.DuelRecords.RemoveAt(report.DuelRecords.Count - 1);
+        report.EndedAtUnixSeconds = Math.Max(report.EndedAtUnixSeconds, endedAtUnixSeconds);
         report.MarkExportDirty();
         player.MarkDirty(PlayerSectionKind.Duel);
     }

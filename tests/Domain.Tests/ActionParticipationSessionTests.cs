@@ -1145,4 +1145,58 @@ public sealed class ActionParticipationSessionTests
             e.State.Buffs?.Any(b => b.BuffId == Domain.Combat.CombatTraitRules.RanhunBuffId && b.Stacks > 0) == true);
         Assert.NotNull(enemyWithRanhun);
     }
+
+    /// <summary>
+    /// 组队雷击符打击不吃技能增幅（总纲 §7.7.1 技能增幅作用域、§20.2 打击公式）：
+    /// 成员面板技能增幅 0 与 100 两次会话推演，敌人承伤必须完全一致。
+    /// 全队攻击/术攻归零且不带技能，敌人承伤全部来自雷击符，对照干净。
+    /// </summary>
+    [Fact]
+    public void LeijiTalismanStrikeIgnoresSkillBonusPointsInParty()
+    {
+        double RunEnemyHitpoints(double skillBonusPoints, bool withTalisman = true)
+        {
+            var (catalog, _, original) = CreateParty();
+            var member0 = original.Members[0];
+            var baseStats = member0.Stats with
+            {
+                AttackPower = 0,
+                MaxManapoints = 100,
+                SpellAttack = 10,
+                AttackIntervalSeconds = 100,
+                SkillBonusPoints = skillBonusPoints
+            };
+            var spec = original with
+            {
+                Members = original.Members.Select((m, i) => i == 0
+                    ? m with
+                    {
+                        Stats = baseStats,
+                        InitialHitpoints = baseStats.MaxHitpoints,
+                        InitialManapoints = 100,
+                        ConsumableSlots = withTalisman
+                            ? [new ActionConsumableSlot("item.leiji-talisman", "combat", AutoUseSlotState.SlotGroupGeneral, 0)]
+                            : null
+                    }
+                    : m with
+                    {
+                        Stats = m.Stats with { AttackPower = 0, SpellAttack = 0, AttackIntervalSeconds = 100 }
+                    }).ToArray()
+            };
+            var session = ActionParticipationSessionEngine.Create(spec, catalog, Wallet(spec, 0, "item.leiji-talisman", 5));
+            var searchSec = session.Export().Expedition!.PhaseDurationSeconds;
+            session.AdvanceTo(Baseline.AddSeconds(searchSec + 3));
+            var doc = session.Export();
+            Assert.Equal(CombatExpeditionPhase.Combat, doc.Expedition!.Phase);
+            return doc.Expedition.Enemies!.Sum(e => e.State.Hitpoints);
+        }
+
+        var withoutBonus = RunEnemyHitpoints(0);
+        var withBonus = RunEnemyHitpoints(100);
+        var noTalisman = RunEnemyHitpoints(0, withTalisman: false);
+        // 雷击符必须真实造成承伤（否则对照形同虚设），且承伤与技能增幅无关。
+        Assert.True(noTalisman > withoutBonus,
+            $"雷击符应已造成承伤：无符 {noTalisman}，有符 {withoutBonus}。");
+        Assert.Equal(withoutBonus, withBonus, 9);
+    }
 }
