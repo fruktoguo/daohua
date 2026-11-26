@@ -281,6 +281,89 @@ public sealed class ZongmenIntegrationTests
         }
     }
 
+    /// <summary>
+    /// 宗门同门列表按权威最大离线挂机时长投影三态（online / idle / offline）：
+    /// 未超时不暴露离线时长；满/超时从实际断线锚点起算总离线秒数，并支持缺失 offline_since 时回退 last_active_at。
+    /// </summary>
+    [Fact]
+    public async Task StateProjectsMemberThreeStatePresenceAndOfflineDurationFromAnchor()
+    {
+        await using var fixture = await Fixture.CreateAsync(5);
+        var onlineMember = fixture.Players[0];
+        var idleMember = fixture.Players[1];
+        var exactTimeoutMember = fixture.Players[2];
+        var overdueMember = fixture.Players[3];
+        var fallbackAnchorMember = fixture.Players[4];
+
+        await fixture.Apply(onlineMember, "create", new
+        {
+            name = "存在感" + Guid.NewGuid().ToString("N")[..10],
+            prefix = "灵",
+            anchorNodeId = "node.yunxi-village"
+        });
+        var own = (await fixture.Repository.FindForPlayerAsync(onlineMember))!;
+        foreach (var member in fixture.Players.Skip(1))
+        {
+            await fixture.Apply(onlineMember, "invite", new { targetPlayerId = member });
+            await fixture.Apply(member, "accept", new { zongmenId = own.Id });
+        }
+
+        var now = new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero);
+        var limit = PlayerLifecycleRules.OfflineIdleLimit;
+        var presence = new OnlinePresenceRegistry();
+        await presence.RegisterAsync(onlineMember, onlineMember.ToString("N"), "node.yunxi-village");
+
+        // 在线成员即使库内残留旧 offline_since，实时存在感仍判 online 且不返回离线秒数。
+        await UpsertProjection(onlineMember, "offline", now - limit - TimeSpan.FromHours(10), now - TimeSpan.FromHours(1));
+        // 挂机中（距断线不足最大挂机时长）判 idle，不返回离线秒数。
+        await UpsertProjection(idleMember, "offline", now - limit + TimeSpan.FromHours(1), now - limit + TimeSpan.FromHours(1));
+        // 恰好达到最大挂机时长判 offline，离线时长从断线锚点起算（即 limit 本身，而非 0）。
+        await UpsertProjection(exactTimeoutMember, "offline", now - limit, now - limit);
+        // 超过最大挂机时长 3 小时，离线时长 = limit + 3h。
+        await UpsertProjection(overdueMember, "offline", now - limit - TimeSpan.FromHours(3), now - limit - TimeSpan.FromHours(3));
+        // 缺少 offline_since 时回退 last_active_at 判定。
+        await UpsertProjection(fallbackAnchorMember, "offline", null, now - limit - TimeSpan.FromHours(5));
+
+        var state = await fixture.Repository.StateAsync(onlineMember, presence, "", default, now);
+        var byId = state.Zongmen!.Members.ToDictionary(m => m.PlayerId, StringComparer.Ordinal);
+
+        var mOnline = byId[onlineMember.ToString("D")];
+        Assert.True(mOnline.Online);
+        Assert.Equal(ZongmenMemberPresenceStates.Online, mOnline.PresenceStatus);
+        Assert.Null(mOnline.OfflineDurationSeconds);
+
+        var mIdle = byId[idleMember.ToString("D")];
+        Assert.False(mIdle.Online);
+        Assert.Equal(ZongmenMemberPresenceStates.Idle, mIdle.PresenceStatus);
+        Assert.Null(mIdle.OfflineDurationSeconds);
+
+        var mExact = byId[exactTimeoutMember.ToString("D")];
+        Assert.False(mExact.Online);
+        Assert.Equal(ZongmenMemberPresenceStates.Offline, mExact.PresenceStatus);
+        Assert.Equal((long)limit.TotalSeconds, mExact.OfflineDurationSeconds);
+
+        var mOverdue = byId[overdueMember.ToString("D")];
+        Assert.False(mOverdue.Online);
+        Assert.Equal(ZongmenMemberPresenceStates.Offline, mOverdue.PresenceStatus);
+        Assert.Equal((long)(limit + TimeSpan.FromHours(3)).TotalSeconds, mOverdue.OfflineDurationSeconds);
+
+        var mFallback = byId[fallbackAnchorMember.ToString("D")];
+        Assert.False(mFallback.Online);
+        Assert.Equal(ZongmenMemberPresenceStates.Offline, mFallback.PresenceStatus);
+        Assert.Equal((long)(limit + TimeSpan.FromHours(5)).TotalSeconds, mFallback.OfflineDurationSeconds);
+
+        Task UpsertProjection(Guid playerId, string presenceText, DateTimeOffset? offlineSince, DateTimeOffset lastActiveAt) =>
+            fixture.Sql("""
+                INSERT INTO game.player_projection(player_id, presence, offline_since, last_active_at, updated_at)
+                VALUES($1, $2, $3, $4, $5)
+                ON CONFLICT(player_id) DO UPDATE SET
+                    presence = EXCLUDED.presence,
+                    offline_since = EXCLUDED.offline_since,
+                    last_active_at = EXCLUDED.last_active_at,
+                    updated_at = EXCLUDED.updated_at
+                """, playerId, presenceText, (object?)offlineSince ?? DBNull.Value, lastActiveAt, now);
+    }
+
     private sealed class Fixture(NpgsqlDataSource source) : IAsyncDisposable
     {
         public NpgsqlDataSource Source { get; } = source;

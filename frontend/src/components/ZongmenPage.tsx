@@ -6,6 +6,7 @@ import { useT } from '../i18n'
 import { useUiStore } from '../uiStore'
 import { gameClient } from '../network/gameClient'
 import { resolveBuildingIconUrl } from '../game/buildingIcons'
+import { resolveZongmenMemberPresence } from '../game/zongmenPresence'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ItemReference } from './ItemDisplay'
 import { Icon } from './Icon'
@@ -244,61 +245,76 @@ const ZongmenMembersSection = memo(function ZongmenMembersSection({
       </div>
 
       <div className="zongmen-members">
-        {own.members.map(member => (
-          <div className="zongmen-member" key={member.playerId}>
-            <span>
-              <i className={member.online ? 'is-online' : ''} />
-              {member.displayName}
-            </span>
-            <span>{t(`social.zongmen.role${member.role}`)}</span>
-            {own.myRole <= 3 && member.role > own.myRole && (
-              <div className="zongmen-actions">
-                <select
-                  aria-label={t('social.zongmen.changeRole')}
-                  disabled={pending}
-                  onChange={event =>
-                    act('role', { targetPlayerId: member.playerId, role: Number(event.target.value) })
-                  }
-                  value={member.role}
-                >
-                  {[1, 2, 3, 4, 5, 6]
-                    .filter(role => role > own.myRole && (role >= 4 || own.myRole === 0))
-                    .map(role => (
-                      <option key={role} value={role}>{t(`social.zongmen.role${role}`)}</option>
-                    ))}
-                </select>
-                {own.myRole === 0 && (
+        {own.members.map(member => {
+          const presence = resolveZongmenMemberPresence(member)
+          const presenceLabel =
+            presence.status === 'idle'
+              ? t('social.zongmen.presenceIdle')
+              : presence.status === 'offline'
+                ? (presence.compactOfflineDuration
+                  ? t('social.zongmen.presenceOfflineDuration', { duration: presence.compactOfflineDuration })
+                  : t('social.zongmen.presenceOffline'))
+                : null
+
+          return (
+            <div className="zongmen-member" key={member.playerId}>
+              <span className="zongmen-member-name">
+                <i className={`is-${presence.status}`} />
+                <span className="zongmen-member-display-name">{member.displayName}</span>
+                {presenceLabel && (
+                  <span className={`zongmen-presence-tag is-${presence.status}`}>{presenceLabel}</span>
+                )}
+              </span>
+              <span>{t(`social.zongmen.role${member.role}`)}</span>
+              {own.myRole <= 3 && member.role > own.myRole && (
+                <div className="zongmen-actions">
+                  <select
+                    aria-label={t('social.zongmen.changeRole')}
+                    disabled={pending}
+                    onChange={event =>
+                      act('role', { targetPlayerId: member.playerId, role: Number(event.target.value) })
+                    }
+                    value={member.role}
+                  >
+                    {[1, 2, 3, 4, 5, 6]
+                      .filter(role => role > own.myRole && (role >= 4 || own.myRole === 0))
+                      .map(role => (
+                        <option key={role} value={role}>{t(`social.zongmen.role${role}`)}</option>
+                      ))}
+                  </select>
+                  {own.myRole === 0 && (
+                    <button
+                      disabled={pending}
+                      onClick={() =>
+                        ask(
+                          t('social.zongmen.transfer'),
+                          t('social.zongmen.transferConfirm', { name: member.displayName }),
+                          () => act('transfer', { targetPlayerId: member.playerId }),
+                        )
+                      }
+                      type="button"
+                    >
+                      {t('social.zongmen.transfer')}
+                    </button>
+                  )}
                   <button
                     disabled={pending}
                     onClick={() =>
                       ask(
-                        t('social.zongmen.transfer'),
-                        t('social.zongmen.transferConfirm', { name: member.displayName }),
-                        () => act('transfer', { targetPlayerId: member.playerId }),
+                        t('social.zongmen.kick'),
+                        t('social.zongmen.kickConfirm', { name: member.displayName }),
+                        () => act('kick', { targetPlayerId: member.playerId }),
                       )
                     }
                     type="button"
                   >
-                    {t('social.zongmen.transfer')}
+                    {t('social.zongmen.kick')}
                   </button>
-                )}
-                <button
-                  disabled={pending}
-                  onClick={() =>
-                    ask(
-                      t('social.zongmen.kick'),
-                      t('social.zongmen.kickConfirm', { name: member.displayName }),
-                      () => act('kick', { targetPlayerId: member.playerId }),
-                    )
-                  }
-                  type="button"
-                >
-                  {t('social.zongmen.kick')}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

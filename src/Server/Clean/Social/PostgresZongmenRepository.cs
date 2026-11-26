@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using Domain.Player;
 using Domain.World;
 using Domain.GameData;
 using Protocol;
@@ -55,8 +56,15 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
     }
 
     /// <summary>自身驻地与组织名录分开投影，他宗门的节点、挂靠点和私密成员不进入名录。</summary>
-    public async ValueTask<ZongmenStateDto> StateAsync(Guid playerId, OnlinePresenceRegistry presence, string search, CancellationToken ct)
+    public async ValueTask<ZongmenStateDto> StateAsync(
+        Guid playerId,
+        OnlinePresenceRegistry presence,
+        string search,
+        CancellationToken ct,
+        DateTimeOffset? now = null)
     {
+        var currentTime = now ?? DateTimeOffset.UtcNow;
+        var maxIdleLimit = PlayerLifecycleRules.OfflineIdleLimit;
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var readTransaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
         var ownId = await ScalarAsync(connection, readTransaction, "SELECT zongmen_id FROM social.zongmen_members WHERE player_id=$1", ct, playerId);
@@ -65,15 +73,29 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
         {
             var members = new List<ZongmenMemberDto>();
             await using (var command = Command(connection, readTransaction, """
-                SELECT m.player_id,p.display_name,m.role FROM social.zongmen_members m
+                SELECT m.player_id,p.display_name,m.role,j.offline_since,j.last_active_at,p.created_at
+                FROM social.zongmen_members m
                 JOIN identity.players p ON p.player_id=m.player_id
+                LEFT JOIN game.player_projection j ON j.player_id=m.player_id
                 WHERE m.zongmen_id=$1 ORDER BY m.role,m.joined_at,m.player_id
                 """, id))
             await using (var reader = await command.ExecuteReaderAsync(ct))
                 while (await reader.ReadAsync(ct))
                 {
                     var memberId = reader.GetGuid(0);
-                    members.Add(new(memberId.ToString("D"), reader.GetString(1), reader.GetInt32(2), presence.IsOnline(memberId)));
+                    var isOnline = presence.IsOnline(memberId);
+                    var offlineSince = reader.IsDBNull(3) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(3);
+                    var lastActiveAt = reader.IsDBNull(4) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(4);
+                    var createdAt = reader.GetFieldValue<DateTimeOffset>(5);
+                    var (presenceStatus, offlineDurationSeconds) = ResolveMemberPresence(
+                        isOnline, offlineSince, lastActiveAt, createdAt, currentTime, maxIdleLimit);
+                    members.Add(new(
+                        memberId.ToString("D"),
+                        reader.GetString(1),
+                        reader.GetInt32(2),
+                        isOnline,
+                        presenceStatus,
+                        offlineDurationSeconds));
                 }
             var role = (members.FirstOrDefault(member => member.PlayerId == playerId.ToString("D"))
                 ?? throw new InvalidOperationException("宗门成员名册缺少自身行。")).Role;
@@ -98,13 +120,40 @@ public sealed class PostgresZongmenRepository(NpgsqlDataSource dataSource, GameD
                 var building = new NodeBuildingState(ZongmenRules.HallBuildingId, reader.GetInt32(4), reader.GetInt32(5), reader.GetDouble(6),
                     JsonSerializer.Deserialize<Dictionary<string, double>>(reader.GetString(7))!);
                 var level = NodeBuildingRules.EffectiveLevel(building, catalog.Buildings[ZongmenRules.HallBuildingId],
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d, ZongmenRules.ResidenceNodeId(reader.GetGuid(0)));
+                    currentTime.ToUnixTimeMilliseconds() / 1000d, ZongmenRules.ResidenceNodeId(reader.GetGuid(0)));
                 directory.Add(new(reader.GetGuid(0).ToString("D"), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), ZongmenRules.MemberCapacity(level), reader.GetString(8)));
             }
         var invitations = await RequestsAsync(connection, readTransaction, "r.player_id=$1 AND r.kind='invitation'", playerId, ct);
         var applications = await RequestsAsync(connection, readTransaction, "r.player_id=$1 AND r.kind='application'", playerId, ct);
         await readTransaction.CommitAsync(ct);
         return new(own, directory, invitations, applications);
+    }
+
+    /// <summary>
+    /// 按权威最大离线挂机时长判定宗门成员三态存在感：
+    /// 在线直返 online；不在线且距断线锚点（缺失时回退最后活跃/建号时间）未满上限返 idle；
+    /// 已满或超过上限返 offline，并下发自实际断线时刻起算的总离线秒数。
+    /// </summary>
+    internal static (string PresenceStatus, long? OfflineDurationSeconds) ResolveMemberPresence(
+        bool online,
+        DateTimeOffset? offlineSince,
+        DateTimeOffset? lastActiveAt,
+        DateTimeOffset createdAt,
+        DateTimeOffset now,
+        TimeSpan maxIdleLimit)
+    {
+        if (online)
+            return (ZongmenMemberPresenceStates.Online, null);
+
+        var anchor = offlineSince ?? lastActiveAt ?? createdAt;
+        var elapsed = now - anchor;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+
+        if (elapsed < maxIdleLimit)
+            return (ZongmenMemberPresenceStates.Idle, null);
+
+        return (ZongmenMemberPresenceStates.Offline, (long)Math.Floor(elapsed.TotalSeconds));
     }
 
     public async ValueTask<IReadOnlyList<Guid>> MemberIdsAsync(Guid id, CancellationToken ct = default)

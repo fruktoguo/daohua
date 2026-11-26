@@ -64,12 +64,25 @@ public sealed class ZongmenRulesTests
     public void StateContractRoundTripsWithCamelCaseAndRoles()
     {
         var state = new ZongmenStateDto(new("id", "青云宗", "青", "leader", 0, "node.anchor", "node.private", 1, 20,
-            [new("leader", "道友", 0, true)], []), [new("z1", "玄剑宗", "玄", 5, 20, "node.anchor")], [], [new("z1", "玄剑宗", "me", "道友", "application")]);
+            [
+                new("leader", "道友", 0, true, ZongmenMemberPresenceStates.Online, null),
+                new("idle-member", "挂机道友", 4, false, ZongmenMemberPresenceStates.Idle, null),
+                new("offline-member", "离线道友", 6, false, ZongmenMemberPresenceStates.Offline, 180_000),
+            ], []), [new("z1", "玄剑宗", "玄", 5, 20, "node.anchor")], [], [new("z1", "玄剑宗", "me", "道友", "application")]);
         var json = JsonSerializer.Serialize(state, ProtocolJson.Options);
         Assert.Contains("\"anchorNodeId\":\"node.anchor\"", json);
         Assert.Contains("\"applications\"", json);
+        Assert.Contains("\"presenceStatus\":\"idle\"", json);
+        Assert.Contains("\"presenceStatus\":\"offline\"", json);
+        Assert.Contains("\"offlineDurationSeconds\":180000", json);
         var restored = JsonSerializer.Deserialize<ZongmenStateDto>(json, ProtocolJson.Options)!;
-        Assert.Equal(0, Assert.Single(restored.Zongmen!.Members).Role);
+        Assert.Equal(3, restored.Zongmen!.Members.Count);
+        Assert.Equal(0, restored.Zongmen.Members[0].Role);
+        Assert.Equal(ZongmenMemberPresenceStates.Online, restored.Zongmen.Members[0].PresenceStatus);
+        Assert.Equal(ZongmenMemberPresenceStates.Idle, restored.Zongmen.Members[1].PresenceStatus);
+        Assert.Null(restored.Zongmen.Members[1].OfflineDurationSeconds);
+        Assert.Equal(ZongmenMemberPresenceStates.Offline, restored.Zongmen.Members[2].PresenceStatus);
+        Assert.Equal(180_000L, restored.Zongmen.Members[2].OfflineDurationSeconds);
         Assert.Equal(state.Zongmen!.NodeId, restored.Zongmen.NodeId);
         Assert.Equal("node.anchor", Assert.Single(restored.Directory).AnchorNodeId);
         Assert.Equal("application", Assert.Single(restored.Applications).Kind);

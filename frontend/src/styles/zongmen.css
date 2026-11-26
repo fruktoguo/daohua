@@ -7,8 +7,14 @@
 .zongmen-members { display: flex; flex-direction: column; }
 .zongmen-member { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
 .zongmen-member > span:first-child { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
-.zongmen-member i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); margin-right: 6px; }
-.zongmen-member i.is-online { background: var(--color-jade, #6ba58a); }
+.zongmen-member-name { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.zongmen-member i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim, var(--text-muted, #8c8c8c)); flex-shrink: 0; }
+.zongmen-member i.is-online { background: var(--jade, var(--color-jade, #6ba58a)); }
+.zongmen-member i.is-idle { background: var(--amber, #d6a45b); }
+.zongmen-member i.is-offline { background: var(--text-dim, var(--text-muted, #8c8c8c)); }
+.zongmen-presence-tag { display: inline-block; padding: 1px 6px; font-size: 0.78em; line-height: 1.4; border-radius: 3px; border: 1px solid transparent; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.zongmen-presence-tag.is-idle { color: var(--amber, #d6a45b); border-color: color-mix(in srgb, var(--amber, #d6a45b) 40%, transparent); background: color-mix(in srgb, var(--amber, #d6a45b) 12%, transparent); }
+.zongmen-presence-tag.is-offline { color: var(--text-dim, var(--text-muted, #8c8c8c)); border-color: color-mix(in srgb, var(--text-dim, #8c8c8c) 32%, transparent); background: color-mix(in srgb, var(--text-dim, #8c8c8c) 10%, transparent); }
 .zongmen-error { color: var(--color-danger, #d97676); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 /* 散修立宗顶部横幅 */
 .zongmen-create-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
