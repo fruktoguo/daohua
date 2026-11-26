@@ -1557,6 +1557,7 @@ combat.map.stopTravel,"中断当前赶路","Cancel Travel"
 combat.map.stopTravelConfirmBtn,"中断","Cancel"
 combat.map.stopTravelConfirmDesc,"确定中断前往“{name}”的赶路吗？","Cancel travel to ""{name}""?"
 combat.map.stopTravelConfirmTitle,"中断赶路","Cancel Travel"
+combat.map.travelBaseTime,"（原 {seconds} 秒）"," (base {seconds}s)"
 combat.map.travelCancelBtn,"暂缓","Later"
 combat.map.travelConfirmBtn,"立即启程","Depart Now"
 combat.map.travelConfirmPrompt,"确认后将立即规划最短路线并启程前往。","Confirm to chart the shortest route and depart immediately."
@@ -1565,6 +1566,15 @@ combat.map.travelDestination,"目标地点","Destination"
 combat.map.travelEstimatedTime,"预估耗时","Est. Time"
 combat.map.travelOrigin,"当前起点","Origin"
 combat.map.travelRoute,"途经路线","Route"
+combat.map.travelSpeedBadge,"移速 {percent}%","Speed {percent}%"
+combat.map.travelSpeedBase,"{percent}%","{percent}%"
+combat.map.travelSpeedBoosted,"{percent}%（+{bonus}%）","{percent}% (+{bonus}%)"
+combat.map.travelSpeedLabel,"大地图移速","Map Speed"
+combat.map.travelSpeedTooltip,"大地图移速 {percent}%（+{bonus}%）
+中境界 ×{mid}（+{midBonus}%）· 大境界 ×{major}（+{majorBonus}%）
+每中境界 +5%，每大境界 +30%","Map Speed {percent}% (+{bonus}%)
+Mid Realms ×{mid} (+{midBonus}%) · Major Realms ×{major} (+{majorBonus}%)
++5% per Mid Realm, +30% per Major Realm"
 combat.map.travelling,"正在前往途中...","Traveling..."
 combat.map.zoomIn,"放大","Zoom In"
 combat.map.zoomOut,"缩小","Zoom Out"

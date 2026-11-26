@@ -232,9 +232,15 @@ public sealed class WorldGraph
 
     /// <summary>
     /// 从当前位置（支持处于某条边中间或处于节点上）规划到达目标节点的最短路径。
-    /// 根据设计规范 §7.2：从边中间再次规划时，同时比较前往边两端的剩余时间，再选择总耗时更短的路线。
+    /// 根据设计规范 §7.2 与 §8.3.1b：从边中间再次规划时比较前往边两端的剩余时间选出更短路线，
+    /// 再按角色大地图移速倍率 <paramref name="speedMultiplier"/> 统一缩放各路段与总耗时。
     /// </summary>
-    public TravelPlan PlanFromPosition(string? edgeId, double edgeProgress, string currentNodeId, string targetNodeId)
+    public TravelPlan PlanFromPosition(string? edgeId, double edgeProgress, string currentNodeId, string targetNodeId,
+        double speedMultiplier = 1d)
+        => PlanFromPositionBase(edgeId, edgeProgress, currentNodeId, targetNodeId)
+            .WithSpeedMultiplier(speedMultiplier);
+
+    private TravelPlan PlanFromPositionBase(string? edgeId, double edgeProgress, string currentNodeId, string targetNodeId)
     {
         if (string.IsNullOrWhiteSpace(targetNodeId)) throw new DomainException(DomainErrorCode.InvalidArgument, "目标节点无效。");
         if (!ContainsNode(targetNodeId)) throw new DomainException(DomainErrorCode.NotFound, $"目标节点不存在：{targetNodeId}。");
@@ -318,4 +324,30 @@ public sealed record TravelPlan(
 {
     /// <summary>途经路段明细（含边内起止进度与耗时）。</summary>
     public IReadOnlyList<TravelSegment> Segments { get; init; } = Segments ?? [];
+
+    /// <summary>
+    /// 按大地图移速倍率缩放全部路段耗时与总耗时（路径拓扑与空间里程不变）；
+    /// 总耗时取折算后各路段时长精确之和，消除分段推进时的浮点尾差。
+    /// </summary>
+    public TravelPlan WithSpeedMultiplier(double speedMultiplier)
+    {
+        if (!double.IsFinite(speedMultiplier) || speedMultiplier <= 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "大地图移速倍率必须为正有限数。");
+        if (speedMultiplier == 1d || Segments.Count == 0) return this;
+
+        var scaledSegments = new TravelSegment[Segments.Count];
+        var totalSeconds = 0d;
+        for (var i = 0; i < Segments.Count; i++)
+        {
+            var seg = Segments[i];
+            var duration = seg.DurationSeconds / speedMultiplier;
+            scaledSegments[i] = seg with { DurationSeconds = duration };
+            totalSeconds += duration;
+        }
+        return this with
+        {
+            TotalTravelSeconds = totalSeconds,
+            Segments = scaledSegments
+        };
+    }
 }

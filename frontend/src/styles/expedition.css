@@ -165,6 +165,31 @@
   gap: 2px;
 }
 
+.world-map-speed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(201, 180, 109, 0.36);
+  border-radius: 2px;
+  color: var(--gold-bright);
+  background: rgba(10, 14, 12, 0.88);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-kaiti);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: help;
+  backdrop-filter: blur(4px);
+}
+
+.world-map-speed-badge.is-boosted {
+  border-color: rgba(104, 196, 152, 0.55);
+  color: var(--jade-bright, #7fe0b0);
+}
+
 /* 漫游画布视口：尺寸由基准像素包围盒显式注入，配合外层 transform 实现全等比缩放 */
 .world-map-canvas {
   position: absolute;
@@ -980,8 +1005,24 @@
 }
 
 .travel-highlight-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   color: #38bdf8;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.travel-base-time {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.travel-highlight-speed {
+  color: var(--jade-bright, #7fe0b0);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .travel-route-section {

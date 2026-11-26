@@ -1223,8 +1223,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                 RemoveStaleTravel(aggregate);
                                 return;
                             }
+                            var travelSpeed = WorldTravelRules.SpeedMultiplier(aggregate.Progression.RealmLevel);
                             var plan = worldGraph.PlanFromPosition(aggregate.World.EdgeId,
-                                aggregate.World.EdgeProgress, aggregate.World.NodeId, targetNodeId);
+                                aggregate.World.EdgeProgress, aggregate.World.NodeId, targetNodeId, travelSpeed);
                             if (plan.Segments.Count == 0 && plan.TotalTravelSeconds <= 0)
                             {
                                 RemoveStaleTravel(aggregate);
@@ -1787,8 +1788,9 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     aggregate.RemoveAction(aggregate.Actions[i].Id);
                             }
                             var worldGraph = gameData.WorldGraph;
+                            var travelSpeed = WorldTravelRules.SpeedMultiplier(aggregate.Progression.RealmLevel);
                             var plan = worldGraph.PlanFromPosition(aggregate.World.EdgeId,
-                                aggregate.World.EdgeProgress, aggregate.World.NodeId, homeNodeId);
+                                aggregate.World.EdgeProgress, aggregate.World.NodeId, homeNodeId, travelSpeed);
                             if (plan.Segments.Count == 0 && plan.TotalTravelSeconds <= 0)
                             {
                                 if (worldGraph.TryGetNode(homeNodeId, out var targetNodeObj))

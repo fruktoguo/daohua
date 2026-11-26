@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useGameStoreWhenVisible } from '../game/gameStore'
+import { formatNumber } from '../game/format'
 import { findEquipmentInCatalog, findItemInCatalog, resolveItemMetadata, resolveWorldLocationName } from '../game/ids'
+import { applyWorldTravelSpeed, calculateWorldTravelSpeed } from '../game/worldTravelSpeed'
 import type { CombatantDefinition, MapNodeBuilding, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { fetchNodeBuildingIndex } from '../network/apiClient'
@@ -83,8 +85,10 @@ type WorldBounds = WorldCanvasSize
 
 /** 路径规划计算结果 */
 interface PathPlanResult {
-  /** 最短路径总耗时（秒） */
+  /** 折算角色当前境界移速后的实际预估耗时（秒） */
   totalDurationSeconds: number
+  /** 未计移速加成的地图原始基础耗时（秒） */
+  baseDurationSeconds: number
   /** 途经的节点名称链 */
   pathNodeNames: string[]
   /** 途经的路径边 ID 列表 */
@@ -92,12 +96,14 @@ interface PathPlanResult {
 }
 
 /**
- * 使用 Dijkstra 算法精确规划当前玩家位置到目标地点的最短路径与耗时
+ * 使用 Dijkstra 算法精确规划当前玩家位置到目标地点的最短路径与耗时，
+ * 并按角色境界移速倍率折算实际耗时（与服务端 WorldGraph.PlanFromPosition 同源）。
  */
 function planShortestTravel(
   map: WorldGraphView,
   world: WorldState,
   targetNodeId: string,
+  speedMultiplier = 1,
 ): PathPlanResult | null {
   if (!map || !targetNodeId) return null
   const targetNode = map.nodes.find(n => n.nodeId === targetNodeId)
@@ -174,8 +180,10 @@ function planShortestTravel(
       }
     }
 
+    const baseDurationSeconds = totalDist + initialDelaySeconds
     return {
-      totalDurationSeconds: Math.ceil(totalDist + initialDelaySeconds),
+      totalDurationSeconds: applyWorldTravelSpeed(baseDurationSeconds, speedMultiplier),
+      baseDurationSeconds,
       pathNodeNames: nodeNames,
       pathEdgeIds: edgeIds,
     }
@@ -183,7 +191,7 @@ function planShortestTravel(
 
   if (world.nodeId) {
     if (world.nodeId === targetNodeId) {
-      return { totalDurationSeconds: 0, pathNodeNames: [targetNode.name], pathEdgeIds: [] }
+      return { totalDurationSeconds: 0, baseDurationSeconds: 0, pathNodeNames: [targetNode.name], pathEdgeIds: [] }
     }
     const { dist, prev } = dijkstra(world.nodeId)
     const targetDist = dist.get(targetNodeId)
@@ -545,6 +553,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const buildingCatalog = useGameStoreWhenVisible(hidden, state => state.buildings)
   const queue = useGameStoreWhenVisible(hidden, state => state.queue.entries)
   const consciousness = useGameStoreWhenVisible(hidden, state => state.combat?.consciousnessLevel ?? 0)
+  const realmLevel = useGameStoreWhenVisible(hidden, state => state.stats?.realmLevel ?? 1)
+  const travelSpeed = useMemo(() => calculateWorldTravelSpeed(realmLevel), [realmLevel])
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
@@ -1258,11 +1268,11 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     return buildingIndex[selectedNode.nodeId] ?? []
   }, [selectedNode, world.nodeId, world.nodeBuildings, buildingIndex])
 
-  // 4. 计算当前位置到选中地点的最短路径规划（合并世界图，跨区域可达）
+  // 4. 计算当前位置到选中地点的最短路径规划（合并世界图，跨区域可达，按境界移速折算耗时）
   const plannedTravel = useMemo(() => {
     if (worldIndex.nodes.length === 0 || !selectedNodeId) return null
-    return planShortestTravel(worldGraphView, world, selectedNodeId)
-  }, [worldIndex, worldGraphView, world, selectedNodeId])
+    return planShortestTravel(worldGraphView, world, selectedNodeId, travelSpeed.multiplier)
+  }, [worldIndex, worldGraphView, world, selectedNodeId, travelSpeed.multiplier])
 
   const atSelectedNode = selectedNode?.nodeId === world.nodeId
   const travellingToSelected = selectedNode?.nodeId === activeTravel?.travelDestinationNodeId
@@ -1302,6 +1312,26 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       >
         {/* 浮动操作快捷栏 */}
         <div className="world-map-toolbar" role="toolbar">
+          <FloatingTooltip
+            placement="bottom"
+            title={t('combat.map.travelSpeedTooltip', {
+              percent: travelSpeed.speedPercent,
+              bonus: travelSpeed.bonusPoints,
+              mid: travelSpeed.midBreaks,
+              midBonus: travelSpeed.midBreaks * 5,
+              major: travelSpeed.majorBreaks,
+              majorBonus: travelSpeed.majorBreaks * 30,
+            })}
+            tone={travelSpeed.bonusPoints > 0 ? 'jade' : 'gold'}
+          >
+            <span
+              className={`world-map-speed-badge${travelSpeed.bonusPoints > 0 ? ' is-boosted' : ''}`}
+              tabIndex={0}
+            >
+              <Icon name="walk" size={12} />
+              <span>{t('combat.map.travelSpeedBadge', { percent: travelSpeed.speedPercent })}</span>
+            </span>
+          </FloatingTooltip>
           <button
             className="world-map-tool-btn"
             onClick={() => centerOnPlayer(zoomRef.current)}
@@ -1719,7 +1749,26 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               </div>
               <div className="travel-confirm-row">
                 <span>{t('combat.map.travelEstimatedTime')}</span>
-                <strong className="travel-highlight-time">{t('combat.attr.seconds', { n: plannedTravel?.totalDurationSeconds ?? 0 })}</strong>
+                <strong className="travel-highlight-time">
+                  {t('combat.attr.seconds', {
+                    n: formatNumber(plannedTravel?.totalDurationSeconds ?? 0, { maxDecimals: 1 }),
+                  })}
+                  {travelSpeed.bonusPoints > 0 && plannedTravel && plannedTravel.baseDurationSeconds > plannedTravel.totalDurationSeconds + 0.05 && (
+                    <small className="travel-base-time">
+                      {t('combat.map.travelBaseTime', {
+                        seconds: formatNumber(plannedTravel.baseDurationSeconds, { maxDecimals: 1 }),
+                      })}
+                    </small>
+                  )}
+                </strong>
+              </div>
+              <div className="travel-confirm-row">
+                <span>{t('combat.map.travelSpeedLabel')}</span>
+                <strong className={travelSpeed.bonusPoints > 0 ? 'travel-highlight-speed' : ''}>
+                  {travelSpeed.bonusPoints > 0
+                    ? t('combat.map.travelSpeedBoosted', { percent: travelSpeed.speedPercent, bonus: travelSpeed.bonusPoints })
+                    : t('combat.map.travelSpeedBase', { percent: travelSpeed.speedPercent })}
+                </strong>
               </div>
               {plannedTravel && plannedTravel.pathNodeNames.length > 1 && (
                 <div className="travel-route-section">

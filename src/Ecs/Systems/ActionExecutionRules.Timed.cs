@@ -175,8 +175,9 @@ internal static partial class ActionExecutionRules
         TravelPlan plan;
         try
         {
+            var travelSpeed = WorldTravelRules.SpeedMultiplier(player.Progression.RealmLevel);
             plan = worldGraph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress,
-                player.World.NodeId, anchor);
+                player.World.NodeId, anchor, travelSpeed);
         }
         catch (DomainException)
         {

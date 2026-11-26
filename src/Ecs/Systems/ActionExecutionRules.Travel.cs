@@ -45,11 +45,13 @@ internal static partial class ActionExecutionRules
             {
                 try
                 {
+                    var travelSpeed = WorldTravelRules.SpeedMultiplier(player.Progression.RealmLevel);
                     var plan = worldGraph.PlanFromPosition(
                         player.World.EdgeId,
                         player.World.EdgeProgress,
                         player.World.NodeId,
-                        targetNodeId);
+                        targetNodeId,
+                        travelSpeed);
                     travel = new TravelActionState(
                         targetNodeId,
                         plan.TotalTravelSeconds,

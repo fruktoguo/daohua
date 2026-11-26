@@ -374,6 +374,8 @@
 :root[data-theme="light"] .arena-buff-square--jade .arena-buff-glyph,
 :root[data-theme="light"] .arena-buff-tooltip-desc,
 :root[data-theme="light"] .arena-travel-tag,
+:root[data-theme="light"] .world-map-speed-badge.is-boosted,
+:root[data-theme="light"] .travel-highlight-speed,
 :root[data-theme="light"] .badge-party,
 :root[data-theme="light"] .daohua-floating-menu-item--jade:hover:not(:disabled) {
   color: var(--jade);
@@ -555,6 +557,7 @@
 }
 
 :root[data-theme="light"] .compound-stat-label,
+:root[data-theme="light"] .world-map-speed-badge,
 :root[data-theme="light"] .world-map-tool-btn {
   background: rgba(var(--surface-rgb), 0.88);
 }
@@ -868,6 +871,7 @@
 :root[data-theme="light"] .picker-trigger-label { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 7px rgba(201, 180, 109, 0.16); }
 :root[data-theme="light"] .item-tooltip--emperor { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), 0 0 20px rgba(242, 209, 124, 0.18); }
 :root[data-theme="light"] .world-map-stage::after { box-shadow: inset 0 0 90px rgba(71, 49, 18, 0.175); }
+:root[data-theme="light"] .world-map-speed-badge,
 :root[data-theme="light"] .world-map-tool-btn { box-shadow: 0 2px 8px rgba(71, 49, 18, 0.15); }
 :root[data-theme="light"] .world-map-node-plaque,
 :root[data-theme="light"] .world-map-node-media {
