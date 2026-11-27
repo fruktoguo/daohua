@@ -1436,6 +1436,7 @@
 - **境界阶段**：大境界内的分段徽章单字——凡俗段为「武（Lv1~6）/ 玄（Lv7~12）/ 天（Lv13~18）」，修真段每个大境界 12 层内分「初（1~3 层）/ 中（4~6 层）/ 后（7~9 层）/ 极（10~12 层）」；
 - **大境界**（共 11 个）：凡俗（Lv1~18）→ 练气、筑基、金丹、元婴、化神、炼虚、合体、大乘、渡劫（各 12 层，Lv19~126）→ 飞升（Lv127）。凡俗段 18 级的小境界名依次为：凡胎、炼皮、锻骨、易筋、洗髓、养气、通脉、瑶光、开阳、玉衡、天权、天玑、天璇、天枢、宗师、大宗师、临渊、叩天门；修真段每大境界 12 层命名为「X 一层~X 九层 → X 巅峰 → X 大圆满 → 半步 Y」（半步 Y 为下一大境界的破境过渡档）。
 - **一体化徽章表现**：`[大境界牌匾框] ◇境界阶段棱形框◇ (小境界胶囊框)`（如 `[练气] ◇极◇ (练气巅峰)`，悬浮展示精准等级 Lv）。
+- **境界大地图移速成长**：每个中境界阶段晋升提升 **`+5%`** 大地图移动速度，每个大境界突破提升 **`+30%`**（线性加算，大境界入口仅计大境界突破、不重复计中境界，与根基上限档位及装备固定回血同口径）；凡俗武 `1.00×` → 玄 `1.05×` → 天 `1.10×` → 练气初 `1.40×` → 筑基初 `1.85×` → … → 飞升 `5.45×`，完整结算与后续地图间距规约见 [第八篇 §8.3.1b](./08-大世界地图与质量预算遇怪系统.md)。
 
 ### 3.1.2 等阶（T级）数值内容轴
 等阶 T1~T12 是装备套、技能、丹药与怪物的数值底座与产出分档轴，锚点等级为 `1/18/30/42/54/66/78/90/102/114/126/127`（`BaseAttributeCatalog.TierAt`：不超过当前等级的锚点个数即等阶）。等阶边界与大境界错开一层：每个等阶以「破境过渡小境界」开篇——叩天门开启 T2，半步筑基开启 T3，……，半步飞升开启 T11——覆盖到对应大境界大圆满为止。即 T2 对应练气内容档、T3 对应筑基档、T10 对应渡劫档、T11 半步飞升、T12 飞升。
@@ -1734,13 +1735,13 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
 4. **双端协同约束**：前端挂单弹窗与快速表单自动将最低价格、步长网格与快捷调价按钮夹在 $[\max(2, \text{SellPrice}), \text{MaxPrice}]$ 区间内；服务端在 `market.place` 命令、HTTP 挂单接口与持久化层三道防线严格拦截低于回收底价的挂单（返回 `PRICE_BELOW_VENDOR_FLOOR`）。
 
 <!-- FILE:05-技能神通与秘籍残卷体系.md -->
-# 第五篇 技能神通与秘籍残卷体系 (21 门神通 + 10 门内功心法)
+# 第五篇 技能神通与秘籍残卷体系 (24 门神通 + 10 门内功心法)
 
-## 5.1 全量真实技能清单与数值配置 (21 门)
+## 5.1 全量真实技能清单与数值配置 (24 门)
 
-游戏技能严格划分为**物理系 (Physical)** 与 **术法系 (Spell)** 两大类，当前正式配置库共有 **21 门真实神通**：
+游戏技能严格划分为**物理系 (Physical)** 与 **术法系 (Spell)** 两大类，当前正式配置库共有 **24 门真实神通**：
 
-### 1. 物理系神通 (9 门 · `config/game-data/abilities/physical_abilities.json`)
+### 1. 物理系神通 (12 门 · `config/game-data/abilities/physical_abilities.json`)
 | 技能名称 | 技能 ID | 等阶 | 武道风格 | 属性 | 冷却 | 吟唱 | 灵力消耗 | 目标类型 | 基础效果与伤害 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | **重斩** | `ability.heavy-slash` | **T1 凡胎** | 剑修 (`sword`) | 金 (`metal`) | 18.0s | 1.0s | 10.0 MP | 单体敌方 | 造成 **`240% AD + 35`** 金系物理伤害 |
@@ -1752,6 +1753,9 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
 | **斩玉（踏云）** | `ability.zhanyu` | **T1 凡胎** | 剑修 (`sword`) | 金 (`metal`) | 8.0s | 0.5s | 10.0 MP | 单体敌方（移形时切换全体敌方） | 常态「斩玉」对单个敌人造成 **`160% AD + 40`** 金系物理伤害；起手结算时若自身拥有「移形」（`buff.yixing`），切换为 **踏云** 对全体存活敌方造成同等 **`160% AD + 40`** 金系物理伤害，享受本技能 2× 命中并在施放后消耗 1 层「移形」 |
 | **瞬闪** | `ability.shunshan` | **T2 叩天门** | 剑修 (`sword`) | 金 (`metal`) | 24.0s | 0.5s | 20.0 MP | 单体敌方 | 造成 **`280% AD + 120`** 金系物理单体突袭伤害。起手前若自身**未持有**「移形」，则施放后赋予自身 1 层、持续 **5.0s** 的「移形」（`buff.yixing`，`noLevelGrowth`）；起手前若自身**已持有**「移形」，本次享受 `2×` 命中并消耗 1 层「移形」、不再补施「移形」，且若本次攻击击杀目标，立即重置「瞬闪」冷却（由于先导移形已在本次消耗，连续施放不会连环刷新冷却） |
 | **破军** | `ability.pojun` | **T2 叩天门** | 刀修 (`blade`) | 金 (`metal`) | 24.0s | 1.5s | 35.0 MP | 全体敌方 | 对全体存活敌方造成 **`160% AD + 80`** 金系物理群攻伤害，并赋予自身 1 层「移形」（5.0s）与 **5 层**、持续 **5.0s** 的「势不可挡」（`buff.shibukedang`：`maxStacks: 5`、`maxKeep`、`resetOnWave: true`、`noLevelGrowth: true`；每层 +20 点伤害免伤即起步 +100 点 = 50% 减伤，并通过 `decayStacksPerSecond: 1.0` 通道每过 1 秒自动减少 1 层） |
+| **罡气护体** | `ability.gangqi-huti` | **T1 进阶** | 炼体 (`body`) | 无 (`none`) | 20.0s | 1.0s | 50.0 MP | 自身 (`self`) | 凝练周身护体罡气：立即获得 **`20% 自身最大生命值`**（吃技能等级成长与技能增幅）的战内永久护盾 |
+| **迸裂** | `ability.benglie` | **T2 叩天门** | 炼体 (`body`) | 土 (`earth`) | 18.0s | 1.5s | **5% 最大生命** | 全体敌方 | 震碎并**消耗自身全部当前护盾**，对全体存活敌方造成 **`100% AD + 10% 自身最大生命 + 100% 当前护盾值 + 50`** 土系物理群攻伤害（当前生命须严格大于消耗量方可起手） |
+| **天罡断岳** | `ability.tiangang-duanyue` | **T2 进阶** | 刀修 (`blade`) | 无 (`none`) | 30.0s | 5.0s | 100.0 MP | 全体敌方 | 造成 **`200% AD + 200`** 无属性物理群攻伤害；5.0s 引导吟唱期间每承受敌方**一次独立的攻击行为**（多段连击或衍生伤害在同一攻击行为内只计 1 次）获得 1 层「天罡」（`buff.tiangang`，5.0s 叠层刷新，每层 +10 点总增伤与 +10 点免伤）；释放时在先享受「天罡」自身增伤的基础上，每层额外提升 **20%** 本次技能伤害（`×(1+0.20×层数)`），全体伤害落账完成后清空全部「天罡」 |
 
 ### 3. 术法系神通 (12 门 · `config/game-data/abilities/spell_abilities.json`)
 | 技能名称 | 技能 ID | 等阶 | 武道风格 | 属性 | 冷却 | 吟唱 | 灵力消耗 | 目标类型 | 基础效果与伤害 |
@@ -1765,12 +1769,12 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
 | **潮汐** | `ability.tide` | **T1 进阶** | 五行 (`fiveElements`) | 水 (`water`) | **0.0s (0CD)** | 3.0s | 10.0 MP | 全体敌方 | 引动水灵浪涌：造成 **`50% AP + 10`** 水系法术群攻伤害；持续站桩重炮输出，潮汐之灵掉落秘籍/残卷 |
 | **跃迁** | `ability.yueqian` | **T2 叩天门** | 符箓 (`talisman`) | 无 (`none`) | 24.0s | 3.0s | 50.0 MP | 全体友方 | 为全体存活友方施加 1 层、持续 **5.0s** 的位移增益「移形」（`buff.yixing`，`resetOnWave: true`、`maxStacks: 99`；重复授予叠层并刷新持续时间，只要层数 ≥1 即固定提供 2× 闪避与伤害型技能 2× 命中，单次施放伤害型技能消耗 1 层，默认 `self buff-stacks == 0 buff.yixing` 时触发） |
 | **火焰风暴** | `ability.huoyan-fengbao` | **T2 叩天门** | 五行 (`fiveElements`) | 火 (`fire`) | 18.0s | 3.0s | 30.0 MP | 全体敌方 | 唤起焚天火风：对全体存活敌方造成 **`100% AP + 50`** 火系术法群攻伤害，并对命中且存活的敌方附加 **`max(1, floor((max(0, AP) × 技能增幅 × 20% + 5) × 等级成长))`** 层「燃烧」（`buff.ranhun`，复用既有 5.0s 火灼 Buff：每层每秒 1 点火法威力、可叠层刷新到期且与「燃魂」特质同池互通） |
-| **天雷破** | `ability.tianlei-po` | **T2 叩天门** | 五行 (`fiveElements`) | 木 (`wood`) | 18.0s | 2.0s | 20.0 MP | 至多 2 名敌方 (`maxTargets: 2`) | 从存活敌方中依威胁抽取至多 **2** 个目标，造成 **`110% AP + 50`** 木系术法伤害，并对命中且存活目标附加持续 **5.0s** 的「麻痹」（`buff.mabi`，`noLevelGrowth: true`、`resetOnWave: true`、`maxStacks: 1`）：闪避后段乘区 −20%（`evasionPostRatio: -0.2`）、化解后段乘区 −20%（`parryPostRatio: -0.2`）且行动速度点数 −10（`actionSpeedPoints: -10.0`） |
+| **天雷破** | `ability.tianlei-po` | **T2 叩天门** | 五行 (`fiveElements`) | 木 (`wood`) | 18.0s | 2.0s | 20.0 MP | 至多 2 名敌方 (`maxTargets: 2`) | 从存活敌方中依威胁抽取至多 **2** 个目标，造成 **`110% AP + 50`** 木系术法伤害，并对命中且存活目标附加持续 **5.0s** 的「麻痹」（`buff.mabi`，`noLevelGrowth: true`、`resetOnWave: true`、`maxStacks: 99`）：每层闪避后段乘区 −20%（`evasionPostRatio: -0.2`）、化解后段乘区 −20%（`parryPostRatio: -0.2`）且行动速度点数 −10（`actionSpeedPoints: -10.0`） |
 | **灼心** | `ability.zhuoxin` | **T2 叩天门** | 五行 (`fiveElements`) | 火 (`fire`) | 20.0s | 2.0s | 20.0 MP | 单体敌方 | 零直伤火毒咒印：对单体敌方执行命中检定（`damageRatio = 0`、`flatDamage = 0`），命中且目标存活时附加 **`max(1, floor((max(0, AP) × 技能增幅 × 50% + 10) × 等级成长))`** 层「燃烧」（`buff.ranhun`，持续 5.0s、每层每秒 1 点火法威力、与「燃魂」及「火焰风暴」同池叠加并刷新到期） |
 | **山鬼谣** | `ability.shangui-yao` | **T2 叩天门** | 符箓 (`talisman`) | 水 (`water`) | 35.0s | 3.0s | 40.0 MP | 全体友方 | 为全体存活友方施加 10.0s 既有回春增益「甘露」（`buff.ganlu`，`baseStacks: 5`、`spellAttackStackPercent: 0.12`、`maxKeep`）：**层数 = `max(1, floor((5 + 施法者术法攻击 × 12% × 等级成长 × (1 + 技能增幅点数/100)) × (1 + 治疗增幅点数/100)))`**，每层每秒恢复 1 点气血，默认触发为任意友方气血低于 80% |
 > **战内 Buff 生命周期**：技能授予的战内 Buff 默认**跨波存续**——波次清空按战斗时钟剩余秒数折算携带、下一波重注入，整场战斗行动结束时统一移除（详见 [第七篇](./07-战斗数值与内视规约.md) §7.9.5）。`buff.resetOnWave: true` 为特例开关：标记的 Buff 波次清空即消散、不进入携带；缺省 `false`。「移形」（`buff.yixing`）、「麻痹」（`buff.mabi`）与「势不可挡」（`buff.shibukedang`）均标记 `resetOnWave: true`。
 
-## 5.2 完整技能书与残卷体系 (31 门功法配套书对 = 62 种专属道具)
+## 5.2 完整技能书与残卷体系 (34 门功法配套书对 = 68 种专属道具)
 1. **完整技能书 (`item.tome.<ability_id>`)**（掉率 0.1%）：
    - **首次研读**：直接领悟并解锁该技能（初始 Lv.1，0 经验）；
    - **学会后再次使用**：为该技能直接增加 **10,000 点技能经验**。
@@ -1778,7 +1782,7 @@ $$T(N) = T_0 \times \left( 1 + 0.30 \times (N - 1) \right)$$
    - **使用前置条件**：必须先学会对应技能，未领悟前无法研读；
    - **使用收益**：为对应技能增加 **500 点技能经验**。
 3. **秘籍覆盖面守恒律（硬约束）**：**每一门 `abilities/*.json` 中定义的功法都必须同时存在 `item.tome.<id>` 与 `item.fragment.<id>` 两条物品定义**，不得存在无秘籍可学的功法，也不得存在无对应功法的秘籍。服务端 `ability.learn` 靠 `item.tome.` / `item.fragment.` 前缀反推 `ability.<x>`（`EcsPlayerRuntimeAdapter`），缺任一侧都会让掉落变成死物品或功法永远无法习得。新增功法时必须同批补齐秘籍、残卷、`frontend/src/game/ids.ts` 静态元数据与 `game.zh.ts` 词条（`check-i18n-keys.mjs` 会对缺失硬失败）。
-   - **当前覆盖**：31 门功法 × 2 = 62 件；`碎罡`（`ability.sui-gang`）由二图关底首领 **撼地金背猿**（`enemy.golden-ape-boss`）掉落补齐；四图【雾梦泽】闭环全量补充 T2 功法掉落——**毒火游泽蛙** / **赤鳞棘蜥** 掉落【灼心】、精英 **寒潭玄鳄** 掉落【破军】与【火焰风暴】、精英 **九首鬼车** 掉落【天雷破】【山鬼谣】与【跃迁】、关底妖王 **雾隐剑魄** 掉落【瞬闪】与【斩玉】（Boss 不带也不掉跃迁，小怪不带斩玉）。
+   - **当前覆盖**：34 门功法 × 2 = 68 件；`碎罡`（`ability.sui-gang`）由二图关底首领 **撼地金背猿**（`enemy.golden-ape-boss`）掉落补齐；`罡气护体`（`ability.gangqi-huti`）由二图精英 **铁甲岩獠** 掉落；`迸裂`（`ability.benglie`）由三图精英 **残刃尸煞** 掉落；四图【雾梦泽】闭环全量补充功法掉落——**毒火游泽蛙** / **赤鳞棘蜥** 掉落【灼心】（赤鳞棘蜥与精英 **寒潭玄鳄** 同步掉落【天罡断岳】）、精英 **寒潭玄鳄** 掉落【破军】与【火焰风暴】、精英 **九首鬼车** 掉落【天雷破】【山鬼谣】与【跃迁】、关底妖王 **雾隐剑魄** 掉落【瞬闪】与【斩玉】（Boss 不带也不掉跃迁，小怪不带斩玉）。
 4. **批量研读**：秘籍与残卷属手动即时消耗品，支持一次选择多本（`ability.learn` 携带 `quantity`）。
    - 语义与逐本重复点击等价：未习得功法时使用 N 本秘籍，第 1 本领悟解锁，其余 N-1 本各 +10,000 经验；已习得则 N 本各 +10,000；残卷 N 本各 +500。
    - **结算代价与数量解耦（硬约束）**：等级只由累计经验经立方曲线派生，故服务端按 `总量 = 本数 × 单本经验` **一次注入、一次跃迁判定**，禁止按本数循环。日志账本把批量折叠为一条 `起始等级 → 最终等级` 跃迁记录，经验总量与逐本累加同值。
@@ -1911,9 +1915,12 @@ graph TD
   - `durationSeconds`：单件物品提供的总有效动作持续时间（秒，如引气丹为 300 秒）。
   - `usableInActionTypes`：物品可装配的**物品栏域**集合（栏域标识见 §6.2.3），决定该物品允许进入哪些自动使用物品栏；某个物品栏只接受声明了本栏域的自动消耗品。
   - `stackableSlotCount`：同一物品 ID 在角色全部自动使用槽位中允许占用的槽位总数；缺省或 `0` 表示不可重复占槽（最多占 1 槽），正整数表示最多占用该数量的槽位。
+  - `uniqueEffectType`：自动消耗品**独特效果互斥类型**（`ConsumableUniqueEffect` 整数枚举，缺省 `0 = None` 普通消耗品不跨物品互斥；`1 = EnhancementSuccess` 强化成功率提升，如淬灵粉、固灵砂，后续新增不可跨物品叠层的特殊效果依次递增枚举值）。声明非 `0` 独特效果类型的物品不可配置 `stackableSlotCount > 1`，且在角色全部自动使用槽位中**同一 `uniqueEffectType` 至多只能存在 1 件**。
   - 分类加成字段：直接对该动作结算生效的加成修正，按行动大类分别命名——`cultivationMultiplier`（修炼）、`gatheringMultiplier`（探索）、`alchemyMultiplier`（炼丹制造），如引气丹 `cultivationMultiplier = 1.3` 即增加 30% 修炼效果；**不通过全局 Buff 列表与自然时间计时器流逝**。
   - **生效守卫**：物品对运行中行动大类查得的加成倍率 ≤ 1 时，不充能、不扣剩余时长——引气丹可挂在历练栏内，但跑采集行动时不会白烧丹药（倍率字段只对修炼行动生效）。
-  - **重复槽位归一化**：配置物品时按 `stackableSlotCount` 检查该物品在全部自动使用槽中的占位数；超过上限时保留本次新配置的槽位，并清除较早的重复占位。重复槽位分别按各自槽位逻辑充能与扣件；具体效果按倍率乘算、加成相加或同 Buff ID 覆盖等既有结算规则处理。
+  - **重复槽位与独特效果互斥归一化**：
+    1. **手动配置顶替**：配置物品时先按 `stackableSlotCount` 清除同 `itemId` 超限旧槽位；若该物品 `uniqueEffectType > 0`，同步清除全部自动使用槽位中其它同 `uniqueEffectType` 的旧槽位，保留本次新配置的槽位（旧槽位已开封剩余时长按 §6.3.3 切换惩罚归零）。
+    2. **存量多槽自动清理**：玩家存档装载水合（含主服上线恢复与计算节点离线补算）时，若同一非零 `uniqueEffectType` 已装载多个槽位，自动移除低等级槽位，仅保留**物品等级最高**（同级依次比对品阶、效果数值、启用态与剩余时长）的那一个槽位并标脏 `Settings` 分段。重复槽位（`uniqueEffectType == 0` 且允许叠槽者）仍分别按各自槽位逻辑充能与扣件。
 
 ### 6.2.3 自动使用物品栏：栏域模型与战斗双组栏位
 
@@ -2244,7 +2251,7 @@ public sealed class AutoUseSlot
 
 ### 7.3.1 怪我同构建模原则 (Monster-Player Isomorphic Modeling)
 系统杜绝“拍脑袋填表、来回人工调参、牵一发而动全身”的落后配表方式。整个数值体系是**完全参数化、闭环量化**的：
-1. **完全对称数据结构（任何战斗单位同一模型）**：怪物、玩家、斗法镜像以及未来任何参战单位（含召唤物）在领域模型中完全同构——共用同一 `CombatantState` 属性池、同一 `SkillSlot` 技能槽、同一触发器求值器、同一 Buff 结算与同一普通攻击机制；不存在按单位身份分叉的专属属性、专属技能或专属效果管线；
+1. **完全对称数据结构与双阵营平等模型（任何战斗单位同一模型）**：怪物、玩家、斗法镜像以及未来任何参战单位（含召唤物）在领域模型中完全同构——共用同一 `CombatantState` 属性池、同一 `SkillSlot` 技能槽、同一触发器求值器、同一 Buff 结算与同一普通攻击机制；单位**阵营**（`CombatSide`：`SideA` / `SideB`）与**单位身份**（`CombatantKind`：`Player` / `Monster` / `Summon`）严格正交解耦，严禁凭单位 ID 前缀（`"player"`/`"enemy:"`）推导玩家身份或阵营归属。`CombatEncounterState` 原生提供双阵营对称入口 `CreateSymmetric(encounterId, seed, sideA, sideB)`（对称模式 `IsSymmetric = true`，双方单位默认均为 `Player` 且对称编号 `sideA:{i}` / `sideB:{i}`），PVE 模式保留 `PlayerAllies`/`Enemies` 视图与既有确定性序列；
 2. **挂机基准波次怪物标准**（详见 [第十一篇](./11-数值量化模型集.md) §11.2）：
    - **妖兽 (Minion)**：**80% 全属性，300% 玩家生命**；
    - **精英 (Elite)**：**120% 全属性，500% 玩家生命**（每 5 波一次）；
@@ -2314,7 +2321,7 @@ public sealed class AutoUseSlot
 
 1. **第一层：大类抗性非线性平方减伤（护甲 / 法抗）**：
    $$\text{DamageAfterCategory} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0}$$
-   - **原始伤害口径**：普攻 `RawDamage = 物理攻击 ×(1+普攻增幅点数/100)`；技能命中的单发威力在出手构造时按 `攻基 ×(1+技能增幅点数/100) × 技能倍率` 并入——两类增幅点数均在抗性穿甲之前放大单发威力，天然穿甲优势随之同步生效；
+   - **原始伤害口径**：普攻 `RawDamage = 物理攻击 ×(1+普攻增幅点数/100)`；技能命中的单发威力在出手构造时按 `攻基 ×(1+技能增幅点数/100) × 技能倍率` 并入；伤害型符箓打击（如雷击符）按 `基础打击威力 ×(1+符箓伤害增幅点数/100)` 并入；伤害型阵盘反击（如天雷阵、血煞阵）按 `阵盘基础伤害 ×(1+阵法伤害增幅点数/100)` 并入——四类输出形态增幅点数均在抗性穿甲之前放大单发威力，天然穿甲优势随之同步生效，且相互隔离（物品打击与阵盘反击不吃普攻/技能增幅，普攻与技能不吃符/阵增幅）；
    - **动态抗性系数 $K$**：等于当前等阶 `Tier`，由 `BaseAttributeCatalog.TierAt(level)` 锚点计数推导（`baseAttributeAnchors` 起始等级 `1/18/30/42/54/66/78/90/102/114/126/127`，等级不超过 `level` 的锚点个数即为 `K`；T1 得 `1.0`、T2 得 `2.0`，直至 T12 段 `12.0`，详见基准表）。
    - **有效抗性 ($\mathbf{RES}$)**：计算穿透比例后实际起效的大类抗性。物理伤害对应守方护甲（`Armor`），术法伤害对应守方法抗（`MagicResistance`）；化解成功时 $\text{RES} \times 2$。
    - **公式特性**：单发原始伤害越高，天然穿甲能力越强；法系凭借超大 AP 具备极强天然破防优势。
@@ -2324,7 +2331,7 @@ public sealed class AutoUseSlot
    $$\times\left(1+\frac{\text{物理增伤或法术增伤}}{100}\right) \times \left(1+\frac{\text{对应五行增伤}}{100}\right) \times \left(1+\frac{\text{总增伤}}{100}\right)$$
    - 物理/法术增伤按伤害大类匹配（普攻与物理技能吃物理增伤，术法技能吃法术增伤）；
    - 五行增伤仅在攻击携带对应五行属性时生效（`Element.None` 跳过该项）；
-   - 普攻增幅与技能增幅不在本层——二者已并入原始威力基数（见第一层口径），不与后段增伤重复乘算。
+   - 普攻增幅、技能增幅、符箓伤害增幅与阵法伤害增幅不在本层——四者已并入各自对应的第一层原始威力基数（见第一层口径），不与后段增伤重复乘算。
 
 3. **守方减伤乘区（NonLinear 点数，正向收敛）**：
    按承伤归属匹配生效，逐项收敛乘算，任意单项减伤永不归零伤害：
@@ -2426,7 +2433,7 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 | 总增减 | 固定总增伤 / 固定总减伤 | `fixedDamageBonus` / `fixedDamageReduction` | 0 / 0 | 任意类型伤害均在最终伤害加减对应点数 |
 
 > **内视面板展示规范**：内视面板与战斗单位详情中，固定伤害增减参考百分比增减对的形式合并为 3 个展示 Item（`固定伤害增减`、`固定物理伤害`、`固定法术伤害`），格式为 `+增伤 / 减伤`（如 `+10 / 5`），两侧均为 0 时默认隐藏。
-**特殊属性 10 项**：
+**特殊属性 12 项**：
 
 | 属性 | 曲线 | 默认 | 语义 |
 | :--- | :--- | :--- | :--- |
@@ -2436,6 +2443,8 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 | 冷却缩减 | NonLinear | 0 | 所有冷却时间 ÷(1+x/100)，适用于全部冷却属性 |
 | 普攻增幅 | Linear | 0 | 普攻与带「普通攻击」tag 技能的增伤修饰（tag 机制待落地，当前无技能携带） |
 | 技能增幅 | Linear | 0 | 不带「普通攻击」tag 技能的增伤修饰；仅作用于单位自身技能（含技能伤害/治疗/附加层数派生），消耗品打击、阵盘反击、特质反应等非技能来源一律不吃 |
+| 符箓伤害增幅 | Linear | 0 | 仅作用于造成直接伤害的符箓（带 `strike` 规格的符箓，如雷击符），在抗性穿甲前放大原始威力；符箓技艺每级自动提供 +1 点 |
+| 阵法伤害增幅 | Linear | 0 | 仅作用于造成直接伤害的阵盘效果（如天雷阵、血煞阵反击伤害），在抗性穿甲前放大原始威力，不影响非伤害阵法效果与维持代价；阵法技艺每级自动提供 +1 点 |
 | 治疗增幅 | Linear | 0 | 仅放大角色主动治疗技能的回血量（不含自动回复） |
 | 威胁增幅 | Linear | 0 | 不改威胁存储值，仅在判定/显示等使用侧乘算：`有效威胁 = Threat × (1 + 增幅)`；增幅归零即还原为基础威胁 |
 | 气血汲取 | Linear 非负钳制 | 0 | 命中实伤 × 比例回复攻击方气血 |
@@ -2723,12 +2732,12 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 2. **`capped`（有上限 / 经典累加至上限，默认缺省）**：
    - 适用于常规可堆叠增益（如破阵战意等）；
    - 全局单实例（目标身上同 `buffId` 唯一）；
-   - 重复施加时，持续时间刷新为新施加时长（`ExpiresAtSeconds = encounter.ElapsedSeconds + duration`），层数递增直至 `maxStacks` 上限封顶（`Stacks = min(maxStacks, current.Stacks + grantStacks)`）。
+   - 重复施加时，持续时间遵循**「保高不降」通用原则**——取当前剩余到期时间与新施加时长中的较大值（`ExpiresAtSeconds = max(current.ExpiresAtSeconds, encounter.ElapsedSeconds + duration)`，杜绝短时长同源状态如 10s 隐身符反向覆盖长时长如 20s 隐身），层数递增直至 `maxStacks` 上限封顶（`Stacks = min(maxStacks, current.Stacks + grantStacks)`）。
 
 3. **`maxKeep`（不可重复且无上限 / 取最高层数刷新时间）**：
    - 适用于依赖施法者瞬时法攻强度的持续恢复/衰减效果（如「甘露」）；
    - 全局单实例（目标身上同 `buffId` 唯一）；
-   - 重复施加时，持续时间刷新为新施加时长（`ExpiresAtSeconds = encounter.ElapsedSeconds + duration`）；
+   - 重复施加时，持续时间同样按**「保高不降」**取 `max(current.ExpiresAtSeconds, encounter.ElapsedSeconds + duration)`；
    - **层数取历史存续层数与新施加层数中的较大者**：`Stacks = max(current.Stacks, grantStacks)`；
    - **机制效果**：若已有 5 层 Buff，后续低法攻施法者仅施加 3 层，层数维持 5 层不变但有效时间得到刷新；若后续高法攻施法者施加 5 层，则层数提升至 5 层并刷新时间。既保证了法攻更高的施法者能有效强化增益，又彻底杜绝了多人交替施法导致层数无限滚雪球累加。
 
@@ -2764,11 +2773,13 @@ Buff 的数值效果不再以平铺 record 字段承载，统一收敛为**效�
 | `ResistancePoints` | `resistancePoints` | **Instance** | **否** | 双抗乘区（正增负破防，逐实例累加后统一乘算，不随层数放大） |
 | `ThreatPoints` | `threatPoints` | PerStack | 是 | 有效威胁乘区（§7.8.1） |
 | `Evasion` | `evasion` | PerStack | 是 | 闪避固定值 |
-| `EvasionPostRatio` | `evasionPostRatio` | **Instance** | **否** | 闪避后段乘区（+100% 即最终 ×2；逐实例累加后统一乘算，不随层数/技能等级放大） |
+| `EvasionPostRatio` | `evasionPostRatio` | PerStack | 否 | 闪避后段乘区（走 `SoftRatio` 软着陆：+100% 即 `×2.0`，-100% 即 `÷2.0` 总值减半；「移形」单实例标记固定不随层数放大，「麻痹」每层 `-0.2` 叠 5 层为 `-1.0` 即闪避减半） |
 | `ActionSpeedPoints` / `CriticalDamagePoints` / `HealingBonusPoints` | `actionSpeedPoints` / `criticalDamagePoints` / `healingBonusPoints` | PerStack | 是 | 行动读条、暴击倍率与主动治疗 |
 | `FireSpellDamagePerSecond` | `fireSpellDamagePerSecond` | PerStack | 是 | 1 秒网格火属性术法持续伤害，来源随 Buff 保存 |
-| `ParryPostRatio` | `parryPostRatio` | **Instance** | **否** | 化解后段乘区（正增负削；如「麻痹」`-0.2` 使最终化解 ×0.8，下限钳 0） |
+| `ParryPostRatio` | `parryPostRatio` | PerStack | 否 | 化解后段乘区（走 `SoftRatio` 软着陆：正 `1+x`、负 `1/(1+\|x\|)`；如「麻痹」每层 `-0.2`，5 层合计 `-1.0` 使最终化解 `×0.5` 减半，永不归零） |
 | `DecayStacksPerSecond` | `decayStacksPerSecond` | **Instance** | **否** | 1 秒网格自动减层通道（先结算当刻减伤/属性或周期效果，再逐实例扣减层数、降至 ≤0 剔除；如「势不可挡」5 层每秒 −1 层） |
+| `AttackPowerPostRatio` | `attackPowerPostRatio` | PerStack | 否 | 物理攻击后段百分比乘区（`SoftRatio` 软着陆；如「剑意」每层 `+0.30`） |
+| `CriticalPostRatio` | `criticalPostRatio` | PerStack | 否 | 暴击点数后段百分比乘区（`SoftRatio` 软着陆；如「剑意」每层 `+0.30`） |
 
 生命周期与派生元数据（`durationSeconds`/`maxStacks`/`stackPolicy`/`resetOnWave`/`noLevelGrowth`/`baseStacks`/`skipIfHasYixing`/`missingHitpointsPerStack`/`spellAttackStackPercent`/`resistancePerStack`+`resistanceStackRatio`）不是数值通道，保留强类型字段，不进注册表。其中 `noLevelGrowth: true` 使该 Buff 数值与层数均不随技能等级与技能增幅放大；`baseStacks` 为 `spellAttackStackPercent` 与 `resistancePerStack` 提供固定起始基底（缺省 1）；`skipIfHasYixing: true` 表示当施法者起手已持有「移形」时跳过授予该自我 Buff。
 
@@ -2801,11 +2812,19 @@ Buff 的数值效果不再以平铺 record 字段承载，统一收敛为**效�
 - 在线与离线挂机玩家均参与行动与匹配；只有彻底离线（actor 未加载）或处于移动赶路中的玩家不参与。
 - 斗法失败一方进入 `defeatCooldownSeconds`（默认 3600 秒）冷却，期间不再判定计数与匹配。
 - 无撮合能力的离线补算路径保留计数并回退为正常波次，不产生斗法。
-### 7.10.2 剧本锁定、消耗品结算与弃战
+### 7.10.2 剧本锁定、双侧对称裁决、消耗品结算与弃战
 
-- 撮合成功瞬间冻结双方属性面板、功法槽位、已启用的战斗自动消耗品槽位（含自定义触发条件、剩余冷却/持续时长及当前背包可用库存）与暂存物品清单，一次性推演完整 `DuelScript`；战斗期间任何配置修改不生效，重新进入战斗行动才生效。
-- 斗法推演与 PVE 共用同一消耗品判定与结算公式（单人斗法敌方单位数计 `1`）：即时战斗消耗品（如雷击符打击、战斗丹药回血回蓝与增益）与持续战斗消耗品（阵盘充能与双侧对称受击反击）均按触发条件与当前可用库存实时结算；回放期间按事件时间轴推进逐帧真实扣减本方背包库存、更新槽位冷却与持续剩余时长并写入行动战报与系统日志（中途主动弃战仅扣减已回放到的事件消耗）。
-- 双方各自回放同一份剧本（`ViewerIsInitiator` 视角翻译）；任一方主动结束行动、调序挪下队首或发起移动即弃战判负，对方立即判胜。
+- 撮合成功瞬间冻结双方（单人 1v1 或队伍 1~5 vs 1~5）全部参战玩家的属性面板、功法槽位、已启用的战斗自动消耗品槽位（含自定义触发条件、剩余冷却/持续时长及当前背包可用库存）与暂存物品清单，经 `CombatEncounterState.CreateSymmetric` 一次性推演完整 `DuelScript`；战斗期间任何配置修改不生效，重新进入战斗行动才生效。
+- **双侧完全对称与交换不变性（`Resolve(A, B, seed) ≡ Mirror(Resolve(B, A, seed))`）**：
+  - **双方平等为玩家**：无论阵营为 `SideA` 还是 `SideB`，全体参战修士均标记为 `CombatantKind.Player`（`IsPlayer == true`），`target-enemy / is-player` 与 `enemies / has-player` 触发条件双侧对称生效；阵盘受击反击（天雷阵/血煞阵）与阵法全队增益（§7.9.5）双侧全员对称生效（前后端模拟器一致）。
+  - **同刻同时生效（Simultaneous Barrier，允许同刻互杀判平）**：
+    1. **开局与波末动作决策**：同一决策点上双侧所有需决策单位读取同一冻结快照并行求值触发器与选中技能槽，再统一提交预扣灵力与下一次出手时刻，杜绝先决策侧预扣灵力污染后决策侧条件视野；
+    2. **同刻出手（普攻/技能）**：同一自然边界时刻 `t` 到点的双侧存活单位全部纳入同一出手波次；当同刻 ≥2 名单位出手时，基于波初冻结快照完成全部命中/伤害/吸血/反伤/阵盘反击/特质/Buff 结算，随后波末统一按「先汇总落伤（遵循欲速则不达留一）→ 扣伤后仍存活者落治疗与吸血 → 落灵力/威胁/Buff 与派生层数 → 统一刷新存活人数特质（单挑王/我要打十个）」提交并裁决胜负——同刻互杀判平局（`Draw`），杜绝「发起方/左阵营同攻速恒先手秒杀」与「先手满血吸血溢出、后手先掉血再吸血」的顺序偏差；
+    3. **同刻周期 Tick**：5s 回复与 1s 燃魂/掉层双侧全员结算完毕后，再统一剔除到期 Buff 并刷新存活人数特质；
+    4. **同刻消耗品波次收敛**：开打 `t = 0` 及每个边界后，按波次基于当前快照同时扫描双侧全部存活成员的就绪持续/即时消耗品（每名成员每波至多触发首个满足条件的槽位），同波所有打击/回血/回蓝/Buff 同步落账并循环进入下一波，直至整波无人触发（上限 256 波）。同刻双雷击符互秒判平，被打残后双方均可在下一波同刻触发止血散等反应消耗品。
+  - **无偏规范化随机流**：对称模式双侧共用统一目标抽取通道（`18`/`19`）；推演期先按双侧成员 `PlayerId` 字典序规范化内部 `SideA`/`SideB` 映射（保证 `Resolve(A, B, seed)` 与 `Resolve(B, A, seed)` 逐位镜像等价），再由 `seed` 奇偶决定双侧随机侧位标签（`0x2000+i` / `0x3000+i`）归属，同时消除「发起方偏向」与「UUID 字典序偏向」。
+- 斗法推演与 PVE 共用同一消耗品判定与结算公式：即时战斗消耗品（如雷击符打击、战斗丹药回血回蓝与增益）与持续战斗消耗品（阵盘充能与双侧对称受击反击）均按触发条件与当前可用库存实时结算；回放期间按事件时间轴推进逐帧真实扣减本方对应成员背包库存、更新槽位冷却与持续剩余时长并写入行动战报与系统日志（中途主动弃战仅扣减已回放到的事件消耗）。
+- 双方各自回放同一份剧本（`ViewerIsInitiator` + `SelfUnitIndex` 视角翻译）；任一方主动结束行动、调序挪下队首或发起移动即弃战判负，对方立即判胜。
 
 ### 7.10.3 收益与暂存区
 
@@ -2823,7 +2842,7 @@ Buff 的数值效果不再以平铺 record 字段承载，统一收敛为**效�
 - **开关与冻结**：队伍斗法开关 `pvpEnabled` 是队伍档案字段，仅队长可修改，队员只读可见；仅 `activityKind='combat'` 可为 true，档案目标改离讨伐时自动归位 false。会话创建时把开关冻结进参与规格（`ActionParticipationSpec.PvpEnabled`）；会话存续期间档案开关与冻结值不一致即散场重建（与目标漂移同口径），新会话按新值冻结。
 - **单位实力**：单位实力 = 全体出战单位六维等级总和之和（单人即本人六维总和、队伍为全体成员之和），匹配仍限 ±`powerBandRatio`。
 - **遭遇计数**：队伍单位的斗法遭遇计数随会话生灭、由会话权威状态承载，随会话每次进入战斗按 `encounterChancePerBattle` 递增；计数大于 0 时下次搜寻完成整队进入撮合等待，回退/等待口径与单人一致。
-- **剧本多方化**：`DuelScript` 输入由双方各一名 `DuelCombatant` 扩展为两侧各 1~5 名名单；`DuelScriptEvent` 以双方单位下标定位出手/受击者；回放载荷携带本方名单（成员按 `SelfIndex` 定位自身单位）与对手名单，单方玩家对阵队伍时对手名单即对方全员。剧本撮合时一次性推演完毕，队伍单位全员按同一份剧本各自视角回放，与单人共用同一结算模型。
+- **剧本多方化**：`DuelScriptEngine.Resolve` 主入口原生接受两侧各 1~5 名 `DuelCombatant` 名单（单人重载委托为 1v1）；`DuelScriptEvent` 通过 `AttackerUnitIndex` / `TargetUnitIndex`（缺省 `0`，向下兼容 1v1）定位双方阵营内的具体出手/受击成员；`DuelPlaybackState` 新增可缺省的 `SelfUnitIndex`、`SelfUnits`（本方全员 `DuelPlaybackUnit`）与 `OpponentUnits`（对方全员 `DuelPlaybackUnit`），并经 `ForTeamViewer` 按各成员视角投影统计簿与紧凑斗法记录（`Units[0]` 恒为观看者本人、己方全员 `IsAlly = true`、敌方全员 `IsAlly = false`）。剧本撮合时一次性推演完毕，队伍单位全员按同一份剧本各自视角回放，与单人共用同一结算模型。
 - **暂存区**：队伍单位每名成员持有个人暂存区；会话勾选斗法期间归属该成员的掉落进其个人暂存区。斗法落败时败方全体成员的暂存物池按胜方成员数均分转移（向下取整，余数按胜方名单顺序补足），入账与清理口径同单人。
 - **弃战与冷却**：队伍单位任一成员取消准备、离队、被移出或离线逐出即散场——斗法进行中散场视同整队弃战判负，全体成员各入 `defeatCooldownSeconds` 冷却；单方弃战沿用现有口径。队伍单位再次进入撮合等待要求全体成员均无失败冷却。
 
@@ -2953,15 +2972,27 @@ $$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \t
 | **天品** | 燃魂 | `trait.ranhun` | 16 点 | 直接火伤实际扣血的 2% 向下取整、至少 1 层施加「燃烧」（`buff.ranhun`）；每层每秒 1 点火属性术法威力，持续 5 秒，叠层并刷新到期 |
 | **天品** | 剑与心 | `trait.jianyuxin` | 12 点 | 物理攻击 +5%、术法攻击 +5%（每级 +5%）；自身拥有「移形」（`buff.yixing`）时，伤害型技能主要目标无视仇恨体系，改为从当前存活敌方中等概率随机选取 |
 | **天品** | 火神 | `trait.huoshen` | 12 点 | 火属性增伤 +10%（每级 +5%）；自身所有伤害的五行属性均转化为火属性（不改变物理、术法与真实伤害类别） |
+| **天品** | 阵法大师 | `trait.zhenfadashi` | 16 点 | 阵法造成的伤害 +200%（`formationDamageBonusPoints: 200`，每级 +5%）；技能增幅 -500 点、普攻增幅 -500 点（负面锁定） |
+| **天品** | 符法·疾 | `trait.fufaji` | 16 点 | 符箓冷却加速 +400 点（冷却减少 80%，每级 +5% 提升加速点数如 Lv2 为 420 点）；符箓灵力消耗提升 300%（即变为 400%），技能增幅 -500 点、普攻增幅 -500 点（负面锁定） |
+| **地品** | 符法·破阵 | `trait.fufapozhen` | 12 点 | 符箓可触发暴击；暴击提升 10%、暴击伤害 +10 点（每级 +5%） |
+| **玄品** | 符法·天罡 | `trait.fufatiangang` | 8 点 | 符箓造成的伤害 +30 点（`talismanDamageBonusPoints: 30`，每级 +5%） |
+| **天品** | 符法·天命 | `trait.fufatianming` | 16 点 | 主动术法槽位可装配符箓（全栏同名互斥、无吟唱瞬发）；符箓造成的伤害 +10 点（每级 +5%） |
+| **天品** | 养剑术 | `trait.yangjianshu` | 16 点 | 战斗中每秒未造成直接伤害获得 1 层「剑意」（`buff.jianyi`，最多持续 10 秒，获层刷新时长；每层物理攻击 +30%、暴击 +30%、暴击伤害 +30 点，每级 +5%），普攻或伤害型技能结算后散去全部剑意 |
+| **地品** | 藏锋 | `trait.cangfeng` | 12 点 | 战斗中不再进行普通攻击（无可用技能时收剑待机）；技能增幅 +20 点（每级 +5%） |
+| **灵阶** | 血气化盾 | `trait.xueqihuadun` | 20 点 | 每波开战第 0 秒及此后每 5 秒，将超出 20% 最大生命值的气血作为受击伤害扣除（触发蓄意等受击反应），按 100%（每级 +5%）转为战内永久护盾；每波战斗结束时将剩余护盾转为治疗（吃治疗增幅） |
+| **天品** | 闪身步 | `trait.shanshenbu` | 15 点 | 成功闪避敌方攻击时获得 1 层「移形」（5.0s），内置冷却基础 3.0 秒，随等级按反比例曲线缩短（20 级满级加速 100% 缩至 1.5 秒） |
 
-机制特质以表内单项消耗为准，不强制套用基础数值特质的默认消耗阶梯。Q6 灵阶当前消耗 25 点。用户指定的机制数值与点数作为本批预算约束：初见对应 300 点闪避百分比的短时窗口；其余速度、增减伤、真实伤害及持续伤害属于特殊属性，按条件与负面代价人工配平，不反推修改用户指定值。
+机制特质以表内单项消耗为准，不强制套用基础数值特质的默认消耗阶梯。Q6 灵阶当前消耗 20~25 点。用户指定的机制数值与点数作为本批预算约束：初见对应 300 点闪避百分比的短时窗口；其余速度、增减伤、真实伤害及持续伤害属于特殊属性，按条件与负面代价人工配平，不反推修改用户指定值。
 
 #### 7.12.3.1 机制特质统一结算
 
 - 属性复用已有通道与乘区，补齐 `ActionSpeedPoints`、`CriticalDamagePoints`、`HealingBonusPoints` 的 Buff 入口；负增幅 -100 点为 ×0.5，-200 点为 ×1/3，同乘区点数相加。免伤 +10/+20 点分别为承伤 ÷1.1/÷1.2，不额外建立特质专属乘区。
 - 人数统计包含双方全部存活战斗单位。条件特质采用按需监听：进入本场战斗时统一定格特质 ID 和等级，仅为入战激活的特质挂接对应无状态检查器；战中装配与等级修改不改变本场效果，下一场战斗入场时生效。死亡与复活边界只派发给监听存活人数变化的检查器；没有监听者时直接返回，不检查未装备单位的特质或 Buff。普通面板刷新仍使用本场定格特质计算，不能将战中修改透传进当前战斗。开战在真实入场状态就绪后求值；战斗快照保存定格 ID 与等级，恢复继续本场定格并重建监听，不按当前玩家装配重新入战。监听表只属当前战斗运行时，不持久化引用。执行顺序固定为盟友序、敌人序及检查器顺序，不随装配 ID 的排列改变。Buff 改变只影响此后新决定的动作，不重排已经起手的读条。
 - 初见、隐身与条件属性 Buff 每波重建；蓄意、燃烧与移形每波清除（`ResetOnWave = true`）。蓄意按实际扣血累积，未命中与零伤害不累积；蓄意爆发不再累积蓄意、不触发其他命中反应。阈值严格为 `Stacks > MaxHitpoints`，先消费后伤害，不因主目标已被本次攻击击杀而取消其他目标的爆发。
-- **移形（`buff.yixing`）统一位移体系**：全部位移/闪现效果在回合时间轴中统一表现为「移形」Buff（基础时长 5.0 秒、叠层并刷新到期，`MaxStacks = 99`，`ResetOnWave = true`）。因 `EvasionPostRatio` 为 `Instance` 且不吃成长，只要层数 ≥1 即固定提供 **+100% 闪避后段乘区（最终闪避 ×2）**，不随层数或技能等级叠加；施放**伤害型技能**时攻方命中固定 **×2**，并在该次技能结算完成后按技能次数消耗 **1 层**（连击/群攻无论命中几次均只扣 1 层；普通攻击及治疗/纯辅助技能既不享受 2× 命中也不消耗「移形」）。
+- **移形（`buff.yixing`）统一位移体系**：全部位移/闪现效果在回合时间轴中统一表现为「移形」Buff（基础时长 5.0 秒、叠层并按保高不降刷新到期，`MaxStacks = 99`，`ResetOnWave = true`）。移形固定提供 **+100% 闪避后段乘区（最终闪避 ×2）**，不随层数或技能等级叠加；施放**伤害型技能**时攻方命中固定 **×2**，并在该次技能结算完成后按技能次数消耗 **1 层**（连击/群攻无论命中几次均只扣 1 层；普通攻击及治疗/纯辅助技能既不享受 2× 命中也不消耗「移形」）。携带「闪身步」（`trait.shanshenbu`）的单位每次成功闪避敌方攻击时，若距上次触发已满 `3.0 / (1 + (Lv - 1) / 19.0)` 秒，赋予自身 1 层 5.0 秒「移形」。
+- **战内永久护盾（`Shield`）与血气化盾闭环**：每个战斗单位持有独立非负护盾池 `Shield`（战内默认永久持续不衰减，波次结束或阵亡清零）。敌人攻击经抗性、分类增减伤、暴击、总免伤与固定增减伤结算后的伤害先抵扣 `Shield`，护盾耗尽后的溢出部分再扣减 `Hitpoints`；被护盾吸收的部分不计入「蓄意」实际扣血层数。「血气化盾」（`trait.xueqihuadun`）在每波开战第 0 秒及每 5 秒回复边界末，将超出 `20% 最大生命` 的气血以绕过自身护盾的自损受击结算扣除（正常累积「蓄意」与「力微饭否」受击威胁，不触发反伤），并按 `100% × 等级成长` 注入 `Shield`；每波战斗结束时将存活持有者的剩余 `Shield` 按 `100% × (1 + 治疗增幅/100)` 转化为生命恢复后清零。
+- **养剑蓄势与藏锋止戈（`trait.yangjianshu` / `trait.cangfeng`）**：携带「养剑术」的存活单位在每个 `1.0s` 自然网格检查：若距上次造成普攻/伤害技能直伤满 1 秒（含开战未出手及技能长吟唱期间），获得 1 层持续 10.0s 的「剑意」（`buff.jianyi`，每层物攻后段 `+30%`、暴击后段 `+30%`、暴击伤害 `+30` 点，均乘特质等级成长）；一旦完成普攻或伤害型技能动作结算且实际打出伤害，立即散去全部「剑意」并记录直伤时刻。携带「藏锋」的单位在无可用技能时不再执行普通攻击，改为推进至最近技能就绪边界或下一整秒复查边界。
+- **符法四特质与术法槽装符（`trait.fufaji` / `fufapozhen` / `fufatiangang` / `fufatianming`）**：符箓（`subCategory = talisman`）独立走 `TalismanDamageBonusPoints` 乘区（直伤威力与怒焰符燃烧层数同享加成，并实时投影至前端物品悬浮面板）；「符法·疾」为符箓注入 `400 × 等级成长` 点冷却加速（NonLinear 曲线，Lv1 冷却 ×0.20）并将符箓 `manaCostRatio` 放大至 4.0×；「符法·破阵」使直伤符箓走攻守暴击对抗与暴伤乘区；「符法·天命」允许 1~N 号主动术法槽装配符箓，与自动物品栏共用全栏同名互斥、无吟唱瞬发、按物品 ID 共享触发条件与独立冷却，卸下该特质时自动清退术法槽内已装符箓。
 - **剑与心（`trait.jianyuxin`）主目标重选**：装备「剑与心」且施法者于起手结算时拥有「移形」的情况下，任意伤害型技能的主要目标选择跳过仇恨加权（`EffectiveThreat`），改用同确定性随机数槽从全部存活敌方中等概率随机选取（包括 `allEnemies` 群体技能的 `picked[0]` 主目标），使依赖主目标的后续效果（如 `蓄意` 主目标真伤）跟随此次随机主目标结算。
 - **斩玉 → 踏云条件切态**：`ability.zhanyu` 起手结算时若自身拥有「移形」，切换为「踏云」态将目标拓展为全体存活敌方（`allEnemies`），享受本技能 2× 命中并在施放后消耗 1 层「移形」，日志展示为 `{{ability:ability.zhanyu|踏云}}`（悬停卡片与技能熟练度经验仍归属 `ability.zhanyu`）。
 - **瞬闪先导移形与击杀重置（`ability.shunshan`）**：起手前若自身**无**「移形」，结算攻击后为自身赋予 1 层、持续 5.0s 的「移形」（不随技能等级成长）；起手前若自身**已持有**「移形」，本次享受 `2×` 命中并消耗 1 层「移形」、跳过本次自付与的「移形」（`skipIfHasYixing: true`），且当本次打击击杀目标时立即清零当前施放技能的冷却（`resetCooldownOnYixingKill: true`）——因消耗发生在本次施放完成时，下次立即施放时的「瞬闪」不再视作持有先导「移形」，从而彻底阻断连续重置循环。
@@ -2981,7 +3012,7 @@ $$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \t
 1. **觉醒石（Awakening Stone）产出、分类与使用**：
    - **品阶与品质**：觉醒石为**天品**奇石（Tier 5，Q5 天品，金色品质边框与辉光），可在坊市自由挂单交易；
    - **品类与展示**：觉醒石在道具体系中品类归为「特殊」（`category: "special"`, `subCategory: "special"`）；储物袋（背包）界面收拢在「重要」（`important`）分组陈列，避免混入普通消耗品；坊市中可在「全部」及「材料」（全部材料/稀有材料/五阶筛选）中检索并交易；
-   - **使用效果**：玩家使用觉醒石（`item.use`），消耗 1 颗觉醒石，从全量 38 个特质池中等概率随机觉醒一项特质；
+   - **使用效果**：玩家使用觉醒石（`item.use`），消耗 1 颗觉醒石，从全量 47 个特质池中等概率随机觉醒一项特质；
    - 若该特质尚未拥有，则直接解锁并初入 **Lv 1**（Exp 0）；
    - 若该特质已拥有，则该特质获得 **1 点特质经验**（Exp +1），达到升级经验阈值时自动晋升 1 级。
 
@@ -3177,6 +3208,19 @@ interface NpcDefinition {
   - **二图【青云古道】(`map.qingyun-trail`)**：凡俗中后期过渡（Lv 9~16），四节点官道险隘，小怪为青脊妖狼 (Lv 10) 与潮汐之灵 (Lv 11)，精英铁甲岩獠 (Lv 14)，关底首领撼地金背猿 (Lv 16)；
   - **三图【星陨异境】(`map.starfall-domain`)**：T2 叩天门及练气初期（Lv 16~25），焦土死气与天外陨星，小怪为裂齿妖狼与星火夜鸦，关底坠星异兽；
   - **四图【雾梦泽】(`map.wumeng-marsh`)**：练气中后期～半步筑基（Lv 24~30），畸木焦林以北四节点（泽畔荒径、毒瘴浅沼、迷雾泽心、剑冢沉潭），小怪为泽泥水傀、毒火游泽蛙、赤鳞棘蜥（沿用 Lv 18 兽牙/火羽/阴魂符常规掉落），精英寒潭玄鳄（Lv 27，掉落玄鳄逆鳞）、九首鬼车（Lv 28，掉落鬼车赤翎），关底物理剑修妖王雾隐剑魄（Lv 30，掉落龙珠及瞬闪/斩玉秘籍）。
+
+### 8.3.1b 境界驱动的大地图移动速度与后续地图间距规约
+- **境界移速公式（线性加算，与根基及装备固定回血同口径）**：
+  - 角色在大地图节点间赶路的移动速度随**中境界晋升**与**大境界突破**线性提升，每次中境界晋升 **`+5%`**、每次大境界突破 **`+30%`**，**大境界入口仅计大境界突破，不重复叠加中境界**：
+    - 凡俗段（Lv.1~18）：`武(Lv.1~6)` 0 次中境界（`+0%` / `1.00×`）、`玄(Lv.7~12)` 1 次（`+5%` / `1.05×`）、`天(Lv.13~18)` 2 次（`+10%` / `1.10×`），大境界 0 次；
+    - 修真段（Lv.19~126 每 12 层一大境界，Lv.127 飞升封顶）：跨入每个大境界第 1 层 `初`（Lv.19 练气一层、Lv.31 筑基一层……Lv.115 渡劫一层）及 `Lv.127 飞升` 时计 1 次大境界突破（`+30%`）；各大境界内跨入第 4 层 `中` / 第 7 层 `后` / 第 10 层 `极` 时各计 1 次中境界晋升（`+5%`）；
+    - 整数点数口径：`bonusPoints = midBreaks × 5 + majorBreaks × 30`，`speedMultiplier = (100 + bonusPoints) / 100`；代表锚点：练气初 `1.40×`、练气极 `1.55×`、筑基初 `1.85×`、金丹初 `2.30×`、元婴初 `2.75×`、化神初 `3.20×`、飞升（29 中 + 10 大）`5.45×`。
+- **路径耗时折算与运行时语义**：
+  - 规划赶路路径时，按启程瞬间角色境界对应的 `speedMultiplier` 统一缩放全部路段耗时 `seg.DurationSeconds = baseSegDuration / speedMultiplier`，`TotalDurationSeconds` 取折算后各路段时长精确之和（消除分段求和浮点尾差）；由于移速是全图统一正标量，最短路径拓扑保持不变，`WorldGraph.Plan` 缓存保持 O(1) 复用。
+  - 覆盖全部赶路规划入口：手动 `world.travel` 命令、新手引导重开返程、自动赶路插队 `TryEnqueueAutoTravel` 及模拟自愈重规划 `PrepareTravelActionCore`。已在途赶路锁定启程时速度直至抵达或重新规划；赶路身法经验仍按折算后的实际行进总秒数入账。
+- **后续新图间距拉长规约**：
+  - 既有四图（青云仙山、青云古道、星陨异境、雾梦泽）维持既有边基础耗时与节点坐标不变；
+  - 自五图（筑基期及更高阶区域）起，新增地图应参考目标境界对应的 `speedMultiplier` 成比例拉长图内边基础 `durationSeconds` 与跨区域关口边耗时（并可适当拉大节点坐标间距体现高阶地域辽阔），确保同阶修士本图单边通行维持舒适节奏、低阶越级远行体感路途遥远、高阶修士重返低阶地图疾行如风。
 ### 8.3.2 地图生灵生态原则（特色化分布）
 
 本节地名和后文 JSON 为生态设计示例，未全部进入当前目录。当前地图索引见 [`../world/maps.md`](../../world/maps.md)，包含青云仙山与星陨异境。预算属于遭遇，不是地图节点属性；示例中的节点预算不得作为 maps 配表新增字段的要求。
@@ -3371,9 +3415,9 @@ flowchart TD
 本节记录该系统的实际实现落点，供代码对照；字段归属以本节与配表为准。
 
 1. **配置层**：地图节点定义由 `config/game-data/maps/*.json` 的 `WorldNode` 承载（节点坐标、`availableActionIds`、`npcs`、`buildings`、`buildableTemplate`/`buildableList`、`encounterIds`）；行动侧地点约束由 `config/game-data/actions/*.json` 的 `availableNodeIds`（白名单）/`excludedNodeIds`（黑名单，互斥）承载；遭遇预算与怪群池定义在 `config/game-data/encounters/*.json`（`minBudget`/`maxBudget`/`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`/`battlesPerElite`/`battlesPerBoss`）；怪物定义在 `config/game-data/monsters/*.json`（含 `budgetCost`/`rank`/`strength`）。解析产物为 `GameDataCatalog` 持有的只读定义集合。
-2. **领域层**：确定性波次抽取由 `src/Domain/Combat/EncounterWaveSelector.cs` 的 `Select(encounter, monsters, seed, waveNumber)` 实现质量预算扣减；世界图连通性由 `GameDataCatalog.BuildWorldGraph` 与 `WorldGraph` 维护。
+2. **领域层**：确定性波次抽取由 `src/Domain/Combat/EncounterWaveSelector.cs` 的 `Select(encounter, monsters, seed, waveNumber)` 实现质量预算扣减；世界图连通性由 `GameDataCatalog.BuildWorldGraph` 与 `WorldGraph` 维护；境界驱动的大地图移动速度规则由 `src/Domain/World/WorldTravelRules.cs` 与 `TravelPlan.WithSpeedMultiplier` 承载，并在手动 `world.travel`、引导返程、自动赶路插队与自愈规划四处统一接入。
 3. **协议层与服务端映射**：地点节点 DTO 由 `src/Server/Clean/ProtocolSnapshotMapper.cs` 的 `ToWorldSection` 投影，输出 `minBudget`/`maxBudget`/`encounterIds`/`npcs`/`buildings`/`buildableBuildingIds`/`nodeBuildings` 等字段。
-4. **前端**：`frontend/src/components/WorldMapPanel.tsx`（地图，内建 `nodeId→mapId` 全局索引与区域可见集合，采用 `14 × 10` 固定基准像素画布 + 舒适视野自动拉近聚焦与 `reprojectViewportOnResize` 重投影，支持通过 `frontend/src/game/nodeIcons.ts` 自动加载 `frontend/src/assets/nodes/` 节点图像呈现「图像 + 古风牌匾」地标并显式展示「交界 / 精英 / 妖王」角标）与 `frontend/src/components/NearbyPanel.tsx`（怪物/人物/建筑页签）渲染，快照解码在 `frontend/src/network/snapshot.ts`；讨伐行动弹窗的节点生态图标面板为 `frontend/src/components/CombatEcologyPanel.tsx`（悬停简卡 + 单击详卡双层浮层），行动名地点本地化为 `frontend/src/game/ids.ts` 的 `localizeActionDisplayText`。
+4. **前端**：`frontend/src/components/WorldMapPanel.tsx`（地图，内建 `nodeId→mapId` 全局索引与区域可见集合，采用 `14 × 10` 固定基准像素画布 + 舒适视野自动拉近聚焦与 `reprojectViewportOnResize` 重投影，支持通过 `frontend/src/game/nodeIcons.ts` 自动加载 `frontend/src/assets/nodes/` 节点图像呈现「图像 + 古风牌匾」地标并显式展示「交界 / 精英 / 妖王」角标；大地图工具栏移速徽章与启程确认弹窗预估耗时经 `frontend/src/game/worldTravelSpeed.ts` 与服务端 `WorldTravelRules` 同源计算）与 `frontend/src/components/NearbyPanel.tsx`（怪物/人物/建筑页签）渲染，快照解码在 `frontend/src/network/snapshot.ts`；讨伐行动弹窗的节点生态图标面板为 `frontend/src/components/CombatEcologyPanel.tsx`（悬停简卡 + 单击详卡双层浮层），行动名地点本地化为 `frontend/src/game/ids.ts` 的 `localizeActionDisplayText`。
 5. **门禁与测试**：确定性波次抽取由 `tests/Domain.Tests` 覆盖；建筑配表引用由 `DataTool validate --strict` 校验；整体门禁 `scripts/verify.sh`。
 
 <!-- FILE:09-节点公共建筑系统.md -->
@@ -3969,14 +4013,14 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 
 - 竖屏（≤960px）底部导航固定为 **7 个一级分组**：内视 / 坊市 / 历练 / 详情 / 技艺 / 背包 / 更多；组内页签多于一个时在其上方浮现子行完成二次选择，单页签分组不渲染子行、保持一击直达。
 - 分组与组内页签的真源是 `frontend/src/mobileNav.ts`（`MOBILE_NAV_GROUP_DEFS` 键即分组标识，`MOBILE_NAV_GROUP_ORDER` 决定展示顺序，`GROUP_OF_TAB` 以 `satisfies Record<TabId, …>` 保证每个页签都有归属且无多余键）。
-- 组内构成：坊市＝坊市/商店；历练＝历练/地图；更多＝同道/图鉴/排行榜/更新日志/帮助/日志/记录/设置（其中点击「帮助」直接唤起独立大尺寸弹窗 `HelpModal` 而不替换底层主界面，顶部横向切换章节、下方正文独立滚动）；技艺组的子行是技艺模式切换条（炼丹/炼器/符箓/阵法/强化，含技艺等级），由 `CraftingModeTabs` 渲染，页面主体内不再重复出现；同道通用二级（队伍/宗门/邀请）由 `SocialSubTabs` 渲染在「更多」子行之上的底部子行中，`SocialPage` 内不再单独渲染页头切换条，而「队伍」内部的「队伍 / 对弈」切换（`PartyGameTabs`）属于玩法内子页签，保留在队伍面板顶部。
+- 组内构成：坊市＝坊市/商店；历练＝历练/地图；更多＝同道/图鉴/排行榜/更新日志/帮助/日志/记录/设置（其中点击「帮助」直接唤起独立大尺寸弹窗 `HelpModal` 而不替换底层主界面，顶部横向切换章节、下方正文独立滚动）；技艺组的子行是技艺模式切换条（炼丹/炼器/符箓/阵法/强化，含技艺等级），由 `CraftingModeTabs` 渲染，页面主体内不再重复出现；同道通用二级（队伍/对弈/宗门/攻略/邀请）由 `SocialSubTabs` 渲染在「更多」子行之上的底部子行中，`SocialPage` 内不再单独渲染页头切换条。
 - 交互：点击非当前分组 → 切到该组记忆落点并展开子行（1 击到达内容）；点击当前分组 → 不改变当前页签；点击子项 → 切换页签且子行保持展开。落点按分组记忆于 `uiStore.mobileNavMemory`，任何 `setActiveTab`（含代码直跳与新手引导）都会更新所属分组的落点。
 - 角标必须上提到分组层：日志未读与同道待处理邀请在「更多」分组图标上合计露出，子行各自只显示自己那份（日志报未读条数、同道报邀请数；进入同道页后，若停留在宗门/邀请页，邀请角标继续在「队伍」子项上提示），否则私聊与组队邀请会在二级沉底后完全静默。
 - 导航高度由 `BottomNav` 实测反写 `--mobile-nav-offset`，页面底部占位与提示气泡避让统一引用该变量，不得再出现硬编码的 `72px`。
 - 页签可达性：`docs/tasks` 以外的竖屏入口必须落在某个分组内（仅 `alchemy` 为例外——它是直达技艺-炼丹的别名，由 `setActiveTab` 归一为 `crafting`）；新手引导锚点 `[data-tour="nav-map"]` 同时挂在桌面侧边栏与「历练」组的地图子项上，取首个可见元素。
 - 竖屏「详情」全屏专注模式：`@media (orientation: portrait)` 下「详情」页标题行最右侧展示放大/恢复切换按钮（`aria-expanded`，≤640px 效率条折行时仍固定居于标题第一行最右端，横屏不展示）；点击放大后详情面板按 `position: fixed; inset: 0; height: 100dvh; z-index: 55` 覆盖顶栏（`20`）与底部导航（`40`）并适配 `env(safe-area-inset-*)`，内容区维持独立纵向滚动且浅/深双主题铺实 `--panel` 底色；各类模态弹窗、悬浮窗、新手引导与提示气泡仍高于该层级；再次点击恢复按钮、无顶层弹窗时按 `Esc`、离开详情页或切出竖屏自动恢复常规布局。
 - 桌面端（横屏）侧边栏（`Sidebar`）保持高可达平铺与适度收拢并行：
-  - 主区保留「内视 / 历练 / 地图 / 详情」一级直达，并将「坊市（坊市 / 商店）」「技艺（炼丹 / 炼器 / 符箓 / 阵法 / 秘法）」「同道（队伍 / 宗门 / 邀请）」「其他（图鉴 / 排行榜 / 更新日志 / 帮助）」组织为可折叠二级分组（`.nav-group` + `.nav-sub-menu`），其中「坊市 / 商店」分组口径与竖屏一致；点击「帮助」直接唤起独立大尺寸弹窗 `HelpModal`（不替换底层主视图，横屏左目录固定、右正文独立滚动；竖屏章节目录置顶横向滑动、下方正文独立滚动）；
+  - 主区保留「内视 / 历练 / 地图 / 详情」一级直达，并将「坊市（坊市 / 商店）」「技艺（炼丹 / 炼器 / 符箓 / 阵法 / 秘法）」「同道（队伍 / 对弈 / 宗门 / 攻略 / 邀请）」「其他（图鉴 / 排行榜 / 更新日志 / 帮助）」组织为可折叠二级分组（`.nav-group` + `.nav-sub-menu`），其中「坊市 / 商店」分组口径与竖屏一致；点击「帮助」直接唤起独立大尺寸弹窗 `HelpModal`（不替换底层主视图，横屏左目录固定、右正文独立滚动；竖屏章节目录置顶横向滑动、下方正文独立滚动）；
   - 侧栏底部（`.sidebar-footer`）保持「记录 / 设置」吸底直达不变。
 
 ### 13.1.3 纯字符双语终端挂机模式
@@ -3993,6 +4037,13 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 - **英文分组标题适配**：战斗装配区的英文分组标题横排置于槽位上方，并在正常文档流中占用独立空间；简中保留原竖排标签与内边距，避免将英文逐字符竖排的问题混同为公共布局缺陷。
 - **公共槽位可达性**：桌面端不分语言，均按容器实际宽度让分组换行，单组仍放不下时让槽位换行；窄主面板高度受限时允许装配区内原生纵向滚动，保证所有槽位可达，不缩小槽位或裁切内容。移动端保留上方消耗品、下方功法的分行布局。保持桌面 64px、移动端 48px 的槽位尺寸约定，在中英 1440×1000、390×844 及 961px 附近窄主面板验收标题完整可读、与槽位不重叠且无横向溢出。
 - 「武 / 玄 / 天 / 初 / 中 / 后 / 极」为境界牌匾共享字形，双语共用，不视为缺译。
+
+### 13.1.5 高布局空间利用率与横竖屏同步设计规范
+
+- **多档位/枚举选择器优先下拉或紧凑胶囊**：当候选档位较多（如八品阶位、多级难度、地图区域）且玩家每次仅聚焦单一选中项时，禁止使用大尺寸卡片网格整屏平铺挤占纵向视区；一律采用基于 `FloatingPopover` Portal 的单行紧凑下拉框（如 `DropdownSelect` 或定制品质色下拉）或紧凑单行胶囊条。
+- **状态与资金指标微型化（图标 + 简短文本 + 紧凑数值）**：底注、入场验资、可用资金、消耗、速率等面板指标一律采用单行内联微型芯片（`[极简短标签] + [14~16px 实体小图标 ItemIcon/Icon] + [UnitNumber 紧凑数值]`），禁止为单个数值单独包裹大尺寸多行卡片或重复渲染带物品全名的完整胶囊；长句机制说明（如「开局托管十倍底注用于局终结算」）统一收进 `FloatingTooltip` 悬停提示或「玩法 / 说明」弹窗。
+- **顶栏、指标与操作区紧凑合流**：面板标题、核心下拉选择器、微型指标条与主操作按钮优先在同一卡片的 1~2 行内流式合流，消除冗余留白、重复操作按钮与整行长文脚注。
+- **横竖屏（Desktop Landscape & Mobile Portrait）双端同步设计**：所有界面与组件必须同时覆盖横屏宽视口（单行/多列紧凑并排）与竖屏窄视口（`≤960px` / `≤720px` 自适应折行、紧凑内边距、防横向溢出与控件挤压，触控热区清晰且不遮挡底部导航与日志区）。
 
 ## 13.2 核心公共组件速查 (强制收拢规范)
 1. **`FloatingPopover` / `FloatingInfoCard` / `FloatingTooltip`**：基于 React Portal 挂载至 `#daohua-floating-root`，自动计算视口翻转（Auto Flip）与边界夹持（Viewport Clamp），标准宽度 `medium` (300px)，支持 `quantity={amount}` 独立中文四位分段副气泡；桌面 Hover 防抖、移动端 Touch 0 阻碍穿透底层。
@@ -4177,7 +4228,7 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 | 32 | `ChatLikeChanged` | S→C | `ChatLikeChangedDto` |
 
 - `ChatSendDto { requestId, channel, body, targetPlayerId?, quoteMessageId? }`：`targetPlayerId` 仅好友频道使用；正文去首尾空白后 1~200 字符。
-- `ChatMessageDto { messageId, channel, scopeKey, senderId, senderName, body, sentAtUnixMilliseconds, partyLink?, quote?, likeCount, likedByMe, likeVersion }`：`partyLink` 为队伍卡片快照（见第二十一篇 §21.8），队伍解散后缺席。
+- `ChatMessageDto { messageId, channel, scopeKey, senderId, senderName, body, sentAtUnixMilliseconds, partyLink?, senderRealmLevel, quote?, likeCount, likedByMe, likeVersion, senderTopRank? }`：`partyLink` 为队伍卡片快照（见第二十一篇 §21.8），队伍解散后缺席；`senderTopRank` 为发送者当前全服个人排行榜（除宗门榜外 11 榜）Top 50 中的最高单榜名次（`GuideRankBadgeDto`），由服务端在发言广播与历史回放出口直接从 `LeaderboardRuntime` 整点内存快照 O(1) 实时派生、**不落盘**，并列同排名按 `境界 > 斗法 > 身家 > 灵石 > 七技艺` 优先。前端传音行头渲染顺序为 `[时间] [境界] [宗门] [榜单图腾 #N] 道号：`，未上榜时省略徽标。
 - `ChatHistoryDto { channel, scopeKey, targetPlayerId?, messages[] }`：`targetPlayerId` 仅好友频道回填，供客户端把会话映射到具体好友。
 - `ChatHistoryRequestDto { channel, targetPlayerId? }`。
 - `SocialActionDto { requestId, action, targetPlayerId?, targetName?, partyId?, channel?, party? }`，`action` ∈ `friend.request|friend.accept|friend.reject|friend.remove|party.invite|party.accept|party.decline|party.leave|party.create|party.update|party.disband|party.kick|party.join|party.match.set|party.match.clear|party.share`（后 8 个动作的字段语义见第二十一篇 §21.7/§21.9）：
@@ -4211,11 +4262,12 @@ $$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \math
 
 ## 14.8 聊天行内富文本超链接标记体系
 
-传音正文支持行内轻量结构化标记，在保证 200 字符限制与纯文本优雅降级的前提下，实现四大游戏核心实体的超链接交互：
+传音正文支持行内轻量结构化标记，在保证 200 字符限制与纯文本优雅降级的前提下，实现五大游戏核心实体的超链接交互：
 1. **物品超链接**：`{{item:itemId:enhancementLevel}}`，渲染为行内物品胶囊，带强化等级与悬浮详情卡；
 2. **订单超链接**：`{{order:orderId:side:itemId:enhancementLevel:price:quantity}}`，渲染为带买卖方向徽章的订单胶囊，点击直达坊市盘口；
 3. **队伍超链接**：`{{party:partyId:name:activityKind:nodeId:minValuation:memberCount:maxSlots}}`，渲染为修仙队伍胶囊，显示目标徽标与容量，悬浮展示队伍配置，点击一键入队；
-4. **地点超链接**：`{{location:nodeId:name}}`（或 `{{map:nodeId}}`），渲染为翡翠罗盘地标胶囊，悬浮查看区域与产出，点击自动跳转大地图并居中定位。
+4. **地点超链接**：`{{location:nodeId:name}}`（或 `{{map:nodeId}}`），渲染为翡翠罗盘地标胶囊，悬浮查看区域与产出，点击自动跳转大地图并居中定位；
+5. **攻略超链接**：`{{guide:postId:unlockPrice:title}}`，渲染为修仙攻略胶囊（含免费/灵石解锁价标识），悬浮提示攻略标题与查看指引，点击自动跳转「同道 → 攻略」并直达对应攻略详情页。
 
 ## 14.9 消息交互与会话草稿
 
@@ -4864,6 +4916,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 中文名 | 变量名 | 一句话 |
 | :--- | :--- | :--- |
 | 气血 | `Hitpoints`/`MaxHitpoints` | 0 即阵亡 |
+| 护盾 | `Shield` | 战内永久吸收池，减伤后优先抵扣伤害，波次结束清零（血气化盾转治疗） |
 | 灵力 | `Manapoints`/`MaxManapoints` | 技能消耗池（法力） |
 | 物理攻击 | `AttackPower`（属性侧 `PhysicalAttack`） | 普攻/物理技能基数 |
 | 术法攻击 | `SpellAttack` | 术法技能基数 |
@@ -4957,7 +5010,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 2. **可直译词用准确英文**：`Foundation` 底蕴、`CombatExperience` 战斗经验、`Experience` 修为。
 3. **同构双名已冻结**：战斗面板 `AttackPower`/`Defense`/`CriticalResistance`/`ParryResolve` ↔ 玩家属性 `PhysicalAttack`/`Armor`/`CriticalAvoidance`/`Parry`，不再造第三名字。
 4. **死契约不保留**：废弃键直接删并记入 §19.6，不留兼容路径。
-5. **特质 ID 前缀 `trait.`**：特质拼音连写（`trait.liweifanfou` 力微饭否、`trait.bukandaowo` 看不到我）；特质衍生 buff 按 buff 惯例拼音（`buff.yinshen` 隐身）。
+5. **特质 ID 前缀 `trait.`**：特质拼音连写（`trait.liweifanfou` 力微饭否、`trait.bukandaowo` 看不到我、`trait.zhenfadashi` 阵法大师、`trait.fufaji`/`fufapozhen`/`fufatiangang`/`fufatianming` 符法四式、`trait.yangjianshu` 养剑术、`trait.cangfeng` 藏锋、`trait.xueqihuadun` 血气化盾、`trait.shanshenbu` 闪身步）；特质/技能衍生 buff 按 buff 惯例拼音（`buff.yinshen` 隐身、`buff.jianyi` 剑意、`buff.tiangang` 天罡、`buff.shenxing` 神行）。
 
 ## 19.8 同道与组队（§21）
 
@@ -5025,6 +5078,15 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 追忆副本难度 | `DungeonDifficulty` (`0..10`) | 双下拉 11 档：虚境 3 档 普通/困难/地狱（`0..2`，固定原等级）+ 现世 8 阶 凡/黄/玄/地/天/灵/圣/帝（`3..10`，按队伍最高等级下限保护保差值动态升阶并继续叠乘 `1.30^d / 1.15^d`，耗体 `30 → 240`） |
 | 助战模式 | `assistMode` | 组队无体力或主动勾选的助战态：开局不扣体力、全程不领任何副本经验/灵石/掉落，照常参战并计入全队存活判定 |
 | 通关战利品池 | `clearLootTable` | 仅第 10 波通关瞬间结算的追忆副本独占奖励（专属特殊材料与低概率专属成品装备，掉率仅随难度等阶增减）；第 1~10 波怪物收益逐波独立直发，开局即扣体力、失败不返还 |
+
+### 19.14 功德任务系统（第32篇）
+
+| 中文术语 | 代码标识符 | 含义 |
+| --- | --- | --- |
+| 任务（功德任务） | `Quest` / `PlayerQuestState` / `ActiveQuest` / `QuestCandidate` | 随 `progression` 分段持久化的 4 候选槽择一接取无限循环委托系统（规避废弃前缀 `Task*`） |
+| 任务类别 | `QuestKind` (`Gather`/`Craft`/`Kill`) | 三大委托类别：采集（采摘/伐木/挖掘）、制造（炼丹/精炼/锻造/符阵）、击杀（讨伐常驻妖兽） |
+| 功德等级 | `MeritLevel` / `LifetimeQuestMerit` | 无上限无限养成等级（`Lv.1 → ∞`），由累计任务获取功德唯一导出，每级抬高每周功德获取上限 `+100` |
+| 功德圆满 | `IsWeeklyCapped`（`WeeklyMeritEarned >= WeeklyMeritCap`） | 本周（UTC+8 周一零点重置）任务功德达上限的状态名；圆满后继续循环不再给功德与功德经验，仅发少量基础修为与灵石 |
 ---
 
 *设计总纲结束。*
@@ -5109,12 +5171,20 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 - 存量玩家无需迁移：技艺等级由累计经验在读取时折算，同一份累计经验在新曲线下直接体现为更高等级，落库经验值不变。
 
 
-### 20.1.3 行动速度加成
+### 20.1.3 行动速度加成与符/阵伤害加成
 
-- 每级技艺 +5% 对应行动速度：`实际耗时 = 基础耗时 / (1 + 0.05 × level)`。
-- 作用于**该技艺对应**的行动耗时（`ActionDefinition.Technique`），不跨技艺叠加，不作用于修炼/探索/战斗/赶路主行动。
-- 秘法等级加速作用于全部 `enhancement` 技艺行动：装备强化与化灵/分解/转化三个排队秘法操作均按同一除数提速（`duration /= 1 + 0.05×L + Σ工具加成 + …`），并按目标物品等级与当次实际基础耗时授予 `enhancement` 技艺经验与等额底蕴（详见 §20.8 与 §20.1.2）。
-- 与节点建筑速度乘区同点结算（`TimedActionDuration`），保持确定性。
+- **行动速度加成（全七技艺）**：每级技艺 +5% 对应行动速度：`实际耗时 = 基础耗时 / (1 + 0.05 × level)`。
+  - 作用于**该技艺对应**的行动耗时（`ActionDefinition.Technique`），不跨技艺叠加，不作用于修炼/探索/战斗/赶路主行动。
+  - 秘法等级加速作用于全部 `enhancement` 技艺行动：装备强化与化灵/分解/转化三个排队秘法操作均按同一除数提速（`duration /= 1 + 0.05×L + Σ工具加成 + …`），并按目标物品等级与当次实际基础耗时授予 `enhancement` 技艺经验与等额底蕴（详见 §20.8 与 §20.1.2）。
+  - 与节点建筑速度乘区同点结算（`TimedActionDuration`），保持确定性。
+- **符/阵伤害增幅（仅 `talisman` 与 `formation` 技艺，TASK-20261126-07）**：
+  - **独立 Linear 点数通道**：符箓技艺每级提供 `+1` 点**符箓伤害增幅**（`talismanDamageBonusPoints`，1% / 级），阵法技艺每级提供 `+1` 点**阵法伤害增幅**（`formationDamageBonusPoints`，1% / 级）；两项通道各自独立，不跨类互加，后续特质/装备/心法可直接向同键加算。
+  - **乘区落点**：位于战斗伤害链第一层原始威力基数（抗性平方穿甲之前，与普攻增幅、技能增幅同级）：`原始威力 × (1 + 点数 / 100)`（Linear 曲线，负向软着陆），天然放大穿甲能力。
+  - **严格限定于造成直接伤害的符/阵**：
+    - 符箓伤害增幅仅作用于带 `consumable.strike` 打击规格的符箓物品（当前为雷击符 `item.leiji-talisman`，后续新增伤害型符箓自动继承）；
+    - 阵法伤害增幅仅作用于造成伤害的阵盘效果（当前为天雷阵 `formation.tianlei` 反击雷击与血煞阵 `formation.xuesha` 反击血煞，后续伤害型阵盘同口径接入）；
+    - **明确不作用于**：非伤害阵盘效果（聚灵阵回蓝、迷踪阵闪避）、阵盘维系与触发代价（天雷阵耗蓝、血煞阵每秒自损气血）、普攻与功法神通（含 `style: "talisman"` 的流派技能）、丹药回复及装备反伤；血煞阵吸血按实伤 100% 结算，随实伤自然等比提升而不重复叠乘。
+  - **单一事实源**：服务端经 `TechniqueCatalog.DamageBonusPoints(level)` 注入 `PlayerAttributeResolver` 面板通道（并将 `TechniqueExperiences.Version` 纳入属性缓存修订号），前端镜像走 `combatConstants.ts`（`TECHNIQUE_DAMAGE_BONUS_POINTS_PER_LEVEL`）及战斗模拟器 `attributeResolver.ts`。
 
 ### 20.1.4 非战斗行动六维经验
 
@@ -5135,13 +5205,16 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 修炼 `cultivation` | 经脉 meridians + 根骨 bone（平分） |
 | 赶路 `world.travel` | 身法 agility（按秒） |
 
-## 20.2 符箓 —— 雷击符
+## 20.2 符箓谱系与符法联动
 
-- 制造行动 `talisman.draw-leiji`（技艺=符箓）：消耗 `桃木晶×3`，20 秒/张，产出 `item.leiji-talisman`。
-- 雷击符为**战斗通用栏即时消耗品**：`usableInActionTypes=["combat"]`，支持触发器条件与 60 秒冷却，无吟唱。
-- 触发即扣 `manaCostRatio(5%) × MaxManapoints`；灵力不足则本次不激活。
-- 打击 `raw = manaDamageRatio(20%) × MaxMana + spellAttackRatio(200%) × SpellAttack`，元素 Wood、大类 Spell；走守方减伤链（抗性平方穿甲→攻方增伤 Linear→守方减伤 NonLinear→免伤收口），物品打击不参与命中/暴击掷点。物品打击非玩家自身技能，**不吃技能增幅**（§7.7.1 技能增幅作用域）。
-- 目标语义与普攻一致（最高有效威胁，回退首个存活敌人）；伤害直接写入战斗实体或波次快照，胜负判定交回战斗边界。
+符箓为**战斗通用栏即时消耗品**（`usableInActionTypes=["combat"]`，`subCategory="talisman"`，基础冷却统一 60 秒，无吟唱；装备特质 `trait.fufatianming` 时亦可装入主动术法槽，全栏同名符箓互斥）。符箓不吃技能增幅，统一受 `TalismanDamageBonusPoints`（符箓技艺每级 +1 点及符法特质加成）放大直伤威力与怒焰符燃烧层数，并实时展示于物品悬浮详情面板；持有 `trait.fufaji` 时冷却乘 `100/(100 + 400×等级成长)`、灵力消耗 ×4.0；持有 `trait.fufapozhen` 时直伤符箓参与暴击对抗与暴伤乘算。制造售价严格遵循「原材料卖店总价 × 2.0」与线性耗时模型（T1 20s / T2 26s）：
+
+- **雷击符**（`item.leiji-talisman` / `talisman.draw-leiji`，T1 Lv.1）：`桃木晶×3`，20s，回收价 180；耗蓝 `5%`，单体木系术法伤害 `20% MaxMP + 200% AP`。
+- **神行符**（`item.shenxing-talisman` / `talisman.draw-shenxing`，T1 Lv.6）：`桃木晶×3 + 晨露×2`，20s，回收价 212；耗蓝 `5%`，赋予自身 60s「神行」（`buff.shenxing`，行动速度 +10 点，单层保高刷新）。
+- **定神符**（`item.dingshen-talisman` / `talisman.draw-dingshen`，T1 Lv.10）：`桃木晶×3 + 破碎灵核×2`，20s，回收价 228；耗蓝 `5%`，对当前最高威胁敌人施加 5 层、持续 5s 的「麻痹」（`buff.mabi`，每层闪避 `-20%`、化解 `-20%`、行动速度 `-10` 点，合计闪避与化解软着陆减半、行动速度 `-50` 点）。
+- **剑符**（`item.jian-talisman` / `talisman.draw-jian`，T2 Lv.18）：`灵松晶×3 + 残魄灵符×1`，26s，回收价 580；耗蓝 `10%`，单体金系物理伤害 `320% AD + 30`。
+- **怒焰符**（`item.nuyan-talisman` / `talisman.draw-nuyan`，T2 Lv.18）：`灵松晶×3 + 火羽×2`，26s，回收价 612；耗蓝 `10%`，对全体存活敌人施加 `floor((10% AP + 10) × (1 + 符箓伤害增幅/100))` 层「燃烧」（`buff.ranhun`，持续 5s）。
+- **隐身符**（`item.yinshen-talisman` / `talisman.draw-yinshen`，T2 Lv.20）：`灵松晶×3 + 伴灵精华×1`，26s，回收价 692；耗蓝 `10%`，赋予自身 10s「隐身」（`buff.yinshen`，威胁增幅 `-100` 点，与看不到我同源且剩余时长保高不降）。
 
 ## 20.3 阵法 —— 聚灵阵盘
 
@@ -5165,7 +5238,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 - 目标等级 `t = 当前等级 + 1`；`t > 20` 拒绝开轮。
 - 耗时：`5 + t` 秒/次，再受秘法技艺速度加成。
 - 成本：`灵石 × t×10`。
-- 成功率：基础成功率全阶查表（+1 为 50%，+2~+3 为 45%，+4~+6 为 40%，+7~+10 为 35%，+11~+20 统一为 30%）；秘法等级 `L≥t` 线性乘算 `×(1+0.01×L)`，`L<t` 乘性衰减 `×0.9^(t-L)`；随后叠加 `enhancement` 自动栏位有效持续消耗品的 `enhancementSuccessBonus`（如淬灵粉 `+0.03`、固灵砂 `+0.05`），终值 clamp `[0,0.99]`。强化持续消耗品按本轮实际经过耗时扣减剩余时长，前端强化工作台预览同步实时反映槽位生效中或可激活消耗品的加成总成功率。
+- 成功率：基础成功率全阶查表（+1 为 50%，+2~+3 为 45%，+4~+6 为 40%，+7~+10 为 35%，+11~+20 统一为 30%）；秘法等级 `L≥t` 时仅对**超出目标等级的部分**线性乘算 `×(1+0.005×(L-t))`（每超 1 级乘算提升 0.5%，`L=t` 无加成），`L<t` 乘性衰减 `×0.9^(t-L)`；随后直接加算两项额外成功率加成——① `enhancement` 自动栏位有效持续消耗品的 `enhancementSuccessBonus`（淬灵粉 `+0.03`、固灵砂 `+0.05` 同属 `uniqueEffectType = 1` 独特效果组，全栏位互斥不可叠加，仅生效一件），② 已穿戴秘法/强化技艺工具（`slot = "tool-enhancement"`）的固定 `techniqueBonus.enhancementSuccessBonus`（1 级淬灵锤 `+0.03`、18 级赤铜淬灵锤 `+0.05`、30 级玄光镇灵锤 `+0.07`，**固定不随工具强化等级缩放**）；终值分段封顶——`t≤10` 时 clamp `[0, 0.99]`，`t≥11`（`+10→+11` 及以后）硬封顶为 **`45%`**（clamp `[0, 0.45]`），杜绝高阶成功率跨过 50% 对称点引发期望轮次坍塌。强化持续消耗品按本轮实际经过耗时扣减剩余时长，前端强化工作台预览同步实时反映已穿戴强化工具与槽位生效中或可激活消耗品的加成总成功率。
 - 判定走确定性随机（种子=行动实例 Id 前 8 字节，channel 独立不扰战斗种子）。
 - 成功 → 资产键升至 `+t`（已装备者同步槽位等级）；失败：保护生效（每轮消耗 1 个保护材料）则强化等级回落一级（`max(0, t-2)`，较当前等级 -1 且下限 +0），无保护直接归零（回到基础键）。起护等级 `protectLevel`（意图参数，最低钳制 +2）：当前等级未达起护线时不检查、不消耗保护材料，失败一律归零；达到起护线后才检查并消耗保护材料。保护材料由 `AuxItemId` 指定：装备配表 `enhanceProtectionItems` 非空时取列表内任一物品，未配置时以同装备无强化基础件（裸 `AssetKey`）代护；保护材料与本体共用裸键时（+0 装备以自身裸件代护）须持有 ≥2。
 - `targetLevel` 意图参数到达后行动提前完成出队；余额不足/物品不存在 → 阻塞语义无产出。
@@ -5173,7 +5246,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 ## 20.5 内视「技艺」Tab 与前端页面
 
-- 内视页新增 `technique` Tab：七技艺列表，每项展示等级、经验进度（本级累计/下一级需求）、+5%×等级 行动速度加成。
+- 内视页新增 `technique` Tab：七技艺列表，每项展示等级、经验进度（本级累计/下一级需求）、+5%×等级 行动速度加成；其中**符箓**与**阵法**两项额外展示 `+1%×等级` 符箓伤害 / 阵法伤害加成胶囊，同时在斗法战斗属性面板「特殊」页并列展示非零的符箓伤害增幅与阵法伤害增幅。
 - 技艺导航组在炼丹/炼器之外新增符箓/阵法/秘法三个子页；符箓/阵法复用行动卡网格；秘法页包含装备强化、化灵、分解、转化四个操作。
 - 装备强化继续使用原有工作台（物品格+目标等级+保护槽+重复控件 / 费用·成功率·产出·经验·耗时面板）；其经验与成功率仍取 `enhancement` 技艺等级。
 
@@ -5186,21 +5259,37 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 ### 20.7.1 物品模型
 
-- 七技艺各配一件可装备工具，以**装备目录条目**落地（`equipment.` 前缀、进 `RawEquipments`），不参与物品目录登记。
-- 装备槽位：`slot = "tool-<techniqueId>"`（`tool-alchemy`/`tool-forging`/`tool-talisman`/`tool-enhancement`/`tool-formation`/`tool-gathering`/`tool-mining`），七个专属槽位随装备槽位唯一互斥校验天然互斥，同技艺至多一件。
-- 加成声明：`techniqueBonus = { technique, speedRatio }` 绑定技艺与速度加成数值；`speedRatio` 配表化为后续高品阶工具留空间，本批（tier 1）恒为 `0.10`。
+- 七技艺分阶配置可装备工具，以**装备目录条目**落地（`equipment.` 前缀、进 `RawEquipments`），不参与物品目录登记。
+- 装备槽位：`slot = "tool-<techniqueId>"`（`tool-alchemy`/`tool-forging`/`tool-talisman`/`tool-enhancement`/`tool-formation`/`tool-gathering`/`tool-mining`），七个专属槽位随装备槽位唯一互斥校验天然互斥，同技艺至多一件；穿戴校验沿用装备显式 `level`（1 / 18 / 30 级境界门槛）。
+- 加成声明：`techniqueBonus = { technique, speedRatio, enhancementSuccessBonus? }` 绑定技艺与速度加成数值；其中 `enhancement` 强化技艺工具额外声明 `enhancementSuccessBonus` 提供固定强化成功率加成：
+  - **T1（Lv.1 凡品）**：`speedRatio = 0.10`（+10%），强化工具附带 `enhancementSuccessBonus = 0.03`（+3%）；
+  - **T2（Lv.18 黄品 · 练气档）**：`speedRatio = 0.20`（+20%），强化工具附带 `enhancementSuccessBonus = 0.05`（+5%）；
+  - **T3（Lv.30 玄品 · 筑基档）**：`speedRatio = 0.30`（+30%），强化工具附带 `enhancementSuccessBonus = 0.07`（+7%）。
 - 工具不配置 `flatStats`/`baseStatRatios`，对战斗属性零贡献；命名遵循「本名不拼品阶前缀」，高阶工具以新 id 承载。
-- 首批工具：桃木铲（采集）、精铁镐（挖掘）、灵火炉（炼丹）、百炼铁钳（炼器）、桃木笔（符箓）、桃晶旗（阵法）、淬灵锤（秘法）。
+- 三套共 21 件技艺工具：
 
-### 20.7.2 速度加成结算
+| 技艺槽位 | T1 凡品（Lv.1 · +10%） | T2 黄品（Lv.18 · +20%） | T3 玄品（Lv.30 · +30%） |
+| :--- | :--- | :--- | :--- |
+| 采集 `tool-gathering` | 桃木铲 (`tool-herb-hoe`) | 灵松药锄 (`tool-pine-hoe`) | 寒玉灵铲 (`tool-jade-spade`) |
+| 挖掘 `tool-mining` | 精铁镐 (`tool-prospect-compass`) | 赤铜灵镐 (`tool-copper-pick`) | 玄晶开山镐 (`tool-xuanjing-pick`) |
+| 炼丹 `tool-alchemy` | 灵火炉 (`tool-flame-ding`) | 赤铜丹鼎 (`tool-copper-ding`) | 玄炎九转炉 (`tool-xuanyan-furnace`) |
+| 炼器 `tool-forging` | 百炼铁钳 (`tool-forge-hammer`) | 赤铜火钳 (`tool-copper-tongs`) | 镇岳玄铁钳 (`tool-zhenyue-tongs`) |
+| 符箓 `tool-talisman` | 桃木笔 (`tool-talisman-brush`) | 松纹灵笔 (`tool-pine-brush`) | 紫毫承雷笔 (`tool-zihao-brush`) |
+| 阵法 `tool-formation` | 桃晶旗 (`tool-formation-flag`) | 灵松阵旗 (`tool-pine-flag`) | 九宫玄纹旗 (`tool-jiugong-flag`) |
+| 秘法 `tool-enhancement` | 淬灵锤 (`tool-quench-anvil`, +3% 成功率) | 赤铜淬灵锤 (`tool-copper-hammer`, +5% 成功率) | 玄光镇灵锤 (`tool-zhenling-hammer`, +7% 成功率) |
 
-- 行动 `Technique` 命中已装备工具的 `techniqueBonus.technique` 时，其 `speedRatio` 与技艺等级加成**同除数加算**：`实际耗时 = 基础耗时 / (1 + 0.05×技艺等级 + Σ工具speedRatio)`。
-- 不跨技艺叠加、不乘产出倍率；与节点建筑速度乘区同点结算（`TimedActionDuration`），保持确定性。
+### 20.7.2 速度加成与强化成功率结算
+
+- **速度加成**：行动 `Technique` 命中已装备工具的 `techniqueBonus.technique` 时，其 `speedRatio`（随强化按 `1.05^强化等级` 缩放）与技艺等级加成**同除数加算**：`实际耗时 = 基础耗时 / (1 + 0.05×技艺等级 + Σ工具speedRatio×1.05^N)`。不跨技艺叠加、不乘产出倍率；与节点建筑速度乘区同点结算（`TimedActionDuration`），保持确定性。
+- **强化成功率加成**：装备强化行动（`enhance.equipment`）额外读取已穿戴 `tool-enhancement` 工具的 `techniqueBonus.enhancementSuccessBonus`，作为**固定值**（不随工具强化等级缩放）与强化自动栏消耗品（淬灵粉/固灵砂）加算后参与最终成功率计算，并在 `t≥11` 统一受 `45%` 硬封顶约束；秘法其余三项排队操作（化灵/分解/转化）无此项加成。
 
 ### 20.7.3 制造与获取
 
-- 工具由炼器产出：炼器页新增「技艺」子分组，7 条 `forge.tool-*` 配方（`technique=forging`），产出对应 `equipment.tool-*`。
-- 工具**可强化**：强化规则同普通装备（指数成长 1.05^强化等级，未配置保护材料时以同装备基础件代护）；强化后其 `techniqueBonus.speedRatio` 随强化等级等比缩放（`有效速度加成 = 基础加成 × 1.05^强化等级`），与技艺等级加成同除数加算，进一步提升对应生活生产行动速度。
+- 工具由炼器产出：炼器页「技艺」子分组收录全三套共 21 条 `forge.tool-*` 配方（`technique=forging`），按目标等级升序排列并受境界/炼器技艺解锁门槛控制：
+  - **T1（Lv.1）**：基础材料直造；
+  - **T2（Lv.18）**：制式平价升阶——对应 T1 工具 ×2 + T2 加工料（赤铜精/灵松晶）与常规怪料/采料，耗时按总纲 §4.6.4 T2 系数 `1.3×` 线性增长；
+  - **T3（Lv.30）**：制式平价升阶——对应 T2 工具 ×2 + 更高量 T2 加工料（赤铜精/灵松晶/伴灵精华/百炼铁）与常规怪料（不卡 Boss 稀有掉落，便于批量锻造与强化），耗时按总纲 §4.6.4 T3 系数 `1.6×` 线性增长。
+- 工具**可强化**：强化规则同普通装备（指数成长 `1.05^强化等级`，未配置保护材料时以同装备基础件代护）；强化后其 `techniqueBonus.speedRatio` 随强化等级等比缩放（`有效速度加成 = 基础加成 × 1.05^强化等级`），**`enhancementSuccessBonus` 保持固定白板值不变**。
 
 ### 20.7.4 前端槽位
 
@@ -5447,8 +5536,8 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
   返回 `{inviteCode, inviteeCount, invitees:[{displayName, highestRealmLevel,
   qiRewarded, foundationRewarded, createdAt}], invitedByName}`。邀请视图走低频 REST，
   不进 WebSocket 社交帧。
-- 同道二级入口依次为「队伍、宗门、邀请」；PC 侧栏可展开/收起，移动端保留顶部二级页签。宗门规则见[第二十五篇](./25-宗门与专属驻地.md)。
-- `SocialSubTab` 含 `party`、`zongmen`、`invite`；`SocialPage` 子页「邀请」：专属邀请码/邀请链接展示 +
+- 同道二级入口依次为「队伍、对弈、宗门、攻略、邀请」；PC 侧栏可展开/收起，移动端保留底部二级页签。宗门规则见[第二十五篇](./25-宗门与专属驻地.md)。
+- `SocialSubTab` 含 `party`、`doudizhu`、`zongmen`、`guide`、`invite`；`SocialPage` 子页「邀请」：专属邀请码/邀请链接展示 +
   一键复制（Clipboard API 降级 execCommand）、奖励规则说明、被邀请人境界进度列表。
 - 注册页邀请码输入框（`app.login.regInvite*`）；物品名走既有 `game.item.<id>` 词条链。
 - 里程碑日志采用 `{{item:id|名称|数量}}` 结构化模板，双方各一条 system 频道战报。
@@ -5557,58 +5646,66 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 - **序号口径**：`player_seq` 为注册自增编号，经社交仓储 `identity.players` 直查，
   不进入玩家聚合与快照分段。
 
-## 21.15 队伍对弈：斗地主
+## 21.15 同道对弈：斗地主（八阶全局匹配）
 
 > 独立表现原型：`tools/doudizhu-demo.html`。该单文件离线 Demo 使用本地角色图片及本地模拟余额，先验证洗发牌、叫抢/牌型反馈、选牌命中与逐步托管的整体表现；不连接正式社交或资产结算。角色不带背景框，余额只展示图标与数字；AI/托管每步至少一秒。正式对弈仍以服务端权威规则为准。
 
 原型表现约束：洗牌依次呈现分堆、交错、拱桥收拢和收齐；发出的牌须沿连续轨迹到达接牌处后才进入对应手牌，发完后再统一理牌，禁止提前显示到手牌中。牌面使用统一矢量花色、双端点数和人物/王牌图案，牌背沿用墨绿金纹。本人形象朝向手牌。点击其他角色可打开本地互动菜单，支持番茄、鲜花、请茶、鼓掌的飞行/命中表现及快捷话语气泡；本地互动不消耗真实资产、不触发外部消息。
 
-### 21.15.1 定位与牌桌
+### 21.15.1 定位、八阶场次与十倍验资托管
 
-- 「对弈」是队伍内的休闲玩法，不进入行动队列、斗法或组队讨伐结算；玩法先落地斗地主。
-- 仅队伍当前恰好 3 名成员时可开局，不提供观战位；三名成员按队伍加入顺序对应固定座次，斗地主准备状态独立于组队讨伐准备状态。
-- 开局前三名成员必须全部准备，且队长发起开局；牌局期间队伍成员变化不得替换已冻结的玩家名册。
-- 队长作为牌桌房主，可在开局前设置底注；默认 10 灵石，最小值 0，不设置业务上限。服务端拒绝负数、NaN、Infinity 与无法安全计算的金额。
-- 底注修改只影响下一局；一局开始时冻结底注与参与者。每名参与者开局前必须持有不少于底注的可用灵石；底注为 0 时不要求持有灵石。
-- 洗牌、发牌、叫/抢地主、出牌、超时策略、倍率和终局结果都由服务端产生；私有牌面只下发给牌主本人，公共状态对本队成员一致。
+- 「对弈」是「同道」下的独立二级子界面（与队伍、宗门、攻略、邀请并列），完全脱离队伍系统——无需组队，与队伍成员关系、组队讨伐准备及行动队列互不耦合；玩法先落地斗地主。
+- 全局匹配按游戏内八品阶位划分为 **8 阶场次**（每阶底注按 `×100` 递增），并强制执行 **十倍底注验资与开局托管**：
+
+| 阶位序号 | 阶位名称 | 品质色 | 底注（灵石） | 准入验资 & 开局托管（`10 × 底注`） |
+| :---: | :---: | :---: | :---: | :---: |
+| 1 | 凡阶 | 凡品（白） | `1` | `10` |
+| 2 | 黄阶 | 黄品（绿） | `100` | `1,000` |
+| 3 | 玄阶 | 玄品（蓝） | `10,000`（1 万） | `100,000`（10 万） |
+| 4 | 地阶 | 地品（紫） | `1,000,000`（100 万） | `10,000,000`（1,000 万） |
+| 5 | 天阶 | 天品（金） | `100,000,000`（1 亿） | `1,000,000,000`（10 亿） |
+| 6 | 灵阶 | 灵品（橙） | `10,000,000,000`（100 亿） | `100,000,000,000`（1,000 亿） |
+| 7 | 圣阶 | 圣品（红） | `1,000,000,000,000`（1 万亿） | `10,000,000,000,000`（10 万亿） |
+| 8 | 帝阶 | 帝品（彩） | `100,000,000,000,000`（100 万亿） | `1,000,000,000,000,000`（1,000 万亿） |
+
+- **准入验资与开局担保托管**：点击「开始匹配」与凑齐 3 人开局瞬间，服务端均强制校验参与者当前可用 `currency.spirit-stone` ≥ `10 × 底注`。凑齐 3 人建局同事务从每人可用余额预扣冻结 `10 × 底注` 作为局内担保托管金（`doudizhu.escrow`），防止局内经坊市挂单转移灵石逃避翻倍赔付；若排队期间有人灵石跌破 `10 × 底注`，仅剔除余额不足者，其余合格排队者保留原位继续等待。
+- 洗牌、发牌、叫/抢地主、出牌、超时策略、倍率和终局结果全部由服务端权威产生；私有牌面只下发给牌主本人，公共状态对同桌三名玩家一致。
 
 ### 21.15.2 发牌与叫/抢地主
 
 - 使用 54 张标准扑克牌，牌面排序为 3 至 A、2、小王、大王。洗牌由服务端安全随机源完成，牌序与牌局检查点一起持久化，不能由客户端指定。
 - 每名玩家先发 17 张，余下 3 张作为底牌；地主确定后将底牌加入地主手牌。
-- 房主启动前由 3 名玩家入座并准备。首位叫地主的玩家按洗牌结果确定；任一叫分后，其他未确定玩家可以选择不抢或抢地主。首次叫地主倍率为 1，每次成功抢地主将本局基础倍率翻倍；无人叫地主则本局作废并重新洗牌发牌。
-- 地主身份、底牌、叫/抢过程与叫分倍率在开局定格；叫/抢操作不能由观战者或非当前操作玩家提交。
+- 同阶匹配池满 3 人即自动随机排定三座位与首位叫地主座位并立即开局（无队长、无手动准备环节）。任一叫分后，其他未确定玩家可以选择不抢或抢地主。首次叫地主倍率为 1，每次成功抢地主将本局基础倍率翻倍；无人叫地主则本局重新洗牌发牌（保留已预扣的十倍底注担保金）。
+- 地主身份、底牌、叫/抢过程与叫分倍率在开局定格；叫/抢操作不能由非当前操作玩家提交。
 
 ### 21.15.3 出牌与牌型比较
 
 - 地主先出牌，其后按固定座次轮转。每轮玩家可出牌或不出；连续两名玩家不出后，最后出牌者重新获得自由领出权。手牌清空立即终局。
 - 合法牌型包括：单张、对子、三张、三带一、三带二、顺子（至少 5 张）、连对（至少 3 对）、飞机（至少连续 2 个三张，可不带翅膀或带等量单牌/对子）、四带二（两张单牌或两对）、炸弹（四张同点）、王炸（大小王）。顺子/连对/飞机序列不得包含 2 或王；带牌不得重复使用牌张。
 - 普通牌型只能由相同类别、相同牌张数/连续组数的更高主牌压过；炸弹压过任意非炸弹并按点数比较，王炸压过炸弹与其他牌型。选择不完整、重复、非本人手牌或不能压过当前牌的出牌由服务端拒绝，牌局状态保持不变。
-- 断线重连恢复服务端当前检查点；操作必须带牌局 ID 与单调版本，旧状态/重复请求不得重复出牌或结算。成员离队或队伍解散不改变座次；牌局进入明确的终止/托管处理，不能静默换人。
+- 断线重连恢复服务端当前检查点；操作必须带牌局 ID 与单调版本，旧状态/重复请求不得重复出牌或结算。
 
 ### 21.15.4 底注结算与倍率
 
-- 终局基础分为队长设置的底注；抢地主每次翻倍，炸弹和王炸各翻倍一次。地主胜时记为地主对两位农民各赢取一份；农民胜时地主分别向两位农民各支付一份。
+- 终局基础分为本场阶位对应的固定底注；抢地主每次翻倍，炸弹和王炸各翻倍一次。地主胜时记为地主对两位农民各赢取一份；农民胜时地主分别向两位农民各支付一份。
 - **春天**：地主获胜且两位农民整局均未出过牌，终局倍率再翻倍。**反春**：农民获胜且地主整局只出过一手，终局倍率再翻倍。春天与反春互斥。
-- 每名输家分别承担其应付份额；若终局时可用灵石不足，按当前可用余额全额扣至 0（all-in），只将实际扣得金额记入赢家；结算在单个 PostgreSQL 事务内完成且不得凭空增发、不得出现负余额。每局终局写幂等结算键，重复提交不重复扣款或入账。
-- 底注为 0 时仍完整记录和显示倍率、输赢及牌型，不产生灵石分录。
+- 终局结算在单个 PostgreSQL `Serializable` 事务内完成：每位座位的有效可赔付上限为「当前自由可用灵石 + 开局已托管的 `10 × 底注`」；若应付超出该上限则全额扣至 0（all-in），只将实际扣得金额记入赢家，并将「净盈亏 + 退回托管金」原子写回钱包余额（`doudizhu.settlement`），不凭空增发、不产生负余额。每局终局写确定性幂等结算键，重复提交不重复扣款或入账。
 
 ### 21.15.5 持久化、协议与验收
 
-- 队伍底注随队伍档案持久化；活跃牌局检查点独立持久化完整牌序、座位、私有手牌、出牌历史、当前阶段/操作人、倍率、状态版本与终局结果，以支持服务重启和玩家重连。
-- WebSocket 契约区分牌桌指令、公共牌局快照和玩家私有手牌；服务器按成员身份过滤私有信息。队长权限只用于设置底注和开始牌局，普通成员仅能操作自己的座位。
-- 关键回归覆盖牌型分类/压制边界、抢地主与倍率、炸弹/王炸、春天/反春、非法操作不变更状态、断线恢复、并发版本冲突、资产不足与终局幂等。
-- UI 在同道队伍信息中提供「对弈」视图，显示座位、状态、公共出牌区、本人手牌、叫/抢/出牌/不出操作及倍率与终局结算；队长可编辑底注。沿用现有修仙设计 tokens、浮层与表单组件，兼顾桌面和移动端。
+- 活跃牌局检查点（`social.doudizhu_games`，以 `game_id` 为主键，记录 `tier`、`player_ids`、`dismissed_by`）独立持久化完整牌序、座位、托管金、私有手牌、出牌历史、当前阶段/操作人、倍率、状态版本与终局结果，以支持服务重启和玩家重连；队伍表与队伍成员表不持有任何斗地主字段，加队/离队/解散不受斗地主影响。
+- 全局八阶匹配池由主服社交运行时内存串行维护：同一玩家至多登记一个匹配阶位，断线自动移出匹配队列；提供轻量内存计数查询与社交状态投影，实时反馈八阶当前匹配人数。
+- WebSocket 契约区分匹配指令（`doudizhu.match.join` / `doudizhu.match.cancel` / `doudizhu.leave`）、牌局操作指令、公共牌局快照（含三座位道号、形象、实时灵石）和玩家私有手牌；服务器按座位身份过滤私有信息。
+- 关键回归覆盖八阶底注与十倍验资托管、牌型分类/压制边界、抢地主与倍率、炸弹/王炸、春天/反春、非法操作不变更状态、重发牌保留托管金、断线恢复、并发版本冲突、高倍率资产不足与终局零和幂等。
 
-### 21.15.6 页面入口、独立准备与托管
+### 21.15.6 页面入口、八阶匹配大厅与托管
 
-- 「队伍」和「对弈」不新增为应用主导航项，均位于「同道」的「队伍」面板中；队伍面板顶部以两个页签切换「队伍」与「对弈」。宗门与邀请仍由同道现有导航承载。
-- 对弈页签未开局时显示独立的准备与设置页面：游戏类型选择目前仅提供斗地主，展示所有队员的名称、角色、准备状态及可用灵石。斗地主准备只写 `doudizhu_ready`，与组队讨伐准备 `ready` 完全独立。
-- 牌局进入叫/抢地主或出牌阶段后切换为完整斗地主牌桌，牌桌铺满应用中间内容列（主内容区），保留应用顶栏、左右侧栏与整体导航；结束结算继续留在中间牌桌视图。牌桌围绕三座位、公共出牌区与本人手牌布局，不呈现队伍管理文本面板。
-- 三个座位复用队伍名册的角色头像与道号，并展示手牌数量、地主身份、轮次与托管状态。队内可见各成员 `currency.spirit-stone` 当前可用余额，由服务端从资产账本投影，不以身家代替灵石。
-- 左上对手依次展示名称、角色与手牌数、灵石，所出牌紧邻其右侧；右上对手镜像布局，出牌在其左侧。本人名称、角色和灵石位于牌桌右下角，本人手牌居中靠下，操作按钮在手牌附近。各座位分别展示当前轮最近一次出牌或不出，不显示底部牌局记录。
+- 「对弈」位于「同道」二级导航（桌面侧栏折叠子菜单与竖屏底部同道二级子行）；队伍面板不再包含任何对弈页签或设置。
+- 未处于牌局时显示高密度对弈匹配卡片：顶栏紧凑并排标题、**八阶（凡/黄/玄/地/天/灵/圣/帝）品级下拉框**（触发器与下拉选项均展示八品品质色调、灵石小图标与底注及当前匹配人数，其它阶位有人排队时附带轻量角标提示）与「玩法」规则弹窗按钮；下方单行高密度排布「底注 / 验资 / 可用」（每项仅由极简标签、灵石小图标与 `UnitNumber` 紧凑数值构成，十倍底注托管规则收进悬停 Tooltip）及「开始匹配 / 改配此阶 / 取消匹配」主按钮，横竖屏均保持高空间利用率与零冗余留白。
+- 匹配凑齐进入叫/抢地主或出牌阶段后自动切换为完整斗地主牌桌，牌桌铺满应用中间内容列（主内容区），保留应用顶栏、左右侧栏与整体导航；结束结算继续留在中间牌桌视图。
+- 三个座位直接消费牌局下发的三名玩家角色头像、道号与 `currency.spirit-stone` 当前可用余额。左上对手依次展示名称、角色与手牌数、灵石，所出牌紧邻其右侧；右上对手镜像布局，出牌在其左侧。本人名称、角色和灵石位于牌桌右下角，本人手牌居中靠下，操作按钮在手牌附近。各座位分别展示当前轮最近一次出牌或不出，不显示底部牌局记录。
 - 牌桌受中间主内容区边界约束，保留底部日志/聊天停靠区，不能覆盖聊天或输入区域。
-- 开局与结算不自动取消斗地主准备；结算后在牌桌内显示结果及「再来一把 / 结束」菜单，全员仍准备时队长可发起下一局，其他成员等待队长。任一成员选择结束或取消准备即取消本人的准备，并原子移除已结束牌桌，所有成员返回准备页；其他成员已有准备保持不变。进行中禁止取消准备，避免中途退出绕过结算。
+- 结算后在牌桌内显示结果及「离开牌桌 / 继续匹配」操作：点击「离开牌桌」仅关闭本人的赛后牌桌视图返回八阶匹配大厅（不影响同桌其他玩家查看结算）；点击「继续匹配」关闭本局视图并直接按本局阶位重新进入全局匹配队列（再次执行十倍底注验资）。全员均离开或超留存窗口后清退终态牌局记录。
 - 本人手牌以扑克牌面横向扇列展示；鼠标悬停牌张时抬起预览，点击后选中并保持抬起状态，再次点击取消；触屏点击使用相同选牌状态。所有有效牌张均可读、可操作，不以纯文本手牌替代牌面。
 - 牌桌在桌面与窄屏下都保持三座位、公共出牌区和本人手牌可见；窄屏允许手牌横向滚动，操作区固定在手牌附近且不得遮挡牌面。
 - 每次叫/抢地主或出牌操作后，当前操作座位获得 30 秒服务端时限。有效操作结束或超时自动操作后，下一操作重置时限；客户端倒计时只负责展示，服务端时钟是准入依据。
@@ -5620,13 +5717,13 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 
 ### 21.15.7 正式牌桌表现与同桌互动
 
-- 将 `tools/doudizhu-demo.html` 已认可的表现迁入正式 React 前端，使用真实角色、道号、准备状态和灵石；横屏牌桌只占中间区域，保留应用聊天停靠区。竖屏对局面板铺满游戏视口并保留队伍/对弈页签，本人手牌最多三排，角色缩小，按钮与多排触控选牌不互相遮挡。
+- 将 `tools/doudizhu-demo.html` 已认可的表现迁入正式 React 前端，使用真实角色、道号和灵石；横屏牌桌只占中间区域，保留应用聊天停靠区。竖屏对局面板铺满游戏视口并保留底部同道二级导航，本人手牌最多三排，角色缩小，按钮与多排触控选牌不互相遮挡。
 - 服务端持久化发牌开始时刻和操作开放时刻。开局/无人叫地主重发牌预留 9 秒洗发牌及理牌；定地主后预留 2.4 秒翻底牌、派底牌和理牌。后续操作间保留 350 毫秒表现时间，30 秒操作倒计时从开放时刻计算。后台、重连和切回牌桌按服务端时刻恢复，不回放过期动画、不推迟权威时限。
 - 仅向本人投影其 17 张初始发牌顺序，不下发其他玩家的牌或完整牌序。牌逐张飞行到固定牌槽后才显示为手牌，完成后平滑理牌；地主的三张底牌同样单独飞入。牌面采用原型矢量美术，花色映射遵循服务端编号。
 - 大小王的 `JOKER` 角标与中文名称固定竖排，字形保持正立；手牌、底牌、出牌与飞牌共用该规则，不随界面缩放或响应式断点改变排版方向。
 - 正式牌面以固定 SVG 坐标统一布局，数字、花色、人物图案和王字仅随整牌等比缩放，所有分辨率、缩放与牌面用途均不改变内部构图。理牌保持卡牌标识与选中状态，仅在手牌顺序或槽位变化时做一次连续位移，不重复叠加动画；触控命中与发牌落点使用同一多排槽位坐标。
 - 牌局时间投影须附带同一权威时钟读取的服务端当前时刻，客户端以此同步动画年龄、操作开放和倒计时；浏览器与服务端系统时钟不要求一致。手动操作失败须显示服务端拒绝原因。
-- 牌桌提供全屏进入/退出按钮，优先使用浏览器 Fullscreen API，受限环境使用页面全屏布局回退。横竖屏均按当前方向响应排版，切换全屏不锁定设备方向，退出恢复队伍面板与既有聊天布局。
+- 牌桌提供全屏进入/退出按钮，优先使用浏览器 Fullscreen API，受限环境使用页面全屏布局回退。横竖屏均按当前方向响应排版，切换全屏不锁定设备方向，退出恢复对弈面板与既有聊天布局。
 - 叫/不叫/抢/不抢记录显式下发，初叫者在其他人抢地主后保留一次最终抢回机会。出牌显示标准牌型名称；提示在本人的合法候选间轮换，仅用于选牌，最终出牌仍由服务端校验。
 - 点击其他角色，通过公共浮层打开番茄、鲜花、请茶、鼓掌及固定快捷话语。服务端校验发送者与目标属于同一牌桌，按发送者限频 1 秒，给同桌广播短暂互动事件；各端按事件标识去重播放飞行/命中与话语气泡。互动不改变牌局版本、不持久化、不扣灵石；重连不重放过期互动，不伪造其他真实玩家的回复。
 - 同桌互动浮层仅在本地发送成功后关闭；离线、限频与服务端拒绝均给出可见反馈。成功表现只以服务端确认事件为准，且发起者也会收到确认事件。
@@ -6144,10 +6241,14 @@ HTTP 拉取式（整点数据无推送诉求，WebSocket 不引入新消息）�
 - **缓存头**：`ETag`（`computedAt` 派生）+ `Cache-Control: private, max-age=60`；整点内重复拉取命中 304/内存字节，响应体为预序列化 `ReadOnlyMemory<byte>` 零再编码。
 - 运维旁路：ops 面板挂 `POST {ops}/api/leaderboards/rebuild`（立即重跑物化，供发布/修复后手动刷新）与最近物化时刻/耗时指标展示。
 
-## 26.8 前端
+## 26.8 前端与荣誉头衔投影
 
+- **12 榜专属二值图腾**：12 个榜单各自配备纯白二值镂空图腾（MOSS-Image 体系 C），128×128 无损 WebP 母模归档于 `art/glyphs/lb.<boardId>.webp`，64×64 无损 WebP 运行时资产落盘于 `frontend/src/assets/glyphs/lb.<boardId>.webp`；前端公共组件 `LeaderboardGlyph` 以 CSS `mask-image` 动态单色染色，自适应名次色（金/银/铜/道金）与深浅双主题。
+- **个人最高排名荣誉投影（传音与攻略共享）**：从除宗门榜（`zongmen`）外的 11 张个人榜 Top 50（`1 <= rank <= 50`）中取 `rank` 最小的一项；多榜同名次并列时固定按 **`境界 > 斗法 > 身家 > 灵石 > 七技艺（炼丹/炼器/制符/强化/阵法/采集/挖矿）`** 裁决。服务端经 `LeaderboardRuntime` 内存快照 O(1) 实时派生，零写库、不侵入持久化表。
+  - **传音频道**：角色道号前展示 `[时间] [境界] [宗门] [图腾 #N] 道号：`，悬停 `FloatingTooltip` 展示完整榜名与名次（如「境界榜 第 1 名」）。
+  - **道友攻略**：作者名旁既有 `.guide-rank-pill` 同步前置对应榜单图腾。
 - 新页签 `leaderboard`：桌面端收拢于左侧导航栏「其他」可折叠分组下（与「图鉴」并列），移动端收拢于底部导航「更多」分组下；组件为 `LeaderboardPage`。
-- 二级榜 Tab：境界 / 技艺（七子页签或紧凑分组切换，名称复用技艺既有 i18n 键）/ 身家 / 灵石 / 宗门 / 斗法。
+- 二级榜 Tab：境界 / 技艺（七子页签或紧凑分组切换，均挂载对应榜单二值图腾，名称复用技艺既有 i18n 键）/ 身家 / 灵石 / 宗门 / 斗法。
 - 行形态：名次徽标（1~3 名强化样式）+ 形象头像 + 道号（冠宗门前缀）+ 境界徽章 `RealmBadge` + 主数值与榜别副字段；点击玩家行弹 `PlayerCardModal`（已有名片体系，受目标修士配装隐私设置约束，禁止另建）。
 - 「我的名次」条：吸底/吸顶常驻显示本人在当前榜名次与分数；榜页顶注「结算于 HH:00，每小时整点更新」。
 - 拉取策略：入页拉一次 + `visibilitychange` 复验 + 手动刷新按钮；ETag 自动 304。
@@ -6600,6 +6701,9 @@ $$\text{Total}(d) = S(d) \times E(d) = \frac{\text{Cost}(d)}{30} \times (1 + 0.1
 3. **组队与战斗视图**：
    - 同道组队页「追忆副本」目标同步采用「虚境/现世 + 档位」双下拉与「次」单位；
    - 战场顶栏展示「副本名 · 模式与难度徽章 · 第 X / 10 波」进度条，点击战场敌怪同样检视动态等级与难度增幅后的真实面板。
+4. **战斗模拟器追忆副本预演**：
+   - 战斗模拟器支持「野外讨伐 / 追忆副本」双模式切换，共享 1~5 人阵容配装、触发器与种子；
+   - 追忆副本模式支持多选副本与 11 档难度（`0..10`），采用虚拟无限体力按设定挑战次数推演（单次全员团灭记败并记录止步波次后满血重开下一把，直至跑满设定次数以统计通关率），同源结算逐波独立奖励与第 10 波通关独占产出，并在报告中展示通关率、止步波次、等效消耗体力及每点体力 / 每小时收益效率。
 
 <!-- FILE:31-道友攻略与配装付费查阅规约.md -->
 # 第三十一篇 道友攻略与配装付费查阅规约
@@ -6644,11 +6748,15 @@ $$\text{Total}(d) = S(d) \times E(d) = \frac{\text{Cost}(d)}{30} \times (1 + 0.1
    - **图像链接自动解析**：支持 Markdown 图片 `![说明](https://...)`、`{{img:https://...}}` 以及正文直接粘贴的 `http(s)://` 图片直链（`.png/.jpg/.jpeg/.gif/.webp/.svg/.avif`，长度 ≤ 500 字符），自动解析为自适应内嵌图片，点击唤起 `ChatImageLightbox` 缩放查看；支持在编辑器中直接选取个人云同步表情包或本地上传图片生成安全直链插入；
    - **游戏实体胶囊**：兼容传音同源标记 `{{item:itemId}}` / `{{item:itemId:enhancementLevel}}` 与 `{{location:nodeId}}`，行内渲染图标与悬浮详情卡片（严格显式透传 `itemId`）。
 
-### 31.3.2 独立编辑器横竖屏适配
+### 31.3.2 独立编辑器横竖屏适配与传音分享
 - 攻略编辑采用独立全视口级工作台弹窗（`Modal` large 全幅扩展），不挤压侧栏与底栏：
   - **横屏（桌面/宽屏）**：顶部元数据栏（标题、导语、付费灵石门槛）+ 多功能排版工具栏（标题/加粗/引用/列表/分割线/内置表情/颜文字/插图/物品引用）+ **左右分栏（左侧源码编辑区 + 右侧实时排版预览区）**，亦支持切换单栏专注写作；底部实时显示 `当前字数 / 10,000` 与本地草稿保存状态。
   - **竖屏（移动端）**：紧凑可横滑工具栏 + **「编辑 / 预览」顶部分段一键切换**，全高自适应避让虚拟软键盘，保证手机端长文撰写与排版预览同样完整顺畅。
   - **本地草稿防丢**：未发布的新帖草稿按玩家 ID 自动暂存 `localStorage`，意外关闭后重开自动恢复。
+- **攻略传音分享与一键直达**：
+  - **查看攻略时**：详情页顶栏提供「发送到聊天」入口（面向全部可读/付费攻略），点击后经 `shareToChat` 将 `{{guide:postId:unlockPrice:title}}` 超链接胶囊填入当前激活聊天频道草稿并聚焦输入框，允许玩家补充文字后发送。
+  - **编辑攻略时**：编辑器底部操作区提供「保存并发送到聊天」（编辑已有攻略）/「发布并发送到聊天」（新建攻略），先完成校验与保存/发布拿到权威 `postId`，再自动关闭编辑器并将攻略链接填入聊天草稿。
+  - **传音胶囊直达**：传音消息中的 `{{guide:...}}` 渲染为带免费/灵石价格标识的交互胶囊，点击自动切换至「同道 → 攻略」并直达对应攻略详情页。
 
 ---
 
@@ -6707,6 +6815,228 @@ $$\text{Total}(d) = S(d) \times E(d) = \frac{\text{Cost}(d)}{30} \times (1 + 0.1
 3. **5 类持久化白名单与定期排空**：
    - 经济事务类型 `'guide.reward'` 与 `'privacy.inspect'` 纳入第⑤类跨玩家资产交互白名单（`PersistLedger = true`），并在 `PostgresRetentionWorker` 登记入 30 天流水保留集合。
    - `PostgresRetentionWorker` 定期清理过期超过 7 天的 `social.loadout_inspect_grants`、超过 7 天的 `social.guide_daily_quotas` 以及软删除超过 30 天的 `social.guide_posts`（级联清理附属互动行）。
+
+---
+*设计总纲结束。*
+
+<!-- FILE:32-功德任务系统规约.md -->
+# 第三十二篇 功德任务系统规约
+
+> **文档状态**：设计定稿（待全栈实装）  
+> **所属体系**：世俗委托 / 周常挂机循环 / 功德无限养成（`quest`）  
+> **上位依据**：[01-核心哲学与顶层定位.md](01-核心哲学与顶层定位.md)、[12-世界观设定主线剧情与叙事红线.md](12-世界观设定主线剧情与叙事红线.md)、[13-前端UI设计系统与修仙交互规范.md](13-前端UI设计系统与修仙交互规范.md)、[18-服务端ECS化执行架构与触发器规约.md](18-服务端ECS化执行架构与触发器规约.md)、[20-技艺体系与符箓阵法强化规约.md](20-技艺体系与符箓阵法强化规约.md)、[24-系统商店与每日限购.md](24-系统商店与每日限购.md)、[28-每日签到系统规约.md](28-每日签到系统规约.md)  
+> **对应任务**：[TASK-20261127-04](../../tasks/TASK-20261127-04-功德任务系统设计与实现.md)
+
+---
+
+## 32.1 定位、设计哲学与命名边界
+
+### 32.1.1 核心定位
+1. **贴合进度的动态委托与刷新博弈**：吸收《银河奶牛放置》任务板的进度锚定与重随思想，围绕玩家当前境界与技艺进度**上下浮动**抽取**采集、制造、击杀**三类委托——既有顺路可做的同阶单，也会刷出需切换采集地、调配产线或小幅越级的委托，不能每次无脑顺带白嫖，驱动玩家在「专程执行」与「刷新重随」之间做轻度决策。
+2. **接取即无限循环（契合长线离线挂机）**：摒弃「做完一次即销毁」的碎片化高频点按模式。玩家从任务列表中接取 1 条任务后，该任务进入**无限循环结算态**：每跑满 1 轮自动发放奖励并结转余数直接进入下一轮，只要不主动放弃或切换接取其他任务便永久生效，完美兼容 48 小时离线挂机与 `RemainingRepeats == -1` 无限行动队列。
+3. **功德主产出渠道与无限养成闭环**：任务核心产出为 **20% 流通功德（`item.gongde`）+ 80% 绑定功德（`item.gongde-bound`）**。通过任务获取的功德数量直接驱动**「功德等级」**无限升级（`Lv.1 → ∞`）；功德等级越高，每周可获取的功德上限越高，触达周上限时展示**「功德圆满」**，形成简洁透明、永不封顶的长线正反馈养成线。
+4. **去地名概称剧情叙事**：每条任务附带贴合太初世俗与散修生态的简短委托背景（如妖兽骚扰周边城镇请协助清除、村落疫寒急需药草等），**严禁绑定任何具体地图地名或具名 NPC**，统一采用「城镇」「村落」「聚落」「商队」等概称，实现全等级段与未来新地图的零穿帮通用匹配。
+
+### 32.1.2 命名红线与机器人隔离
+1. **禁用历史废弃前缀**：遵循工程规约，严禁在服务端或协议中复用历史废弃的 `Task*` 命名前缀；代码与协议标识符统一使用 `Quest`（任务）与 `Merit`（功德等级体系），界面玩家侧展示名统一使用**「任务」「功德等级」「功德圆满」**。
+2. **市场机器人隔离**：`identity.accounts.is_bot = true` 的市场机器人在任务命令入口（接取/刷新）一律拦截，且模拟推进不触发任务轮次结算，防止自动化机器人批量产出 20% 流通功德流入坊市。
+
+---
+
+## 32.2 任务面板结构、三大类型与浮动抽取规则
+
+### 32.2.1 候选列表与单槽激活模型
+1. **槽位编制**：每名角色持有 **4 个候选任务槽（`Candidates[0..3]`）** 与 **1 个当前执行槽（`Active`）**。
+2. **首次初始化**：新角色首次进入或存量角色升级后首次加载时，若候选列表为空，按角色当前进度与确定性种子自动生成满编 4 条候选任务。
+3. **接取与替换语义**：
+   - 点击任一未接取候选槽的「接取」，该候选转入 `Active` 执行槽（当前进度 `Progress = 0`、已完成轮数 `CompletedRounds = 0`）；
+   - 若执行槽原本已有进行中的任务，原任务直接被新任务覆盖替换（原任务未满 1 轮的零头进度作废，历史已入账奖励保留）；
+   - **防零成本洗槽约束**：候选槽被接取后，原槽位标记为 `Accepted = true`（界面显示「已接取 · 刷新后补充」），**不会在接取瞬间自动免费刷出新任务**，直至玩家执行免费或付费刷新时统一重随补满全部 4 槽。
+4. **放弃语义**：玩家可随时点击执行槽「放弃」清空 `Active`，回归无任务自由挂机态。
+
+### 32.2.2 三大任务类型与候选池自动准入过滤
+服务端在 `GameDataCatalog` 构建期自动从现有配表中筛选合法可循环标的池（零手工硬编码 ID 表，新增常规物品/怪物自动纳入）：
+
+| 任务类别 | `QuestKind` | 候选池准入条件（加载期静态过滤） | 标的等级 $L_{\text{item}}$ | 进度计次口径（仅限接取后亲自执行） |
+| :--- | :--- | :--- | :--- | :--- |
+| **采集** | `gather` | `type == "exploration"` 且 `technique` 为 `gathering`（采集）或 `mining`（挖掘），且 `yields` 主产物为 `item.*` 普通灵材/矿石（**排除**直接产货币的 `explore.mine-spirit-stone`） | 行动显式 `level`（缺省取产物 `level`，再缺省 `1`） | 采集/挖掘行动每完成一轮实际产出的目标 `itemId` 数量（坊市购入、邮件、分解或背包旧存量不计） |
+| **制造** | `craft` | `technique` 为 `alchemy`/`forging`/`talisman`/`formation`，含非空 `inputs` 与单一主产物 `yields`；**排除**：① `inputs` 含任何 `equipment.*` 上级装备的升阶配方；② `inputs` 含 `tier >= 2` 低爆率稀有异材或追忆副本独占特殊材料的配方；③ 宗门专属行动 `zongmen.*` | `ResolveRequiredRealmLevel`（行动显式 `level` → 产物装备/物品 `level` → `1`） | 制造行动每完成一轮实际炼制产出的目标成品件数（购买、掉落或库存旧物不计） |
+| **击杀** | `kill` | 大世界讨伐行动（`combat.json`）关联遭遇池 `randomSpawns` 中的常驻普通/精英妖兽（**排除**仅靠长波次保底刷新的关底领主 Boss 及副本独占怪，避免挂机看脸卡波次） | 怪物配表 `level` | 野外讨伐或非助战追忆副本波次中击败目标 `enemyId` 的只数（组队讨伐为本人在场有效参战波次内的全队击杀数；副本 `assistMode` 助战态不计） |
+
+### 32.2.3 贴合当前进度与上下浮动算法
+1. **基准锚点等级 $L_{\text{anchor}}$**：
+   - **击杀类**：直接锚定角色当前境界等级 $L_{\text{anchor}} = \text{RealmLevel}$；
+   - **采集 / 制造类**：兼顾角色主境界进度与对应生活技艺专精，取：
+     $$L_{\text{anchor}}(t) = \max\big(\text{TechniqueLevel}(t),\; \text{RealmLevel} - 4\big)$$
+     （既让专精生活玩家刷到匹配高技艺的委托，又防止从不练某项技艺的高境界角色永远只刷出 `Lv.1` 新手单，落实「不用每次都能顺便做，不顺手可刷新」的设计意图。）
+2. **上下浮动抽取窗口**：
+   - 目标等级抽取区间为闭区间 $\big[\max(1, L_{\text{anchor}} - 6),\; L_{\text{anchor}} + 4\big]$；
+   - **离散阶梯非空回退**：若某类别在上述窗口内无匹配配表标的，回退选取该类别中满足 $L_{\text{item}} \le L_{\text{anchor}} + 4$ 的最高等级标的群；仍为空时取该类别最低等级标的群，确保 `Lv.1 ~ Lv.127` 任意进度下生成恒定成功。
+3. **4 槽分布与去重**：
+   - 每次整板刷新生成 4 个候选槽时，前 3 槽固定各抽 **采集、制造、击杀** 各 1 条（顺序随机打乱），第 4 槽在三大类中等权随机抽取 1 条；
+   - 同一次刷新的 4 个槽位优先保证 `targetId` 互不重复（仅当同档可用唯一标的不足时允许回退重复）。
+
+---
+
+## 32.3 单轮工作量折算与双轨刷新机制
+
+### 32.3.1 单轮需求数量均衡公式
+以**无加速基础行动耗时 $T_{\text{round}} = 600\text{s}$（10 分钟）**为单轮标准工作量基准，并抽取档位浮动乘子 $\eta \in \{0.85,\; 1.00,\; 1.15\}$ 使面板数量富有自然层次：
+
+1. **采集 / 制造单轮目标件数**：
+   设该行动配表基础单轮时长为 $d_{\text{action}}$ 秒、单轮固定产出件数为 $y \ge 1$，则：
+   $$N_{\text{target}} = \max\left(5,\; \mathrm{round}\left(\frac{600 \times \eta}{d_{\text{action}}} \times y\right)\right)$$
+   - 示例：`8s` 采摘凝气草单轮为 `64 / 75 / 86` 株；`12s` 炼制引气丹单轮为 `43 / 50 / 58` 颗；`20s` 绘制雷击符单轮为 `26 / 30 / 35` 张。玩家自身的技艺等级、技艺工具、建筑与消耗品加速将真实缩短实际完成耗时。
+2. **击杀单轮目标只数**：
+   设目标妖兽在其主出没遭遇池 `randomSpawns` 中的出现权重占比为 $p \in (0, 1]$（单一怪池 $p = 1$，三怪等权混编池 $p = 1/3$），按平均每 `15s` 基础战斗节奏折算并施加夹逼保护：
+   $$N_{\text{target}} = \mathrm{clamp}\Big(\mathrm{round}\big(40 \times \eta \times \max(0.40,\; p)\big),\; 12,\; 50\Big)$$
+   - 示例：单一怪遭遇池约 `34 ~ 46` 只/轮；多怪混编池自动折减至 `14 ~ 23` 只/轮，保证单轮期望挂机时长同样稳定在约 10~15 分钟。
+3. **越级挑战功德系数 $k_{\text{diff}}$**：
+   当抽出的标的等级高于玩家当前境界等级（$L_{\text{item}} > \text{RealmLevel}$）时，每越 1 级给予 `+5%` 单轮功德奖励加成（最高 `+20%`）：
+   $$k_{\text{diff}} = 1 + 0.05 \times \mathrm{clamp}(L_{\text{item}} - \text{RealmLevel},\; 0,\; 4)$$
+   （在候选生成瞬间按玩家当时境界定格存入候选卡，平级或低级委托恒为 $k_{\text{diff}} = 1.0$。）
+
+### 32.3.2 双轨刷新规则（免费蓄能 + 灵石递增重随）
+刷新操作一次性重随全部 **4 个候选槽**（不影响当前 `Active` 正在执行的任务）：
+
+1. **免费冷却刷新（确定性懒恢复）**：
+   - **最大蓄能上限**：`MaxFreeRefreshes = 3` 次（创角初始满额 `3` 次）；
+   - **恢复周期**：恒定每 `4 小时`（`14,400 秒`）恢复 `1` 次；
+   - **整点推进守恒**：存档仅维护锚点剩余次数 $R_0 \in [0, 3]$ 与锚点时间戳 $t_0$。在时刻 $t \ge t_0$：
+     $$\Delta r = \left\lfloor \frac{t - t_0}{14400\text{s}} \right\rfloor, \qquad R(t) = \min(3,\; R_0 + \Delta r)$$
+     消耗 1 次免费刷新时：若消耗前 $R(t) = 3$（原已满额），新锚点置为 $R'_0 = 2,\; t'_0 = t$；若消耗前 $1 \le R(t) < 3$，则保留余数秒推进 $R'_0 = R(t) - 1,\; t'_0 = t_0 + \Delta r \times 14400\text{s}$。
+2. **灵石付费重随（跨日重置翻倍封顶）**：
+   - 当 $R(t) = 0$ 时，玩家可消耗灵石（`currency.spirit-stone`）立即刷新；
+   - 按 **UTC+8 自然日**（$\text{DayIndex} = \lfloor(\text{unixSeconds} + 28800)/86400\rfloor$）统计当日已付费刷新次数 $c_{\text{paid}} \ge 0$，跨零点自动归零；
+   - 当日第 $c_{\text{paid}} + 1$ 次付费刷新的灵石消耗为：
+     $$\text{RefreshCost}(c_{\text{paid}}) = \min\big(500 \times 2^{c_{\text{paid}}},\; 16{,}000\big)$$
+     （依次为 `500 → 1,000 → 2,000 → 4,000 → 8,000 → 16,000` 灵石封顶。）
+   - 命令防误扣守卫：`quest.refresh` 携带布尔字段 `allowPaid`；当服务端裁定 $R(t) = 0$ 且 `allowPaid == false` 时直接拒绝并返回 `FREE_REFRESH_EXHAUSTED`，绝不静默扣减灵石。
+
+---
+
+## 32.4 简易功德无限养成体系与「功德圆满」
+
+### 32.4.1 功德等级（`MeritLevel`）无限升级模型
+1. **单一养成真源**：
+   - 角色维护累计任务功德总值 `LifetimeQuestMerit`（非负整数，初始 `0`），**每通过任务轮次结算实际入账 `1` 点功德（流通 + 绑定合计），`LifetimeQuestMerit` 同步累加 `1`**；
+   - 签到、新手引导、邀请、储物袋、邮件或坊市交易获取的功德不计入 `LifetimeQuestMerit`；消费功德亦不扣减 `LifetimeQuestMerit`。
+2. **无限升级曲线（`Lv.1 → ∞` 永不封顶）**：
+   从功德等级 $L$（$L \ge 1$）升入 $L + 1$ 级所需的任务功德增量为：
+   $$\text{MeritToNext}(L) = 300 + 100 \times (L - 1) + 15 \times (L - 1)^2$$
+   前 $L - 1$ 级累计需求闭式和为：
+   $$\text{CumulativeMeritFor}(L) = \sum_{k=1}^{L-1} \text{MeritToNext}(k) = 300(L-1) + 50(L-1)(L-2) + \frac{5(L-1)(L-2)(2L-3)}{2}$$
+   任意时刻的当前功德等级 `MeritLevel`、本级已积进度 `CurrentLevelMerit` 与升级需求 `MeritToNext` 均由 `LifetimeQuestMerit` 确定性唯一导出。
+
+### 32.4.2 每周功德上限、单轮收益与渐近耗时收敛
+1. **UTC+8 自然周重置口径**：
+   对齐每日签到周统计与周清节奏，以北京时间 **周一 `00:00:00+08:00`** 为自然周分界：
+   $$\text{WeekIndex}(t) = \left\lfloor \frac{\text{DayIndex}(t) + 3}{7} \right\rfloor$$
+   当推进时钟进入新 `WeekIndex` 时，`WeeklyMeritEarned` 自动归零重计。
+2. **每周功德获取上限公式**：
+   $$\text{WeeklyMeritCap}(L) = 500 + 100 \times (L - 1)$$
+   - `Lv.1` 初始周上限为 **`500` 功德/周**，每提升 `1` 级功德等级，每周功德上限永久 **`+100`**，无上限封顶；
+   - **升级实时扩上限**：某轮任务结算获得的功德令 `MeritLevel` 提升至 $L'$ 时，本周生效上限立即扩张至 $\text{WeeklyMeritCap}(L')$，当周即可继续获取新增的 `100` 点额度直至达到新等级上限。
+3. **单轮基础功德产出公式**：
+   $$M_{\text{raw}}(L, k_{\text{diff}}) = \mathrm{round}\Big(\big(15 + 2 \times (L - 1)\big) \times k_{\text{diff}}\Big)$$
+   - **防肝度膨胀数学保障**：在 $k_{\text{diff}} = 1.0$ 基准下，每周打满上限所需的轮次数为 $\dfrac{500 + 100(L-1)}{15 + 2(L-1)}$，在 `Lv.1` 时约为 `33.3` 轮（约 5.5 小时基础时长），随等级趋于无穷严格单调渐近收敛至 **`50` 轮/周**（约 8.3 小时基础时长，计入技艺/工具加速后约 **4~6 小时/周**），确保无限养成永远维持轻松舒适的周常节奏。
+
+#### 功德等级代表档位数值速查表
+
+| 功德等级 `L` | 升至下一级需求 `MeritToNext` | 累计总功德门槛 | 每周功德上限 `WeeklyMeritCap` | 平级单轮功德 (`20%`流通+`80%`绑定) | 满额约需轮数 | 满额约需周数（升级节奏） |
+| :---: | ---: | ---: | ---: | :---: | :---: | :---: |
+| `Lv.1` | `300` | `0` | `500` | `15`（`3` + `12`） | `34` 轮 | `0.6` 周（首周即升 Lv.2） |
+| `Lv.2` | `415` | `300` | `600` | `17`（`3` + `14`） | `36` 轮 | `0.7` 周 |
+| `Lv.5` | `940` | `2,060` | `900` | `23`（`5` + `18`） | `40` 轮 | `1.0` 周 |
+| `Lv.10` | `2,415` | `9,075` | `1,400` | `33`（`7` + `26`） | `43` 轮 | `1.7` 周 |
+| `Lv.20` | `7,615` | `56,150` | `2,400` | `53`（`11` + `42`） | `46` 轮 | `3.2` 周 |
+| `Lv.50` | `41,215` | `689,975` | `5,400` | `113`（`23` + `90`） | `48` 轮 | `7.6` 周 |
+
+### 32.4.3 20% 流通 + 80% 绑定拆分与「功德圆满」结算算法
+每当 `Active` 任务累计进度跨过 1 轮（`Progress >= TargetCount`，`Progress -= TargetCount`，`CompletedRounds += 1`），按以下顺序精确裁决本轮奖励：
+
+1. **未圆满态（`WeeklyMeritEarned < WeeklyMeritCap(MeritLevel)`）**：
+   - 计算当前等级单轮应发总额 $M_{\text{raw}} = M_{\text{raw}}(\text{MeritLevel}, k_{\text{diff}})$；
+   - **跨级平滑截断**：由于本轮获得的功德可能在入账途中触发 `MeritLevel` 升级并同步抬高 `WeeklyMeritCap`，结算函数按逐点/逐段推进校验：最终实发功德整数 $M \in [1, M_{\text{raw}}]$ 满足入账后 `WeeklyMeritEarned' <= WeeklyMeritCap(MeritLevel')`（仅当入账至新等级上限仍不足 $M_{\text{raw}}$ 时截断为触顶差额）；
+   - **20% 流通 / 80% 绑定整数守恒入账**：
+     $$M_{\text{bound}} = \mathrm{round}(M \times 0.80), \qquad M_{\text{tradable}} = M - M_{\text{bound}}$$
+     向玩家钱包写入 `item.gongde-bound` $+M_{\text{bound}}$ 与 `item.gongde` $+M_{\text{tradable}}$（值为 `0` 的分项不生成空资产增量），同步累加 `WeeklyMeritEarned += M` 与 `LifetimeQuestMerit += M`。
+2. **「功德圆满」态（入账前已满足 `WeeklyMeritEarned >= WeeklyMeritCap(MeritLevel)`）**：
+   - 界面状态徽记展示为**「功德圆满」**；
+   - 已接取任务**继续无限循环计次**，每完成 1 轮**不再发放任何流通/绑定功德，亦不再增加 `LifetimeQuestMerit`**；
+   - 改为发放与该任务目标等级 $L_{\text{item}}$ 匹配的微薄基础回馈（控制在 10 分钟常规挂机产出的 `~8%` 添头水位，保持循环跳字反馈且零套利空间）：
+     - **基础修为**：$\Delta \text{Exp} = \mathrm{round}\big(\text{BaseExperienceForLevel}(L_{\text{item}}) \times 5\big)$，经标准 `CreditExperience(amp, cap, combatExp: 0)` 入账（修为满层时按既有规则沉淀为底蕴）；
+     - **基础灵石**：$\Delta \text{Stone} = \max\big(10,\; \mathrm{round}(\text{ExpectedAttributes.At}(L_{\text{item}}).\text{Hp} \times 0.20)\big)$，直接入账 `currency.spirit-stone`。
+
+---
+
+## 32.5 概称剧情委托文案规约（严禁出现具体地名）
+
+### 32.5.1 叙事与文案硬性红线
+1. **零具体地名与零具名 NPC**：任何任务标题、委托引子与完成日志中，**严禁出现具体地图区域名、节点地名或具名人物**（如禁止出现「云溪村」「青云山」「离山驿」「星陨异境」「雾梦泽」「林伯」等），确保同一模板在任意境界、任意驻留区域下均完全自洽。
+2. **统一使用通用聚落与行当概称**：一律使用**「周边村落」「邻近城镇」「山脚聚落」「边鄙驿站」「往来商队」「城中医馆」「山野猎户」「驻守散修」「城中丹坊」「城南铁铺」**等泛化概称。
+3. **遵守太初叙事底色**：契合总纲第十二篇太初之世设定，行文简练质朴（每条 `22 ~ 45` 字），不出现违禁后世词汇。
+
+### 32.5.2 八大细分子类剧情模板池
+生成候选任务时，根据任务细分子类确定性抽取 1 个模板键 `flavorKey` 固化在候选结构中，前端以 `{target}` 注入目标物品/妖兽名称渲染：
+
+| 细分子类 | 判定条件 | 标准概称剧情模板池（示例） |
+| :--- | :--- | :--- |
+| **草木采摘** | `gather` 且非矿非木 | ① 周边村落近日寒湿流行，乡中病患颇多，医馆急需一批 `{target}` 入药救急。<br>② 邻近城镇的药铺存货告罄，掌柜特悬赏征集新鲜 `{target}` 以备日常所需。<br>③ 往来商队途经山野折损人手，随行医师正四处求取 `{target}` 调配伤药。 |
+| **灵木采伐** | `gather` 且木属灵材 | ① 山脚聚落修缮外围木栅以防野兽夜袭，工匠恳请协助采伐一批坚韧 `{target}`。<br>② 邻近城镇的制器作坊炉火正旺，急需补充上好 `{target}` 作胎木基料。<br>③ 边鄙驿站年久失修，驿卒张榜募集 `{target}` 加固梁柱门户。 |
+| **矿脉采掘** | `gather` 且 `mining` | ① 城中铁铺近来订单激增，炉中矿料见底，铁匠恳请修士采掘一批 `{target}`。<br>② 周边城镇筹备加固城防器具，特向过往修士收购原矿 `{target}`。<br>③ 往来商队欲打造护路兵刃，正在附近聚落高价寻觅 `{target}`。 |
+| **丹药炼制** | `craft` 且产物为丹散 | ① 边鄙驿站外伤患频仍，驻守散修丹药匮乏，恳请丹师炼制一批 `{target}` 支援。<br>② 邻近城镇的医馆应对时疫分身乏术，特托付同道代为成批炼制 `{target}`。<br>③ 远行商队即将启程穿越险境，急需备足 `{target}` 以防不测。 |
+| **材物提纯** | `craft` 且产物为精材 | ① 城中工坊炉火品阶不足，难以自行淬炼精料，恳请修士代为提纯一批 `{target}`。<br>② 周边聚落的散修筹备修缮器物，急需借重同道手艺精炼 `{target}`。<br>③ 邻近城镇的商会正在收储熟料，悬赏征集品质稳定的 `{target}`。 |
+| **器物锻造** | `craft` 且产物为装备 | ① 周边城镇组建巡守乡勇抵御山兽，急需锻造一批制式 `{target}` 配发人手。<br>② 往来商队的护卫兵甲多有损毁，管事特恳请炼器同道打造 `{target}` 替换。<br>③ 边鄙聚落的猎户深入荒野谋生，盼能求得趁手的 `{target}` 傍身护命。 |
+| **符阵制炼** | `craft` 且 `talisman`/`formation` | ① 邻近城镇夜间常有异响惊扰居民，乡老恳请制备一批 `{target}` 护持街巷。<br>② 驻守险要路口的散修人手吃紧，急需补充 `{target}` 以助轮值戒备。<br>③ 往来商队夜宿荒郊缺乏倚仗，特张榜求取 `{target}` 随队防身。 |
+| **妖兽清剿** | `kill` | ① 近日有大批 `{target}` 频繁骚扰周边城镇，伤及樵夫商旅，恳请修士协助清除。<br>② 山脚村落外的田亩屡遭 `{target}` 肆虐践踏，村民生计维艰，泣求修士出手驱剿。<br>③ 邻近驿站商道被成群 `{target}` 盘踞阻断，为保道路畅通，请同道前往清剿。 |
+
+---
+
+## 32.6 领域架构、ECS 确定性与持久化规约
+
+### 32.6.1 玩家分段状态结构
+任务状态属于角色长线模拟与成长事实，内聚于 **`PlayerProgressionState`（`progression` 分段）** 下的 `Quest` 属性（`PlayerQuestState`）：
+
+- `LifetimeQuestMerit`（`double`）：历史任务累计获得总功德（驱动等级导出的唯一真源）；
+- `WeekIndex`（`long`）+ `WeeklyMeritEarned`（`double`）：当前自然周序号与本周已获任务功德；
+- `FreeRefreshes`（`int`）+ `RefreshUpdatedAtUnixSeconds`（`double`）：免费刷新锚点次数与锚点时间戳；
+- `PaidRefreshDayIndex`（`long`）+ `PaidRefreshCountToday`（`int`）：当日付费刷新日序号与计数；
+- `GenerationNonce`（`long`）：单调递增生成游标，结合 `PlayerId` 与 `ExplorationSeed` 构造纯确定性无状态哈希抽样（不污染战斗与强化随机流）；
+- `Active`（`ActiveQuest?`）：`QuestId`、`Kind`、`TargetId`、`TargetLevel`、`TargetCount`、`Progress`、`CompletedRounds`、`DifficultyMultiplier`、`FlavorKey`；
+- `Candidates`（`IReadOnlyList<QuestCandidate>`，定长 `4`）：`SlotIndex`、`Kind`、`TargetId`、`TargetLevel`、`TargetCount`、`DifficultyMultiplier`、`FlavorKey`、`Accepted`。
+
+### 32.6.2 离散推进、批量快进与跨周自然边界
+1. **跨周零点自然窗口切分**：
+   - 在 `ActionExecutionRules.PrepareResourceBoundaryCore` 中，当 `player.Progression.Quest.Active is not null` 时，计算下一北京时间周一 `00:00:00+08:00` 时间戳 `nextWeekResetUnix` 并纳入 `naturalStep` 最小值竞争；
+   - 效果：每周最多切分 1 次自然窗口，零性能损耗；同时保证 `CanBulkAdvance` 在合并数百轮采集/制造计时窗口横跨周一零点时，精准在零点切开——零点前完成的轮次计入上周额度，零点后立即重置 `WeeklyMeritEarned = 0` 并恢复功德产出，在线实时、重连快进与 `ComputeNode` 离线冷算结果 **100% 逐位一致**。
+2. **三大结算钩子接入点**：
+   - **采集与制造**：在计时行动单轮/批量产出结算点（`TimedAction` 实际发放 `yields` 物品后），若 `Active.Kind` 为 `Gather`/`Craft` 且行动类型与产出 `itemId == Active.TargetId` 匹配，直接将本次实际产出总量 `producedCount` 注入 `QuestSettlementRules.AdvanceProgress`，支持一次批量推进连结多轮；
+   - **击杀**：在野外讨伐波次结算与非助战追忆副本波次结算（含组队参与会话 `ActionParticipationSettlement` 回流结算）中，统计本波被击败敌方单位命中 `Active.TargetId` 的数量注入同一结算函数；
+   - **资产与账本同步**：任务轮次结算产出的 `item.gongde-bound`、`item.gongde`、`currency.spirit-stone` 生成标准 `AssetDelta` 并入当次模拟 `request.AddAsset`（修为经 `CreditExperience` 并入 `PlayerStatsDelta`），标记 `PlayerSectionKind.Progression` 脏段。
+3. **两层持久化与迁移**：
+   - 任务单轮结算与灵石刷新均遵循 `PersistLedger = false` 轻量口径，随 10 分钟在线安全检查点或关键边界同事务原子落盘，不写入 `economy.transactions` 不可变流水表；
+   - 实装时同步推进 `SectionCodec.CurrentSchemaVersion` 与 `PostgresSchema.Version`（全部字段支持缺省零值解码，`MinReadableSchemaVersion` 保持不抬），登记 `docs/backend/db-version-changes.md` 并增量编写 `migrations/NNNN_vX_to_vY.sql`。
+
+---
+
+## 32.7 协议与前端交互规约
+
+### 32.7.1 命令契约与快照映射
+1. **快照下发**：`ProtocolSnapshotMapper` 在玩家状态快照/增量中映射 `quest` 视图 DTO（含导出计算的 `meritLevel`、`currentLevelMerit`、`meritToNext`、`weeklyMeritEarned`、`weeklyMeritCap`、`isWeeklyCapped`、免费刷新实时可用次数与下次恢复时间戳、下次付费刷新灵石费用、当前 `active` 与 4 条 `candidates`）。
+2. **业务命令**（复用 `ExecuteAsync` 标准幂等命令信封）：
+   - `quest.accept`：`{ "slotIndex": 0..3 }` —— 校验槽位存在且 `Accepted == false`，覆写 `Active` 并将该槽标为 `Accepted = true`；
+   - `quest.abandon`：`{}` —— 清空 `Active`；
+   - `quest.refresh`：`{ "allowPaid": true | false }` —— 优先消耗实时免费次数重置 4 槽；免费次数为 `0` 时校验 `allowPaid` 与灵石余额，同事务扣减灵石、递增当日付费次数并生成新 4 槽。
+
+### 32.7.2 导航归属与高空间利用率 UI
+1. **主导航独立入口**：
+   - **桌面端**：左侧主导航栏「历练」分组新增独立**「任务」**（`TabId = 'quest'`）页签，紧随「历练」与「地图」；
+   - **竖屏移动端**：并入底部一级分组 `explore`（历练组）的 `tabs` 子行，形成 **`历练 / 任务 / 地图`** 三子页一键切换，方便接取任务后就近切换挂机。
+2. **紧凑响应式版式（遵循高空间利用率与强标识契约）**：
+   - **顶栏功德状态条（1~2 行紧凑合流）**：左侧展示「功德等级 `Lv.X` 徽章 + 本级升级进度条（`current / next`）」；中部展示「本周功德 `earned / cap`」（达标时高亮道金印记**「功德圆满」**并悬浮提示圆满后每轮仍享微量修为与灵石）；右侧内联展示「免费刷新 `R/3`（未满附倒计时）+ 刷新按钮（付费态直接内联显示小灵石图标 + `UnitNumber` 费用）」。
+   - **中部当前执行任务卡**：未接取时展示一行紧凑空态提示；已接取时单卡横向呈现——左侧目标视觉瓦片（采集/制造强制显式传入 `ItemTile itemId={active.targetId}`，击杀展示怪物头像徽标），中部「任务标题 + 概称剧情描述 + 轮次进度条 `progress / targetCount`（附已完成 `N` 轮标签）」，右侧「单轮奖励微型胶囊（`ItemIcon` 绑定功德 + 流通功德，圆满态切换显示修为 + 灵石）+『前往』快捷定位按钮 +『放弃』按钮」。
+   - **下部候选任务网格**：桌面端 `2 × 2` 紧凑双列网格、竖屏单列紧凑流，每张卡以 3 行内呈现「类别/等级标签 + 目标图标与数量 + 概称剧情简述 + 单轮功德收益与『接取』按钮」；`accepted == true` 的槽位半透明置灰显示「已接取 · 刷新后补充」。
 
 ---
 *设计总纲结束。*
