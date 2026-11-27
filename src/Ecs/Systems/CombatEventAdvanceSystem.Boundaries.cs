@@ -294,6 +294,10 @@ public sealed partial class CombatEventAdvanceSystem
         if (!regenPending && (buffs.Count > 0 || unit.ExternalBuffStacks is not null)
             && (unit.BuffStacks("formation.tianlei") > 0 || unit.BuffStacks("formation.xuesha") > 0))
             regenPending = true;
+        if (!regenPending && CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.XueqihuadunTraitId))
+            regenPending = true;
+        if (!threatTickPending && CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.YangjianshuTraitId))
+            threatTickPending = true;
     }
 
 }

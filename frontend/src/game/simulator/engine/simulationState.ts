@@ -756,7 +756,7 @@ export class SimPlayerRuntime {
     } else {
       const seen = new Set<string>()
       for (const slot of state.abilitySlots) {
-        if (slot.abilityId) seen.add(slot.abilityId)
+        if (slot.abilityId && !slot.abilityId.startsWith('item.')) seen.add(slot.abilityId)
       }
       for (const id of Object.keys(state.abilityExperiences)) {
         seen.add(id)

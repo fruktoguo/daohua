@@ -213,7 +213,14 @@ public sealed record ConsumableStrike(
     double ManaCostRatio,
     double ManaDamageRatio,
     double SpellAttackRatio,
-    Domain.Combat.CombatElement Element);
+    Domain.Combat.CombatElement Element,
+    double PhysicalAttackRatio = 0,
+    double FlatDamage = 0,
+    Domain.Combat.CombatDamageKind DamageKind = Domain.Combat.CombatDamageKind.Spell,
+    string TargetType = "targetEnemy",
+    double RanhunBaseStacks = 0,
+    double RanhunSpellAttackRatio = 0,
+    JsonElement? OnHitBuff = null);
 
 /// <summary>
 /// 持续/自动消耗品对各行动类型提供的权威效果定义。
@@ -234,7 +241,8 @@ public sealed record ConsumableDefinition(
     double TechniqueSpeedRatio = 0,
     double EnhancementSuccessBonus = 0,
     int StackableSlotCount = 0,
-    ConsumableUniqueEffect UniqueEffect = ConsumableUniqueEffect.None)
+    ConsumableUniqueEffect UniqueEffect = ConsumableUniqueEffect.None,
+    double ManaCostRatio = 0)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -703,19 +711,25 @@ public sealed class GameDataCatalog
             buffs.TryAdd(buffId, string.IsNullOrWhiteSpace(name) ? buffId : name);
         }
 
-        // 消耗品战内 Buff：与求值路径读取的同一来源（原始配表 consumable.buffs）。
+        // 消耗品战内 Buff：与求值路径读取的同一来源（原始配表 consumable.buffs 及 strike.onHitBuff）。
         foreach (var raw in rawItems.Values)
         {
             if (!raw.TryGetProperty("consumable", out var consumable)
-                || consumable.ValueKind != JsonValueKind.Object
-                || !consumable.TryGetProperty("buffs", out var buffsArray)
-                || buffsArray.ValueKind != JsonValueKind.Array) continue;
-            foreach (var buff in buffsArray.EnumerateArray())
-                Add(JsonRead.Text(buff, "buffId"), JsonRead.Text(buff, "name"));
+                || consumable.ValueKind != JsonValueKind.Object) continue;
+            if (consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var buff in buffsArray.EnumerateArray())
+                    Add(JsonRead.Text(buff, "buffId"), JsonRead.Text(buff, "name"));
+            }
+            if (consumable.TryGetProperty("strike", out var strikeEl) && strikeEl.ValueKind == JsonValueKind.Object
+                && strikeEl.TryGetProperty("onHitBuff", out var strikeBuff) && strikeBuff.ValueKind == JsonValueKind.Object)
+            {
+                Add(JsonRead.Text(strikeBuff, "buffId"), JsonRead.Text(strikeBuff, "name"));
+            }
         }
         // 功法战内 Buff：显式 buffId 优先，缺省走引擎合成的 ability-buff:<abilityId>。
-        // 同时扫描主 Buff（buff/buffs[]）、命中附加（onHitBuff/onHitBuffs[]）与自我增益（selfBuff/selfBuffs[]）。
-        string[] abilitySingleBuffKeys = ["buff", "onHitBuff", "selfBuff"];
+        // 同时扫描主 Buff（buff/buffs[]）、命中附加（onHitBuff/onHitBuffs[]）、自我增益（selfBuff/selfBuffs[]）与引导受击增益（channelingAttackedBuff）。
+        string[] abilitySingleBuffKeys = ["buff", "onHitBuff", "selfBuff", "channelingAttackedBuff"];
         string[] abilityArrayBuffKeys = ["buffs", "onHitBuffs", "selfBuffs"];
         foreach (var (abilityId, ability) in abilities)
         {
@@ -748,6 +762,9 @@ public sealed class GameDataCatalog
         Add(Combat.CombatTraitRules.XuyiBuffId, "蓄意");
         Add(Combat.CombatTraitRules.RanhunBuffId, "燃烧");
         Add(Combat.CombatTraitRules.YixingBuffId, "移形");
+        Add(Combat.CombatTraitRules.JianyiBuffId, "剑意");
+        Add(Combat.CombatTraitRules.TiangangBuffId, "天罡");
+        Add(Combat.CombatTraitRules.ShenxingBuffId, "神行");
         return buffs;
     }
 
@@ -1200,11 +1217,26 @@ public sealed class GameDataCatalog
                     ? elementProperty.GetString() : null;
                 if (!Enum.TryParse<Domain.Combat.CombatElement>(elementText ?? "none", true, out var element))
                     element = Domain.Combat.CombatElement.None;
+                var damageKind = string.Equals(JsonRead.Text(strikeProperty, "damageKind"), "physical", StringComparison.OrdinalIgnoreCase)
+                    ? Domain.Combat.CombatDamageKind.Physical
+                    : Domain.Combat.CombatDamageKind.Spell;
+                var targetType = JsonRead.Text(strikeProperty, "targetType") ?? "targetEnemy";
+                JsonElement? onHitBuff = strikeProperty.TryGetProperty("onHitBuff", out var onHitBuffProp)
+                    && onHitBuffProp.ValueKind == JsonValueKind.Object
+                    ? onHitBuffProp.Clone()
+                    : null;
                 strike = new ConsumableStrike(
                     JsonRead.Number(strikeProperty, "manaCostRatio"),
                     JsonRead.Number(strikeProperty, "manaDamageRatio"),
                     JsonRead.Number(strikeProperty, "spellAttackRatio"),
-                    element);
+                    element,
+                    JsonRead.Number(strikeProperty, "physicalAttackRatio"),
+                    JsonRead.Number(strikeProperty, "flatDamage"),
+                    damageKind,
+                    targetType,
+                    JsonRead.Number(strikeProperty, "ranhunBaseStacks"),
+                    JsonRead.Number(strikeProperty, "ranhunSpellAttackRatio"),
+                    onHitBuff);
             }
             var stackableSlotCount = 0;
             if (consumableProperty.TryGetProperty("stackableSlotCount", out var stackableSlotCountProperty)
@@ -1234,7 +1266,8 @@ public sealed class GameDataCatalog
                 JsonRead.Number(consumableProperty, "techniqueSpeedRatio"),
                 JsonRead.Number(consumableProperty, "enhancementSuccessBonus"),
                 stackableSlotCount,
-                uniqueEffect);
+                uniqueEffect,
+                JsonRead.Number(consumableProperty, "manaCostRatio"));
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";

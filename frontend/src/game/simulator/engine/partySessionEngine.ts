@@ -10,11 +10,19 @@ import {
 } from './combatActionRules.ts'
 import {
   CombatBoundaryHookDispatcher,
+  addRanhunStacks,
   advanceCombatTo,
   applyRanhun,
   applyCombatDamage,
+  grantAbilityBuff,
+  notifyUnitAttacked,
+  resolveConsumableCooldownSeconds,
+  resolveConsumableManaCost,
+  resolveConsumableRanhunStacks,
   resolveConsumableStrikePower,
   resolveStrikeDamage,
+  rollTalismanCrit,
+  settleWaveEndShields,
 } from './combatEngine.ts'
 import {
   CombatOutcome,
@@ -38,11 +46,14 @@ import { captureCombatState, completeResourceRegeneration } from './resourceBoun
 import {
   AutoUseBar,
   BuffEffectChannel,
-  CombatDamageKind,
   CombatElement,
+  SlotGroupAbility,
   SlotGroupGeneral,
   SlotGroupPotion,
+  TECHNIQUE_SUBCATEGORY_TALISMAN,
   abilityLevelForExp,
+  canEquipTalismanInAbilitySlot,
+  mergeBuffExpiry,
   parseBuffEffects,
   resolveDamageElement,
   type CombatRespawnPolicy,
@@ -197,6 +208,8 @@ export function captureSustainedBuffs(
 export function captureConsumableSlots(
   slots: readonly PlayerState['autoUseSlots'][number][],
   catalog: GameDataCatalog,
+  abilitySlots?: readonly PlayerState['abilitySlots'][number][],
+  talismanCooldowns?: Record<string, number>,
 ): ActionConsumableSlot[] | null {
   let list: ActionConsumableSlot[] | null = null
   for (let i = 0; i < slots.length; i++) {
@@ -230,6 +243,32 @@ export function captureConsumableSlots(
       cooldownUntilUnixSeconds: slot.cooldownUntilUnixSeconds,
       sustainedExpiresAtUnixSeconds: isSustained ? slot.remainingDurationSeconds : 0,
     })
+  }
+  if (abilitySlots) {
+    for (let i = 1; i < abilitySlots.length; i++) {
+      const itemIdText = abilitySlots[i].abilityId
+      if (!itemIdText || !itemIdText.startsWith('item.')) continue
+      const item = catalog.items.get(itemIdText)
+      if (
+        !item ||
+        item.subCategory !== TECHNIQUE_SUBCATEGORY_TALISMAN ||
+        !item.consumable ||
+        item.consumable.isContinuous ||
+        item.consumable.durable ||
+        !item.consumable.usableInBars.has(AutoUseBar.Combat)
+      ) {
+        continue
+      }
+      const cdUntil = talismanCooldowns ? (talismanCooldowns[itemIdText] ?? 0) : 0
+      if (!list) list = []
+      list.push({
+        group: SlotGroupAbility,
+        slotIndex: i,
+        itemId: itemIdText,
+        cooldownUntilUnixSeconds: cdUntil,
+        sustainedExpiresAtUnixSeconds: 0,
+      })
+    }
   }
   return list
 }
@@ -300,7 +339,12 @@ export function buildActionParticipantSnapshot(
     respawnPolicy: state.respawnPolicy as CombatRespawnPolicy,
     respawnTargetPlayerId: state.respawnTargetPlayerId,
     regenCarrySeconds: state.regenCarrySeconds,
-    consumableSlots: captureConsumableSlots(state.autoUseSlots, catalog),
+    consumableSlots: captureConsumableSlots(
+      state.autoUseSlots,
+      catalog,
+      canEquipTalismanInAbilitySlot(state.traitIds) ? state.abilitySlots : undefined,
+      state.talismanCooldowns,
+    ),
     consumableTriggers: hasConsumableTriggers ? consumableTriggers : null,
     internalArtId: internalArt?.abilityId ?? null,
     internalArtLevel: internalArt?.level ?? 0,
@@ -574,7 +618,7 @@ export class ActionParticipationSessionEngine {
           this._members[row.memberIndex].state.consumableTriggers,
         )
         mask = resolveTriggerListWakeMask(triggers, false)
-        if (item.consumable.strike !== null) {
+        if (item.consumable.strike !== null || item.consumable.manaCostRatio > 0) {
           mask = unionWakeMask(mask, { ...EMPTY_WAKE_MASK, self: UnitChannel.Mana })
         }
       }
@@ -1039,76 +1083,134 @@ export class ActionParticipationSessionEngine {
         return false
       }
     }
-    const cooldown = consumable.cooldownSeconds
-    if (cooldown <= 0) {
+    if (consumable.cooldownSeconds <= 0) {
       throw new Error('自动即时消耗品必须配置正冷却。')
     }
+    const itemDef = this._catalog.items.get(itemId)!
+    const effectiveCasterStats = caster ? caster.effectiveStats : this._spec.members[memberIndex].stats
+    const baseCasterStats = caster ? caster.stats : this._spec.members[memberIndex].stats
+    const cooldown = resolveConsumableCooldownSeconds(
+      itemDef,
+      consumable,
+      baseCasterStats.traits,
+      baseCasterStats.traitLevels,
+    )
 
     if (strike !== null) {
-      if (caster === null) return false
-      const manaCost = strike.manaCostRatio * caster.stats.maxManapoints
-      if (target === null || caster.manapoints < manaCost - 1e-9) return false
+      if (caster === null || this._battle === null) return false
+      const manaCost = resolveConsumableManaCost(itemDef, strike.manaCostRatio, caster.stats)
+      if (caster.manapoints < manaCost - 1e-9) return false
+      const isAoE = strike.targetType === 'allEnemies'
+      if (isAoE) {
+        if (!this._battle.enemies.some((e) => e.isAlive)) return false
+      } else if (target === null || !target.isAlive) {
+        return false
+      }
+      caster.manapoints = Math.max(0, caster.manapoints - manaCost)
+      const hasDirectDamage =
+        strike.manaDamageRatio > 0 ||
+        strike.spellAttackRatio > 0 ||
+        strike.physicalAttackRatio > 0 ||
+        strike.flatDamage > 0
+      const ranhunStacks = resolveConsumableRanhunStacks(itemDef, strike, caster.stats)
       const totalDmgBonus =
         caster.stats.totalDamageBonusPoints + caster.buffTotal(BuffEffectChannel.DamageBonusPoints)
       const strikeElement = resolveDamageElement(
         caster.stats.traits,
         strike.element as CombatElement,
       )
-      // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
-      const strikeItem = this._catalog.items.get(itemId)!
+      const rawPower = hasDirectDamage
+        ? resolveConsumableStrikePower(itemDef, strike, effectiveCasterStats)
+        : 0
       const strikeStats = {
-        ...caster.stats,
-        attackPower: resolveConsumableStrikePower(strikeItem, strike, caster.stats),
-        damageKind: CombatDamageKind.Spell,
+        ...effectiveCasterStats,
+        attackPower: rawPower,
+        damageKind: strike.damageKind,
         element: strikeElement,
         totalDamageBonusPoints: totalDmgBonus,
       }
-      let damage = resolveStrikeDamage(strikeStats, target)
-      caster.manapoints = Math.max(0, caster.manapoints - manaCost)
-      const settled = applyCombatDamage(this._battle, caster, target, damage)
-      damage = settled.damage
-      applyRanhun(
-        caster,
-        target,
-        strikeElement,
-        settled.actual,
-        this._battle!.elapsedSeconds,
-      )
-      if (this._battle) {
-        let anyAlive = false
-        for (let e = 0; e < this._battle.enemies.length; e++) {
-          if (this._battle.enemies[e].isAlive) {
-            anyAlive = true
-            break
+      let totalDamage = 0
+      let anyCrit = false
+      const side = memberIndex === 0 ? 0n : 0x400n + BigInt(memberIndex)
+      const rollBase = caster.attackCount + this._battle.sequence
+      for (let eIdx = 0; eIdx < this._battle.enemies.length; eIdx++) {
+        const foe = this._battle.enemies[eIdx]
+        if (!foe.isAlive) continue
+        if (!isAoE && foe !== target) continue
+        if (hasDirectDamage) {
+          const isCrit = rollTalismanCrit(
+            this._battle.seed,
+            side,
+            rollBase + eIdx,
+            caster,
+            foe,
+          )
+          if (isCrit) anyCrit = true
+          let dmg = resolveStrikeDamage(strikeStats, foe, isCrit)
+          const settled = applyCombatDamage(this._battle, caster, foe, dmg)
+          dmg = settled.damage
+          totalDamage += dmg
+          applyRanhun(caster, foe, strikeElement, settled.actual, this._battle.elapsedSeconds)
+          if (foe.definitionId && this.canonical.report) {
+            const book = this.canonical.report.combatStats
+            const attackerKey = memberIndex === 0 ? 'player' : `ally:${memberIndex}`
+            book.register(attackerKey, this._spec.members[memberIndex].displayName)
+            const monster = this._catalog.monsters.get(foe.definitionId)
+            book.register(`monster:${foe.definitionId}`, monster ? monster.name : foe.definitionId)
+            book.recordHitKey(
+              attackerKey,
+              `monster:${foe.definitionId}`,
+              strike.damageKind,
+              dmg,
+              Math.max(0, rawPower - dmg),
+              strikeElement,
+            )
           }
         }
-        if (!anyAlive) this._battle.outcome = CombatOutcome.PlayerWon
+        if (ranhunStacks > 0) {
+          addRanhunStacks(caster, foe, ranhunStacks, this._battle.elapsedSeconds, this._battle)
+        }
+        if (strike.onHitBuff !== null && foe.isAlive) {
+          grantAbilityBuff(
+            strike.onHitBuff,
+            caster,
+            foe,
+            this._battle.elapsedSeconds,
+            1.0,
+            itemId,
+            this._battle,
+            false,
+          )
+        }
+        notifyUnitAttacked(this._battle, caster, foe, this._battle.elapsedSeconds)
       }
-      if (target.definitionId && this.canonical.report) {
-        const book = this.canonical.report.combatStats
-        const attackerKey = memberIndex === 0 ? 'player' : `ally:${memberIndex}`
-        book.register(attackerKey, this._spec.members[memberIndex].displayName)
-        const monster = this._catalog.monsters.get(target.definitionId)
-        book.register(`monster:${target.definitionId}`, monster ? monster.name : target.definitionId)
-        book.recordHitKey(
-          attackerKey,
-          `monster:${target.definitionId}`,
-          CombatDamageKind.Spell,
-          damage,
-          Math.max(0, strikeStats.attackPower - damage),
-          strikeElement,
-        )
+      if (!this._battle.enemies.some((e) => e.isAlive)) {
+        this._battle.outcome = CombatOutcome.PlayerWon
+        settleWaveEndShields(this._battle, null)
       }
       this.spendBalance(memberIndex, row.itemId)
       this._consumables![index] = { ...row, cooldownUntilUnixSeconds: now + cooldown }
-      this.spendConsumable(
-        memberIndex,
-        itemId,
-        atTicks,
-        now,
-        `自动使用 ${itemName}，造成 ${formatTrimmedFixed(damage, 2)} 点伤害。`,
-      )
+      const strikeLog = hasDirectDamage
+        ? `自动使用 ${itemName}，造成 ${formatTrimmedFixed(totalDamage, 2)} 点伤害${anyCrit ? '（暴击）' : ''}。`
+        : ranhunStacks > 0
+          ? `自动使用 ${itemName}，施加 ${formatTrimmedFixed(ranhunStacks, 2)} 层燃烧。`
+          : `自动使用 ${itemName}。`
+      this.spendConsumable(memberIndex, itemId, atTicks, now, strikeLog)
       return true
+    }
+
+    if (consumable.manaCostRatio > 0) {
+      const selfManaCost = resolveConsumableManaCost(itemDef, consumable.manaCostRatio, baseCasterStats)
+      const availMp = caster !== null ? caster.manapoints : this._members[memberIndex].state.manapoints
+      if (availMp < selfManaCost - 1e-9) return false
+      if (caster !== null) {
+        caster.manapoints = Math.max(0, caster.manapoints - selfManaCost)
+      } else {
+        this._members[memberIndex].state.manapoints = Math.max(
+          0,
+          this._members[memberIndex].state.manapoints - selfManaCost,
+        )
+      }
     }
 
     let healed = 0
@@ -1141,9 +1243,11 @@ export class ActionParticipationSessionEngine {
         const effects = parseBuffEffects(buff, 1.0)
         const name = typeof buff.name === 'string' ? buff.name : buffId
         if (caster !== null) {
+          const existing = caster.buffs.find((b) => b.buffId === buffId)
+          const exp = mergeBuffExpiry(existing?.expiresAtSeconds, this._battle!.elapsedSeconds + duration)
           caster.setBuff({
             buffId,
-            expiresAtSeconds: this._battle!.elapsedSeconds + duration,
+            expiresAtSeconds: exp,
             stacks: 1,
             name,
             resetOnWave: false,
@@ -1929,6 +2033,7 @@ function createEmptyMemberState(
     defense: 0,
     regenCarrySeconds: frozen.regenCarrySeconds,
     combatSkills: frozen.combatSkills ?? createEmptyCombatSkillState(),
+    talismanCooldowns: {},
     combatBuffCarry: frozen.combatBuffs ? [...frozen.combatBuffs] : [],
     buffs: [],
     autoUseSlots: [],
@@ -2028,6 +2133,14 @@ export function applyActionParticipationSettlement(
       ticksToUnixSeconds(player.lastSimulatedAtTicks),
     )
     for (const clock of settlement.consumableSlots) {
+      if (clock.group === SlotGroupAbility) {
+        if (clock.cooldownUntilUnixSeconds > 0) {
+          player.state.talismanCooldowns[clock.itemId] = clock.cooldownUntilUnixSeconds
+        } else {
+          delete player.state.talismanCooldowns[clock.itemId]
+        }
+        continue
+      }
       const idx = player.state.autoUseSlots.findIndex(
         (slot) =>
           slot.actionType === AutoUseBar.Combat &&

@@ -13,6 +13,7 @@ interface PendingDamageEntry {
   target: CombatantState
   damage: number
   accumulateXuyi: boolean
+  bypassShield: boolean
 }
 
 interface PendingHealEntry {
@@ -38,13 +39,16 @@ export function limitDamageForHaste(
 /**
  * 同刻同时生效波次缓冲区：
  * 阶段 1 基于波初冻结快照求值全部伤害/治疗/吸血/反伤/阵盘反击/Buff；
- * 阶段 2 在波末按「统一落伤 → 仍存活者结算治疗与吸血 → 灵力/威胁/Buff 与派生层数 → 刷新存活人数 → 回填事件资源」原子提交。
+ * 阶段 2 在波末按「统一落伤 → 仍存活者结算护盾获取、治疗与吸血 → 灵力/威胁/Buff 与派生层数 → 刷新存活人数 → 回填事件资源」原子提交。
  */
 export class SimultaneousCombatWave {
   private readonly _localVirtualHp = new Map<CombatantState, number>()
+  private readonly _localVirtualShield = new Map<CombatantState, number>()
   private readonly _damages: PendingDamageEntry[] = []
   private readonly _heals: PendingHealEntry[] = []
   private readonly _manaDeltas = new Map<CombatantState, number>()
+  private readonly _shieldGains = new Map<CombatantState, number>()
+  private readonly _shieldConsumed = new Set<CombatantState>()
   private readonly _threatDeltas = new Map<CombatantState, number>()
   private readonly _threatBonusDeltas = new Map<CombatantState, number>()
   private readonly _buffOps: Array<() => void> = []
@@ -55,9 +59,10 @@ export class SimultaneousCombatWave {
     this._eventsStartIndex = eventsStartIndex
   }
 
-  /** 切换至本波次下一名出手单位前重置本地虚拟气血。 */
+  /** 切换至本波次下一名出手单位前重置本地虚拟气血与护盾。 */
   beginActor(): void {
     this._localVirtualHp.clear()
+    this._localVirtualShield.clear()
   }
 
   /** 读取目标在当前出手者视角下的剩余气血。 */
@@ -65,26 +70,54 @@ export class SimultaneousCombatWave {
     return this._localVirtualHp.get(target) ?? target.hitpoints
   }
 
+  /** 读取目标在当前出手者视角下的剩余护盾。 */
+  getLocalVirtualShield(target: CombatantState): number {
+    return this._localVirtualShield.get(target) ?? target.shield
+  }
+
   /** 判断目标在当前出手者本次动作内是否仍存活。 */
   isLocallyAlive(target: CombatantState): boolean {
     return this.getLocalVirtualHp(target) > 1e-12
   }
 
-  /** 登记一次同刻伤害并返回按当前出手者虚拟气血裁决的伤害与实伤。 */
+  /** 登记一次同刻护盾获取（波末仅对仍存活目标落账）。 */
+  addShieldGain(target: CombatantState, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 1e-9) return
+    this._shieldGains.set(target, (this._shieldGains.get(target) ?? 0) + amount)
+  }
+
+  /** 登记本波次单位主动引爆并消耗全部护盾（如「迸裂」）。 */
+  consumeAllShield(unit: CombatantState): void {
+    this._shieldConsumed.add(unit)
+  }
+
+  /** 登记一次同刻伤害并返回按当前出手者虚拟护盾与气血裁决的伤害与实伤。 */
   recordDamage(
     attacker: CombatantState,
     target: CombatantState,
     damage: number,
     accumulateXuyi: boolean,
+    bypassShield = false,
   ): { damage: number; actual: number } {
     const virtualHp = this.getLocalVirtualHp(target)
     if (virtualHp <= 1e-12) return { damage: 0, actual: 0 }
-    const limited = limitDamageForHaste(attacker, virtualHp, Math.max(0, damage))
-    const nextVirtualHp = Math.max(0, virtualHp - limited)
+    let remaining = Math.max(0, damage)
+    let shieldAbsorbed = 0
+    if (!bypassShield) {
+      const virtualShield = this.getLocalVirtualShield(target)
+      if (virtualShield > 0 && remaining > 0) {
+        shieldAbsorbed = Math.min(virtualShield, remaining)
+        this._localVirtualShield.set(target, Math.max(0, virtualShield - shieldAbsorbed))
+        remaining -= shieldAbsorbed
+      }
+    }
+    const limitedHp = remaining > 0 ? limitDamageForHaste(attacker, virtualHp, remaining) : 0
+    const nextVirtualHp = Math.max(0, virtualHp - limitedHp)
     const actual = virtualHp - nextVirtualHp
     this._localVirtualHp.set(target, nextVirtualHp)
-    this._damages.push({ attacker, target, damage: limited, accumulateXuyi })
-    return { damage: limited, actual }
+    const totalDealt = shieldAbsorbed + limitedHp
+    this._damages.push({ attacker, target, damage: totalDealt, accumulateXuyi, bypassShield })
+    return { damage: totalDealt, actual }
   }
 
   /** 登记一次同刻治疗/吸血（波末扣伤后仅对存活目标按缺血上限落账）。 */
@@ -146,14 +179,24 @@ export class SimultaneousCombatWave {
       wasAliveBefore.set(encounter.sideB[i], encounter.sideB[i].isAlive)
     }
 
-    // 1. 统一应用全部同刻伤害
+    // 1. 统一应用本波主动消耗护盾与全部同刻伤害（护盾先吸收，溢出遵守欲速则不达留一与蓄意积累）
+    for (const consumedUnit of this._shieldConsumed) {
+      consumedUnit.shield = 0
+    }
     for (let i = 0; i < this._damages.length; i++) {
       const entry = this._damages[i]
       if (!entry.target.isAlive) continue
-      const applied = limitDamageForHaste(entry.attacker, entry.target.hitpoints, entry.damage)
+      let remaining = Math.max(0, entry.damage)
+      if (!entry.bypassShield && entry.target.shield > 0 && remaining > 0) {
+        const absorbed = Math.min(entry.target.shield, remaining)
+        entry.target.shield = Math.max(0, entry.target.shield - absorbed)
+        remaining -= absorbed
+      }
+      const applied = remaining > 0 ? limitDamageForHaste(entry.attacker, entry.target.hitpoints, remaining) : 0
       const before = entry.target.hitpoints
       entry.target.hitpoints = Math.max(0, before - applied)
       const actual = before - entry.target.hitpoints
+      if (!entry.target.isAlive) entry.target.shield = 0
       if (
         entry.accumulateXuyi &&
         actual > 0 &&
@@ -167,7 +210,12 @@ export class SimultaneousCombatWave {
       }
     }
 
-    // 2. 仍存活单位结算蓄意层数积累与同刻治疗/吸血
+    // 2. 仍存活单位结算护盾获取、蓄意层数积累与同刻治疗/吸血
+    for (const [unit, shieldGain] of this._shieldGains.entries()) {
+      if (unit.isAlive && shieldGain > 0) {
+        unit.shield += shieldGain
+      }
+    }
     for (const [unit, gain] of xuyiGains.entries()) {
       if (!unit.isAlive || gain <= 0) continue
       const existing = unit.buffs.find((b) => b.buffId === BuffIds.Xuyi)
@@ -245,7 +293,7 @@ export class SimultaneousCombatWave {
     }
     if (aliveChanged) encounter.notifyAliveCountsChanged()
 
-    // 4. 回填本波次事件的气血与灵力终态快照
+    // 4. 回填本波次事件的气血、灵力与护盾终态快照
     for (let i = this._eventsStartIndex; i < events.length; i++) {
       const ev = events[i]
       const attacker = encounter.findUnit(ev.attackerId)
@@ -256,6 +304,12 @@ export class SimultaneousCombatWave {
       }
       if (ev.targetManapointsAfter !== null && target) {
         ev.targetManapointsAfter = target.manapoints
+      }
+      if (ev.attackerShieldAfter !== undefined && ev.attackerShieldAfter !== null && attacker) {
+        ev.attackerShieldAfter = attacker.shield
+      }
+      if (ev.targetShieldAfter !== undefined && ev.targetShieldAfter !== null && target) {
+        ev.targetShieldAfter = target.shield
       }
     }
   }

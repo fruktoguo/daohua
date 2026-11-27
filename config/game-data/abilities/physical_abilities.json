@@ -300,5 +300,91 @@
     "manaCost": 35,
     "rootAttribute": "stamina",
     "discipline": "spell"
+  },
+  {
+    "id": "ability.gangqi-huti",
+    "name": "罡气护体",
+    "description": "引周身精元凝作厚重护体罡罩，在战局中常驻抵御外邪锋芒。",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 20000,
+    "castMilliseconds": 1000,
+    "targetType": "self",
+    "damageRatio": 0,
+    "shieldMaxHpRatio": 0.2,
+    "defaultTriggers": [],
+    "manaCost": 50,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.benglie",
+    "name": "迸裂",
+    "description": "燃耗精血引爆周身护体罡盾，化作崩山裂地之厚土狂澜席卷全体敌阵。",
+    "style": "body",
+    "tier": 2,
+    "category": "physical",
+    "element": "earth",
+    "cooldownMilliseconds": 18000,
+    "castMilliseconds": 1500,
+    "targetType": "allEnemies",
+    "damageRatio": 1.0,
+    "maxHpDamageRatio": 0.1,
+    "shieldDamageRatio": 1.0,
+    "consumeAllShield": true,
+    "flatDamage": 50,
+    "hpCostMaxHpRatio": 0.05,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1,
+        "buffId": null
+      }
+    ],
+    "manaCost": 0,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
+  },
+  {
+    "id": "ability.tiangang-duanyue",
+    "name": "天罡断岳",
+    "description": "横刀驻足蓄势五息，任凭万刃加身皆化作护体天罡；待刀势圆满一斩断岳，尽倾所蓄天罡以雷霆万钧之威横扫敌群。",
+    "style": "blade",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 30000,
+    "castMilliseconds": 5000,
+    "targetType": "allEnemies",
+    "damageRatio": 2.0,
+    "flatDamage": 200,
+    "channelingAttackedBuff": {
+      "buffId": "buff.tiangang",
+      "name": "天罡",
+      "durationSeconds": 5,
+      "maxStacks": 999,
+      "resetOnWave": true,
+      "noLevelGrowth": true,
+      "damageBonusPoints": 10,
+      "damageAbsorptionPoints": 10
+    },
+    "consumeBuffId": "buff.tiangang",
+    "consumeBuffExtraDamagePerStack": 0.2,
+    "defaultTriggers": [
+      {
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than",
+        "value": 1,
+        "buffId": null
+      }
+    ],
+    "manaCost": 100,
+    "rootAttribute": "stamina",
+    "discipline": "spell"
   }
 ]

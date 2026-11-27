@@ -135,8 +135,13 @@ test('vfxRouting：斩玉→踏云化形（实时战与斗法剧本）与阵盘�
   assert.equal(resolveRegisteredVfxId('ability.unknown-future', false, hasVfx), 'feedback.burst')
 })
 
-test('vfxRouting：消耗品自动使用日志解析与 13 项消耗品字典完备性', () => {
+test('vfxRouting：消耗品自动使用日志解析与 18 项消耗品字典完备性', () => {
   assert.equal(parseAutoUseActivatedItemId('自动使用 雷击符，造成 182.4 点伤害。'), 'item.leiji-talisman')
+  assert.equal(parseAutoUseActivatedItemId('自动使用 剑符，造成 350 点伤害（暴击）。'), 'item.jian-talisman')
+  assert.equal(parseAutoUseActivatedItemId('自动使用 怒焰符，施加 25 层燃烧。'), 'item.nuyan-talisman')
+  assert.equal(parseAutoUseActivatedItemId('自动使用 定神符。'), 'item.dingshen-talisman')
+  assert.equal(parseAutoUseActivatedItemId('自动使用 神行符。'), 'item.shenxing-talisman')
+  assert.equal(parseAutoUseActivatedItemId('自动使用 隐身符。'), 'item.yinshen-talisman')
   assert.equal(parseAutoUseActivatedItemId('自动使用 止血散。'), 'item.zhixue-powder')
   assert.equal(parseAutoUseActivatedItemId('自动使用 {{item:item.heqi-pill|合气丹}}。'), 'item.heqi-pill')
   assert.equal(parseAutoUseActivatedItemId('自动使用 聚气香，可生效 300 秒。'), null)
@@ -147,8 +152,8 @@ test('vfxRouting：消耗品自动使用日志解析与 13 项消耗品字典完
   assert.equal(Object.keys(FORMATION_ITEM_TO_BUFF).length, 4)
   assert.equal(Object.keys(FORMATION_PROC_MAP).length, 2)
   assert.equal(Object.keys(PILL_BUFF_TO_ITEM).length, 6)
-  assert.equal(Object.keys(INSTANT_CONSUMABLE_NAME_TO_ITEM).length, 7)
-  assert.equal(INSTANT_CONSUMABLE_ITEM_IDS.size, 7)
+  assert.equal(Object.keys(INSTANT_CONSUMABLE_NAME_TO_ITEM).length, 12)
+  assert.equal(INSTANT_CONSUMABLE_ITEM_IDS.size, 12)
 })
 
 function createHeadlessVfxSandbox(extraRelativePaths = []) {

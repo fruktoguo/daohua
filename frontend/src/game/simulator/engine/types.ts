@@ -498,6 +498,13 @@ export interface ConsumableStrike {
   manaDamageRatio: number;
   spellAttackRatio: number;
   element: number;
+  physicalAttackRatio: number;
+  flatDamage: number;
+  damageKind: number;
+  targetType: string;
+  ranhunSpellAttackRatio: number;
+  ranhunBaseStacks: number;
+  onHitBuff: Record<string, unknown> | null;
 }
 
 export interface ConsumableDefinition {
@@ -514,6 +521,7 @@ export interface ConsumableDefinition {
   techniqueSpeedRatio: number;
   enhancementSuccessBonus: number;
   stackableSlotCount: number;
+  manaCostRatio: number;
 }
 
 export interface ItemDefinition {
@@ -574,6 +582,7 @@ export interface PlayerState {
     castCount: number;
   };
   combatBuffCarry: CombatBuffCarryState[];
+  talismanCooldowns?: Record<string, number>;
   buffs: ActiveBuffState[];
   autoUseSlots: AutoUseSlotState[];
   respawnPolicy: number;

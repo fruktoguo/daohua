@@ -715,6 +715,12 @@ export const combatZh = {
         'buff.mabi': '麻痹',
         shibukedang: '势不可挡',
         'buff.shibukedang': '势不可挡',
+        jianyi: '剑意',
+        'buff.jianyi': '剑意',
+        tiangang: '天罡',
+        'buff.tiangang': '天罡',
+        shenxing: '神行',
+        'buff.shenxing': '神行',
       },
     },
     simulator: {

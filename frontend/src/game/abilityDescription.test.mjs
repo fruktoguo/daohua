@@ -470,3 +470,80 @@ test('describeAbility：雾梦泽 20 级五新技能主描述与固定基底层�
     `破军描述异常: ${pojunDesc.description}`,
   )
 })
+
+
+test('describeAbility：罡气护体、迸裂与天罡断岳主描述与气血消耗行精准渲染', () => {
+  const gangqi = {
+    abilityId: 'ability.gangqi-huti',
+    name: '罡气护体',
+    targetType: 'self',
+    category: 'physical',
+    element: 'none',
+    cooldownMilliseconds: 20000,
+    castMilliseconds: 1000,
+    manaCost: 50,
+    shieldMaxHpRatio: 0.2,
+  }
+  const gangqiLv1 = describeAbility(gangqi, 1)
+  const gangqiLv2 = describeAbility(gangqi, 2)
+  assert.ok(gangqiLv1.description.includes('20%'), `罡气护体 Lv.1 应含 20% 护盾比例: ${gangqiLv1.description}`)
+  assert.ok(gangqiLv2.description.includes('20.4%'), `罡气护体 Lv.2 应随等级成长至 20.4%: ${gangqiLv2.description}`)
+
+  const benglie = {
+    abilityId: 'ability.benglie',
+    name: '迸裂',
+    targetType: 'allEnemies',
+    category: 'physical',
+    element: 'earth',
+    cooldownMilliseconds: 18000,
+    castMilliseconds: 1500,
+    manaCost: 0,
+    hpCostMaxHpRatio: 0.05,
+    consumeAllShield: true,
+    damageRatio: 1.0,
+    maxHpDamageRatio: 0.1,
+    shieldDamageRatio: 1.0,
+    flatDamage: 50,
+  }
+  const benglieDesc = describeAbility(benglie, 1)
+  assert.ok(
+    benglieDesc.description.includes('100%物理攻击') &&
+      benglieDesc.description.includes('10%最大生命') &&
+      benglieDesc.description.includes('100%') &&
+      benglieDesc.description.includes('+50'),
+    `迸裂主描述应包含四段伤害构成与消耗护盾说明: ${benglieDesc.description}`,
+  )
+  assert.ok(
+    benglieDesc.lines.some(l => l.includes('5%')),
+    `迸裂消耗行应显示 5% 最大生命消耗: ${benglieDesc.lines.join(' | ')}`,
+  )
+
+  const tiangang = {
+    abilityId: 'ability.tiangang-duanyue',
+    name: '天罡断岳',
+    targetType: 'allEnemies',
+    category: 'physical',
+    element: 'none',
+    cooldownMilliseconds: 30000,
+    castMilliseconds: 5000,
+    manaCost: 100,
+    damageRatio: 2.0,
+    flatDamage: 200,
+    channelingAttackedBuff: {
+      buffId: 'buff.tiangang',
+      name: '天罡',
+      durationSeconds: 5,
+      damageBonusPoints: 10,
+      damageAbsorptionPoints: 10,
+    },
+    consumeBuffId: 'buff.tiangang',
+    consumeBuffExtraDamagePerStack: 0.2,
+  }
+  const tiangangDesc = describeAbility(tiangang, 1)
+  assert.ok(
+    tiangangDesc.description.includes('[[200%物理攻击]] [[+200]]') &&
+      tiangangDesc.description.includes('[[天罡]]') &&
+      tiangangDesc.description.includes('20%'),
+    `天罡断岳主描述应包含吟唱受击叠天罡与消耗天罡额外增伤: ${tiangangDesc.description}`,
+  )
+})

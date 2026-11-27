@@ -89,7 +89,7 @@ public sealed record SessionConsumableSlot(
     /// <summary>持久化不变量。</summary>
     public bool IsValid => MemberIndex >= 0
         && !string.IsNullOrWhiteSpace(ItemId) && ItemId.Length <= 128
-        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion)
+        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion || Group == AutoUseSlotState.SlotGroupAbility)
         && SlotIndex >= 0
         && double.IsFinite(CooldownUntilUnixSeconds) && CooldownUntilUnixSeconds >= 0
         && double.IsFinite(SustainedExpiresAtUnixSeconds) && SustainedExpiresAtUnixSeconds >= 0;

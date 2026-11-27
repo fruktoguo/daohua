@@ -49,6 +49,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         CombatantState Unit,
         int SkillIndex,
         double ManaCost,
+        double HpCost,
         double NextAttackAtSeconds,
         double CooldownUntil);
 
@@ -57,6 +58,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// 对称模式下双侧单位基于同一冻结入场快照并行求值后统一提交预扣，消除视野先后偏差。</summary>
     internal static void DecideInitialActions(CombatEncounterState encounter)
     {
+        CombatTraitReactions.ApplyBattleStartReactions(encounter);
         if (encounter.IsSymmetric)
         {
             var pending = new List<CombatantState>(encounter.SideA.Count + encounter.SideB.Count);
@@ -178,24 +180,28 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             unit.SkillCastCount += 1;
             return;
         }
-        if (target is not null)
+        if (target is not null && !CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.CangfengTraitId))
         {
+            var dealtBasicDamage = false;
             encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, unit, DuelRecordActionKind.BasicAttack);
             try
             {
-                ResolveAttack(encounter, unit, target, side, encounter.ElapsedSeconds, ref events);
+                ResolveAttack(encounter, unit, target, side, encounter.ElapsedSeconds, ref events, dealtDirectDamage: out dealtBasicDamage);
             }
             finally
             {
                 encounter.ActionRecorder?.EndAction();
             }
+            NotifyUnitAttacked(encounter, unit, target, encounter.ElapsedSeconds);
+            if (dealtBasicDamage)
+                ConsumeJianyiAfterDirectDamage(encounter, unit);
         }
     }
 
     /// <summary>
     /// 出手决策：按槽位顺序挑选首个可用技能进入吟唱——触发条件（统一求值器）、冷却就绪与
-    /// 灵力消耗在起手时判定并预扣；吟唱占用整条动作时间线，时长 = castMilliseconds ÷(1+行动速度点数/100)，
-    /// 冷却自吟唱完成时刻起算。无可用技能时下一次出手回落为普通攻击，普攻间隔吃战内攻速 Buff。
+    /// 灵力/气血消耗在起手时判定并预扣；吟唱占用整条动作时间线，时长 = castMilliseconds ÷(1+行动速度点数/100)，
+    /// 冷却自吟唱完成时刻起算。无可用技能时下一次出手回落为普通攻击（携带「藏锋」则收剑待机）。
     /// </summary>
     internal static void DecideNextAction(CombatEncounterState encounter, CombatantState unit,
         IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents, CombatantState? target)
@@ -217,8 +223,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             var pending = unit.SkillWakePending ??= BuildFullPending(skills.Count);
             var verdicts = unit.SkillTriggerVerdicts ??= new bool?[skills.Count];
             var verdictTargets = unit.SkillVerdictTargets ??= new CombatantState?[skills.Count];
-            // 判定缓存仅在事实追踪接入时有效；未追踪路径（周期模式/无钩子推进）恒走全量重评。
-            var tracking = encounter.WakeTracking;
+            // 判定缓存仅在事实追踪接入时有效；藏锋静默整秒重检与同边界剑意叠层同拍，跳过缓存直取实时层数。
+            var tracking = encounter.WakeTracking
+                && !CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.CangfengTraitId);
             for (var i = 0; i < skills.Count; i++)
             {
                 var slot = skills[i];
@@ -246,6 +253,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 }
                 var manaCost = AbilityNumber(slot.Ability, "manaCost");
                 if (unit.Manapoints < manaCost) continue;
+                var hpCostRatio = AbilityNumber(slot.Ability, "hpCostMaxHpRatio");
+                var hpCost = hpCostRatio > 0 ? unit.Stats.MaxHitpoints * hpCostRatio : 0;
+                if (hpCost > 0 && unit.Hitpoints <= hpCost + 1e-9) continue;
                 // 吟唱时长 = 配表 ÷ 行动速度除数（NonLinear 点数，境界成长已注入本通道）。
                 var castSeconds = Math.Max(1e-9,
                     AbilityNumber(slot.Ability, "castMilliseconds") / 1000d
@@ -255,24 +265,41 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 var cdMs = AbilityNumber(slot.Ability, "cooldownMilliseconds");
                 var cdMult = PercentValue.Multiplier(unit.Stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
                 var cdUntil = nextAttackAt + cdMs / 1000d * cdMult;
-                return new ActionDecisionPlan(unit, i, manaCost, nextAttackAt, cdUntil);
+                return new ActionDecisionPlan(unit, i, manaCost, hpCost, nextAttackAt, cdUntil);
             }
+        }
+        // 携带「藏锋」的单位不再进行普通攻击，推进至下一整秒或最近技能冷却就绪时刻重评。
+        if (CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.CangfengTraitId))
+        {
+            var idleNextAt = Math.Floor(encounter.ElapsedSeconds + 1e-9) + 1.0;
+            if (unit.SkillCooldownUntil is { } cds)
+            {
+                for (var i = 0; i < cds.Length && i < skills.Count; i++)
+                    if (cds[i] > encounter.ElapsedSeconds + 1e-9 && cds[i] < idleNextAt)
+                        idleNextAt = cds[i];
+            }
+            return new ActionDecisionPlan(unit, -1, 0, 0, Math.Max(encounter.ElapsedSeconds + 1e-6, idleNextAt), 0);
         }
         // 普攻读条双重除数：攻击速度（面板+战内 Buff 合并）× 行动速度（NonLinear 点数）。
         var basicNextAt = encounter.ElapsedSeconds
             + unit.Stats.AttackIntervalSeconds
             * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints + unit.BuffTotal(BuffEffectChannel.AttackSpeedPoints), PercentCurveMode.NonLinear)
             * PercentValue.Multiplier(unit.EffectiveStats.ActionSpeedPoints, PercentCurveMode.NonLinear);
-        return new ActionDecisionPlan(unit, -1, 0, basicNextAt, 0);
+        return new ActionDecisionPlan(unit, -1, 0, 0, basicNextAt, 0);
     }
 
-    /// <summary>提交单条动作决策方案：落账灵力预扣、待施放槽、下一次出手时刻与技能冷却。</summary>
+    /// <summary>提交单条动作决策方案：落账灵力/气血预扣、待施放槽、下一次出手时刻与技能冷却。</summary>
     private static void CommitActionPlan(ActionDecisionPlan plan)
     {
         var unit = plan.Unit;
         if (plan.SkillIndex >= 0)
         {
             unit.Manapoints -= plan.ManaCost;
+            if (plan.HpCost > 0)
+            {
+                unit.Hitpoints = Math.Max(1e-9, unit.Hitpoints - plan.HpCost);
+                unit.SyncDerivedStacks();
+            }
             unit.PendingSkillIndex = plan.SkillIndex;
             unit.NextAttackAtSeconds = plan.NextAttackAtSeconds;
             var cooldowns = unit.SkillCooldownUntil ??= new double[unit.Skills.Count];
@@ -302,10 +329,38 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         return pending;
     }
 
+    /// <summary>造成普攻或伤害型技能直伤后记录时刻并散去全部「剑意」。</summary>
+    private static void ConsumeJianyiAfterDirectDamage(CombatEncounterState encounter, CombatantState caster)
+    {
+        caster.LastDirectDamageAtSeconds = encounter.ElapsedSeconds;
+        if (caster.BuffStacks(CombatTraitRules.JianyiBuffId) <= 0) return;
+        if (encounter.ActiveWave is SimultaneousCombatWave wave)
+            wave.DeferBuffOp(() => caster.RemoveBuffsWhere(b => b.BuffId == CombatTraitRules.JianyiBuffId));
+        else
+            caster.RemoveBuffsWhere(b => b.BuffId == CombatTraitRules.JianyiBuffId);
+    }
+
     /// <summary>
-    /// 技能施放统一结算：伤害/治疗/支援（威胁修正与战内 Buff）走同一条管线，玩家、怪物与斗法镜像完全同构。
-    /// 灵力消耗与冷却已在起手决策时预扣，此处只负责完成结算。
-    /// 技能类别判定：heal 效果或正治疗量为治疗；伤害为零且目标为友方/自身为支援技；其余为伤害技。
+    /// 独立敌对攻击行为通知（普攻/进攻技能/进攻符箓每个被攻击目标调用 1 次，不受多段连击或衍生伤害次数影响）：
+    /// 若受击目标正在吟唱配置了 <c>channelingAttackedBuff</c> 的技能（如「天罡断岳」），为其叠 1 层对应增益。
+    /// </summary>
+    internal static void NotifyUnitAttacked(CombatEncounterState? encounter, CombatantState attacker,
+        CombatantState target, double at)
+    {
+        if (!CombatDamageSettlement.IsTargetAlive(encounter, target)) return;
+        var pending = target.PendingSkillIndex;
+        if (pending < 0 || pending >= target.Skills.Count) return;
+        var slot = target.Skills[pending];
+        if (!slot.Ability.TryGetProperty("channelingAttackedBuff", out var buffSpec)
+            || buffSpec.ValueKind != JsonValueKind.Object) return;
+        var abilityId = AbilityText(slot.Ability, "id") ?? string.Empty;
+        var levelGrowth = CombatGrowthCurve.AbilityLevelGrowth(slot.Level);
+        GrantBuff(buffSpec, target, target, at, levelGrowth, abilityId, encounter);
+    }
+
+    /// <summary>
+    /// 技能施放统一结算：伤害/治疗/支援（护盾、威胁修正与战内 Buff）走同一条管线，玩家、怪物与斗法镜像完全同构。
+    /// 灵力与气血消耗及冷却已在起手决策时预扣，此处只负责完成结算。
     /// </summary>
     private static void CastSkill(CombatEncounterState encounter, CombatantState caster,
         IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents,
@@ -332,8 +387,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             caster.Threat += threatGain;
             caster.ThreatBonusPoints += threatPoints;
         }
+        var skillBonusMult = PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
         // 治疗量吃技能增幅点数（Linear，含等阶成长注入），与技能伤害同通道。
-        var healOutput = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
+        var healOutput = attackBase * skillBonusMult
             * AbilityNumber(ability, "healingRatio") * levelGrowth
             + AbilityNumber(ability, "flatHealing") * levelGrowth;
         if (AbilityText(ability, "effectType") == "heal" || healOutput > 0)
@@ -355,7 +411,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                     {
                         AbilityId = id, Healing = Math.Max(0, output),
                         AttackerManapointsAfter = caster.Manapoints,
-                        TargetManapointsAfter = ally.Manapoints
+                        TargetManapointsAfter = ally.Manapoints,
+                        AttackerShieldAfter = caster.Shield,
+                        TargetShieldAfter = ally.Shield
                     });
                     return;
                 }
@@ -373,7 +431,9 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 {
                     AbilityId = id, Healing = healed,
                     AttackerManapointsAfter = caster.Manapoints,
-                    TargetManapointsAfter = ally.Manapoints
+                    TargetManapointsAfter = ally.Manapoints,
+                    AttackerShieldAfter = caster.Shield,
+                    TargetShieldAfter = ally.Shield
                 });
             }
             if (targetType == "self")
@@ -391,7 +451,10 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             }
             return;
         }
-        var hasDamage = AbilityNumber(ability, "damageRatio") + AbilityNumber(ability, "flatDamage") > 0;
+        var maxHpDamageRatio = AbilityNumber(ability, "maxHpDamageRatio");
+        var shieldDamageRatio = AbilityNumber(ability, "shieldDamageRatio");
+        var hasDamage = AbilityNumber(ability, "damageRatio") + AbilityNumber(ability, "flatDamage")
+            + maxHpDamageRatio + shieldDamageRatio > 0;
         var ranhunBase = AbilityNumber(ability, "ranhunBaseStacks");
         var ranhunRatio = AbilityNumber(ability, "ranhunSpellAttackRatio");
         var onHitBuffSpecs = AbilityBuffSpecs(ability, "onHitBuff", "onHitBuffs");
@@ -399,13 +462,20 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var hasOffensivePayload = hasDamage || ranhunBase > 0 || ranhunRatio > 0 || onHitBuffSpecs.Count > 0;
         if (targetType == "self" || !hasOffensivePayload && targetType is not ("targetEnemy" or "allEnemies"))
         {
-            // 支援技：以自身/友方为目标的零伤害技能；战内 Buff 授予友方并按战斗时钟到期。
-            // 配表支持 buffs[] 多 Buff（如碎罡同时授予碎罡与罡锋），单 Buff 的旧 buff 对象仍兼容解析。
+            // 支援技：以自身/友方为目标的零伤害技能（含护盾赋予如「罡气护体」及战内 Buff）。
+            var shieldMaxHpRatio = AbilityNumber(ability, "shieldMaxHpRatio");
+            if (shieldMaxHpRatio > 0)
+            {
+                var shieldGain = caster.Stats.MaxHitpoints * shieldMaxHpRatio * levelGrowth * skillBonusMult;
+                if (shieldGain > 0)
+                {
+                    if (wave is not null) wave.AddShieldGain(caster, shieldGain);
+                    else caster.Shield += shieldGain;
+                }
+            }
             var buffSpecs = AbilityBuffSpecs(ability);
             if (buffSpecs.Count > 0)
             {
-                // 目标范围与治疗效果同口径展开：lowestHitpointsAlly 取血量比例最低存活友方
-                // （原 OrderBy+Take(1) 稳定首元素语义），allAllies 顺序遍历存活友方，其余作用于自身。
                 if (targetType == "lowestHitpointsAlly")
                 {
                     if (LowestHitpointsRatioAlly(allies) is { } weakest)
@@ -428,20 +498,41 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             {
                 AbilityId = id,
                 AttackerManapointsAfter = caster.Manapoints,
-                TargetManapointsAfter = caster.Manapoints
+                TargetManapointsAfter = caster.Manapoints,
+                AttackerShieldAfter = caster.Shield,
+                TargetShieldAfter = caster.Shield
             });
             return;
         }
-        // 技能单发威力 = 攻基 ×(1+技能增幅/100) × 技能倍率 + 固定值——技能增幅并入原始威力乘位，
-        // 与普攻增幅在普攻威力上的口径一致，先增减后抗穿（总纲 §7.7.1 原始伤害口径）。
+        var consumeAllShield = AbilityFlag(ability, "consumeAllShield");
+        var currentShield = caster.Shield;
+        if (consumeAllShield && currentShield > 0)
+        {
+            if (wave is not null) wave.ConsumeAllShield(caster);
+            else caster.Shield = 0;
+        }
+        // 技能单发威力 = 攻基 ×(1+技能增幅/100) × 技能倍率 + 固定值（保持既有乘法结合序防 1-ULP 漂移）；
+        // 含生命/护盾威力项（如「迸裂」）时额外叠加对应基数。
+        var skillPower = attackBase * skillBonusMult
+            * AbilityNumber(ability, "damageRatio") * levelGrowth
+            + AbilityNumber(ability, "flatDamage") * levelGrowth;
+        if (maxHpDamageRatio > 0 || shieldDamageRatio > 0)
+        {
+            skillPower += (caster.Stats.MaxHitpoints * maxHpDamageRatio
+                + (consumeAllShield ? currentShield : caster.Shield) * shieldDamageRatio) * skillBonusMult * levelGrowth;
+        }
         var stats = caster.Stats with
         {
-            AttackPower = attackBase * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
-                * AbilityNumber(ability, "damageRatio") * levelGrowth
-                + AbilityNumber(ability, "flatDamage") * levelGrowth,
+            AttackPower = skillPower,
             DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
             Element = AbilityElement(ability)
         };
+        var consumeBuffId = AbilityText(ability, "consumeBuffId");
+        var consumeBuffExtraPerStack = AbilityNumber(ability, "consumeBuffExtraDamagePerStack");
+        var consumedBuffStacks = !string.IsNullOrEmpty(consumeBuffId) ? caster.BuffStacks(consumeBuffId) : 0;
+        var postFinalDamageMultiplier = consumedBuffStacks > 0 && consumeBuffExtraPerStack > 0
+            ? 1.0 + consumeBuffExtraPerStack * consumedBuffStacks
+            : 1.0;
         // 技能出手以施放方累计完成次数为抽样计数，保证确定性随机流不依赖槽位语义。
         var count = caster.SkillCastCount + 1;
         var hasYixing = caster.BuffStacks(CombatTraitRules.YixingBuffId) > 0;
@@ -449,19 +540,29 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var effectiveTargetType = hasYixing ? (AbilityText(ability, "yixingMorphTargetType") ?? targetType) : targetType;
         var ignorePrimaryThreat = hasYixing && CombatTraitRules.ContainsTrait(caster.Stats.Traits, CombatTraitRules.JianyuxinTraitId);
         var extraRanhunStacks = ranhunBase > 0 || ranhunRatio > 0
-            ? Math.Max(1, Math.Floor((Math.Max(0, attackBase) * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear) * ranhunRatio + ranhunBase) * levelGrowth + 1e-9))
+            ? Math.Max(1, Math.Floor((Math.Max(0, attackBase) * skillBonusMult * ranhunRatio + ranhunBase) * levelGrowth + 1e-9))
             : 0;
         var maxTargets = ability.TryGetProperty("maxTargets", out var maxTargetsProperty)
             && maxTargetsProperty.TryGetInt32(out var parsed) ? parsed : 0;
         var zeroDirectDamage = !hasDamage;
         var killedAnyTarget = false;
+        var dealtAnyDirectDamage = false;
+        List<CombatantState>? attackedTargets = null;
         void Strike(CombatantState foe, double? rollCountOverride, ref List<CombatEvent>? ev)
         {
+            attackedTargets ??= new List<CombatantState>(4);
+            var alreadyNoted = false;
+            for (var k = 0; k < attackedTargets.Count; k++)
+                if (ReferenceEquals(attackedTargets[k], foe)) { alreadyNoted = true; break; }
+            if (!alreadyNoted) attackedTargets.Add(foe);
             var wasAlive = CombatDamageSettlement.IsTargetAlive(encounter, foe);
-            ResolveAttack(encounter, caster, foe, side, encounter.ElapsedSeconds, ref ev, stats, rollCountOverride, id,
+            ResolveAttack(encounter, caster, foe, side, encounter.ElapsedSeconds, ref ev,
+                out var dealtThisStrike, stats, rollCountOverride, id,
                 doubleAccuracy: hasYixing, abilityNameOverride: abilityNameOverride,
                 extraRanhunStacks: extraRanhunStacks, zeroDirectDamage: zeroDirectDamage,
-                onHitBuffs: onHitBuffSpecs, levelGrowth: levelGrowth);
+                onHitBuffs: onHitBuffSpecs, levelGrowth: levelGrowth,
+                postFinalDamageMultiplier: postFinalDamageMultiplier);
+            if (dealtThisStrike) dealtAnyDirectDamage = true;
             if (wasAlive && !CombatDamageSettlement.IsTargetAlive(encounter, foe)) killedAnyTarget = true;
         }
         if (effectiveTargetType == "allEnemies")
@@ -481,16 +582,11 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 : SelectTarget(opponents, encounter.Seed, side, count, 16, ignorePrimaryThreat);
             if (single is null) return;
             Strike(single, count, ref events);
-            // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害——后续段沿用
-            // 普攻计数随机流（countOverride=null → 取 attacker.AttackCount 自增序列），各段命中/
-            // 暴击独立掷点；目标中途死亡即终止剩余连段，不转火不空掷。
+            // 多段打击（hitCount>1，连环等）：对同一目标逐段独立结算完整技能伤害。
             var hitCount = Math.Max(1, (int)AbilityNumber(ability, "hitCount"));
             for (var hitIndex = 1; hitIndex < hitCount && CombatDamageSettlement.IsTargetAlive(encounter, single); hitIndex++)
                 Strike(single, null, ref events);
-            // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能
-            // 伤害，至多追加 chainOnKillCount 次；连锁未致死即终止。被击杀目标已离存活池，
-            // 连锁命中未死者时循环结束，故天然不重复命中、总目标数 ≤ 1 + chainOnKillCount。
-            // 连锁帧沿用同一次施放的抽样计数，命中/暴击掷点继承本次出手运气（贯穿语义）。
+            // 击杀连锁（chainOnKillCount）：目标阵亡后按威胁轮盘抽另一存活敌方再结算一次完整技能伤害。
             var chainMax = (int)AbilityNumber(ability, "chainOnKillCount");
             for (var chainIndex = 0; chainIndex < chainMax && !CombatDamageSettlement.IsTargetAlive(encounter, single); chainIndex++)
             {
@@ -499,6 +595,19 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 Strike(single, count, ref events);
             }
         }
+        // 全体打击结算完成后：通知各受击目标一次独立攻击行为（天罡断岳蓄层），并移除施法者自身已消耗的天罡与剑意。
+        if (attackedTargets is not null)
+        {
+            for (var i = 0; i < attackedTargets.Count; i++)
+                NotifyUnitAttacked(encounter, caster, attackedTargets[i], encounter.ElapsedSeconds);
+        }
+        if (!string.IsNullOrEmpty(consumeBuffId) && consumedBuffStacks > 0)
+        {
+            if (wave is not null) wave.DeferBuffOp(() => caster.RemoveBuffsWhere(b => b.BuffId == consumeBuffId));
+            else caster.RemoveBuffsWhere(b => b.BuffId == consumeBuffId);
+        }
+        if (dealtAnyDirectDamage)
+            ConsumeJianyiAfterDirectDamage(encounter, caster);
         // 移形按伤害/进攻型技能施放次数固定消耗 1 层（不论命中几次或几个目标）。
         if (hasYixing)
         {
@@ -524,11 +633,13 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// <summary>按破招化解、闪避、暴击顺序判定后，沿「大类抗性穿甲 → 攻方分类增伤 → 守方分类减伤 → 暴击 → 总免伤收口」结算链结算；
     /// 抽样仅依赖已持久化的种子与出手序号。判定前、伤害落账前、落账后三个点位依次驱动钩子管线；钩子衍生伤害直接落账不再回流。</summary>
     private static void ResolveAttack(CombatEncounterState encounter, CombatantState attacker, CombatantState target,
-        ulong side, double at, ref List<CombatEvent>? events,
+        ulong side, double at, ref List<CombatEvent>? events, out bool dealtDirectDamage,
         CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null,
         bool doubleAccuracy = false, string? abilityNameOverride = null, double extraRanhunStacks = 0,
-        bool zeroDirectDamage = false, IReadOnlyList<JsonElement>? onHitBuffs = null, double levelGrowth = 1)
+        bool zeroDirectDamage = false, IReadOnlyList<JsonElement>? onHitBuffs = null, double levelGrowth = 1,
+        double postFinalDamageMultiplier = 1.0)
     {
+        dealtDirectDamage = false;
         var wave = encounter.ActiveWave as SimultaneousCombatWave;
         if (!attacker.IsAlive || !CombatDamageSettlement.IsTargetAlive(encounter, target)) return;
         var rawAttackStats = statsOverride ?? attacker.Stats;
@@ -545,6 +656,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
             AbilityId = abilityId,
             DoubleAccuracy = doubleAccuracy,
             ZeroDirectDamage = zeroDirectDamage,
+            PostFinalDamageMultiplier = postFinalDamageMultiplier,
             Side = side,
             Count = countOverride ?? attacker.AttackCount,
             AtSeconds = at
@@ -554,6 +666,7 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var settled = CombatDamageSettlement.Apply(encounter, attacker, target, context.Damage);
         context.Damage = settled.Damage;
         context.ActualDamage = settled.Actual;
+        dealtDirectDamage = context.Hit && context.Damage > 0;
         // 行动级战斗统计：攻方按伤害类别计输出、守方计实收与减免（减免 = 原始威力 − 实收，未命中不落账）。
         encounter.StatsBook?.RecordHit(attacker, target, context.AttackStats.DamageKind,
             context.Damage, context.Hit ? Math.Max(0, context.RawDamage - context.Damage) : 0);
@@ -575,8 +688,48 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         // 衍生事件追加在主事件之后，保持战斗日志时序不变。
         var mainEventIndex = events.Count;
         events.Add(new CombatEvent(at, attacker.Id, target.Id, context.Damage, context.Hit, context.AttackStats.DamageKind, target.Hitpoints)
-        { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId, AbilityNameOverride = abilityNameOverride });
+        {
+            Critical = context.Critical, Break = context.Broken, Parried = context.Parried,
+            AbilityId = abilityId, AbilityNameOverride = abilityNameOverride,
+            AttackerShieldAfter = attacker.Shield, TargetShieldAfter = target.Shield
+        });
         EmitHitTriggers(encounter, context, events, mainEventIndex);
+        // 闪身步：成功闪避攻击时获得 1 层持续 5s 的「移形」（受反比例内置冷却约束）。
+        if (!context.Hit && CombatDamageSettlement.IsTargetAlive(encounter, target)
+            && CombatTraitRules.ContainsTrait(target.Stats.Traits, CombatTraitRules.ShanshenbuTraitId))
+        {
+            var shanshenCd = CombatTraitRules.ShanshenbuCooldownSeconds(target.Stats.Traits, target.Stats.TraitLevels);
+            if (target.LastShanshenbuTriggerAtSeconds < 0 || at - target.LastShanshenbuTriggerAtSeconds >= shanshenCd - 1e-9)
+            {
+                target.LastShanshenbuTriggerAtSeconds = at;
+                if (wave is not null)
+                {
+                    var previewExisting = target.Buffs.FirstOrDefault(b => b.BuffId == CombatTraitRules.YixingBuffId);
+                    var previewStacks = Math.Min(99, (previewExisting?.Stacks ?? 0) + 1);
+                    encounter.ActionRecorder?.RecordBuff(target, target, CombatTraitRules.YixingBuffId, previewStacks,
+                        DuelRecordActionKind.Trait, at, CombatTraitRules.ShanshenbuTraitId);
+                    wave.DeferBuffOp(() =>
+                    {
+                        if (!target.IsAlive) return;
+                        var cur = target.Buffs.FirstOrDefault(b => b.BuffId == CombatTraitRules.YixingBuffId);
+                        var nextStacks = Math.Min(99, (cur?.Stacks ?? 0) + 1);
+                        var exp = CombatTraitRules.MergeBuffExpiry(cur?.ExpiresAtSeconds, at + 5.0);
+                        target.SetBuff(new CombatBuffState(CombatTraitRules.YixingBuffId, exp, nextStacks, "移形",
+                            ResetOnWave: true, Effects: [new(BuffEffectChannel.EvasionPostRatio, 1.0)]));
+                    });
+                }
+                else
+                {
+                    var cur = target.Buffs.FirstOrDefault(b => b.BuffId == CombatTraitRules.YixingBuffId);
+                    var nextStacks = Math.Min(99, (cur?.Stacks ?? 0) + 1);
+                    var exp = CombatTraitRules.MergeBuffExpiry(cur?.ExpiresAtSeconds, at + 5.0);
+                    target.SetBuff(new CombatBuffState(CombatTraitRules.YixingBuffId, exp, nextStacks, "移形",
+                        ResetOnWave: true, Effects: [new(BuffEffectChannel.EvasionPostRatio, 1.0)]));
+                    encounter.ActionRecorder?.RecordBuff(target, target, CombatTraitRules.YixingBuffId, nextStacks,
+                        DuelRecordActionKind.Trait, at, CombatTraitRules.ShanshenbuTraitId);
+                }
+            }
+        }
         if (context.Hit && extraRanhunStacks > 0)
             CombatTraitReactions.AddRanhunStacks(attacker, target, extraRanhunStacks, at, encounter);
         if (context.Hit && CombatDamageSettlement.IsTargetAlive(encounter, target) && onHitBuffs is { Count: > 0 })
@@ -604,9 +757,11 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     /// <summary>
     /// 授予单条 Buff 规格：层数由施法者属性（法攻百分比 / 双抗总和按比例）与目标状态
     /// （每损失 N 点气血 1 层）或固定 <c>baseStacks</c> 派生；标记 <c>noLevelGrowth</c> 者数值与派生层数均豁免技能等级放大。
+    /// 重复授予时持续时间遵循「保高不降」原则。
     /// </summary>
-    private static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
-        double grantedAtSeconds, double levelGrowth, string abilityId, CombatEncounterState? encounter = null)
+    internal static void GrantBuff(JsonElement buff, CombatantState caster, CombatantState target,
+        double grantedAtSeconds, double levelGrowth, string abilityId, CombatEncounterState? encounter = null,
+        bool includeCasterSkillBonus = true)
     {
         var baseBuffId = AbilityText(buff, "buffId") ?? $"ability-buff:{abilityId}";
         var policy = AbilityText(buff, "stackPolicy") ?? "capped";
@@ -616,20 +771,19 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
         var resistancePerStack = AbilityNumber(buff, "resistancePerStack");
         var hasStackDerivation = missingPerStack > 0 || spellStackPercent > 0 || resistancePerStack > 0;
         var effectiveLevelGrowth = AbilityFlag(buff, "noLevelGrowth") ? 1.0 : levelGrowth;
-        // 层数派生通道把等级成长与技能增幅折入层数，效果量保持每层基础值，防止等级被二次放大；
-        // 无层数派生的 Buff 若未豁免，仍按等级成长放大全部数值项。时长/叠层上限不成长。
-        var growth = effectiveLevelGrowth * PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear);
+        var skillMult = includeCasterSkillBonus
+            ? PercentValue.Multiplier(caster.Stats.SkillBonusPoints, PercentCurveMode.Linear)
+            : 1.0;
+        var growth = effectiveLevelGrowth * skillMult;
         var effectGrowth = hasStackDerivation ? 1.0 : effectiveLevelGrowth;
         var initialStacks = InitialStacks(buff, caster, target, growth);
-        // 数值效果键按注册表解析（GrowsWithLevel 通道自动乘成长，双抗破防/化解后段乘区等豁免）；生命周期键保持直读。
+        var proposedExpiry = grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds"));
         var grant = new CombatBuffState(buffId,
-            grantedAtSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), initialStacks,
+            proposedExpiry, initialStacks,
             AbilityText(buff, "name") ?? baseBuffId,
             ResetOnWave: buff.TryGetProperty("resetOnWave", out var resetFlag) && resetFlag.ValueKind == JsonValueKind.True,
-            // 已损气血通道存储「折入成长后的等效每层阈值」，动态重算才能沿用同一成长口径。
             MissingHitpointsPerStack: missingPerStack > 0 ? missingPerStack / growth : 0,
             Effects: BuffEffectParser.Parse(buff, effectGrowth), SourceUnitId: caster.Id);
-        // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限（受控入口自动失效聚合缓存）。
         var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
         if (encounter?.ActiveWave is SimultaneousCombatWave wave)
         {
@@ -652,7 +806,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                         "maxKeep" => Math.Max(existingNow.Stacks, initialStacks),
                         _ => Math.Min(stackCap, existingNow.Stacks + initialStacks)
                     };
-                target.SetBuff(grant with { Stacks = nextNow });
+                var mergedNow = CombatTraitRules.MergeBuffExpiry(existingNow?.ExpiresAtSeconds, proposedExpiry);
+                target.SetBuff(grant with { Stacks = nextNow, ExpiresAtSeconds = mergedNow });
                 if (!ReferenceEquals(caster, target) && caster.SkillWakePending is { } casterPendingNow)
                 {
                     var sideBuffWake = new SlotWakeMask { AllySide = UnitChannel.Buff, EnemySide = UnitChannel.Buff };
@@ -670,7 +825,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                 "maxKeep" => Math.Max(existing.Stacks, initialStacks),
                 _ => Math.Min(stackCap, existing.Stacks + initialStacks)
             };
-        target.SetBuff(grant with { Stacks = nextStacks });
+        var mergedExpiry = CombatTraitRules.MergeBuffExpiry(existing?.ExpiresAtSeconds, proposedExpiry);
+        target.SetBuff(grant with { Stacks = nextStacks, ExpiresAtSeconds = mergedExpiry });
         // 跨单位授 Buff 时同步唤醒施法者同相位后续决策的侧级 Buff 订阅，防止依赖队友状态的技能命中缓存。
         if (!ReferenceEquals(caster, target) && caster.SkillWakePending is { } casterPending)
         {

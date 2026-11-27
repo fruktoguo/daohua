@@ -708,3 +708,28 @@
   - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `49 -> 50`；
   - `INSERT INTO platform.schema_version(version, applied_at) VALUES (71, now()) ON CONFLICT (version) DO NOTHING`。
 - 【离线脚本 / 人工步骤】：无。
+
+## v71 -> v72
+
+- **变更日期**：2026-11-27 12:50:00
+- **关联任务**：`TASK-20261126-05`（新战斗流派特质、护盾系统、三门神通与六符矩阵全栈实装）
+- **数据库版本**：`PostgresSchema.Version` 71 -> 72
+- **存档载荷标签**：`SectionCodec.CurrentSchemaVersion` `50 -> 51`；`MinReadableSchemaVersion` 保持 `41`
+- **迁移脚本状态**：已完成 `migrations/0072_v71_to_v72.sql`（支持目标版本幂等重试）
+- **存量处理结论**：无 DDL/权限变更，仅推进三处玩家存档标签 `50 -> 51` 并登记 `schema_version = 72`
+
+### 1. 变了什么
+- 【库结构/权限】无。
+- 【存档载荷】
+  - `actionQueue`（`CombatantSnapshot`）新增 `shield: double = 0`、`lastShanshenbuTriggerAtSeconds: double? = null`、`lastDirectDamageAtSeconds: double? = null`（战内永久护盾与闪身步/养剑术时钟锚点，均可缺省解码）；
+  - `combat`（`PlayerCombatStateDocument`）新增 `talismanCooldowns: Dictionary<string, double>? = null`（主动术法槽装配符箓的独立冷却截止时刻，可缺省解码为 `null`）。
+- 【配表/持久化语义】新增 9 项特质、3 门神通（含 6 件秘籍/残卷）与 5 张符箓（含 5 条制符行动），不删改既有存档引用的旧 ID。
+
+### 2. 是否需要处理存量数据
+- **仅需推进存档标签**：旧 `v50` 存档缺失上述字段时按默认 `0`/`null` 透明解码，无需重写存量 JSON/Brotli 载荷或校验和。
+
+### 3. 如果要处理，怎么处理
+- 【增量迁移脚本 `migrations/0072_v71_to_v72.sql` 要点】：
+  - 推进 `game.player_state_heads`、`game.player_state_sections`、`platform.section_flush_queue` 的 `schema_version` 由 `50 -> 51`；
+  - `INSERT INTO platform.schema_version(version, applied_at) VALUES (72, now()) ON CONFLICT (version) DO NOTHING`。
+- 【离线脚本 / 人工步骤】：无。

@@ -80,7 +80,7 @@ public sealed partial record ActionParticipantSnapshot(
         && (Equipment is null || (Equipment.Count <= 24 && Equipment.All(item => item is not null
             && !string.IsNullOrWhiteSpace(item.ItemId) && item.ItemId.Length <= 128
             && double.IsFinite(item.EnhancementLevel) && item.EnhancementLevel >= 0)))
-        && (ConsumableSlots is null || (ConsumableSlots.Count <= AutoUseSlotState.CombatSlotCount
+        && (ConsumableSlots is null || (ConsumableSlots.Count <= AutoUseSlotState.MaxCombatAndAbilitySlotCount
             && ConsumableSlots.All(slot => slot is not null && slot.IsValid)
             && ConsumableSlots.Select(slot => (slot.Group, slot.SlotIndex)).Distinct().Count() == ConsumableSlots.Count))
         && (InternalArt is null || InternalArt.IsValid)
@@ -155,7 +155,7 @@ public sealed record ActionConsumableSlot(
     /// <summary>持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(ItemId) && ItemId.Length <= 128
         && !string.IsNullOrWhiteSpace(ActionType) && ActionType.Length <= 32
-        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion)
+        && (Group == AutoUseSlotState.SlotGroupGeneral || Group == AutoUseSlotState.SlotGroupPotion || Group == AutoUseSlotState.SlotGroupAbility)
         && SlotIndex >= 0
         && double.IsFinite(CooldownUntilUnixSeconds) && CooldownUntilUnixSeconds >= 0
         && double.IsFinite(SustainedRemainingSeconds) && SustainedRemainingSeconds >= 0;

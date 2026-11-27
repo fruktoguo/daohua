@@ -17,7 +17,9 @@ import {
   TraitIds,
   UNSEEN_BUFF_DURATION_SECONDS,
   containsTrait,
+  mergeBuffExpiry,
   percentMultiplier,
+  postSoftRatio,
   traitLevelScale,
   type BuffEffect,
   type CombatantStats,
@@ -79,6 +81,7 @@ export interface CombatantTemplate {
 export interface CombatantSnapshot {
   hitpoints: number
   manapoints: number
+  shield?: number
   nextAttackAtSeconds: number
   attackCount: number
   threat: number
@@ -113,6 +116,8 @@ export interface CombatEvent {
   healing: number
   attackerManapointsAfter: number | null
   targetManapointsAfter: number | null
+  attackerShieldAfter?: number | null
+  targetShieldAfter?: number | null
 }
 
 export interface AllyMark {
@@ -153,6 +158,7 @@ export class CombatantState {
 
   hitpoints: number
   manapoints: number
+  shield = 0
   nextAttackAtSeconds: number
   attackCount = 0
   threat: number = BASE_THREAT
@@ -167,6 +173,8 @@ export class CombatantState {
   skillCastCount = 0
   lastTianleiTriggerAtSeconds = -1
   lastXueshaTriggerAtSeconds = -1
+  lastShanshenbuTriggerAtSeconds = -1
+  lastDirectDamageAtSeconds = -1
   respawnAtSeconds = Number.POSITIVE_INFINITY
   respawnPolicy: CombatRespawnPolicy = CombatRespawnPolicy.Immediate
   respawnTargetIndex = -1
@@ -308,8 +316,12 @@ export class CombatantState {
       for (let j = 0; j < effects.length; j++) {
         const eff = effects[j]
         const info = CHANNEL_INFO_LIST[eff.channel]
-        totals[eff.channel] +=
-          info.stackMode === BuffEffectStackMode.PerStack ? eff.value * buff.stacks : eff.value
+        const stackMult =
+          info.stackMode === BuffEffectStackMode.PerStack &&
+          !(eff.channel === BuffEffectChannel.EvasionPostRatio && buff.buffId === BuffIds.Yixing)
+            ? buff.stacks
+            : 1.0
+        totals[eff.channel] += eff.value * stackMult
         if (eff.value === 0) continue
         if (info.tickGroup === BuffEffectTickGroup.Regen5s) regenPending = true
         else if (info.tickGroup === BuffEffectTickGroup.Tick1s) tick1sPending = true
@@ -344,9 +356,17 @@ export class CombatantState {
       resistanceTotal === 0 ? 1 : percentMultiplier(resistanceTotal, PercentCurveMode.Linear)
     const next: CombatantStats = {
       ...this.stats,
-      attackPower: Math.max(0, this.stats.attackPower + totals[BuffEffectChannel.AttackPower]),
+      attackPower: Math.max(
+        0,
+        (this.stats.attackPower + totals[BuffEffectChannel.AttackPower]) *
+          postSoftRatio(totals[BuffEffectChannel.AttackPowerPostRatio]),
+      ),
       accuracy: Math.max(0, this.stats.accuracy + totals[BuffEffectChannel.Accuracy]),
-      critical: Math.max(0, this.stats.critical + totals[BuffEffectChannel.Critical]),
+      critical: Math.max(
+        0,
+        (this.stats.critical + totals[BuffEffectChannel.Critical]) *
+          postSoftRatio(totals[BuffEffectChannel.CriticalPostRatio]),
+      ),
       actionSpeedPoints: this.stats.actionSpeedPoints + totals[BuffEffectChannel.ActionSpeedPoints],
       criticalDamagePoints:
         this.stats.criticalDamagePoints + totals[BuffEffectChannel.CriticalDamagePoints],
@@ -360,11 +380,11 @@ export class CombatantState {
       evasion: Math.max(
         0,
         (this.stats.evasion + totals[BuffEffectChannel.Evasion]) *
-          (1 + totals[BuffEffectChannel.EvasionPostRatio]),
+          postSoftRatio(totals[BuffEffectChannel.EvasionPostRatio]),
       ),
       parryResolve: Math.max(
         0,
-        this.stats.parryResolve * (1 + totals[BuffEffectChannel.ParryPostRatio]),
+        this.stats.parryResolve * postSoftRatio(totals[BuffEffectChannel.ParryPostRatio]),
       ),
     }
     this._effectiveStatsCache = next
@@ -476,10 +496,12 @@ export function sumBuffEffect(
     if (!effects) continue
     for (let j = 0; j < effects.length; j++) {
       if (effects[j].channel !== channel) continue
-      total +=
-        info.stackMode === BuffEffectStackMode.PerStack
-          ? effects[j].value * buffs[i].stacks
-          : effects[j].value
+      const stackMult =
+        info.stackMode === BuffEffectStackMode.PerStack &&
+        !(channel === BuffEffectChannel.EvasionPostRatio && buffs[i].buffId === BuffIds.Yixing)
+          ? buffs[i].stacks
+          : 1.0
+      total += effects[j].value * stackMult
     }
   }
   return total
@@ -551,9 +573,10 @@ export function applyBattleStartTraits(unit: CombatantState): void {
         ? Math.max(1, traitLevels[TraitIds.Unseen])
         : 1
     const duration = UNSEEN_BUFF_DURATION_SECONDS * (1.0 + 0.05 * (lv - 1))
-    unit.addBuff({
+    const existing = unit.buffs.find((b) => b.buffId === BuffIds.Unseen)
+    unit.setBuff({
       buffId: BuffIds.Unseen,
-      expiresAtSeconds: duration,
+      expiresAtSeconds: mergeBuffExpiry(existing?.expiresAtSeconds, duration),
       stacks: 1,
       name: '隐身',
       resetOnWave: true,
@@ -927,6 +950,7 @@ export interface CombatHitContext {
   abilityId: string | null
   doubleAccuracy?: boolean
   zeroDirectDamage?: boolean
+  postFinalDamageMultiplier?: number
   side: bigint
   count: number
   atSeconds: number
@@ -958,6 +982,8 @@ export class CombatEncounterState {
   readonly wipeEndsBattle: boolean
   maxBattleSeconds = Number.POSITIVE_INFINITY
   timedOut = false
+  battleStartReactionsApplied = false
+  waveEndShieldsSettled = false
   readonly pendingTriggers: PendingCombatTrigger[] = []
   statsBook: CombatUnitStatsBook | null = null
 
@@ -1245,6 +1271,7 @@ export class CombatEncounterState {
     return {
       hitpoints: state.hitpoints,
       manapoints: state.manapoints,
+      shield: state.shield,
       nextAttackAtSeconds: state.nextAttackAtSeconds,
       attackCount: state.attackCount,
       threat: state.threat,
@@ -1276,6 +1303,7 @@ export class CombatEncounterState {
   ): void {
     state.hitpoints = Math.max(0, Math.min(snap.hitpoints, maxHitpoints))
     state.manapoints = Math.max(0, Math.min(snap.manapoints, maxManapoints))
+    state.shield = Math.max(0, snap.shield ?? 0)
     state.nextAttackAtSeconds = snap.nextAttackAtSeconds
     state.attackCount = snap.attackCount
     state.threat = snap.threat

@@ -262,6 +262,7 @@ internal static class CombatActionRules
             player.Resources.Hitpoints = respawnMember?.Stats.MaxHitpoints ?? player.Resources.MaxHitpoints;
             player.Resources.Manapoints = respawnMember?.Stats.MaxManapoints ?? player.Resources.MaxManapoints;
             player.Combat.Skills = PlayerCombatSkillState.Empty;
+            player.Combat.TalismanCooldowns.Clear();
             for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
                 player.Settings.AutoUseSlots[i] = player.Settings.AutoUseSlots[i] with { CooldownUntilUnixSeconds = 0 };
             player.MarkDirty(PlayerSectionKind.Settings);
@@ -1277,6 +1278,7 @@ internal static class CombatActionRules
                     entryUnix + battle.ElapsedSeconds);
             player.Combat.Skills.ApplyTo(battle.Player);
             player.Combat.Buffs.ApplyTo(battle.Player, battle.ElapsedSeconds);
+            InjectCombatOnlyActiveBuffs(player, battle.Player, entryUnix, battle.ElapsedSeconds);
         }
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
         AttachCombatStats(player, action, battle, spec, gameData);
@@ -1415,7 +1417,8 @@ internal static class CombatActionRules
                     selfUnits[targetIdx] = selfUnits[targetIdx] with
                     {
                         Hitpoints = Math.Clamp(frame.TargetHitpointsAfter, 0, selfUnits[targetIdx].Stats.MaxHitpoints),
-                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, selfUnits[targetIdx].Stats.MaxManapoints)
+                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, selfUnits[targetIdx].Stats.MaxManapoints),
+                        Shield = Math.Max(0, frame.TargetShieldAfter)
                     };
                 }
             }
@@ -1431,7 +1434,8 @@ internal static class CombatActionRules
                     opponentUnits[targetIdx] = opponentUnits[targetIdx] with
                     {
                         Hitpoints = Math.Clamp(frame.TargetHitpointsAfter, 0, opponentUnits[targetIdx].Stats.MaxHitpoints),
-                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, opponentUnits[targetIdx].Stats.MaxManapoints)
+                        Manapoints = Math.Clamp(frame.TargetManapointsAfter, 0, opponentUnits[targetIdx].Stats.MaxManapoints),
+                        Shield = Math.Max(0, frame.TargetShieldAfter)
                     };
                 }
             }
@@ -1444,7 +1448,8 @@ internal static class CombatActionRules
                 {
                     selfUnits[attackerIdx] = selfUnits[attackerIdx] with
                     {
-                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, selfUnits[attackerIdx].Stats.MaxManapoints)
+                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, selfUnits[attackerIdx].Stats.MaxManapoints),
+                        Shield = Math.Max(0, frame.AttackerShieldAfter)
                     };
                 }
             }
@@ -1456,7 +1461,8 @@ internal static class CombatActionRules
                 {
                     opponentUnits[attackerIdx] = opponentUnits[attackerIdx] with
                     {
-                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, opponentUnits[attackerIdx].Stats.MaxManapoints)
+                        Manapoints = Math.Clamp(frame.AttackerManapointsAfter, 0, opponentUnits[attackerIdx].Stats.MaxManapoints),
+                        Shield = Math.Max(0, frame.AttackerShieldAfter)
                     };
                 }
             }
@@ -1484,7 +1490,7 @@ internal static class CombatActionRules
         {
             if (frame.AbilityNameOverride == DuelScriptEvent.SustainedActivateMarker) return;
             if (frame.AbilityId is null && frame.AttackerIsInitiator == frame.TargetIsInitiator
-                && frame.AttackerUnitIndex == frame.TargetUnitIndex && frame.Damage == 0)
+                && frame.AttackerUnitIndex == frame.TargetUnitIndex && frame.Damage == 0 && frame.Healing == 0)
                 return;
             (tailCombatEvents ??= []).Add(new CombatEvent(
                 frame.AtSeconds,
@@ -1502,7 +1508,9 @@ internal static class CombatActionRules
                 AbilityNameOverride = frame.AbilityNameOverride,
                 Healing = frame.Healing,
                 AttackerManapointsAfter = frame.AttackerManapointsAfter,
-                TargetManapointsAfter = frame.TargetManapointsAfter
+                TargetManapointsAfter = frame.TargetManapointsAfter,
+                AttackerShieldAfter = frame.AttackerShieldAfter,
+                TargetShieldAfter = frame.TargetShieldAfter
             });
         }
 
@@ -1557,22 +1565,45 @@ internal static class CombatActionRules
             {
                 ApplyDuelResources(duelEvent);
                 RecordTailCombatEvent(duelEvent);
+                var itemCastEnd = i + 1;
+                var totalStrikeDamage = duelEvent.Damage;
+                var anyStrikeCrit = duelEvent.Critical;
+                while (itemCastEnd < playback.Events.Count
+                    && playback.Events[itemCastEnd].AtSeconds == duelEvent.AtSeconds
+                    && playback.Events[itemCastEnd].AbilityId == duelEvent.AbilityId
+                    && playback.Events[itemCastEnd].AttackerIsInitiator == duelEvent.AttackerIsInitiator
+                    && playback.Events[itemCastEnd].AttackerUnitIndex == duelEvent.AttackerUnitIndex
+                    && playback.Events[itemCastEnd].AbilityNameOverride == duelEvent.AbilityNameOverride)
+                {
+                    cursor = itemCastEnd + 1;
+                    var extraStrikeFrame = playback.Events[itemCastEnd];
+                    ApplyDuelResources(extraStrikeFrame);
+                    RecordTailCombatEvent(extraStrikeFrame);
+                    totalStrikeDamage += extraStrikeFrame.Damage;
+                    anyStrikeCrit |= extraStrikeFrame.Critical;
+                    itemCastEnd++;
+                }
                 var eventAt = WallAt(duelEvent.AtSeconds);
                 if (IsSelfActor(duelEvent))
                 {
                     ApplyViewerDuelInstantConsumable(player, action.Id, gameData, assetBalances,
-                        duelEvent, instantItem, instantConsumable, eventAt,
+                        totalStrikeDamage, anyStrikeCrit, instantItem, instantConsumable, eventAt,
                         eventAt.ToUnixTimeMilliseconds() / 1000d, endUnix, ref deltas, ref events);
                 }
                 else if (instantConsumable.Strike is not null)
                 {
-                    var clauses = new List<string>(1);
-                    AppendCastClause(clauses, DuelLabel(duelEvent.TargetIsInitiator, duelEvent.TargetUnitIndex), duelEvent.Hit,
-                        duelEvent.Damage, duelEvent.Healing, duelEvent.Critical, duelEvent.Break, duelEvent.Parried);
+                    var clauses = new List<string>(itemCastEnd - i);
+                    for (var j = i; j < itemCastEnd; j++)
+                    {
+                        var member = playback.Events[j];
+                        AppendCastClause(clauses, DuelLabel(member.TargetIsInitiator, member.TargetUnitIndex), member.Hit,
+                            member.Damage, member.Healing, member.Critical, member.Break, member.Parried);
+                    }
                     var builder = BeginCastMessage(DuelLabel(duelEvent.AttackerIsInitiator, duelEvent.AttackerUnitIndex), itemKey, gameData);
                     AppendCastClauses(builder, clauses);
                     AddCombatEventAt(ref events, eventAt, "combat.skill", builder.Append('。').ToString(), definition.Id);
                 }
+                i = itemCastEnd - 1;
                 continue;
             }
 
@@ -1747,7 +1778,8 @@ internal static class CombatActionRules
         Guid actionId,
         GameDataCatalog gameData,
         AssetWallet? assetBalances,
-        DuelScriptEvent duelEvent,
+        double totalStrikeDamage,
+        bool anyStrikeCrit,
         ItemDefinition item,
         ConsumableDefinition consumable,
         DateTimeOffset eventAt,
@@ -1761,6 +1793,15 @@ internal static class CombatActionRules
         if (available < 1d) return;
         AddDelta(deltas ??= new Dictionary<AssetKey, double>(), item.Id, -1d);
         player.RecordStats(actionId, eventUnix, new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
+        Dictionary<string, int>? traitLevels = null;
+        if (player.Progression.UnlockedTraits.Count > 0)
+        {
+            traitLevels = new Dictionary<string, int>(player.Progression.UnlockedTraits.Count, StringComparer.Ordinal);
+            foreach (var kv in player.Progression.UnlockedTraits)
+                traitLevels[kv.Key] = kv.Value.Level;
+        }
+        var effectiveCooldown = DeterministicCombatEngine.ResolveConsumableCooldownSeconds(
+            item, consumable, player.Progression.TraitIds, traitLevels);
         var matchIndex = -1;
         for (var s = 0; s < player.Settings.AutoUseSlots.Count; s++)
         {
@@ -1775,9 +1816,20 @@ internal static class CombatActionRules
         {
             player.Settings.AutoUseSlots[matchIndex] = player.Settings.AutoUseSlots[matchIndex] with
             {
-                CooldownUntilUnixSeconds = eventUnix + consumable.CooldownSeconds
+                CooldownUntilUnixSeconds = eventUnix + effectiveCooldown
             };
             player.MarkDirty(PlayerSectionKind.Settings);
+        }
+        else if (CombatTraitRules.CanEquipTalismanInAbilitySlot(player.Progression.TraitIds))
+        {
+            for (var aIdx = 1; aIdx < player.Loadout.AbilitySlots.Count; aIdx++)
+            {
+                if (!string.Equals(player.Loadout.AbilitySlots[aIdx].AbilityId, item.Id.Value, StringComparison.Ordinal))
+                    continue;
+                player.Combat.TalismanCooldowns[item.Id.Value] = eventUnix + effectiveCooldown;
+                player.MarkDirty(PlayerSectionKind.Combat);
+                break;
+            }
         }
         if (gameData.RawItems.TryGetValue(item.Id.Value, out var rawItem)
             && rawItem.TryGetProperty("consumable", out var rawConsumable)
@@ -1788,10 +1840,20 @@ internal static class CombatActionRules
             {
                 var buffId = buff.GetProperty("buffId").GetString()!;
                 var duration = JsonRead.Number(buff, "durationSeconds");
-                player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
-                if (duration > 0 && eventUnix + duration > endUnix)
+                var proposedExpiresAt = eventUnix + duration;
+                var mergedExpiresAt = proposedExpiresAt;
+                for (var bIdx = 0; bIdx < player.Buffs.Active.Count; bIdx++)
                 {
-                    player.Buffs.Active.Add(new(buffId, eventUnix + duration, 1,
+                    if (player.Buffs.Active[bIdx].BuffId == buffId)
+                    {
+                        mergedExpiresAt = CombatTraitRules.MergeBuffExpiry(player.Buffs.Active[bIdx].ExpiresAtUnixSeconds, proposedExpiresAt);
+                        break;
+                    }
+                }
+                player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
+                if (duration > 0 && mergedExpiresAt > endUnix)
+                {
+                    player.Buffs.Active.Add(new(buffId, mergedExpiresAt, 1,
                         JsonRead.Text(buff, "name") ?? buffId, item.Id.Value,
                         Effects: BuffEffectParser.Parse(buff, 1.0)));
                 }
@@ -1799,8 +1861,8 @@ internal static class CombatActionRules
             }
         }
         events ??= new SimulationEventTail();
-        var logText = consumable.Strike is not null
-            ? $"自动使用 {item.Name}，造成 {duelEvent.Damage:0.##} 点伤害。"
+        var logText = consumable.Strike is not null && totalStrikeDamage > 0
+            ? $"自动使用 {item.Name}，造成 {totalStrikeDamage:0.##} 点伤害{(anyStrikeCrit ? "（暴击）" : "")}。"
             : $"自动使用 {item.Name}。";
         events.Add(new SimulationEvent(eventAt, "auto-use.activated", logText,
             null, new Dictionary<ItemId, double> { [item.Id] = -1d }));
@@ -2368,6 +2430,7 @@ internal static class CombatActionRules
     /// （对齐语义同 daojie 的多目标合并战报，服务端不下发缩进字符）。</summary>
     private static void AppendCastClauses(StringBuilder builder, List<string> clauses)
     {
+        if (clauses.Count == 0) return;
         if (clauses.Count == 1)
         {
             builder.Append('，').Append(clauses[0]);
@@ -2452,6 +2515,47 @@ internal static class CombatActionRules
             recharged = true;
         }
         return recharged;
+    }
+
+    /// <summary>
+    /// 将战外持久 Buff 中仅在战内生效（OutOfCombatPanel == None，如神行符行动速度、隐身符威胁修正）的通道注入当前波次单位，
+    /// 按波次入场墙钟折算剩余秒数并以 ResetOnWave 标记（波间不沉淀进跨波战内携带态，避免与下波重注入双重计入）。
+    /// </summary>
+    private static void InjectCombatOnlyActiveBuffs(
+        IPlayerResourceContext player,
+        CombatantState unit,
+        double entryUnix,
+        double battleElapsedSeconds)
+    {
+        var activeList = player.Buffs.Active;
+        for (var i = 0; i < activeList.Count; i++)
+        {
+            var active = activeList[i];
+            var remaining = active.ExpiresAtUnixSeconds - entryUnix;
+            if (remaining <= 0 || active.Effects is not { Count: > 0 }) continue;
+            List<BuffEffect>? combatOnly = null;
+            for (var e = 0; e < active.Effects.Count; e++)
+            {
+                var effect = active.Effects[e];
+                if (BuffEffectRegistry.Info(effect.Channel).OutOfCombatPanel == BuffOutOfCombatPanel.None)
+                    (combatOnly ??= []).Add(effect);
+            }
+            if (combatOnly is null) continue;
+            var proposedExpiresAt = double.IsFinite(remaining)
+                ? battleElapsedSeconds + remaining
+                : double.PositiveInfinity;
+            var mergedExpiresAt = proposedExpiresAt;
+            for (var b = 0; b < unit.Buffs.Count; b++)
+            {
+                if (unit.Buffs[b].BuffId == active.BuffId)
+                {
+                    mergedExpiresAt = CombatTraitRules.MergeBuffExpiry(unit.Buffs[b].ExpiresAtSeconds, proposedExpiresAt);
+                    break;
+                }
+            }
+            unit.SetBuff(new CombatBuffState(active.BuffId, mergedExpiresAt, active.Stacks, active.Name,
+                ResetOnWave: true, Effects: combatOnly));
+        }
     }
 
     /// <summary>将持续消耗品的生效 Buff 注入本次遭遇：时长对齐槽位剩余时长，耗尽即自然过期。

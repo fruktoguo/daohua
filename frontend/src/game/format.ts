@@ -157,9 +157,12 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   // 等级成长与服务端 CastSkill 同式：全部数值项每级 +2.0% 线性成长。
   const levelGrowth = 1 + levelOffset * 0.02
   const damageRatio = (ability.damageRatio ?? 0) * levelGrowth
+  const maxHpDamageRatio = (ability.maxHpDamageRatio ?? 0) * levelGrowth
+  const shieldDamageRatio = (ability.shieldDamageRatio ?? 0) * levelGrowth
   const flatDamage = (ability.flatDamage ?? 0) * levelGrowth
   const healingRatio = (ability.healingRatio ?? 0) * levelGrowth
   const flatHealing = (ability.flatHealing ?? 0) * levelGrowth
+  const shieldMaxHpRatio = (ability.shieldMaxHpRatio ?? 0) * levelGrowth
   // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally），同时兼容原始配表 camelCase。
   const target = resolveAbilityTargetLabel(ability.targetType ?? 'enemy', ability.maxTargets)
   const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
@@ -173,13 +176,21 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   // 伤害/治疗构成表达式：嵌入叙述句，[[ ]] 由 ValueText 渲染为整组胶囊，
   // 标明所吃攻击属性（术法吃术法攻击、物理吃物理攻击），与服务端结算一致。
   const attackStat = t(`game.abilityDesc.attackStat.${ability.category === 'spell' ? 'spell' : 'physical'}`)
-  const composition = (ratio: number, flat: number) => {
+  const composition = (ratio: number, flat: number, extraMaxHpRatio = 0, extraShieldRatio = 0) => {
     const parts: string[] = []
     if (ratio !== 0) parts.push(`[[${abilityRatioPercent(ratio)}${attackStat}]]`)
+    if (extraMaxHpRatio !== 0) {
+      const prefix = parts.length > 0 ? '+' : ''
+      parts.push(`[[${prefix}${abilityRatioPercent(extraMaxHpRatio)}${t('game.abilityDesc.maxHpStat')}]]`)
+    }
+    if (extraShieldRatio !== 0) {
+      const prefix = parts.length > 0 ? '+' : ''
+      parts.push(`[[${prefix}${abilityRatioPercent(extraShieldRatio)}${t('game.abilityDesc.consumedShieldStat')}]]`)
+    }
     if (flat !== 0) parts.push(`[[+${formatNumber(flat)}]]`)
     return parts.length > 0 ? `${parts.join(' ')} ` : ''
   }
-  const damageExpr = composition(damageRatio, flatDamage)
+  const damageExpr = composition(damageRatio, flatDamage, maxHpDamageRatio, shieldDamageRatio)
   const healExpr = composition(healingRatio, flatHealing)
 
   // 效果叙述主句：按效果类型一次性写清目标、数值与伤害类别。
@@ -299,7 +310,14 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   } else if (damageExpr) {
     clauses.push(hitCount > 1
       ? t('game.abilityDesc.effectMultiHit', { target, count: hitCount, expr: damageExpr, damageKind })
+      : ability.consumeAllShield
+      ? t('game.abilityDesc.effectConsumeShieldDamage', { target, expr: damageExpr, damageKind })
       : t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind }))
+  } else if (shieldMaxHpRatio > 0) {
+    clauses.push(t('game.abilityDesc.effectShieldMaxHp', { ratio: abilityRatioPercent(shieldMaxHpRatio) }))
+    if (buffSpecs.length > 0) {
+      clauses.push(buffApplicationClause())
+    }
   } else if (hasRanhunAttach) {
     clauses.push(
       `${t('game.abilityDesc.buffApplySingle', {
@@ -327,7 +345,24 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   } else {
     clauses.push(t('game.abilityDesc.effectBuff', { target }))
   }
-  // 机制附加子句：连击中止条件与击杀连锁与主句连成同一段，不另起配置行。
+  // 机制附加子句：引导受击叠层、消耗层数增伤、连击中止条件与击杀连锁与主句连成同一段，不另起配置行。
+  if (ability.channelingAttackedBuff) {
+    const chanBuff = ability.channelingAttackedBuff
+    const chanLabel = buffLabel(chanBuff, 0, 1)
+    clauses.push(t('game.abilityDesc.channelingAttackedBuffClause', {
+      buff: chanLabel,
+      n: formatNumber(chanBuff.durationSeconds ?? 5),
+    }))
+  }
+  if ((ability.consumeBuffExtraDamagePerStack ?? 0) > 0 && ability.consumeBuffId) {
+    const cName = ability.channelingAttackedBuff?.buffId === ability.consumeBuffId && ability.channelingAttackedBuff.name
+      ? ability.channelingAttackedBuff.name
+      : resolveTriggerBuffName(ability.consumeBuffId)
+    clauses.push(t('game.abilityDesc.consumeBuffExtraDamageClause', {
+      buff: `[[${cName}]]`,
+      ratio: abilityRatioPercent(ability.consumeBuffExtraDamagePerStack!),
+    }))
+  }
   if (hitCount > 1) {
     clauses.push(t('game.abilityDesc.multiHitEnd'))
   }
@@ -381,12 +416,15 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const description = ability.description ? `${ability.description}\n${effectSentence}` : effectSentence
 
   // 主卡片只保留四项基础战斗消耗与冷却行；涉及 Buff 的详细数值加成与机制统一由独立 Buff 副窗展示。
+  const costLine = (ability.hpCostMaxHpRatio ?? 0) > 0 && (ability.manaCost ?? 0) <= 0
+    ? t('game.abilityDesc.hpCostMaxHp', { n: abilityRatioPercent(ability.hpCostMaxHpRatio!) })
+    : t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost ?? 0) })
   const lines = [
     t('game.abilityDesc.level', { n: normalizedLevel }),
     // 配表字段可缺省，服务端按 0 处理，前端同口径。
     t('game.abilityDesc.cooldownTime', { n: ((ability.cooldownMilliseconds ?? 0) / 1000).toFixed(1) }),
     t('game.abilityDesc.castTime', { n: ((ability.castMilliseconds ?? 0) / 1000).toFixed(1) }),
-    t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost ?? 0) }),
+    costLine,
   ]
   return {
     title: ability.name,

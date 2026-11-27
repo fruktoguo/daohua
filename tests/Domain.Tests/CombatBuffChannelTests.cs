@@ -168,7 +168,7 @@ public sealed class CombatBuffChannelTests
     }
 
     /// <summary>
-    /// 麻痹与势不可挡新通道门禁：ParryPostRatio 为 Instance 且豁免成长并折叠入 EffectiveStats.ParryResolve；
+    /// 麻痹与势不可挡新通道门禁：ParryPostRatio / EvasionPostRatio 为 PerStack 且豁免成长，按反比例软着陆公式折算入 EffectiveStats；
     /// DecayStacksPerSecond 标记为 Tick1s 驱动 1 秒自然边界并逐秒扣层至 0 自动移除。
     /// </summary>
     [Fact]
@@ -176,7 +176,7 @@ public sealed class CombatBuffChannelTests
     {
         var parryInfo = BuffEffectRegistry.Info(BuffEffectChannel.ParryPostRatio);
         Assert.Equal("parryPostRatio", parryInfo.ConfigKey);
-        Assert.Equal(BuffEffectStackMode.Instance, parryInfo.StackMode);
+        Assert.Equal(BuffEffectStackMode.PerStack, parryInfo.StackMode);
         Assert.False(parryInfo.GrowsWithLevel);
         Assert.Equal(BuffEffectTickGroup.None, parryInfo.TickGroup);
 
@@ -187,7 +187,7 @@ public sealed class CombatBuffChannelTests
         Assert.Equal(BuffEffectTickGroup.Tick1s, decayInfo.TickGroup);
 
         using var mabiSpec = System.Text.Json.JsonDocument.Parse(
-            """{"buffId":"buff.mabi","name":"麻痹","durationSeconds":5.0,"maxStacks":1,"evasionPostRatio":-0.2,"parryPostRatio":-0.2,"actionSpeedPoints":-10.0}""");
+            """{"buffId":"buff.mabi","name":"麻痹","durationSeconds":5.0,"maxStacks":99,"evasionPostRatio":-0.2,"parryPostRatio":-0.2,"actionSpeedPoints":-10.0}""");
         var mabiParsed = BuffEffectParser.Parse(mabiSpec.RootElement, effectGrowth: 3.0);
         Assert.Equal(-0.2, mabiParsed!.Single(e => e.Channel == BuffEffectChannel.ParryPostRatio).Value, 12);
         Assert.Equal(-0.2, mabiParsed!.Single(e => e.Channel == BuffEffectChannel.EvasionPostRatio).Value, 12);
@@ -199,8 +199,12 @@ public sealed class CombatBuffChannelTests
         var unit = new CombatantState("defender",
             CombatantStats.Create(1000, 50, 10, 2, accuracy: 100, evasion: 50) with { ParryResolve = 80 });
         unit.AddBuff(new CombatBuffState("buff.mabi", ExpiresAtSeconds: 5.0, Stacks: 1, Name: "麻痹", ResetOnWave: true, Effects: mabiParsed));
-        Assert.Equal(40.0, unit.EffectiveStats.Evasion, 12);
-        Assert.Equal(64.0, unit.EffectiveStats.ParryResolve, 12);
+        Assert.Equal(50.0 / 1.2, unit.EffectiveStats.Evasion, 12);
+        Assert.Equal(80.0 / 1.2, unit.EffectiveStats.ParryResolve, 12);
+
+        unit.SetBuff(new CombatBuffState("buff.mabi", ExpiresAtSeconds: 5.0, Stacks: 5, Name: "麻痹", ResetOnWave: true, Effects: mabiParsed));
+        Assert.Equal(25.0, unit.EffectiveStats.Evasion, 12);
+        Assert.Equal(40.0, unit.EffectiveStats.ParryResolve, 12);
 
         unit.RemoveBuffsWhere(_ => true);
         unit.AddBuff(new CombatBuffState("buff.shibukedang", ExpiresAtSeconds: 5.0, Stacks: 5, Name: "势不可挡", ResetOnWave: true, Effects: sbkdEffects));

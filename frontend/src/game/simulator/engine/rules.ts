@@ -54,6 +54,8 @@ export function parseDamageKind(value: string | null | undefined): CombatDamageK
   return CombatDamageKind.Physical
 }
 
+export const TECHNIQUE_SUBCATEGORY_TALISMAN = 'talisman'
+
 export const CombatMonsterRank = {
   Minion: 0,
   Elite: 1,
@@ -79,6 +81,7 @@ export const AutoUseBar = {
 
 export const SlotGroupGeneral = 'general'
 export const SlotGroupPotion = 'potion'
+export const SlotGroupAbility = 'ability'
 
 export const ItemCategories = {
   Material: 'material',
@@ -146,6 +149,8 @@ export const BuffEffectChannel = {
   FireSpellDamagePerSecond: 19,
   ParryPostRatio: 20,
   DecayStacksPerSecond: 21,
+  AttackPowerPostRatio: 22,
+  CriticalPostRatio: 23,
 } as const
 export type BuffEffectChannel = (typeof BuffEffectChannel)[keyof typeof BuffEffectChannel]
 
@@ -181,13 +186,15 @@ export const BUFF_CHANNELS: readonly BuffEffectChannelInfo[] = [
   { channel: BuffEffectChannel.ResistancePoints, configKey: 'resistancePoints', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.ThreatPoints, configKey: 'threatPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.Evasion, configKey: 'evasion', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
-  { channel: BuffEffectChannel.EvasionPostRatio, configKey: 'evasionPostRatio', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.EvasionPostRatio, configKey: 'evasionPostRatio', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.ActionSpeedPoints, configKey: 'actionSpeedPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.CriticalDamagePoints, configKey: 'criticalDamagePoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.HealingBonusPoints, configKey: 'healingBonusPoints', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.FireSpellDamagePerSecond, configKey: 'fireSpellDamagePerSecond', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: true, tickGroup: BuffEffectTickGroup.Tick1s, outOfCombatPanel: BuffOutOfCombatPanel.None },
-  { channel: BuffEffectChannel.ParryPostRatio, configKey: 'parryPostRatio', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.ParryPostRatio, configKey: 'parryPostRatio', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
   { channel: BuffEffectChannel.DecayStacksPerSecond, configKey: 'decayStacksPerSecond', stackMode: BuffEffectStackMode.Instance, growsWithLevel: false, tickGroup: BuffEffectTickGroup.Tick1s, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.AttackPowerPostRatio, configKey: 'attackPowerPostRatio', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
+  { channel: BuffEffectChannel.CriticalPostRatio, configKey: 'criticalPostRatio', stackMode: BuffEffectStackMode.PerStack, growsWithLevel: false, tickGroup: BuffEffectTickGroup.None, outOfCombatPanel: BuffOutOfCombatPanel.None },
 ]
 
 export const BUFF_CHANNEL_BY_KEY = new Map<string, BuffEffectChannelInfo>(
@@ -614,7 +621,7 @@ export function weakenMonsterStats(stats: CombatantStats, weakenRatio: number): 
   }
 }
 
-// ---------- 特质规则（38 项注册表 + 机制函数） ----------
+// ---------- 特质规则（47 项注册表 + 机制函数） ----------
 
 export const TraitIds = {
   Unseen: 'trait.bukandaowo',
@@ -627,7 +634,34 @@ export const TraitIds = {
   Ranhun: 'trait.ranhun',
   Jianyuxin: 'trait.jianyuxin',
   Huoshen: 'trait.huoshen',
+  Zhenfadashi: 'trait.zhenfadashi',
+  Fufaji: 'trait.fufaji',
+  Fufapozhen: 'trait.fufapozhen',
+  Fufatiangang: 'trait.fufatiangang',
+  Fufatianming: 'trait.fufatianming',
+  Yangjianshu: 'trait.yangjianshu',
+  Cangfeng: 'trait.cangfeng',
+  Xueqihuadun: 'trait.xueqihuadun',
+  Shanshenbu: 'trait.shanshenbu',
 } as const
+
+/** 普通属性后段百分比修饰软着陆（正乘 1+r，负除 1/(1-r)）。 */
+export function postSoftRatio(ratio: number): number {
+  return ratio >= 0 ? 1 + ratio : 1 / (1 - ratio)
+}
+
+/** 同源不固定时长 Buff 到期时间保高不降合并。 */
+export function mergeBuffExpiry(
+  existingExpiresAt: number | undefined | null,
+  proposedExpiresAt: number,
+): number {
+  return existingExpiresAt !== undefined &&
+    existingExpiresAt !== null &&
+    existingExpiresAt < BATTLE_LIFETIME_SECONDS &&
+    proposedExpiresAt < BATTLE_LIFETIME_SECONDS
+    ? Math.max(existingExpiresAt, proposedExpiresAt)
+    : proposedExpiresAt
+}
 
 /** 解析携带「火神」特质后的实际伤害五行属性（仅覆写/附加元素，不改变伤害大类）。 */
 export function resolveDamageElement(
@@ -635,6 +669,52 @@ export function resolveDamageElement(
   baseElement: CombatElement,
 ): CombatElement {
   return containsTrait(traits, TraitIds.Huoshen) ? CombatElement.Fire : baseElement
+}
+
+/** 解析符箓冷却加速点数（符法·疾：基础 400 点即冷却减少 80%，每级 +5% 线性成长）。 */
+export function talismanCooldownSpeedPoints(
+  traits: readonly string[] | null | undefined,
+  traitLevels?: Record<string, number> | null,
+): number {
+  if (!containsTrait(traits, TraitIds.Fufaji)) return 0
+  const lv = traitLevels ? Math.max(1, traitLevels[TraitIds.Fufaji] ?? 1) : 1
+  return 400.0 * (1.0 + 0.05 * (lv - 1))
+}
+
+/** 解析符箓灵力消耗倍率（符法·疾：消耗提升 300% 即变为 400%，负面代价锁定不变）。 */
+export function talismanManaCostMultiplier(traits: readonly string[] | null | undefined): number {
+  return containsTrait(traits, TraitIds.Fufaji) ? 4.0 : 1.0
+}
+
+/** 判断符箓是否可触发暴击（符法·破阵）。 */
+export function canTalismanCrit(traits: readonly string[] | null | undefined): boolean {
+  return containsTrait(traits, TraitIds.Fufapozhen)
+}
+
+/** 判断主动术法槽位是否允许装配符箓（符法·天命）。 */
+export function canEquipTalismanInAbilitySlot(traits: readonly string[] | null | undefined): boolean {
+  return containsTrait(traits, TraitIds.Fufatianming)
+}
+
+/** 解析「闪身步」内置触发冷却（基础 3.0s，随等级按反比例曲线缩短，20 级缩至 1.5s）。 */
+export function shanshenbuCooldownSeconds(
+  traits: readonly string[] | null | undefined,
+  traitLevels?: Record<string, number> | null,
+): number {
+  if (!containsTrait(traits, TraitIds.Shanshenbu)) return Number.POSITIVE_INFINITY
+  const rawLv = traitLevels ? (traitLevels[TraitIds.Shanshenbu] ?? 1) : 1
+  const lv = clamp(Math.trunc(rawLv), 1, 20)
+  return 3.0 / (1.0 + (lv - 1) / 19.0)
+}
+
+/** 解析「血气化盾」超出 20% 最大生命部分转化为护盾的比例（Lv1 为 100%，每级 +5%）。 */
+export function xueqihuadunConversionRatio(
+  traits: readonly string[] | null | undefined,
+  traitLevels?: Record<string, number> | null,
+): number {
+  if (!containsTrait(traits, TraitIds.Xueqihuadun)) return 0
+  const lv = traitLevels ? Math.max(1, traitLevels[TraitIds.Xueqihuadun] ?? 1) : 1
+  return 1.0 + 0.05 * (lv - 1)
 }
 
 export const BuffIds = {
@@ -646,6 +726,10 @@ export const BuffIds = {
   Haste: 'buff.yusuzebuda',
   Outnumbered: 'buff.woyaodashige',
   DuelKing: 'buff.dantiaowang',
+  Jianyi: 'buff.jianyi',
+  Tiangang: 'buff.tiangang',
+  Mabi: 'buff.mabi',
+  Shenxing: 'buff.shenxing',
 } as const
 
 export const BATTLE_LIFETIME_SECONDS = Number.MAX_VALUE
@@ -706,6 +790,15 @@ const TRAIT_LIST: TraitDefinition[] = [
   { id: TraitIds.Ranhun, name: '燃魂', quality: 5, cost: 16 },
   { id: TraitIds.Jianyuxin, name: '剑与心', quality: 5, cost: 12, statRatios: { physicalAttack: 0.05, spellAttack: 0.05 } },
   { id: TraitIds.Huoshen, name: '火神', quality: 5, cost: 12, points: { fireDamageBonusPoints: 10 } },
+  { id: TraitIds.Zhenfadashi, name: '阵法大师', quality: 5, cost: 16, points: { formationDamageBonusPoints: 200, skillBonusPoints: -500, basicAttackBonusPoints: -500 } },
+  { id: TraitIds.Fufaji, name: '符法·疾', quality: 5, cost: 16, points: { skillBonusPoints: -500, basicAttackBonusPoints: -500 } },
+  { id: TraitIds.Fufapozhen, name: '符法·破阵', quality: 4, cost: 12, statRatios: { criticalChance: 0.10 }, points: { criticalDamageBonusPoints: 10 } },
+  { id: TraitIds.Fufatiangang, name: '符法·天罡', quality: 3, cost: 8, points: { talismanDamageBonusPoints: 30 } },
+  { id: TraitIds.Fufatianming, name: '符法·天命', quality: 5, cost: 16, points: { talismanDamageBonusPoints: 10 } },
+  { id: TraitIds.Yangjianshu, name: '养剑术', quality: 5, cost: 16 },
+  { id: TraitIds.Cangfeng, name: '藏锋', quality: 4, cost: 12, points: { skillBonusPoints: 20 } },
+  { id: TraitIds.Xueqihuadun, name: '血气化盾', quality: 6, cost: 20 },
+  { id: TraitIds.Shanshenbu, name: '闪身步', quality: 5, cost: 15 },
 ]
 
 export const ALL_TRAITS = new Map<string, TraitDefinition>(TRAIT_LIST.map((t) => [t.id, t]))

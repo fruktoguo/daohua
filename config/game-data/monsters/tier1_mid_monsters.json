@@ -126,6 +126,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.gangqi-huti",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.gangqi-huti",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [

@@ -245,6 +245,7 @@ public sealed class CombatFactTracker
     {
         public double Hp;
         public double Mana;
+        public double Shield;
         public bool Alive;
         public int BuffCount;
         public int PermanentBuffCount;
@@ -325,7 +326,7 @@ public sealed class CombatFactTracker
             var prev = snapshots[i];
             // 引用不同（新单位/新实例）视为全通道翻转，杜绝对象复用误判。
             if (!ReferenceEquals(prev.Stats, snap.Stats)) ch |= UnitChannel.Stats | UnitChannel.Hp | UnitChannel.Mana;
-            if (prev.Hp != snap.Hp) ch |= UnitChannel.Hp;
+            if (prev.Hp != snap.Hp || prev.Shield != snap.Shield) ch |= UnitChannel.Hp;
             if (prev.Mana != snap.Mana) ch |= UnitChannel.Mana;
             if (prev.Alive != snap.Alive) ch |= UnitChannel.Alive | UnitChannel.Hp;
             if (prev.Threat != snap.Threat) ch |= UnitChannel.Threat;
@@ -367,6 +368,7 @@ public sealed class CombatFactTracker
         {
             Hp = unit.Hitpoints,
             Mana = unit.Manapoints,
+            Shield = unit.Shield,
             Alive = unit.IsAlive,
             BuffCount = buffs.Count,
             PermanentBuffCount = permanentCount,

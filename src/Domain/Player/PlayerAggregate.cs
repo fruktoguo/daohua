@@ -474,6 +474,8 @@ public sealed class PlayerCombatState
     public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
     /// <summary>战内 Buff 跨波携带态：整场战斗行动存续期间随波次清空折算携带，行动结束统一移除。</summary>
     public PlayerCombatBuffState Buffs { get; set; } = PlayerCombatBuffState.Empty;
+    /// <summary>主动术法槽装配符箓的独立冷却截止时刻（itemId -> Unix 秒；配合「符法·天命」全栏同名互斥）。</summary>
+    public Dictionary<string, double> TalismanCooldowns { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -698,8 +700,12 @@ public sealed record AutoUseSlotState(
     public const string SlotGroupGeneral = "general";
     /// <summary>药品栏：仅限药品类即时消耗品；仅战斗物品栏域有效。</summary>
     public const string SlotGroupPotion = "potion";
+    /// <summary>主动术法槽符箓组：携带「符法·天命」时 1~3 号主动术法槽装配的符箓。</summary>
+    public const string SlotGroupAbility = "ability";
     /// <summary>战斗物品栏域槽位总数（药品栏 3 + 通用栏 3）。</summary>
     public const int CombatSlotCount = Domain.GameData.AutoUseBar.DefaultSlotCount * 2;
+    /// <summary>战斗物品栏域与主动术法槽符箓合并上限（药品 3 + 通用 3 + 主动术法槽 3）。</summary>
+    public const int MaxCombatAndAbilitySlotCount = CombatSlotCount + 3;
 }
 
 /// <summary>
@@ -1638,6 +1644,14 @@ public sealed partial class PlayerAggregate
                     };
                     clearedDuplicate = true;
                 }
+            }
+            // 全栏同名符箓互斥：自动使用槽装入某符箓时，若主动术法槽中也装有同名符箓，自动将其卸下。
+            for (var aIdx = 1; aIdx < Loadout.AbilitySlots.Count; aIdx++)
+            {
+                if (!string.Equals(Loadout.AbilitySlots[aIdx].AbilityId, itemId, StringComparison.Ordinal)) continue;
+                Loadout.AbilitySlots[aIdx] = new PlayerAbilitySlot(null, 1);
+                Touch(PlayerSectionKind.Loadout);
+                clearedDuplicate = true;
             }
         }
         if (unchanged && !clearedDuplicate) return;

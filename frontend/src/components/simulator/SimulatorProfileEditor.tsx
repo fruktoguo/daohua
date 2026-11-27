@@ -121,7 +121,11 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
     ?? id, [equipmentCatalog, items])
 
   const abilityName = useCallback((id: string | null) =>
-    id ? (abilities.find(a => a.abilityId === id)?.name ?? id) : t('combat.simulator.emptySlot'), [abilities, t])
+    id
+      ? (id.startsWith('item.')
+          ? (items.find(i => i.itemId === id)?.name ?? id)
+          : (abilities.find(a => a.abilityId === id)?.name ?? id))
+      : t('combat.simulator.emptySlot'), [abilities, items, t])
 
   const patch = useCallback((partial: Partial<SimulatorProfileDto>) => onChange({ ...member, ...partial }), [member, onChange])
 
@@ -151,11 +155,18 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
       .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name)),
   [items])
 
+  const slottedTalismanIds = useMemo(() => new Set(
+    (member.abilitySlots ?? [])
+      .map(s => s.abilityId)
+      .filter((id): id is string => Boolean(id && id.startsWith('item.'))),
+  ), [member.abilitySlots])
+
   const consumablePickerItems = useCallback((group: 'potion' | 'general'): ItemPickerEntry[] =>
     combatEligibleConsumables.filter(entry =>
-      group !== 'potion' || (entry.definition?.subCategory === 'pill' && !entry.definition?.isContinuous)
+      (group !== 'potion' || (entry.definition?.subCategory === 'pill' && !entry.definition?.isContinuous))
+      && !slottedTalismanIds.has(entry.itemId),
     ),
-  [combatEligibleConsumables])
+  [combatEligibleConsumables, slottedTalismanIds])
 
   // 无限制沙盒：全量列出部位匹配装备，不限制境界或背包持有
   const equipmentPickerItems = useCallback((match: readonly EquipmentSlot[]): ItemPickerEntry[] =>
@@ -230,18 +241,29 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
     Object.values(TRAIT_DEFINITIONS).sort((a, b) => b.quality - a.quality || a.cost - b.cost || a.id.localeCompare(b.id)),
   [])
 
-  // 无限制沙盒：特质自由装卸，不受道韵容量与解锁限制
+  // 无限制沙盒：特质自由装卸，不受道韵容量与解锁限制；卸下「符法·天命」时自动卸除术法槽内的符箓
   const toggleTrait = useCallback((id: string) => {
     const ids = member.traitIds ?? []
     if (ids.includes(id)) {
-      patch({ traitIds: ids.filter(x => x !== id) })
+      const partial: Partial<SimulatorProfileDto> = { traitIds: ids.filter(x => x !== id) }
+      if (id === 'trait.fufatianming') {
+        if (member.abilitySlots) {
+          partial.abilitySlots = member.abilitySlots.map((s, idx) =>
+            idx > 0 && s.abilityId?.startsWith('item.') ? { abilityId: null, level: 1 } : s,
+          )
+        }
+        if (member.combatAutoUseSlots?.some(s => s.group === 'ability')) {
+          partial.combatAutoUseSlots = member.combatAutoUseSlots.filter(s => s.group !== 'ability')
+        }
+      }
+      patch(partial)
       return
     }
     const partial: Partial<SimulatorProfileDto> = { traitIds: [...ids, id] }
     if (!unlockedMap.has(id))
       partial.unlockedTraits = [...(member.unlockedTraits ?? []), { id, level: 1, exp: 0 }]
     patch(partial)
-  }, [member.traitIds, member.unlockedTraits, patch, unlockedMap])
+  }, [member.abilitySlots, member.traitIds, member.unlockedTraits, patch, unlockedMap])
 
   const updateTraitLevel = useCallback((id: string, level: number) => {
     const existing = member.unlockedTraits ?? []
@@ -293,36 +315,53 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
     if (partial.abilityId !== undefined) {
       const pickedId = partial.abilityId
       if (pickedId) {
+        const isTalisman = pickedId.startsWith('item.')
         const dupIdx = next.findIndex((s, j) => j !== i && s.abilityId === pickedId)
         if (dupIdx >= 0 && dupIdx > 0 && i > 0) {
-          // 功法若已在另一法术槽装配，则交换位置，避免产生重复槽位校验错误
+          // 功法或符箓若已在另一法术槽装配，则交换位置，避免产生重复槽位校验错误
           const dupLevel = next[dupIdx].level
           next[dupIdx] = { abilityId: prevSlot.abilityId, level: prevSlot.level }
           next[i] = {
             abilityId: pickedId,
-            level: partial.level ?? Math.max(1, Math.min(127, dupLevel || calculateAbilityLevelAndProgress(nextExpMap[pickedId] ?? 0).level)),
+            level: isTalisman ? 1 : (partial.level ?? Math.max(1, Math.min(127, dupLevel || calculateAbilityLevelAndProgress(nextExpMap[pickedId] ?? 0).level))),
           }
         } else {
-          const savedLevel = calculateAbilityLevelAndProgress(nextExpMap[pickedId] ?? 0).level
+          const savedLevel = isTalisman ? 1 : calculateAbilityLevelAndProgress(nextExpMap[pickedId] ?? 0).level
           next[i] = {
             abilityId: pickedId,
-            level: partial.level ?? Math.max(1, Math.min(127, savedLevel || 1)),
+            level: isTalisman ? 1 : (partial.level ?? Math.max(1, Math.min(127, savedLevel || 1))),
           }
         }
       } else {
         next[i] = { abilityId: null, level: 1 }
       }
-    } else if (partial.level !== undefined) {
+    } else if (partial.level !== undefined && !prevSlot.abilityId?.startsWith('item.')) {
       const safeLevel = Math.max(1, Math.min(127, partial.level))
       next[i] = { ...prevSlot, level: safeLevel }
     }
     const target = next[i]
-    if (target.abilityId) {
+    if (target.abilityId && !target.abilityId.startsWith('item.')) {
       if (target.level <= 1) delete nextExpMap[target.abilityId]
       else nextExpMap[target.abilityId] = getAbilityCumulativeExpForLevel(target.level)
     }
-    patch({ abilitySlots: next, abilityExperiences: nextExpMap })
-  }, [abilitySlots, member.abilityExperiences, patch])
+    let nextCombatAutoUse = member.combatAutoUseSlots
+    if (partial.abilityId !== undefined && partial.abilityId?.startsWith('item.') && nextCombatAutoUse) {
+      // 主动术法槽装配符箓时，与战斗消耗品栏同物品互斥
+      nextCombatAutoUse = nextCombatAutoUse.map(s =>
+        s.group !== 'ability' && s.itemId === partial.abilityId ? { ...s, itemId: null, enabled: false } : s,
+      )
+    }
+    if (nextCombatAutoUse?.some(s => s.group === 'ability' && next[s.slotIndex]?.abilityId !== s.itemId)) {
+      nextCombatAutoUse = nextCombatAutoUse.filter(
+        s => s.group !== 'ability' || next[s.slotIndex]?.abilityId === s.itemId,
+      )
+    }
+    const patchPayload: Partial<SimulatorProfileDto> = { abilitySlots: next, abilityExperiences: nextExpMap }
+    if (nextCombatAutoUse !== member.combatAutoUseSlots) {
+      patchPayload.combatAutoUseSlots = nextCombatAutoUse
+    }
+    patch(patchPayload)
+  }, [abilitySlots, member.abilityExperiences, member.combatAutoUseSlots, patch])
 
   const consumableSlots = useMemo(() => {
     const real = member.combatAutoUseSlots ?? []
@@ -347,8 +386,18 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
     const next = [...real]
     if (idx >= 0) next[idx] = merged
     else next.push(merged)
-    patch({ combatAutoUseSlots: next })
-  }, [consumableSlots, member.combatAutoUseSlots, patch])
+    const patchPayload: Partial<SimulatorProfileDto> = { combatAutoUseSlots: next }
+    if (merged.itemId && member.abilitySlots?.some((s, sIdx) => sIdx > 0 && s.abilityId === merged.itemId)) {
+      const nextAbSlots = member.abilitySlots.map((s, sIdx) =>
+        sIdx > 0 && s.abilityId === merged.itemId ? { abilityId: null, level: 1 } : s,
+      )
+      patchPayload.abilitySlots = nextAbSlots
+      patchPayload.combatAutoUseSlots = next.filter(
+        s => s.group !== 'ability' || nextAbSlots[s.slotIndex]?.abilityId === s.itemId,
+      )
+    }
+    patch(patchPayload)
+  }, [consumableSlots, member.abilitySlots, member.combatAutoUseSlots, patch])
 
   const respawnTargets = allMembers.filter((m, i) => i !== index && m.sourcePlayerId)
   const slottedAbilitiesCount = abilitySlots.filter(s => s.abilityId !== null).length
@@ -896,11 +945,76 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
               <div className="combat-slot-grid combat-slot-grid--abilities">
                 {abilitySlots.slice(0, ABILITY_SLOT_COUNT).map((slot, i) => {
                   const isInternal = i === 0
-                  const ability = slot.abilityId ? abilities.find(a => a.abilityId === slot.abilityId) : undefined
-                  const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
+                  const isTalismanSlot = !isInternal && Boolean(slot.abilityId?.startsWith('item.'))
                   const slotTypeTag = isInternal
                     ? t('app.combatPanel.slotInternal')
                     : t('app.combatPanel.slotSpell', { n: i })
+
+                  if (isTalismanSlot && slot.abilityId) {
+                    const talismanId = slot.abilityId
+                    const talismanDef = items.find(it => it.itemId === talismanId)
+                    const displayMeta = resolveCatalogItemMetadata(talismanId, {
+                      itemDefinition: talismanDef,
+                      name: itemName(talismanId),
+                      category: talismanDef?.subCategory ?? talismanDef?.category ?? 'talisman',
+                      glyph: '符',
+                      tone: 'gold',
+                      t,
+                    })
+                    const talismanName = itemName(talismanId)
+                    const activeTriggers = resolveActiveTriggers('consumable', talismanId)
+                    const triggerCount = activeTriggers.length
+                    return (
+                      <div
+                        className={`conditioned-tile combat-slot-card${abilityAnchor?.slot === i ? ' is-picking' : ''}`}
+                        key={i}
+                      >
+                        <ItemTooltipTarget
+                          className="combat-ability-slot-shell"
+                          definition={talismanDef}
+                          itemId={talismanId}
+                          metadata={displayMeta}
+                          tabIndex={-1}
+                        >
+                          <button
+                            aria-label={t('app.combatPanel.currentAbilityAria', { name: talismanName })}
+                            className="combat-ability-slot is-spell-slot"
+                            disabled={disabled}
+                            onClick={e => {
+                              const anchor = e.currentTarget
+                              setAbilityAnchor(prev => prev?.slot === i ? null : { el: anchor, slot: i })
+                            }}
+                            type="button"
+                          >
+                            <span className="abilities-slot-tag-badge">{slotTypeTag}</span>
+                            <ItemTile
+                              category={resolveItemCategoryLabel(talismanDef?.subCategory ?? talismanDef?.category ?? 'talisman', t)}
+                              className="combat-ability-cell"
+                              itemId={talismanId}
+                              level={displayMeta.level}
+                              name={talismanName}
+                              rarity={displayMeta.rarity}
+                            />
+                          </button>
+                        </ItemTooltipTarget>
+                        <button
+                          aria-label={t('app.combatPanel.editTriggersAria', { name: talismanName, count: triggerCount })}
+                          className={`item-slot-inline-action item-slot-inline-action--condition${triggerCount > 0 ? ' has-triggers' : ''}`}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setTriggerTarget({ kind: 'consumable', key: talismanId })
+                          }}
+                          title={t('app.combatPanel.editTriggersTitle')}
+                          type="button"
+                        >
+                          {t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' })}
+                        </button>
+                      </div>
+                    )
+                  }
+
+                  const ability = slot.abilityId ? abilities.find(a => a.abilityId === slot.abilityId) : undefined
+                  const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
                   const ribbonLabel = isInternal
                     ? t('app.combatPanel.internalRibbon')
                     : t('app.combatPanel.spellRibbon')
@@ -984,6 +1098,8 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
             {abilitySlots.slice(0, ABILITY_SLOT_COUNT).map((slot, i) => {
               const isInternal = i === 0
               const abilityId = slot.abilityId
+              const isTalisman = Boolean(abilityId?.startsWith('item.'))
+              const triggerKind: 'ability' | 'consumable' = isTalisman ? 'consumable' : 'ability'
               return (
                 <div key={i} className={`sim-ability-level-row ${isInternal ? 'is-internal' : ''}`}>
                   <span className="sim-skill-slot-badge">
@@ -1000,45 +1116,47 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
                   </button>
                   {abilityId && (
                     <>
-                      <div className="sim-stepper">
-                        <span className="sim-skill-level-label">{t('combat.simulator.abilityLevelLabel')}</span>
-                        <button
-                          type="button"
-                          className="sim-stepper-btn"
-                          disabled={disabled || slot.level <= 1}
-                          onClick={() => writeAbilitySlot(i, { level: Math.max(1, slot.level - 1) })}
-                          aria-label="-"
-                        >-</button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={127}
-                          step={1}
-                          disabled={disabled}
-                          className="sim-input sim-skill-level-input"
-                          value={slot.level}
-                          onChange={e => {
-                            const v = integerOr(e.target.value, -1)
-                            if (v >= 1 && v <= 127) writeAbilitySlot(i, { level: v })
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="sim-stepper-btn"
-                          disabled={disabled || slot.level >= 127}
-                          onClick={() => writeAbilitySlot(i, { level: Math.min(127, slot.level + 1) })}
-                          aria-label="+"
-                        >+</button>
-                      </div>
+                      {!isTalisman && (
+                        <div className="sim-stepper">
+                          <span className="sim-skill-level-label">{t('combat.simulator.abilityLevelLabel')}</span>
+                          <button
+                            type="button"
+                            className="sim-stepper-btn"
+                            disabled={disabled || slot.level <= 1}
+                            onClick={() => writeAbilitySlot(i, { level: Math.max(1, slot.level - 1) })}
+                            aria-label="-"
+                          >-</button>
+                          <input
+                            type="number"
+                            min={1}
+                            max={127}
+                            step={1}
+                            disabled={disabled}
+                            className="sim-input sim-skill-level-input"
+                            value={slot.level}
+                            onChange={e => {
+                              const v = integerOr(e.target.value, -1)
+                              if (v >= 1 && v <= 127) writeAbilitySlot(i, { level: v })
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="sim-stepper-btn"
+                            disabled={disabled || slot.level >= 127}
+                            onClick={() => writeAbilitySlot(i, { level: Math.min(127, slot.level + 1) })}
+                            aria-label="+"
+                          >+</button>
+                        </div>
+                      )}
                       {!isInternal && (
                         <button
                           type="button"
                           disabled={disabled}
-                          className={`sim-condition-pill-btn${resolveActiveTriggers('ability', abilityId).length > 0 ? ' has-triggers' : ''}`}
-                          onClick={() => setTriggerTarget({ kind: 'ability', key: abilityId })}
-                          title={resolveTriggerSummary('ability', abilityId)}
+                          className={`sim-condition-pill-btn${resolveActiveTriggers(triggerKind, abilityId).length > 0 ? ' has-triggers' : ''}`}
+                          onClick={() => setTriggerTarget({ kind: triggerKind, key: abilityId })}
+                          title={resolveTriggerSummary(triggerKind, abilityId)}
                         >
-                          {resolveTriggerSummary('ability', abilityId)}
+                          {resolveTriggerSummary(triggerKind, abilityId)}
                         </button>
                       )}
                       <button
@@ -1240,6 +1358,14 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
       {abilityAnchor && (() => {
         const currentAbilityId = abilitySlots[abilityAnchor.slot]?.abilityId ?? null
         const canEditCond = Boolean(currentAbilityId && abilityAnchor.slot > 0)
+        const currentTriggerKind: 'ability' | 'consumable' = currentAbilityId?.startsWith('item.') ? 'consumable' : 'ability'
+        const pickerTalismans = traitIdSet.has('trait.fufatianming') && abilityAnchor.slot > 0
+          ? items.filter(it =>
+              it.category === 'consumable'
+              && it.subCategory === 'talisman'
+              && (it.usableBars ?? []).includes('combat')
+              && !consumableSlots.some(cs => cs.itemId === it.itemId))
+          : undefined
         return (
           <AbilityGridPicker
             open
@@ -1247,6 +1373,7 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
             anchor={abilityAnchor.el}
             title={t('combat.simulator.pickAbility')}
             abilities={abilities}
+            talismanItems={pickerTalismans}
             abilityExperiences={null}
             slotIndex={abilityAnchor.slot}
             levelFor={id => {
@@ -1255,10 +1382,10 @@ export const SimulatorProfileEditor = memo(function SimulatorProfileEditor({
               const exp = member.abilityExperiences?.[id]
               return exp !== undefined ? calculateAbilityLevelAndProgress(exp).level : 1
             }}
-            triggerCount={canEditCond && currentAbilityId ? resolveActiveTriggers('ability', currentAbilityId).length : 0}
+            triggerCount={canEditCond && currentAbilityId ? resolveActiveTriggers(currentTriggerKind, currentAbilityId).length : 0}
             onEditCondition={canEditCond && currentAbilityId ? () => {
               setAbilityAnchor(null)
-              setTriggerTarget({ kind: 'ability', key: currentAbilityId })
+              setTriggerTarget({ kind: currentTriggerKind, key: currentAbilityId })
             } : undefined}
             value={currentAbilityId}
             onClose={() => setAbilityAnchor(null)}

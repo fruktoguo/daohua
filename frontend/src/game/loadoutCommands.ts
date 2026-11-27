@@ -12,9 +12,10 @@ import type { CombatLoadout } from './types'
  * 必须经由此函数发送，不得自行拼装 loadout.replace 载荷。
  */
 export function sendLoadoutReplace(patch: Partial<CombatLoadout>): void {
-  const { combat, abilities } = useGameStore.getState()
+  const { combat, abilities, stats } = useGameStore.getState()
   if (!combat) return
+  const allowTalismans = stats?.traitIds?.includes('trait.fufatianming') ?? false
   const merged = { ...combat, ...patch }
-  merged.abilitySlots = normalizeAbilitySlots(merged.abilitySlots, abilities, merged.abilityExperiences)
+  merged.abilitySlots = normalizeAbilitySlots(merged.abilitySlots, abilities, merged.abilityExperiences, allowTalismans)
   gameClient.sendCommand('loadout.replace', merged)
 }

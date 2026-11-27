@@ -42,6 +42,7 @@ public static class StaticGameCatalogMapper
             var stackableSlotCount = hasConsumable ? ReadInt(consumable, "stackableSlotCount", 0) : 0;
             var uniqueEffectType = hasConsumable ? ReadInt(consumable, "uniqueEffectType", 0) : 0;
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
+            var manaCostRatio = hasConsumable ? ReadDouble(consumable, "manaCostRatio", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
             // 出厂默认触发条件：玩家未配置该物品条件时的回退值；键存在即覆盖（含空数组），前端据此区分三态。
@@ -51,14 +52,23 @@ public static class StaticGameCatalogMapper
                 : [];
             // durable 持续消耗品：部署后不消耗不耗竭、槽位持有即生效。
             var durable = hasConsumable && ReadBool(consumable, "durable", false);
-            // strike 即时打击（雷击符）：耗蓝代价 + 蓝量/法攻折算的木系法术一击。
+            // strike 即时打击（雷击符/剑符/怒焰符/定神符）：耗蓝代价 + 物理/术法/状态折算一击。
             var strike = hasConsumable && consumable.TryGetProperty("strike", out var strikeElement) && strikeElement.ValueKind == JsonValueKind.Object
                 ? new
                 {
                     manaCostRatio = ReadDouble(strikeElement, "manaCostRatio", 0),
                     manaDamageRatio = ReadDouble(strikeElement, "manaDamageRatio", 0),
                     spellAttackRatio = ReadDouble(strikeElement, "spellAttackRatio", 0),
-                    element = ReadString(strikeElement, "element")
+                    physicalAttackRatio = ReadDouble(strikeElement, "physicalAttackRatio", 0),
+                    flatDamage = ReadDouble(strikeElement, "flatDamage", 0),
+                    damageKind = ReadString(strikeElement, "damageKind", "spell"),
+                    targetType = ReadString(strikeElement, "targetType", "enemy"),
+                    ranhunSpellAttackRatio = ReadDouble(strikeElement, "ranhunSpellAttackRatio", 0),
+                    ranhunBaseStacks = ReadDouble(strikeElement, "ranhunBaseStacks", 0),
+                    element = ReadString(strikeElement, "element"),
+                    onHitBuff = strikeElement.TryGetProperty("onHitBuff", out var ohb) && ohb.ValueKind == JsonValueKind.Object
+                        ? (JsonElement?)ohb.Clone()
+                        : null
                 }
                 : null;
 
@@ -80,7 +90,9 @@ public static class StaticGameCatalogMapper
                     evasion = ReadDouble(b, "evasion", 0),
                     evasionPostRatio = ReadDouble(b, "evasionPostRatio", 0),
                     attackSpeedPoints = ReadDouble(b, "attackSpeedPoints", 0),
-                    damageAbsorptionPoints = ReadDouble(b, "damageAbsorptionPoints", 0)
+                    actionSpeedPoints = ReadDouble(b, "actionSpeedPoints", 0),
+                    damageAbsorptionPoints = ReadDouble(b, "damageAbsorptionPoints", 0),
+                    threatPoints = ReadDouble(b, "threatPoints", 0)
                 }).ToArray()
                 : [];
 
@@ -107,6 +119,7 @@ public static class StaticGameCatalogMapper
                 stackableSlotCount,
                 uniqueEffectType,
                 cooldownSeconds,
+                manaCostRatio,
                 hitpointRestore,
                 manapointRestore,
                 durable,

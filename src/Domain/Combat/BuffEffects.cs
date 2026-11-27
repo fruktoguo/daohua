@@ -80,10 +80,14 @@ public enum BuffEffectChannel : byte
     HealingBonusPoints = 18,
     /// <summary>每层每秒火属性术法威力。</summary>
     FireSpellDamagePerSecond = 19,
-    /// <summary>化解后段乘区比率（Instance 型，正增负削，最终乘算 1+Σ 不随层数/技能等级放大）。</summary>
+    /// <summary>化解后段乘区比率（PerStack 型，走 SoftRatio 软着陆，正增负削）。</summary>
     ParryPostRatio = 20,
     /// <summary>每秒自动递减层数（Instance 型，Tick1s 结算后每 1 秒减去对应整数层，≤0 时移除）。</summary>
-    DecayStacksPerSecond = 21
+    DecayStacksPerSecond = 21,
+    /// <summary>物理攻击后段乘区比率（PerStack 型，走 SoftRatio 软着陆，如剑意每层 +30%）。</summary>
+    AttackPowerPostRatio = 22,
+    /// <summary>暴击点数后段乘区比率（PerStack 型，走 SoftRatio 软着陆，如剑意每层 +30%）。</summary>
+    CriticalPostRatio = 23
 }
 
 /// <summary>Buff 效果载荷条目：通道 + 每层基础值（Instance 型通道为总值）。</summary>
@@ -147,7 +151,7 @@ public static class BuffEffectRegistry
         new(BuffEffectChannel.Evasion, "evasion",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.EvasionPostRatio, "evasionPostRatio",
-            BuffEffectStackMode.Instance, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+            BuffEffectStackMode.PerStack, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.ActionSpeedPoints, "actionSpeedPoints",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.CriticalDamagePoints, "criticalDamagePoints",
@@ -157,9 +161,13 @@ public static class BuffEffectRegistry
         new(BuffEffectChannel.FireSpellDamagePerSecond, "fireSpellDamagePerSecond",
             BuffEffectStackMode.PerStack, true, BuffEffectTickGroup.Tick1s, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.ParryPostRatio, "parryPostRatio",
-            BuffEffectStackMode.Instance, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+            BuffEffectStackMode.PerStack, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
         new(BuffEffectChannel.DecayStacksPerSecond, "decayStacksPerSecond",
             BuffEffectStackMode.Instance, false, BuffEffectTickGroup.Tick1s, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.AttackPowerPostRatio, "attackPowerPostRatio",
+            BuffEffectStackMode.PerStack, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
+        new(BuffEffectChannel.CriticalPostRatio, "criticalPostRatio",
+            BuffEffectStackMode.PerStack, false, BuffEffectTickGroup.None, BuffOutOfCombatPanel.None),
     ];
 
     private static readonly BuffEffectChannelInfo[] ChannelIndex = BuildChannelIndex();

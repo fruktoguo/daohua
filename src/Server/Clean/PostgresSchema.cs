@@ -99,8 +99,9 @@ public static class PostgresSchema
     /// v69：符箓与阵法技艺每级提升 1% 对应伤害（CombatantStats 新增 talismanDamageBonusPoints/formationDamageBonusPoints，均可缺省解码为 0；存档标签推进至 v49，无 DDL 变更）。
     /// v70：对弈独立同道子页与八阶全局匹配（移除 social.parties.doudizhu_stake 与 party_members.doudizhu_ready，social.doudizhu_games 改为 game_id 主键并记录 tier/player_ids/dismissed_by；存档标签保持 v49 不变）。
     /// v71：双阵营完全对称战斗与 1~5v1~5 多方斗法协议（actionQueue 斗法回放 DuelScriptEvent 新增 attackerUnitIndex/targetUnitIndex、DuelPlaybackState 新增 selfUnitIndex/selfUnits/opponentUnits，均可缺省解码；存档标签推进至 v50，无 DDL 变更）。
+    /// v72：新战斗流派特质、护盾、三门神通与六符矩阵（actionQueue 战斗快照新增 shield/lastShanshenbuTriggerAtSeconds/lastDirectDamageAtSeconds、combat 分段新增 talismanCooldowns，均可缺省解码；存档标签推进至 v51，无 DDL 变更）。
     /// </summary>
-    public const int Version = 71;
+    public const int Version = 72;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -1064,7 +1065,7 @@ public static class PostgresSchema
     INSERT INTO platform.schema_version(version, applied_at)
     VALUES (19, now()), (20, now()), (21, now()), (22, now()), (23, now()), (24, now()),
         (25, now()), (26, now()), (27, now()), (28, now()), (29, now()), (30, now()), (31, now()), (32, now()), (33, now()), (34, now()), (35, now()), (36, now()), (37, now()), (38, now()),
-        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now()), (69, now()), (70, now()), (71, now())
+        (39, now()), (40, now()), (41, now()), (42, now()), (43, now()), (44, now()), (45, now()), (46, now()), (47, now()), (48, now()), (49, now()), (50, now()), (51, now()), (52, now()), (53, now()), (54, now()), (55, now()), (56, now()), (57, now()), (58, now()), (59, now()), (60, now()), (61, now()), (62, now()), (63, now()), (64, now()), (65, now()), (66, now()), (67, now()), (68, now()), (69, now()), (70, now()), (71, now()), (72, now())
     ON CONFLICT (version) DO NOTHING;
     """;
 }

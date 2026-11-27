@@ -111,7 +111,7 @@ test('特质描述：双刃剑特质升级时正向增益提升，负面惩罚�
 
 
 test('机制特质：等级成长只提升收益，固定惩罚与持续时间不变', () => {
-  assert.equal(Object.keys(TRAIT_DEFINITIONS).length, 38)
+  assert.equal(Object.keys(TRAIT_DEFINITIONS).length, 47)
   assert.match(formatTraitDescription('trait.chujian', 3), /330%，持续 2 秒/)
   assert.match(formatTraitDescription('trait.yusuzebuda', 3), /110%，伤害与治疗增幅各降低 100 点/)
   assert.match(formatTraitDescription('trait.woyaodashige', 3), /11 点/)
@@ -129,4 +129,22 @@ test('机制特质：等级成长只提升收益，固定惩罚与持续时间�
   assert.match(formatTraitDescription('trait.huoshen', 1), /火属性增伤提升 10%/)
   assert.match(formatTraitDescription('trait.huoshen', 2), /火属性增伤提升 10\.5%/)
   assert.match(formatTraitDescription('trait.huoshen', 3), /火属性增伤提升 11%/)
+
+  // 9 项新流派特质（阵法、符修、蓄剑、护盾卖血、闪避移形）
+  assert.match(formatTraitDescription('trait.zhenfadashi', 2), /阵法伤害提升 210%，技能与普攻增幅各降低 500 点/)
+  assert.match(formatTraitDescription('trait.fufaji', 2), /符箓冷却加速 420 点（冷却时间缩短 80\.77%），符箓灵力消耗变为 400%，技能与普攻增幅各降低 500 点/)
+  assert.match(formatTraitDescription('trait.fufapozhen', 3), /暴击提升 11%、暴击伤害提升 11 点/)
+  assert.equal(TRAIT_DEFINITIONS['trait.fufatiangang'].quality, 3)
+  assert.equal(TRAIT_DEFINITIONS['trait.fufatiangang'].cost, 8)
+  assert.match(formatTraitDescription('trait.fufatiangang', 3), /符箓伤害提升 33%/)
+  assert.match(formatTraitDescription('trait.fufatianming', 3), /符箓伤害提升 11%/)
+  assert.match(formatTraitDescription('trait.yangjianshu', 3), /物理攻击提升 33%、暴击提升 33%、暴击伤害提升 33 点/)
+  assert.match(formatTraitDescription('trait.cangfeng', 3), /技能增幅提升 22%/)
+  assert.equal(TRAIT_DEFINITIONS['trait.xueqihuadun'].quality, 6)
+  assert.equal(TRAIT_DEFINITIONS['trait.xueqihuadun'].cost, 20)
+  assert.match(formatTraitDescription('trait.xueqihuadun', 3), /超出 20% 最大生命值.*按 110% 转化为战内永久护盾/)
+  assert.equal(TRAIT_DEFINITIONS['trait.shanshenbu'].quality, 5)
+  assert.equal(TRAIT_DEFINITIONS['trait.shanshenbu'].cost, 15)
+  assert.match(formatTraitDescription('trait.shanshenbu', 1), /每 3 秒最多触发一次/)
+  assert.match(formatTraitDescription('trait.shanshenbu', 20), /每 1\.5 秒最多触发一次/)
 })

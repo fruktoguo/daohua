@@ -419,7 +419,49 @@ public sealed partial class PlayerAggregate
             AbilityTriggers: abilityTriggers, ConsumableTriggers: consumableTriggers));
         Loadout.EquippedItemIds.Clear();
         Loadout.EquippedItemIds.AddRange(equipment.Select(item => new ItemId(item.ItemId)));
+        // 主动术法槽装入符箓时，自动清空普通自动使用栏中的同名符箓槽位（全栏同名互斥）。
+        var settingsCleared = false;
+        for (var i = 1; i < abilities.Count; i++)
+        {
+            var slotId = abilities[i].AbilityId;
+            if (slotId is null || !slotId.StartsWith("item.", StringComparison.Ordinal)) continue;
+            for (var s = 0; s < Settings.AutoUseSlots.Count; s++)
+            {
+                var autoSlot = Settings.AutoUseSlots[s];
+                if (!string.Equals(autoSlot.ItemId, slotId, StringComparison.Ordinal)) continue;
+                Settings.AutoUseSlots[s] = autoSlot with
+                {
+                    ItemId = null,
+                    Enabled = false,
+                    RemainingDurationSeconds = 0,
+                    CooldownUntilUnixSeconds = 0
+                };
+                settingsCleared = true;
+            }
+        }
+        if (settingsCleared) Touch(PlayerSectionKind.Settings);
         Touch(PlayerSectionKind.Loadout);
         Touch(PlayerSectionKind.Combat);
+    }
+
+    /// <summary>当玩家未装配「符法·天命」时，自动清退主动术法槽内已装配的符箓物品。</summary>
+    public bool ReconcileTalismanAbilitySlots()
+    {
+        if (Domain.Combat.CombatTraitRules.CanEquipTalismanInAbilitySlot(Progression.TraitIds))
+            return false;
+        var changed = false;
+        for (var i = 1; i < Loadout.AbilitySlots.Count; i++)
+        {
+            var id = Loadout.AbilitySlots[i].AbilityId;
+            if (id is null || !id.StartsWith("item.", StringComparison.Ordinal)) continue;
+            Loadout.AbilitySlots[i] = new PlayerAbilitySlot(null, 1);
+            changed = true;
+        }
+        if (changed)
+        {
+            Touch(PlayerSectionKind.Loadout);
+            Touch(PlayerSectionKind.Combat);
+        }
+        return changed;
     }
 }

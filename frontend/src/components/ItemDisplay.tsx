@@ -1,5 +1,5 @@
 import { memo, type ReactNode, useCallback } from 'react'
-import { calculateRealmInfo } from '../game/combatConstants'
+import { calculateRealmInfo, getTraitLevelScale } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory, formatExactNumber, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { readableEntityName, resolveAssetName, resolveEntityName, resolveLocalizedEntityName } from '../game/entityNames'
@@ -508,24 +508,93 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
-  // 即时打击规格（符箓）：祭出耗灵一击，伤害 = 最大灵力×manaDamageRatio + 术法攻击×spellAttackRatio
+  const combatAttributes = useGameStore.getState().combatAttributes
+  const isTalisman = definition.subCategory === 'talisman'
+  const talismanBonusPts = isTalisman ? (combatAttributes?.talismanDamageBonusPoints ?? 0) : 0
+  const talismanScale = Math.max(0, 1 + talismanBonusPts / 100)
+  const hasFufaji = isTalisman && Boolean(combatAttributes?.traits?.includes('trait.fufaji'))
+  const fufajiLevel = hasFufaji ? Math.max(1, combatAttributes?.traitLevels?.['trait.fufaji'] ?? 1) : 1
+  const fufajiManaMult = hasFufaji ? 4 : 1
+
+  // 即时打击规格（符箓）：支持雷击符（灵力+术攻）、剑符（物攻+固定）、怒焰符（群体燃烧）、定神符（附带麻痹）
   if (definition.strike) {
     const strike = definition.strike
+    if ((strike.physicalAttackRatio ?? 0) > 0 || (strike.flatDamage ?? 0) > 0) {
+      lines.push(
+        <PillBonusLabel
+          key="item-strike"
+          label={t('market.effect.strikePhysDamage', { element: t(`combat.encounter.element.${strike.element}`) })}
+          tone="crimson"
+          value={t('market.effect.strikePhysDamageFormula', {
+            ad: formatNumber((strike.physicalAttackRatio ?? 0) * 100 * talismanScale, { maxDecimals: 1 }),
+            flat: formatNumber((strike.flatDamage ?? 0) * talismanScale, { maxDecimals: 1 }),
+          })}
+        />,
+      )
+    } else if (strike.manaDamageRatio > 0 || strike.spellAttackRatio > 0) {
+      lines.push(
+        <PillBonusLabel
+          key="item-strike"
+          label={t('market.effect.strikeDamage', { element: t(`combat.encounter.element.${strike.element}`) })}
+          tone="crimson"
+          value={t('market.effect.strikeDamageFormula', {
+            ap: formatNumber(strike.spellAttackRatio * 100 * talismanScale, { maxDecimals: 1 }),
+            mana: formatNumber(strike.manaDamageRatio * 100 * talismanScale, { maxDecimals: 1 }),
+          })}
+        />,
+      )
+    }
+    if ((strike.ranhunSpellAttackRatio ?? 0) > 0 || (strike.ranhunBaseStacks ?? 0) > 0) {
+      const scaledApPct = formatNumber((strike.ranhunSpellAttackRatio ?? 0) * 100 * talismanScale, { maxDecimals: 1 })
+      const scaledBase = formatNumber((strike.ranhunBaseStacks ?? 0) * talismanScale, { maxDecimals: 1 })
+      const liveAp = combatAttributes?.spellAttack ?? 0
+      const liveStacks = liveAp > 0
+        ? Math.max(1, Math.floor(((strike.ranhunSpellAttackRatio ?? 0) * liveAp + (strike.ranhunBaseStacks ?? 0)) * talismanScale + 1e-9))
+        : 0
+      lines.push(
+        <PillBonusLabel
+          key="item-strike-ranhun"
+          label={t('market.effect.strikeRanhunApply')}
+          tone="crimson"
+          value={liveStacks > 0
+            ? t('market.effect.strikeRanhunFormulaLive', { ap: scaledApPct, base: scaledBase, cur: formatNumber(liveStacks) })
+            : t('market.effect.strikeRanhunFormula', { ap: scaledApPct, base: scaledBase })}
+        />,
+      )
+    }
+    if (strike.onHitBuff) {
+      const ohb = strike.onHitBuff
+      const ohbName = ohb.buffId ? resolveLocalizedEntityName(t, 'buff', ohb.buffId, ohb.name) : (ohb.name ?? '')
+      lines.push(
+        <PillBonusLabel
+          key="item-strike-debuff"
+          label={t('market.effect.strikeDebuffApply')}
+          tone="amber"
+          value={t('market.effect.strikeDebuffValue', {
+            name: ohbName,
+            stacks: formatNumber(ohb.baseStacks ?? 1),
+            seconds: formatNumber(ohb.durationSeconds ?? 5),
+          })}
+        />,
+      )
+    }
+    if (strike.manaCostRatio > 0) {
+      lines.push(
+        <PillBonusLabel
+          key="item-strike-cost"
+          label={t('market.effect.strikeCost')}
+          tone="cyan"
+          value={`${formatNumber(strike.manaCostRatio * fufajiManaMult * 100, { maxDecimals: 1 })}%`}
+        />,
+      )
+    }
+  } else if ((definition.manaCostRatio ?? 0) > 0) {
     lines.push(
       <PillBonusLabel
-        key="item-strike"
-        label={t('market.effect.strikeDamage', { element: t(`combat.encounter.element.${strike.element}`) })}
-        tone="crimson"
-        value={t('market.effect.strikeDamageFormula', {
-          ap: formatNumber(strike.spellAttackRatio * 100, { maxDecimals: 0 }),
-          mana: formatNumber(strike.manaDamageRatio * 100, { maxDecimals: 0 }),
-        })}
-      />,
-      <PillBonusLabel
-        key="item-strike-cost"
+        key="item-mana-cost"
         label={t('market.effect.strikeCost')}
         tone="cyan"
-        value={`${formatNumber(strike.manaCostRatio * 100, { maxDecimals: 1 })}%`}
+        value={`${formatNumber((definition.manaCostRatio ?? 0) * fufajiManaMult * 100, { maxDecimals: 1 })}%`}
       />,
     )
   }
@@ -646,12 +715,16 @@ export function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     )
   }
   if (definition.cooldownSeconds > 0) {
+    const fufajiCdPts = hasFufaji ? 400 * getTraitLevelScale(fufajiLevel) : 0
+    const effectiveCd = fufajiCdPts > 0
+      ? definition.cooldownSeconds * (100 / (100 + fufajiCdPts))
+      : definition.cooldownSeconds
     lines.push(
       <PillBonusLabel
         key="item-cd"
         label={t('market.effect.cooldown')}
         tone="slate"
-        value={`${formatNumber(definition.cooldownSeconds)}s`}
+        value={`${formatNumber(effectiveCd, { maxDecimals: 1 })}s`}
       />
     )
   }
@@ -1102,17 +1175,19 @@ export function extractBuffBonusItems(buff: {
       value: t('market.effect.formationScopeTeam'),
     })
   }
-  // 1. 效果通道载荷：层数承载通道按层数折算当前总加成（与结算口径一致），
+  // 1. 效果通道载荷：层数承载通道按层数折算当前总加成（与结算口径一致；移形闪避后段倍率按实例生效不随层数放大），
   // tone 按折算后正负取注册表声明的正/负色调。
   for (const effect of buff.effects ?? []) {
     if (effect.value === 0 || !isBuffEffectChannel(effect.channel)) continue
     const info = BUFF_CHANNELS[effect.channel]
-    const displayValue = info.perStack ? effect.value * stacks : effect.value
+    const isSingleYixingEvasion = buff.buffId === 'buff.yixing' && effect.channel === 'evasionPostRatio'
+    const effectiveStacks = isSingleYixingEvasion ? 1 : stacks
+    const displayValue = info.perStack && !isSingleYixingEvasion ? effect.value * effectiveStacks : effect.value
     items.push({
       glyph: info.glyph,
       label: t(info.labelKey),
       tone: (displayValue < 0 ? info.negativeTone : info.positiveTone) as PillTone,
-      value: formatBuffChannelValue(info, effect.value, stacks, buff.isPerStack),
+      value: formatBuffChannelValue(info, effect.value, effectiveStacks, isSingleYixingEvasion ? false : buff.isPerStack),
     })
   }
 
@@ -1502,7 +1577,7 @@ export function resolveItemAsideCards(
     )
   }
 
-  // 4. 战斗丹药与阵法附带的 Buff 效果 (如止血散、顺气丸、迷踪阵)
+  // 4. 战斗丹药与阵法附带的 Buff 效果 (如止血散、顺气丸、迷踪阵、神行符、隐身符)
   for (const buff of definition.buffEffects ?? []) {
     // 天雷阵盘与血煞阵盘机制已在主卡片自身内部完整展示，不在此生成右侧增益副气泡
     if (buff.buffId === 'formation.tianlei' || buff.buffId === 'formation.xuesha') {
@@ -1519,6 +1594,49 @@ export function resolveItemAsideCards(
         tone: 'gold',
         items,
       })
+    )
+  }
+
+  // 4b. 即时打击符箓附加的战内减益副卡（如定神符附带麻痹、怒焰符附带燃烧）
+  if (definition.strike?.onHitBuff) {
+    const ohb = definition.strike.onHitBuff
+    const ohbEffects = specToBuffEffects(ohb as unknown as Record<string, number | undefined>, 1)
+    const ohbItems = extractBuffBonusItems({
+      buffId: ohb.buffId,
+      name: ohb.name,
+      effects: ohbEffects,
+      stacks: 1,
+      isPerStack: (ohb.baseStacks ?? 1) > 1,
+    })
+    cards.push(
+      createStandaloneBuffAsideCard({
+        id: `aside-strike-debuff-${definition.itemId}-${ohb.buffId || 'debuff'}`,
+        name: ohb.buffId ? resolveLocalizedEntityName(t, 'buff', ohb.buffId, ohb.name) : (ohb.name || t('market.aside.debuff')),
+        kind: 'debuff',
+        durationSeconds: ohb.durationSeconds ?? 5,
+        refreshOnStack: true,
+        items: ohbItems,
+      }),
+    )
+  }
+  if ((definition.strike?.ranhunBaseStacks ?? 0) > 0 || (definition.strike?.ranhunSpellAttackRatio ?? 0) > 0) {
+    const ranhunName = t('combat.trigger.buff.ranhun')
+    const ranhunItems = extractBuffBonusItems({
+      buffId: 'buff.ranhun',
+      name: ranhunName,
+      effects: [{ channel: 'fireSpellDamagePerSecond', value: 1 }],
+      stacks: 1,
+      isPerStack: true,
+    })
+    cards.push(
+      createStandaloneBuffAsideCard({
+        id: `aside-strike-ranhun-${definition.itemId}`,
+        name: ranhunName,
+        kind: 'debuff',
+        durationSeconds: 5,
+        refreshOnStack: true,
+        items: ranhunItems,
+      }),
     )
   }
 

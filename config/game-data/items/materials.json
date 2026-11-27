@@ -333,6 +333,165 @@
     "level": 1
   },
   {
+    "id": "item.shenxing-talisman",
+    "name": "神行符",
+    "description": "符贴双足起清风。\n以晨露调和朱砂绘就的轻身灵符，激发后清风缠足，身法出手迅捷轻灵。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 212,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "manaCostRatio": 0.05,
+      "triggers": [
+        {
+          "dependency": "self",
+          "condition": "buff-stacks",
+          "comparator": "equal",
+          "value": 0,
+          "buffId": "buff.shenxing"
+        }
+      ],
+      "buffs": [
+        {
+          "buffId": "buff.shenxing",
+          "name": "神行",
+          "durationSeconds": 60,
+          "actionSpeedPoints": 10
+        }
+      ]
+    },
+    "subCategory": "talisman",
+    "level": 6
+  },
+  {
+    "id": "item.dingshen-talisman",
+    "name": "定神符",
+    "description": "黄纸敕令锁神魂。\n古法勾勒锁神咒印的黄纸灵符，祭出直镇敌首泥丸，令其手足麻木、招架滞涩。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 1,
+    "sellPrice": 228,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.05,
+        "element": "none",
+        "onHitBuff": {
+          "buffId": "buff.mabi",
+          "name": "麻痹",
+          "durationSeconds": 5,
+          "baseStacks": 5,
+          "maxStacks": 99,
+          "resetOnWave": true,
+          "noLevelGrowth": true,
+          "evasionPostRatio": -0.2,
+          "parryPostRatio": -0.2,
+          "actionSpeedPoints": -10
+        }
+      }
+    },
+    "subCategory": "talisman",
+    "level": 10
+  },
+  {
+    "id": "item.jian-talisman",
+    "name": "剑符",
+    "description": "寸纸封藏三尺锋。\n封入一缕庚金锐利剑气的杀伐灵符，祭出时符纸化作白虹剑芒，一击洞穿金铁。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 580,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.1,
+        "damageKind": "physical",
+        "physicalAttackRatio": 3.2,
+        "flatDamage": 30,
+        "element": "metal"
+      }
+    },
+    "subCategory": "talisman",
+    "level": 18
+  },
+  {
+    "id": "item.nuyan-talisman",
+    "name": "怒焰符",
+    "description": "赤符焚空降火云。\n揉入灵禽赤羽精粹绘成的烈焰灵符，祭出后漫天火雨覆压敌群，引燃蚀骨业火。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 612,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.1,
+        "targetType": "allEnemies",
+        "element": "fire",
+        "ranhunBaseStacks": 10,
+        "ranhunSpellAttackRatio": 0.1
+      }
+    },
+    "subCategory": "talisman",
+    "level": 18
+  },
+  {
+    "id": "item.yinshen-talisman",
+    "name": "隐身符",
+    "description": "敛息匿影遁虚空。\n以伴灵清露调墨秘制的匿踪灵符，贴身激发即可隐去周身气机形迹，令群敌无从锁定。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 692,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "manaCostRatio": 0.1,
+      "triggers": [
+        {
+          "dependency": "self",
+          "condition": "buff-stacks",
+          "comparator": "equal",
+          "value": 0,
+          "buffId": "buff.yinshen"
+        }
+      ],
+      "buffs": [
+        {
+          "buffId": "buff.yinshen",
+          "name": "隐身",
+          "durationSeconds": 10,
+          "threatPoints": -100
+        }
+      ]
+    },
+    "subCategory": "talisman",
+    "level": 20
+  },
+  {
     "id": "item.juling-formation-disk",
     "name": "聚灵阵盘",
     "description": "阵盘方寸聚灵潮。\n桃木晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入全队人体内。",

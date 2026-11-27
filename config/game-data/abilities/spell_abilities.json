@@ -271,7 +271,7 @@
       "buffId": "buff.mabi",
       "name": "麻痹",
       "durationSeconds": 5.0,
-      "maxStacks": 1,
+      "maxStacks": 99,
       "resetOnWave": true,
       "noLevelGrowth": true,
       "evasionPostRatio": -0.2,

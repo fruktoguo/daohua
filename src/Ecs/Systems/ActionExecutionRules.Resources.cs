@@ -83,6 +83,22 @@ internal static partial class ActionExecutionRules
             naturalStep = Math.Min(naturalStep, untilCooldown);
             step = Math.Min(step, untilCooldown);
         }
+        if (player.Combat.TalismanCooldowns.Count > 0
+            && CombatTraitRules.CanEquipTalismanInAbilitySlot(player.Progression.TraitIds))
+        {
+            var abilitySlots = player.Loadout.AbilitySlots;
+            for (var i = 1; i < abilitySlots.Count; i++)
+            {
+                if (abilitySlots[i].AbilityId is { } talismanId
+                    && player.Combat.TalismanCooldowns.TryGetValue(talismanId, out var talismanCdUntil)
+                    && talismanCdUntil > nowUnix)
+                {
+                    var untilTalismanCd = SecondsUntilUnixBoundary(now, nowUnix, talismanCdUntil);
+                    naturalStep = Math.Min(naturalStep, untilTalismanCd);
+                    step = Math.Min(step, untilTalismanCd);
+                }
+            }
+        }
         // 暂存区最早到期时刻并入自然边界：模拟窗口正好切在结算点，与 Buff 到期同一调度口径。
         if (player.Duel.ActiveDuelId is null && player.Duel.StagedItems.Count > 0)
         {
@@ -353,7 +369,18 @@ internal static partial class ActionExecutionRules
         var anyEnabled = false;
         for (var i = 0; i < slots.Count; i++)
             if (slots[i].Enabled) { anyEnabled = true; break; }
-        if (!anyEnabled) return [];
+        var activeTraitsForSlotCheck = player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat, PlayerState: { } cps }
+            ? cps.Traits.Ids
+            : player.Progression.TraitIds;
+        var allowAbilityTalismans = CombatTraitRules.CanEquipTalismanInAbilitySlot(activeTraitsForSlotCheck);
+        var anyAbilityTalisman = false;
+        if (allowAbilityTalismans)
+        {
+            for (var i = 1; i < player.Loadout.AbilitySlots.Count; i++)
+                if (player.Loadout.AbilitySlots[i].AbilityId is { } aid && aid.StartsWith("item.", StringComparison.Ordinal))
+                { anyAbilityTalisman = true; break; }
+        }
+        if (!anyEnabled && !anyAbilityTalisman) return [];
         // 存活战斗态直取：战斗边界收尾回调经 liveState 传入正在推进的遭遇，绕开 TryReuse
         // 的文档时钟守卫——窗口中段行动文档快照天然滞后于内存态，守卫失配只是「尚未回写」
         // 而非真错位；守卫仍保留给跨步复用场景，live 未持会话时退回文档快照路径。
@@ -370,29 +397,51 @@ internal static partial class ActionExecutionRules
         CombatantState? evalTarget = null;
         List<CombatantState>? evalAllies = null;
         List<CombatantState>? evalEnemies = null;
-        for (var i = 0; i < slots.Count; i++)
+        var totalCandidateCount = slots.Count + (anyAbilityTalisman ? Math.Max(0, player.Loadout.AbilitySlots.Count - 1) : 0);
+        for (var i = 0; i < totalCandidateCount; i++)
         {
-            var slot = slots[i];
-            if (!slot.Enabled || slot.ItemId is null || actionBarId is null
-                || !string.Equals(slot.ActionType, actionBarId, StringComparison.OrdinalIgnoreCase)
-                || slot.CooldownUntilUnixSeconds > now) continue;
-            var id = new ItemId(slot.ItemId);
-            var item = catalog.Items[id];
+            var isAbilityTalismanSlot = i >= slots.Count;
+            AutoUseSlotState slot = default!;
+            string? slotItemId;
+            double slotCooldownUntil;
+            if (!isAbilityTalismanSlot)
+            {
+                slot = slots[i];
+                if (!slot.Enabled || slot.ItemId is null || actionBarId is null
+                    || !string.Equals(slot.ActionType, actionBarId, StringComparison.OrdinalIgnoreCase)
+                    || slot.CooldownUntilUnixSeconds > now) continue;
+                slotItemId = slot.ItemId;
+                slotCooldownUntil = slot.CooldownUntilUnixSeconds;
+            }
+            else
+            {
+                if (!string.Equals(actionBarId, Domain.GameData.AutoUseBar.Combat, StringComparison.OrdinalIgnoreCase)) continue;
+                var abilitySlotIdx = i - slots.Count + 1;
+                slotItemId = player.Loadout.AbilitySlots[abilitySlotIdx].AbilityId;
+                if (slotItemId is null || !slotItemId.StartsWith("item.", StringComparison.Ordinal)) continue;
+                slotCooldownUntil = player.Combat.TalismanCooldowns.GetValueOrDefault(slotItemId);
+                if (slotCooldownUntil > now) continue;
+            }
+            var id = new ItemId(slotItemId);
+            if (!id.IsValid || !catalog.Items.TryGetValue(id, out var item)) continue;
+            if (isAbilityTalismanSlot && !string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
+                continue;
             if (item.Consumable is not { IsContinuous: false, Durable: false } definition
-                || !definition.UsableInBars.Contains(actionBarId)
+                || !definition.UsableInBars.Contains(actionBarId!)
                 || !catalog.RawItems[id.Value].TryGetProperty("consumable", out var raw)) continue;
             // 消耗品使用条件与技能共用同一套触发判定模型；玩家自定义条件按物品 ID 覆盖配表默认。
             var triggers = Domain.Combat.ConsumableTriggerResolver.Resolve(id.Value, definition,
                 player.Loadout.ConsumableTriggers);
             // 订阅索引门控：边界增量未翻转本槽订阅事实时跳过——含「外部视图」兜底位与
-            // 雷击符灵力门槛通道，保证钱包脏/面板刷新/蓝量跨越仍能唤醒。
+            // 符箓灵力门槛通道，保证钱包脏/面板刷新/蓝量跨越仍能唤醒。
             if (wakeDelta is { } wd)
             {
                 var mask = Domain.Combat.TriggerWakePlanner.ResolveMask(triggers, selfInEnemies: false)
                     .Union(new Domain.Combat.SlotWakeMask
                     {
                         Facts = Domain.Combat.BattleFact.External,
-                        Self = definition.Strike is null ? 0 : Domain.Combat.UnitChannel.Mana,
+                        Self = (definition.Strike is not null || definition.ManaCostRatio > 0)
+                            ? Domain.Combat.UnitChannel.Mana : 0,
                     });
                 if (!mask.WakesOn(wd, liveBattle?.SelfIndex ?? 0)) continue;
             }
@@ -400,8 +449,6 @@ internal static partial class ActionExecutionRules
             {
                 if (evalCaster is null)
                 {
-                    // 触发器求值读取行动文档中的敌人快照：存活战态权威时先压回文档与
-                    // 资源池镜像（边界回调中段文档是旧值）；否则复用会话先回写内存态。
                     if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
                     else live?.Flush();
                     evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies, now);
@@ -411,8 +458,6 @@ internal static partial class ActionExecutionRules
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
                         evalAllies!, evalEnemies!, elapsedSec)) continue;
             }
-            // 已记账扣件汇总按原列表顺序逐条累加（与 LINQ Where+Sum 同序，位级一致）；
-            // 事件驱动边界回调只记差量不即时扣钱包，本请求已挂账支出经 pendingSpends 计入余额口径。
             var consumed = 0d;
             if (deltas is not null)
                 for (var j = 0; j < deltas.Count; j++)
@@ -423,68 +468,128 @@ internal static partial class ActionExecutionRules
             double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var value) ? value.GetDouble() : 0;
             var hp = Read(raw, "hitpointRestore");
             var mp = Read(raw, "manapointRestore");
-            var cooldown = definition.CooldownSeconds;
+            if (definition.CooldownSeconds <= 0) throw new DomainException(DomainErrorCode.InvalidArgument, "自动即时消耗品必须配置正冷却。");
             if (!raw.TryGetProperty("buffs", out var buffs) && hp == 0 && mp == 0 && definition.Strike is null) continue;
-            if (cooldown <= 0) throw new DomainException(DomainErrorCode.InvalidArgument, "自动即时消耗品必须配置正冷却。");
+            if (evalCaster is null && (definition.Strike is not null || definition.ManaCostRatio > 0
+                || string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal)))
+            {
+                if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
+                else live?.Flush();
+                evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies, now);
+            }
+            var cooldown = evalCaster is not null
+                ? DeterministicCombatEngine.ResolveConsumableCooldownSeconds(item, definition, evalCaster.Stats.Traits, evalCaster.Stats.TraitLevels)
+                : definition.CooldownSeconds;
+            void CommitSlotCooldown()
+            {
+                if (!isAbilityTalismanSlot)
+                {
+                    player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
+                    player.MarkDirty(PlayerSectionKind.Settings);
+                }
+                else
+                {
+                    player.Combat.TalismanCooldowns[id.Value] = now + cooldown;
+                }
+            }
             if (definition.Strike is { } strike)
             {
-                // 雷击符打击（总纲 §20.2）：扣施放者灵力后按 Spell 链对当前主要敌人造成一次
-                // 无命中/暴击掷点的伤害；灵力不足或无存活目标则本次不激活。
-                if (evalCaster is null)
+                var manaCost = DeterministicCombatEngine.ResolveConsumableManaCost(item, strike.ManaCostRatio, evalCaster!.Stats);
+                if (player.Resources.Manapoints < manaCost - 1e-9) continue;
+                var isAoE = string.Equals(strike.TargetType, "allEnemies", StringComparison.Ordinal);
+                if (isAoE)
                 {
-                    if (liveBattle is { } evalBattle) SyncLiveBattleToEvalDocs(player, evalBattle);
-                    else live?.Flush();
-                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies, now);
+                    var anyAliveEnemy = false;
+                    for (var e = 0; e < evalEnemies!.Count; e++)
+                        if (evalEnemies[e].IsAlive) { anyAliveEnemy = true; break; }
+                    if (!anyAliveEnemy) continue;
                 }
-                var manaCost = strike.ManaCostRatio * evalCaster.Stats.MaxManapoints;
-                if (evalTarget is null || player.Resources.Manapoints < manaCost - 1e-9) continue;
-                var targetIndex = evalEnemies!.IndexOf(evalTarget);
-                if (targetIndex < 0) continue;
-                // 打击威力 = (灵力倍率×灵力上限 + 术攻倍率×术攻) × 符箓伤害增幅（总纲 §20.1.3 / §20.2）；
-                // 物品打击非玩家自身技能，不吃技能增幅（总纲 §7.7.1 技能增幅作用域）。
-                var strikeElement = CombatTraitRules.ResolveDamageElement(evalCaster.Stats.Traits, strike.Element);
-                var strikeStats = evalCaster.Stats with
+                else
                 {
-                    AttackPower = DeterministicCombatEngine.ResolveConsumableStrikePower(item, strike, evalCaster.Stats),
-                    DamageKind = CombatDamageKind.Spell,
-                    Element = strikeElement
-                };
-                strikeStats = strikeStats with { TotalDamageBonusPoints = evalCaster.Stats.TotalDamageBonusPoints + evalCaster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
-                var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, evalTarget);
+                    if (evalTarget is null || evalEnemies!.IndexOf(evalTarget) < 0) continue;
+                }
                 player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - manaCost);
                 SyncConsumableResourcesToBattle(player, player.Actions[0], liveBattle);
-                damage = ApplyStrikeDamage(player, player.Actions[0], targetIndex, damage, liveBattle, evalCaster, evalTarget, strikeElement);
-                // 雷击符打击计入行动统计簿：本机术法输出；目标怪按类型桶计术法承伤与减免（原始威力 − 实收）。
-                if (evalTarget!.DefinitionId is { } strikeMonsterId
-                    && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)
+                var hasDirectDamage = strike.ManaDamageRatio > 0 || strike.SpellAttackRatio > 0
+                    || strike.PhysicalAttackRatio > 0 || strike.FlatDamage > 0;
+                var ranhunStacks = DeterministicCombatEngine.ResolveConsumableRanhunStacks(item, strike, evalCaster.Stats);
+                var strikeElement = CombatTraitRules.ResolveDamageElement(evalCaster.Stats.Traits, strike.Element);
+                var rawPower = hasDirectDamage
+                    ? DeterministicCombatEngine.ResolveConsumableStrikePower(item, strike, evalCaster.EffectiveStats)
+                    : 0;
+                var strikeStats = evalCaster.EffectiveStats with
                 {
-                    var strikeBook = strikeReport.CombatStats;
-                    strikeBook.Register("player", player.DisplayName);
-                    strikeBook.Register($"monster:{strikeMonsterId}",
-                        catalog.CombatMonsters.TryGetValue(strikeMonsterId, out var strikeMonster)
-                            ? strikeMonster.Name : strikeMonsterId);
-                    strikeBook.RecordHit("player", $"monster:{strikeMonsterId}", CombatDamageKind.Spell,
-                        damage, Math.Max(0, strikeStats.AttackPower - damage));
-                    ActionReportBook.FlushCombatStats(player, player.Actions[0].Id);
+                    AttackPower = rawPower,
+                    DamageKind = strike.DamageKind,
+                    Element = strikeElement,
+                    TotalDamageBonusPoints = evalCaster.Stats.TotalDamageBonusPoints + evalCaster.BuffTotal(BuffEffectChannel.DamageBonusPoints)
+                };
+                var totalDamage = 0d;
+                var anyCrit = false;
+                var seed = liveBattle?.Seed ?? player.Actions[0].Expedition?.Seed ?? 0;
+                var rollBase = (liveBattle?.Player.AttackCount ?? player.Actions[0].Expedition?.PlayerAttackCount ?? 0)
+                    + (liveBattle?.Sequence ?? 0);
+                for (var eIdx = 0; eIdx < evalEnemies!.Count; eIdx++)
+                {
+                    var evalFoe = evalEnemies[eIdx];
+                    if (!evalFoe.IsAlive) continue;
+                    if (!isAoE && !ReferenceEquals(evalFoe, evalTarget)) continue;
+                    if (hasDirectDamage)
+                    {
+                        var liveTargetForFormula = liveBattle is { } lb && eIdx < lb.Enemies.Count ? lb.Enemies[eIdx] : evalFoe;
+                        var isCrit = DeterministicCombatEngine.RollTalismanCrit(seed, 0UL, rollBase + eIdx,
+                            liveBattle?.Player ?? evalCaster, liveTargetForFormula);
+                        if (isCrit) anyCrit = true;
+                        var dmg = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, liveTargetForFormula, isCrit);
+                        dmg = ApplyStrikeDamage(player, player.Actions[0], eIdx, dmg, liveBattle, evalCaster, evalFoe, strikeElement);
+                        totalDamage += dmg;
+                        if (evalFoe.DefinitionId is { } strikeMonsterId
+                            && player.Duel.ReportFor(player.Actions[0].Id) is { } strikeReport)
+                        {
+                            var strikeBook = strikeReport.CombatStats;
+                            strikeBook.Register("player", player.DisplayName);
+                            strikeBook.Register($"monster:{strikeMonsterId}",
+                                catalog.CombatMonsters.TryGetValue(strikeMonsterId, out var strikeMonster)
+                                    ? strikeMonster.Name : strikeMonsterId);
+                            strikeBook.RecordHit("player", $"monster:{strikeMonsterId}", strike.DamageKind,
+                                dmg, Math.Max(0, rawPower - dmg));
+                            ActionReportBook.FlushCombatStats(player, player.Actions[0].Id);
+                        }
+                    }
+                    if (ranhunStacks > 0 || strike.OnHitBuff is { ValueKind: JsonValueKind.Object })
+                    {
+                        ApplyStrikeTargetEffects(player.Actions[0], eIdx, ranhunStacks, strike.OnHitBuff,
+                            item.Id.Value, liveBattle, evalCaster, evalFoe);
+                    }
+                    else if (liveBattle is { } notifyBattle && eIdx < notifyBattle.Enemies.Count)
+                    {
+                        CombatActSystem.NotifyUnitAttacked(notifyBattle, notifyBattle.Player, notifyBattle.Enemies[eIdx], notifyBattle.ElapsedSeconds);
+                    }
                 }
-                player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
-                player.MarkDirty(PlayerSectionKind.Settings);
+                CommitSlotCooldown();
                 player.MarkDirty(PlayerSectionKind.Combat);
                 player.MarkDirty(PlayerSectionKind.ActionQueue);
                 (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
-                // 激活后当前单位血蓝、Buff 或敌方状态可能发生变化，作废缓存避免同趟后续槽位读到过期视图。
                 evalCaster = null;
-                // 即时消耗品扣件计入队首行动账本「失去」物品。
                 player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
-                events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}，造成 {damage:0.##} 点伤害。",
+                var strikeMsg = hasDirectDamage
+                    ? $"自动使用 {item.Name}，造成 {totalDamage:0.##} 点伤害{(anyCrit ? "（暴击）" : "")}。"
+                    : ranhunStacks > 0
+                        ? $"自动使用 {item.Name}，施加 {ranhunStacks:0.##} 层燃烧。"
+                        : $"自动使用 {item.Name}。";
+                events.Add(new SimulationEvent(at, "auto-use.activated", strikeMsg,
                     ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
                 continue;
+            }
+            if (definition.ManaCostRatio > 0)
+            {
+                var selfManaCost = DeterministicCombatEngine.ResolveConsumableManaCost(item, definition.ManaCostRatio, evalCaster!.Stats);
+                if (player.Resources.Manapoints < selfManaCost - 1e-9) continue;
+                player.Resources.Manapoints = Math.Max(0, player.Resources.Manapoints - selfManaCost);
             }
             var hitpointsBeforePotion = player.Resources.Hitpoints;
             player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + hp);
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + mp);
-            // 药品瞬回计「其他治疗」输出。即时消耗品只限战斗行动域；激活可能发生在行动首步的
-            // T0 资源边界（先于远征初始化），此时按队首行动口径补建账本再入账。
             if (player.Resources.Hitpoints > hitpointsBeforePotion)
             {
                 var headAction = player.Actions[0];
@@ -498,22 +603,22 @@ internal static partial class ActionExecutionRules
                     ActionReportBook.FlushCombatStats(player, headAction.Id);
                 }
             }
-            // 战斗中即时药品同样要把恢复量压回战内单位/文档镜像，否则下一战斗步以战内值覆盖战外资源池。
             SyncConsumableResourcesToBattle(player, player.Actions[0], liveBattle);
             if (buffs.ValueKind == JsonValueKind.Array)
             {
                 foreach (var buff in buffs.EnumerateArray())
                 {
                     var buffId = buff.GetProperty("buffId").GetString()!;
+                    var proposedActiveExp = now + Read(buff, "durationSeconds");
+                    var existingActive = player.Buffs.Active.FirstOrDefault(current => current.BuffId == buffId);
+                    var mergedActiveExp = existingActive is not null && !IsInfiniteOrBeyondMaxUnixBoundary(existingActive.ExpiresAtUnixSeconds)
+                        ? Math.Max(existingActive.ExpiresAtUnixSeconds, proposedActiveExp)
+                        : proposedActiveExp;
                     player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
-                    player.Buffs.Active.Add(new(buffId, now + Read(buff, "durationSeconds"), 1,
+                    player.Buffs.Active.Add(new(buffId, mergedActiveExp, 1,
                         buff.GetProperty("name").GetString()!, id.Value,
                         Effects: BuffEffectParser.Parse(buff, 1.0)));
                 }
-                // 战内同口径注入（与组队会话 EvaluateInstant 一致）：战内回复/免伤只读单位 Buff 列表，
-                // 仅写战外 ActiveBuff 会让药效在下一步战斗快照重建时丢失——表现为「药已扣件却不回血、
-                // 角色身上也没有 Buff 图标」。到期时刻按战斗时钟落账，文档镜像与存活会话同时写入：
-                // 会话复用时走内存单位，跨推进重建时走 PlayerState 快照。
                 if (player.Actions[0] is QueuedAction headQueued
                     && headQueued.Expedition is { Phase: CombatExpeditionPhase.Combat } battleExpedition)
                 {
@@ -533,35 +638,39 @@ internal static partial class ActionExecutionRules
                         {
                             var liveUnit = buffBattle.Player;
                             foreach (var battleBuff in battleBuffs)
-                                liveUnit.SetBuff(battleBuff with { ExpiresAtSeconds = buffBattle.ElapsedSeconds
-                                    + (battleBuff.ExpiresAtSeconds - battleExpedition.BattleElapsedSeconds) });
+                            {
+                                var proposedExp = buffBattle.ElapsedSeconds + (battleBuff.ExpiresAtSeconds - battleExpedition.BattleElapsedSeconds);
+                                var existingBattleBuff = liveUnit.Buffs.FirstOrDefault(b => b.BuffId == battleBuff.BuffId);
+                                liveUnit.SetBuff(battleBuff with
+                                {
+                                    ExpiresAtSeconds = CombatTraitRules.MergeBuffExpiry(existingBattleBuff?.ExpiresAtSeconds, proposedExp)
+                                });
+                            }
                         }
                         if (battleExpedition.PlayerState is { } playerState)
                         {
                             var merged = playerState.Buffs is { Count: > 0 } existing ? existing.ToList() : [];
                             foreach (var battleBuff in battleBuffs)
                             {
+                                var prev = merged.FirstOrDefault(current => current.BuffId == battleBuff.BuffId);
+                                var mergedExp = CombatTraitRules.MergeBuffExpiry(prev?.ExpiresAtSeconds, battleBuff.ExpiresAtSeconds);
                                 merged.RemoveAll(current => current.BuffId == battleBuff.BuffId);
-                                merged.Add(battleBuff);
+                                merged.Add(battleBuff with { ExpiresAtSeconds = mergedExp });
                             }
                             headQueued.Expedition = battleExpedition with
                             {
                                 PlayerState = playerState with { Buffs = merged }
                             };
-                            // 战内 Buff 快照随行动队列分段下发：不标脏会让前端等到下一步战斗推进才看到图标。
                             player.MarkDirty(PlayerSectionKind.ActionQueue);
                         }
                     }
                 }
             }
-            player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
-            player.MarkDirty(PlayerSectionKind.Settings);
+            CommitSlotCooldown();
             player.MarkDirty(PlayerSectionKind.Buffs);
             player.MarkDirty(PlayerSectionKind.Combat);
             (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
-            // 激活后当前单位血蓝、Buff 或敌方状态可能发生变化，作废缓存避免同趟后续槽位读到过期视图。
             evalCaster = null;
-            // 即时消耗品扣件计入队首行动账本「失去」物品。
             player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
             events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
         }
@@ -578,7 +687,12 @@ internal static partial class ActionExecutionRules
         out CombatantState? target, out List<CombatantState> allies, out List<CombatantState> enemies,
         double? nowUnix = null)
     {
-        var caster = new CombatantState("player", player.ResolveAttributes(catalog).ToCombatant(player.Progression.CombatExperience))
+        // 战斗进行中沿用入战定格特质（与 RestoreCombatBattle / RefreshStats 同口径），防止战中换特质导致雷击符转火与燃魂口径错位。
+        var expedition = player.Actions[0].Expedition;
+        var casterAttributes = expedition is { Phase: CombatExpeditionPhase.Combat, PlayerState: { } combatPlayerState }
+            ? PlayerAttributeResolver.ResolveForCombat(player, catalog, combatPlayerState.Traits)
+            : player.ResolveAttributes(catalog);
+        var caster = new CombatantState("player", casterAttributes.ToCombatant(player.Progression.CombatExperience))
         {
             Hitpoints = player.Resources.Hitpoints,
             Manapoints = player.Resources.Manapoints
@@ -720,7 +834,11 @@ internal static partial class ActionExecutionRules
             var settled = CombatDamageSettlement.Apply(live, live.Player, unit, damage);
             CombatTraitReactions.ApplyRanhun(live.Player, unit, element, settled.Actual, live.ElapsedSeconds);
             if (!live.Enemies.Any(static e => e.IsAlive))
+            {
                 live.Outcome = CombatOutcome.PlayerWon;
+                List<CombatEvent>? dummyEvents = null;
+                CombatTraitReactions.SettleWaveEndShields(live, ref dummyEvents);
+            }
             return settled.Damage;
         }
         if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap
@@ -732,7 +850,7 @@ internal static partial class ActionExecutionRules
         damage = result.Damage;
         updated[targetIndex] = enemy with
         {
-            State = enemy.State with { Hitpoints = target.Hitpoints, Buffs = target.Buffs.ToArray() }
+            State = enemy.State with { Hitpoints = target.Hitpoints, Shield = target.Shield, Buffs = target.Buffs.ToArray() }
         };
         var allDead = true;
         for (var i = 0; i < updated.Length; i++)
@@ -743,6 +861,36 @@ internal static partial class ActionExecutionRules
             Outcome = allDead ? CombatOutcome.PlayerWon : snap.Outcome
         };
         return damage;
+    }
+
+    /// <summary>即时打击消耗品附带效果（怒焰符燃烧叠层、定神符麻痹等）落账至存活战斗单位或文档快照。</summary>
+    private static void ApplyStrikeTargetEffects(IPlayerActionState action, int targetIndex, double ranhunStacks,
+        JsonElement? onHitBuff, string itemId, CombatEncounterState? liveBattle,
+        CombatantState evalCaster, CombatantState evalTarget)
+    {
+        if (liveBattle is { } live && targetIndex < live.Enemies.Count)
+        {
+            var unit = live.Enemies[targetIndex];
+            if (ranhunStacks > 0 && unit.IsAlive)
+                CombatTraitReactions.AddRanhunStacks(live.Player, unit, ranhunStacks, live.ElapsedSeconds, live);
+            if (onHitBuff is { ValueKind: JsonValueKind.Object } spec && unit.IsAlive)
+                CombatActSystem.GrantBuff(spec, live.Player, unit, live.ElapsedSeconds, 1.0, itemId, live, includeCasterSkillBonus: false);
+            CombatActSystem.NotifyUnitAttacked(live, live.Player, unit, live.ElapsedSeconds);
+            return;
+        }
+        if (action.Expedition is not { Phase: CombatExpeditionPhase.Combat } snap
+            || snap.Enemies is not { } waveEnemies || targetIndex >= waveEnemies.Count) return;
+        if (ranhunStacks > 0 && evalTarget.IsAlive)
+            CombatTraitReactions.AddRanhunStacks(evalCaster, evalTarget, ranhunStacks, snap.BattleElapsedSeconds);
+        if (onHitBuff is { ValueKind: JsonValueKind.Object } snapSpec && evalTarget.IsAlive)
+            CombatActSystem.GrantBuff(snapSpec, evalCaster, evalTarget, snap.BattleElapsedSeconds, 1.0, itemId, null, includeCasterSkillBonus: false);
+        var updated = waveEnemies.ToArray();
+        var enemy = updated[targetIndex];
+        updated[targetIndex] = enemy with
+        {
+            State = enemy.State with { Buffs = evalTarget.Buffs.ToArray() }
+        };
+        action.Expedition = snap with { Enemies = updated };
     }
 
     /// <summary>

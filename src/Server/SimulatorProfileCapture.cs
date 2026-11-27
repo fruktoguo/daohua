@@ -64,9 +64,7 @@ public static class SimulatorProfileCapture
             ToDto(combat.Skills),
             combat.Buffs.Buffs.Select(ToDto).ToArray(),
             (state.Buffs ?? []).Select(ToDto).ToArray(),
-            (state.Settings.AutoUseSlots ?? [])
-                .Where(slot => slot.ActionType == AutoUseBar.Combat)
-                .Select(ToDto).ToArray(),
+            CaptureCombatAutoUseSlots(state),
             assets.ToArray(),
             (int)state.Settings.RespawnPolicy,
             state.Settings.RespawnTargetPlayerId?.ToString("D"),
@@ -91,6 +89,29 @@ public static class SimulatorProfileCapture
     public static SimulatorAutoUseSlotDto ToDto(AutoUseSlotState slot)
         => new(slot.ActionType, slot.SlotIndex, slot.ItemId, slot.Quantity, slot.Enabled,
             slot.RemainingDurationSeconds, slot.CooldownUntilUnixSeconds, slot.Group);
+
+    private static SimulatorAutoUseSlotDto[] CaptureCombatAutoUseSlots(PlayerAggregateState state)
+    {
+        var list = (state.Settings.AutoUseSlots ?? [])
+            .Where(slot => slot.ActionType == AutoUseBar.Combat)
+            .Select(ToDto)
+            .ToList();
+        if (state.Combat.TalismanCooldowns is { Count: > 0 } talismanCds)
+        {
+            var abilitySlots = state.Loadout.AbilitySlots;
+            for (var i = 1; i < abilitySlots.Count; i++)
+            {
+                var itemId = abilitySlots[i].AbilityId;
+                if (itemId is null || !itemId.StartsWith("item.", StringComparison.Ordinal)) continue;
+                if (talismanCds.TryGetValue(itemId, out var cdUntil) && cdUntil > 0)
+                {
+                    list.Add(new SimulatorAutoUseSlotDto(
+                        AutoUseBar.Combat, i, itemId, 1, true, 0, cdUntil, AutoUseSlotState.SlotGroupAbility));
+                }
+            }
+        }
+        return list.ToArray();
+    }
 
     public static SimulatorBuildingEffectsDto ToDto(BuildingEffectSet effects)
         => new(effects.ExplorationSpeedRatio, effects.ExplorationOutputRatio, effects.AlchemySpeedRatio,

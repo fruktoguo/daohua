@@ -166,7 +166,8 @@ export function extractSingleBuffSpecBonusItems(
     (buff.resistancePerStack && buff.resistancePerStack > 0) ||
     (buff.missingHitpointsPerStack && buff.missingHitpointsPerStack > 0) ||
     (buff.spellAttackStackPercent && buff.spellAttackStackPercent > 0) ||
-    ((buff.baseStacks ?? 1) > 1 && (buff.decayStacksPerSecond ?? 0) > 0)
+    ((buff.baseStacks ?? 1) > 1 && (buff.decayStacksPerSecond ?? 0) > 0) ||
+    buff.buffId === 'buff.tiangang'
   )
   const effectGrowth = isStacked || buff.noLevelGrowth ? 1 : levelGrowth
   // 配表平铺规格 → 通道载荷（GrowsWithLevel 通道乘成长，双抗破防/豁免成长通道保持基础值）。
@@ -180,6 +181,7 @@ function renderAbilityLineNode(line: string): React.JSX.Element {
   let glyphName: string | null = null
   if (line.includes('冷却') || lower.includes('cooldown')) glyphName = 'cooldown-reduction'
   else if (line.includes('吟唱') || line.includes('施法') || lower.includes('cast')) glyphName = 'action-speed'
+  else if (line.includes('气血') || lower.includes('hp')) glyphName = 'hp'
   else if (line.includes('消耗') || line.includes('灵力') || lower.includes('mp') || lower.includes('mana')) glyphName = 'mp'
   else if (line.includes('等级') || lower.includes('level') || lower.includes('lv.')) glyphName = 'realm'
   return (
@@ -268,7 +270,8 @@ export function createAbilityBuffAsideCards(
     : ability.selfBuff
     ? [ability.selfBuff]
     : []
-  const mergedSpecs = [...primarySpecs, ...onHitSpecs, ...selfSpecs]
+  const channelingSpecs = ability.channelingAttackedBuff ? [ability.channelingAttackedBuff] : []
+  const mergedSpecs = [...primarySpecs, ...onHitSpecs, ...selfSpecs, ...channelingSpecs]
   const seenBuffIds = new Set<string>()
   const buffSpecs = mergedSpecs.filter((spec, index) => {
     const key = spec.buffId || `__idx_${index}`
@@ -293,7 +296,7 @@ export function createAbilityBuffAsideCards(
       name: buffName,
       kind: isDebuff ? 'debuff' : 'buff',
       durationSeconds: spec.durationSeconds,
-      refreshOnStack: spec.buffId === 'buff.yixing' || spec.buffId === 'buff.ranhun',
+      refreshOnStack: spec.buffId === 'buff.yixing' || spec.buffId === 'buff.ranhun' || spec.buffId === 'buff.tiangang',
       items,
     })
   })

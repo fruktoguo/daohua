@@ -141,6 +141,13 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'forge.tool-zihao-brush', type: 'alchemy', technique: 'forging', level: 30, durationSeconds: 16, inputs: { 'equipment.tool-pine-brush': 2, 'item.spirit-pine-crystal': 10, 'item.fire-feather': 6, 'item.soul-talisman': 8 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-zihao-brush', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 952, aspect: 'consciousness' }] },
   { id: 'forge.tool-jiugong-flag', type: 'alchemy', technique: 'forging', level: 30, durationSeconds: 24, inputs: { 'equipment.tool-pine-flag': 2, 'item.spirit-pine-crystal': 10, 'item.refined-copper': 4, 'item.soul-talisman': 8 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-jiugong-flag', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 1428, aspect: 'consciousness' }] },
   { id: 'forge.tool-zhenling-hammer', type: 'alchemy', technique: 'forging', level: 30, durationSeconds: 32, inputs: { 'equipment.tool-copper-hammer': 2, 'item.refined-copper': 10, 'item.spirit-pine-crystal': 6, 'item.soul-talisman': 8 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-zhenling-hammer', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 1904, aspect: 'consciousness' }] },
+
+  // 符箓绘制（符箓技艺）
+  { id: 'talisman.shenxing-talisman', type: 'alchemy', technique: 'talisman', level: 6, durationSeconds: 20, inputs: { 'item.peach-wood-crystal': 2, 'item.morning-dew': 1, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.shenxing-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 46, aspect: 'consciousness' }] },
+  { id: 'talisman.dingshen-talisman', type: 'alchemy', technique: 'talisman', level: 10, durationSeconds: 20, inputs: { 'item.peach-wood-crystal': 2, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.dingshen-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 80, aspect: 'consciousness' }] },
+  { id: 'talisman.jian-talisman', type: 'alchemy', technique: 'talisman', level: 18, durationSeconds: 26, inputs: { 'item.spirit-pine-crystal': 2, 'item.refined-copper': 2, 'item.beast-fang': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.jian-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 347, aspect: 'consciousness' }] },
+  { id: 'talisman.nuyan-talisman', type: 'alchemy', technique: 'talisman', level: 18, durationSeconds: 26, inputs: { 'item.spirit-pine-crystal': 2, 'item.banling-essence': 1, 'item.fire-feather': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.nuyan-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 347, aspect: 'consciousness' }] },
+  { id: 'talisman.yinshen-talisman', type: 'alchemy', technique: 'talisman', level: 20, durationSeconds: 26, inputs: { 'item.spirit-pine-crystal': 2, 'item.banling-essence': 1, 'item.soul-talisman': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinshen-talisman', amount: 1 }, { kind: 'rootexp', per: 'repeat', amount: 486, aspect: 'consciousness' }] },
 ]
 
 /** 静态兜底行动的 ID 索引（服务端目录未到达前供 resolveActionDefinition 查询） */
@@ -442,9 +449,14 @@ export function normalizeAbilitySlots(
   slots: readonly CombatAbilitySlot[],
   abilities: readonly { abilityId: string; discipline?: 'internal' | 'spell' }[],
   abilityExperiences: Readonly<Record<string, number>> | undefined,
+  allowTalismans = false,
 ): CombatAbilitySlot[] {
   return slots.map((slot, index) => {
     if (slot.abilityId === null || slot.abilityId === undefined) return slot
+    if (slot.abilityId.startsWith('item.')) {
+      if (!allowTalismans || index === 0) return { ...slot, abilityId: null }
+      return slot.level === 1 ? slot : { ...slot, level: 1 }
+    }
     const definition = findAbilityInCatalog(abilities, slot.abilityId)
     const isInternal = (definition?.discipline ?? 'spell') === 'internal'
     if ((index === 0) !== isInternal) return { ...slot, abilityId: null }
@@ -1339,6 +1351,11 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fire-feather': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 16, subCategory: 'exoticMaterial' },
   'item.soul-talisman': { glyph: '材', tone: 'gray', rarity: 'mundane', level: 18, subCategory: 'exoticMaterial' },
   'item.leiji-talisman': { glyph: '雷', tone: 'cyan', rarity: 'mundane', level: 1, subCategory: 'talisman' },
+  'item.shenxing-talisman': { glyph: '风', tone: 'emerald', rarity: 'mundane', level: 6, subCategory: 'talisman' },
+  'item.dingshen-talisman': { glyph: '定', tone: 'amber', rarity: 'mundane', level: 10, subCategory: 'talisman' },
+  'item.jian-talisman': { glyph: '剑', tone: 'gold', rarity: 'yellow', level: 18, subCategory: 'talisman' },
+  'item.nuyan-talisman': { glyph: '焰', tone: 'crimson', rarity: 'yellow', level: 18, subCategory: 'talisman' },
+  'item.yinshen-talisman': { glyph: '隐', tone: 'purple', rarity: 'yellow', level: 20, subCategory: 'talisman' },
   'item.juling-formation-disk': { glyph: '阵', tone: 'violet', rarity: 'mundane', level: 1, subCategory: 'formation' },
   'item.tianlei-formation-disk': { glyph: '阵', tone: 'cyan', rarity: 'mundane', level: 9, subCategory: 'formation' },
   'item.mizong-formation-disk': { glyph: '阵', tone: 'emerald', rarity: 'mundane', level: 9, subCategory: 'formation' },
@@ -1500,6 +1517,12 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.shangui-yao': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 28, subCategory: 'manualFragment' },
   'item.tome.pojun': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 27, subCategory: 'manualTome' },
   'item.fragment.pojun': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 27, subCategory: 'manualFragment' },
+  'item.tome.gangqi-huti': { glyph: '谱', tone: 'gray', rarity: 'mundane', level: 10, subCategory: 'manualTome' },
+  'item.fragment.gangqi-huti': { glyph: '卷', tone: 'gray', rarity: 'mundane', level: 10, subCategory: 'manualFragment' },
+  'item.tome.benglie': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualTome' },
+  'item.fragment.benglie': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 18, subCategory: 'manualFragment' },
+  'item.tome.tiangang-duanyue': { glyph: '谱', tone: 'green', rarity: 'yellow', level: 28, subCategory: 'manualTome' },
+  'item.fragment.tiangang-duanyue': { glyph: '卷', tone: 'green', rarity: 'yellow', level: 28, subCategory: 'manualFragment' },
   // 一阶武器 / 护具 / 法宝（配表 equipment 全量对齐，9 级一阶装备）
   'equipment.xuantie-sword': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },
   'equipment.piyan-blade': { glyph: '武', tone: 'gray', rarity: 'mundane', level: 9, subCategory: 'weapon' },

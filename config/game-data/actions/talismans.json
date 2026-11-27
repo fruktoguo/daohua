@@ -24,5 +24,140 @@
         "aspect": "consciousness"
       }
     ]
+  },
+  {
+    "id": "talisman.draw-shenxing",
+    "name": "神行符",
+    "description": "取桃木晶与破晓晨露调墨，勾画御风神行符纹，成符可助身法迅捷如风。",
+    "type": "alchemy",
+    "technique": "talisman",
+    "executionKind": "timed",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.peach-wood-crystal": 3,
+      "item.morning-dew": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.shenxing-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "talisman.draw-dingshen",
+    "name": "定神符",
+    "description": "融桃木晶与破碎灵核之微芒落笔成敕，绘就镇锁敌魂、麻痹肢体的定神灵符。",
+    "type": "alchemy",
+    "technique": "talisman",
+    "executionKind": "timed",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.peach-wood-crystal": 3,
+      "item.broken-spirit-core": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.dingshen-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "talisman.draw-jian",
+    "name": "剑符",
+    "description": "以灵松晶配古旧残魄灵符承载锋锐杀意，将凌厉庚金剑芒封入寸纸之中。",
+    "type": "alchemy",
+    "technique": "talisman",
+    "executionKind": "timed",
+    "durationSeconds": 26,
+    "inputs": {
+      "item.spirit-pine-crystal": 3,
+      "item.soul-talisman": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.jian-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "talisman.draw-nuyan",
+    "name": "怒焰符",
+    "description": "采灵松晶与赤红火羽研磨成朱，走笔间星火流窜，绘成焚烧群敌的怒焰灵符。",
+    "type": "alchemy",
+    "technique": "talisman",
+    "executionKind": "timed",
+    "durationSeconds": 26,
+    "inputs": {
+      "item.spirit-pine-crystal": 3,
+      "item.fire-feather": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.nuyan-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
+  },
+  {
+    "id": "talisman.draw-yinshen",
+    "name": "隐身符",
+    "description": "以灵松晶合伴灵精华调引虚空清气，凝笔绘成敛息匿影、消弭敌意的隐身灵符。",
+    "type": "alchemy",
+    "technique": "talisman",
+    "executionKind": "timed",
+    "durationSeconds": 26,
+    "inputs": {
+      "item.spirit-pine-crystal": 3,
+      "item.banling-essence": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.yinshen-talisman",
+        "amount": 1
+      },
+      {
+        "kind": "rootexp",
+        "per": "repeat",
+        "percentage": 100,
+        "aspect": "consciousness"
+      }
+    ]
   }
 ]

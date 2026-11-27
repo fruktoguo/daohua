@@ -44,6 +44,11 @@ export const FORMATION_ITEM_TO_BUFF: Readonly<Record<string, string>> = {
 /** 即时消耗品中文显示名 -> 消耗品物品 ID（用于原始日志流解析） */
 export const INSTANT_CONSUMABLE_NAME_TO_ITEM: Readonly<Record<string, string>> = {
   雷击符: 'item.leiji-talisman',
+  神行符: 'item.shenxing-talisman',
+  定神符: 'item.dingshen-talisman',
+  剑符: 'item.jian-talisman',
+  怒焰符: 'item.nuyan-talisman',
+  隐身符: 'item.yinshen-talisman',
   止血散: 'item.zhixue-powder',
   顺气丸: 'item.shunqi-pill',
   生肌膏: 'item.shengji-balm',
@@ -339,6 +344,8 @@ const YIXING_CONSUME_DAMAGE_ABILITIES = new Set([
   'ability.huoyan-fengbao',
   'ability.tianlei-po',
   'ability.zhuoxin',
+  'ability.benglie',
+  'ability.tiangang-duanyue',
 ])
 
 /** 斗法剧本中推断 `ability.zhanyu` 是否处于前置「移形」5 秒窗内化态为「踏云」 */

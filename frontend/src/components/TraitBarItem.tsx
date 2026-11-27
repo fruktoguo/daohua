@@ -126,7 +126,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
         : value
       effects.push({ channel: key, value: scaled })
     }
-    const isPerStack = def.id === 'trait.woyaodashige' || def.id === 'trait.ranhun'
+    const isPerStack = def.id === 'trait.woyaodashige' || def.id === 'trait.ranhun' || def.id === 'trait.yangjianshu'
     const items = extractBuffBonusItems({
       buffId: buff.buffId,
       name: displayName,
@@ -137,7 +137,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
     if (items.length > 0) {
       const kind = buff.buffId === 'buff.ranhun'
         ? 'debuff'
-        : (buff.buffId === 'buff.yixing' || buff.buffId === 'buff.yinshen')
+        : (buff.buffId === 'buff.yixing' || buff.buffId === 'buff.yinshen' || buff.buffId === 'buff.jianyi')
           ? 'buff'
           : 'state'
       const durationSeconds = def.id === 'trait.bukandaowo' && buff.durationSeconds
@@ -155,7 +155,7 @@ export function resolveTraitAsideCards(def: TraitMeta, level = 1): FloatingAside
           name: displayName,
           kind,
           durationSeconds,
-          refreshOnStack: buff.buffId === 'buff.yixing' || buff.buffId === 'buff.ranhun',
+          refreshOnStack: buff.buffId === 'buff.yixing' || buff.buffId === 'buff.ranhun' || buff.buffId === 'buff.jianyi',
           subtitle,
           items,
         })

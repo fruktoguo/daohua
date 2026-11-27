@@ -4,10 +4,18 @@
 import { playerAttributesToCombatantStats } from './attributeResolver.ts'
 import { resolveDungeonMonster, type GameDataCatalog } from './catalog.ts'
 import {
+  addRanhunStacks,
   applyCombatDamage,
   applyRanhun,
+  grantAbilityBuff,
+  notifyUnitAttacked,
+  resolveConsumableCooldownSeconds,
+  resolveConsumableManaCost,
+  resolveConsumableRanhunStacks,
   resolveConsumableStrikePower,
   resolveStrikeDamage,
+  rollTalismanCrit,
+  settleWaveEndShields,
 } from './combatEngine.ts'
 import {
   CombatEncounterState,
@@ -18,10 +26,13 @@ import {
 } from './combatModels.ts'
 import { TICKS_PER_SECOND, ticksToUnixSeconds } from './math.ts'
 import {
+  AutoUseBar,
   BuffEffectChannel,
-  CombatDamageKind,
   CombatElement,
   PercentCurveMode,
+  TECHNIQUE_SUBCATEGORY_TALISMAN,
+  canEquipTalismanInAbilitySlot,
+  mergeBuffExpiry,
   parseBuffEffects,
   percentMultiplier,
   resolveDamageElement,
@@ -357,6 +368,19 @@ export function prepareResourceBoundaryCore(
       step = Math.min(step, untilCooldown)
     }
   }
+  if (canEquipTalismanInAbilitySlot(player.state.traitIds)) {
+    const abilitySlots = player.state.abilitySlots
+    for (let i = 1; i < abilitySlots.length; i++) {
+      const talismanId = abilitySlots[i].abilityId
+      if (!talismanId) continue
+      const talismanCdUntil = player.state.talismanCooldowns[talismanId] ?? 0
+      const untilTalismanCd = talismanCdUntil - nowUnix
+      if (untilTalismanCd > 1e-9) {
+        naturalStep = Math.min(naturalStep, untilTalismanCd)
+        step = Math.min(step, untilTalismanCd)
+      }
+    }
+  }
   const participation = player.actions[0]?.participation
   if (participation && Number.isFinite(participation.endsAtUnixSeconds)) {
     const untilSessionEnd = participation.endsAtUnixSeconds - nowUnix
@@ -579,16 +603,22 @@ function buildConsumableEvalUnits(
   allies: CombatantState[]
   enemies: CombatantState[]
 } {
-  const caster = new CombatantState(
-    'player',
-    playerAttributesToCombatantStats(player.resolveAttributes(catalog), player.state.combatExperience),
-  )
+  const head = player.actions[0]
+  const combatPlayerState =
+    head?.expedition?.phase === CombatExpeditionPhase.Combat ? head.expedition.playerState : null
+  const casterStats = combatPlayerState
+    ? player.resolveAttributesForCombat(
+        catalog,
+        combatPlayerState.traits,
+        combatPlayerState.traitLevels,
+      )
+    : playerAttributesToCombatantStats(player.resolveAttributes(catalog), player.state.combatExperience)
+  const caster = new CombatantState('player', casterStats)
   caster.hitpoints = player.state.hitpoints
   caster.manapoints = player.state.manapoints
   const activeBuffs = player.state.buffs
   caster.externalBuffStacks = (buffId) =>
     sumUnmergedActiveBuffStacks(caster.buffs, activeBuffs, buffId, nowUnix)
-  const head = player.actions[0]
   const battleBuffs = head?.expedition?.playerState?.buffs
   if (battleBuffs) caster.replaceBuffs(battleBuffs)
   const allies = [caster]
@@ -660,6 +690,7 @@ function applyStrikeDamageToBattle(
     )
     if (!liveBattle.enemies.some((e) => e.isAlive)) {
       liveBattle.outcome = CombatOutcome.PlayerWon
+      settleWaveEndShields(liveBattle, null)
     }
     return settled.damage
   }
@@ -676,6 +707,7 @@ function applyStrikeDamageToBattle(
     state: {
       ...enemy.state,
       hitpoints: target.hitpoints,
+      shield: target.shield,
       buffs: target.buffs.map((b) => ({ ...b })),
     },
   }
@@ -692,6 +724,67 @@ function applyStrikeDamageToBattle(
     outcome: allDead ? CombatOutcome.PlayerWon : snap.outcome,
   }
   return res.damage
+}
+
+function applyStrikeTargetEffects(
+  action: SimActionState,
+  targetIndex: number,
+  ranhunStacks: number,
+  onHitBuff: Record<string, unknown> | null,
+  itemId: string,
+  liveBattle: CombatEncounterState | null,
+  evalCaster: CombatantState,
+  evalTarget: CombatantState,
+): void {
+  if (liveBattle && targetIndex < liveBattle.enemies.length) {
+    const unit = liveBattle.enemies[targetIndex]
+    if (ranhunStacks > 0 && unit.isAlive) {
+      addRanhunStacks(liveBattle.player, unit, ranhunStacks, liveBattle.elapsedSeconds, liveBattle)
+    }
+    if (onHitBuff !== null && unit.isAlive) {
+      grantAbilityBuff(
+        onHitBuff,
+        liveBattle.player,
+        unit,
+        liveBattle.elapsedSeconds,
+        1.0,
+        itemId,
+        liveBattle,
+        false,
+      )
+    }
+    notifyUnitAttacked(liveBattle, liveBattle.player, unit, liveBattle.elapsedSeconds)
+    return
+  }
+  const snap = action.expedition
+  if (!snap || snap.phase !== CombatExpeditionPhase.Combat || !snap.enemies || targetIndex >= snap.enemies.length) {
+    return
+  }
+  if (ranhunStacks > 0 && evalTarget.isAlive) {
+    addRanhunStacks(evalCaster, evalTarget, ranhunStacks, snap.battleElapsedSeconds)
+  }
+  if (onHitBuff !== null && evalTarget.isAlive) {
+    grantAbilityBuff(
+      onHitBuff,
+      evalCaster,
+      evalTarget,
+      snap.battleElapsedSeconds,
+      1.0,
+      itemId,
+      null,
+      false,
+    )
+  }
+  const updated = snap.enemies.slice()
+  const enemy = updated[targetIndex]
+  updated[targetIndex] = {
+    ...enemy,
+    state: {
+      ...enemy.state,
+      buffs: evalTarget.buffs.map((b) => ({ ...b })),
+    },
+  }
+  action.expedition = { ...snap, enemies: updated }
 }
 
 /** 对应 `ActionExecutionRules.ActivateInstantConsumables`。 */
@@ -718,7 +811,22 @@ export function activateInstantConsumables(
       break
     }
   }
-  if (!anyEnabled) return []
+  const activeTraitsForSlotCheck =
+    head.expedition?.phase === CombatExpeditionPhase.Combat && head.expedition.playerState
+      ? head.expedition.playerState.traits
+      : player.state.traitIds
+  const allowAbilityTalismans = canEquipTalismanInAbilitySlot(activeTraitsForSlotCheck)
+  let anyAbilityTalisman = false
+  if (allowAbilityTalismans) {
+    for (let i = 1; i < player.state.abilitySlots.length; i++) {
+      const aid = player.state.abilitySlots[i].abilityId
+      if (aid && aid.startsWith('item.')) {
+        anyAbilityTalisman = true
+        break
+      }
+    }
+  }
+  if (!anyEnabled && !anyAbilityTalisman) return []
 
   let liveBattle: CombatEncounterState | null = liveState
   if (!liveBattle && live && head.expedition) {
@@ -745,19 +853,39 @@ export function activateInstantConsumables(
     evalEnemies = ctx.enemies
   }
 
-  for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i]
-    if (
-      !slot.enabled ||
-      slot.itemId === null ||
-      actionBarId === null ||
-      slot.actionType.toLowerCase() !== actionBarId.toLowerCase() ||
-      slot.cooldownUntilUnixSeconds > now
-    ) {
+  const totalCandidateCount =
+    slots.length + (anyAbilityTalisman ? Math.max(0, player.state.abilitySlots.length - 1) : 0)
+  for (let i = 0; i < totalCandidateCount; i++) {
+    const isAbilityTalismanSlot = i >= slots.length
+    let slot = slots[0]
+    let slotItemId: string | null = null
+    let slotCooldownUntil = 0
+    if (!isAbilityTalismanSlot) {
+      slot = slots[i]
+      if (
+        !slot.enabled ||
+        slot.itemId === null ||
+        actionBarId === null ||
+        slot.actionType.toLowerCase() !== actionBarId.toLowerCase() ||
+        slot.cooldownUntilUnixSeconds > now
+      ) {
+        continue
+      }
+      slotItemId = slot.itemId
+      slotCooldownUntil = slot.cooldownUntilUnixSeconds
+    } else {
+      if (!actionBarId || actionBarId.toLowerCase() !== AutoUseBar.Combat) continue
+      const abilitySlotIdx = i - slots.length + 1
+      slotItemId = player.state.abilitySlots[abilitySlotIdx]?.abilityId ?? null
+      if (!slotItemId || !slotItemId.startsWith('item.')) continue
+      slotCooldownUntil = player.state.talismanCooldowns[slotItemId] ?? 0
+      if (slotCooldownUntil > now) continue
+    }
+    const item = catalog.items.get(slotItemId)
+    if (!item || !item.consumable || item.consumable.isContinuous || item.consumable.durable) {
       continue
     }
-    const item = catalog.items.get(slot.itemId)
-    if (!item || !item.consumable || item.consumable.isContinuous || item.consumable.durable) {
+    if (isAbilityTalismanSlot && item.subCategory !== TECHNIQUE_SUBCATEGORY_TALISMAN) {
       continue
     }
     const definition = item.consumable
@@ -773,11 +901,11 @@ export function activateInstantConsumables(
     )
     if (wakeDelta !== null) {
       const baseMask = resolveTriggerListWakeMask(triggers, false)
-      const withStrike =
-        definition.strike !== null
+      const withMana =
+        definition.strike !== null || definition.manaCostRatio > 0
           ? unionWakeMask(baseMask, { ...EMPTY_WAKE_MASK, self: UnitChannel.Mana })
           : baseMask
-      const mask = unionWakeMask(withStrike, { ...EMPTY_WAKE_MASK, facts: BattleFact.External })
+      const mask = unionWakeMask(withMana, { ...EMPTY_WAKE_MASK, facts: BattleFact.External })
       const selfIdx = liveBattle?.selfIndex ?? 0
       if (!wakeMaskWakesOn(mask, wakeDelta, selfIdx)) continue
     }
@@ -807,74 +935,174 @@ export function activateInstantConsumables(
     const rawBuffs = Array.isArray(rawCons.buffs)
       ? (rawCons.buffs as Record<string, unknown>[])
       : null
-    const cooldown = definition.cooldownSeconds
+    if (definition.cooldownSeconds <= 0) {
+      throw new Error('自动即时消耗品必须配置正冷却。')
+    }
     if (!rawBuffs && hp === 0 && mp === 0 && definition.strike === null) continue
+
+    if (
+      evalCaster === null &&
+      (definition.strike !== null ||
+        definition.manaCostRatio > 0 ||
+        item.subCategory === TECHNIQUE_SUBCATEGORY_TALISMAN)
+    ) {
+      ensureEvalContext()
+    }
+    const cooldown = evalCaster
+      ? resolveConsumableCooldownSeconds(
+          item,
+          definition,
+          evalCaster.stats.traits,
+          evalCaster.stats.traitLevels,
+        )
+      : definition.cooldownSeconds
+    const commitSlotCooldown = () => {
+      if (!isAbilityTalismanSlot) {
+        slots[i] = { ...slot, cooldownUntilUnixSeconds: now + cooldown }
+        player.markDirty(PlayerSectionKind.Settings)
+      } else {
+        player.state.talismanCooldowns[item.id] = now + cooldown
+      }
+    }
 
     if (definition.strike !== null) {
       const strike = definition.strike
       ensureEvalContext()
-      const manaCost = strike.manaCostRatio * evalCaster!.stats.maxManapoints
-      if (evalTarget === null || player.state.manapoints < manaCost - 1e-9) continue
-      const targetIndex = evalEnemies!.indexOf(evalTarget)
-      if (targetIndex < 0) continue
+      const manaCost = resolveConsumableManaCost(item, strike.manaCostRatio, evalCaster!.stats)
+      if (player.state.manapoints < manaCost - 1e-9) continue
+      const isAoE = strike.targetType === 'allEnemies'
+      if (isAoE) {
+        let anyAliveEnemy = false
+        for (let e = 0; e < evalEnemies!.length; e++) {
+          if (evalEnemies![e].isAlive) {
+            anyAliveEnemy = true
+            break
+          }
+        }
+        if (!anyAliveEnemy) continue
+      } else {
+        if (evalTarget === null || evalEnemies!.indexOf(evalTarget) < 0) continue
+      }
 
-      // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
-      const attackPower = resolveConsumableStrikePower(item, strike, evalCaster!.stats)
+      player.state.manapoints = Math.max(0, player.state.manapoints - manaCost)
+      syncConsumableResourcesToBattle(player, head, liveBattle)
+
+      const hasDirectDamage =
+        strike.manaDamageRatio > 0 ||
+        strike.spellAttackRatio > 0 ||
+        strike.physicalAttackRatio > 0 ||
+        strike.flatDamage > 0
+      const ranhunStacks = resolveConsumableRanhunStacks(item, strike, evalCaster!.stats)
       const strikeElement = resolveDamageElement(
         evalCaster!.stats.traits,
         strike.element as CombatElement,
       )
+      const rawPower = hasDirectDamage
+        ? resolveConsumableStrikePower(item, strike, evalCaster!.effectiveStats)
+        : 0
       const strikeStats: CombatantStats = {
-        ...evalCaster!.stats,
-        attackPower,
-        damageKind: CombatDamageKind.Spell,
+        ...evalCaster!.effectiveStats,
+        attackPower: rawPower,
+        damageKind: strike.damageKind,
         element: strikeElement,
         totalDamageBonusPoints:
           evalCaster!.stats.totalDamageBonusPoints +
           evalCaster!.buffTotal(BuffEffectChannel.DamageBonusPoints),
       }
-      const rawDamage = resolveStrikeDamage(strikeStats, evalTarget)
-      player.state.manapoints = Math.max(0, player.state.manapoints - manaCost)
-      syncConsumableResourcesToBattle(player, head, liveBattle)
-      const damage = applyStrikeDamageToBattle(
-        head,
-        targetIndex,
-        rawDamage,
-        liveBattle,
-        evalCaster!,
-        evalTarget,
-        strikeElement,
-      )
-      const strikeDefId = evalTarget!.definitionId
-      if (strikeDefId && player.report) {
-        const book = player.report.combatStats
-        book.register('player', player.displayName)
-        const strikeMonster = catalog.monsters.get(strikeDefId)
-        book.register(`monster:${strikeDefId}`, strikeMonster ? strikeMonster.name : strikeDefId)
-        book.recordHitKey(
-          'player',
-          `monster:${strikeDefId}`,
-          CombatDamageKind.Spell,
-          damage,
-          Math.max(0, strikeStats.attackPower - damage),
-          strikeElement,
-        )
+      let totalDamage = 0
+      let anyCrit = false
+      const seed = liveBattle?.seed ?? head.expedition?.seed ?? 0n
+      const rollBase =
+        (liveBattle?.player.attackCount ?? head.expedition?.playerAttackCount ?? 0) +
+        (liveBattle?.sequence ?? 0)
+      for (let eIdx = 0; eIdx < evalEnemies!.length; eIdx++) {
+        const evalFoe = evalEnemies![eIdx]
+        if (!evalFoe.isAlive) continue
+        if (!isAoE && evalFoe !== evalTarget) continue
+        if (hasDirectDamage) {
+          const liveTargetForFormula =
+            liveBattle && eIdx < liveBattle.enemies.length ? liveBattle.enemies[eIdx] : evalFoe
+          const isCrit = rollTalismanCrit(
+            seed,
+            0n,
+            rollBase + eIdx,
+            liveBattle?.player ?? evalCaster!,
+            liveTargetForFormula,
+          )
+          if (isCrit) anyCrit = true
+          let dmg = resolveStrikeDamage(strikeStats, liveTargetForFormula, isCrit)
+          dmg = applyStrikeDamageToBattle(
+            head,
+            eIdx,
+            dmg,
+            liveBattle,
+            evalCaster!,
+            evalFoe,
+            strikeElement,
+          )
+          totalDamage += dmg
+          const strikeDefId = evalFoe.definitionId
+          if (strikeDefId && player.report) {
+            const book = player.report.combatStats
+            book.register('player', player.displayName)
+            const strikeMonster = catalog.monsters.get(strikeDefId)
+            book.register(`monster:${strikeDefId}`, strikeMonster ? strikeMonster.name : strikeDefId)
+            book.recordHitKey(
+              'player',
+              `monster:${strikeDefId}`,
+              strike.damageKind,
+              dmg,
+              Math.max(0, rawPower - dmg),
+              strikeElement,
+            )
+          }
+        }
+        if (ranhunStacks > 0 || strike.onHitBuff !== null) {
+          applyStrikeTargetEffects(
+            head,
+            eIdx,
+            ranhunStacks,
+            strike.onHitBuff,
+            item.id,
+            liveBattle,
+            evalCaster!,
+            evalFoe,
+          )
+        } else if (liveBattle && eIdx < liveBattle.enemies.length) {
+          notifyUnitAttacked(
+            liveBattle,
+            liveBattle.player,
+            liveBattle.enemies[eIdx],
+            liveBattle.elapsedSeconds,
+          )
+        }
       }
-      slots[i] = { ...slot, cooldownUntilUnixSeconds: now + cooldown }
-      player.markDirty(PlayerSectionKind.Settings)
+      commitSlotCooldown()
       player.markDirty(PlayerSectionKind.Combat)
       player.markDirty(PlayerSectionKind.ActionQueue)
       deltas.push({ itemId: item.id, variant: '', quantityDelta: -1 })
       evalCaster = null
       player.recordStats(now, { lostItem: item.id, lostQuantity: 1 })
+      const strikeMsg = hasDirectDamage
+        ? `自动使用 ${item.name}，造成 ${formatTrimmedFixed(totalDamage, 2)} 点伤害${anyCrit ? '（暴击）' : ''}。`
+        : ranhunStacks > 0
+          ? `自动使用 ${item.name}，施加 ${formatTrimmedFixed(ranhunStacks, 2)} 层燃烧。`
+          : `自动使用 ${item.name}。`
       events.add({
         atTicks,
         code: 'auto-use.activated',
-        message: `自动使用 ${item.name}，造成 ${formatTrimmedFixed(damage, 2)} 点伤害。`,
+        message: strikeMsg,
         actionId: null,
         itemDeltas: { [item.id]: -1 },
       })
       continue
+    }
+
+    if (definition.manaCostRatio > 0) {
+      ensureEvalContext()
+      const selfManaCost = resolveConsumableManaCost(item, definition.manaCostRatio, evalCaster!.stats)
+      if (player.state.manapoints < selfManaCost - 1e-9) continue
+      player.state.manapoints = Math.max(0, player.state.manapoints - selfManaCost)
     }
 
     const hpBefore = player.state.hitpoints
@@ -898,12 +1126,18 @@ export function activateInstantConsumables(
         const buffId = String(buff.buffId)
         const duration = typeof buff.durationSeconds === 'number' ? buff.durationSeconds : 0
         const name = typeof buff.name === 'string' ? buff.name : buffId
+        const proposedActiveExp = now + duration
+        const existingActive = player.state.buffs.find((current) => current.buffId === buffId)
+        const mergedActiveExp =
+          existingActive && Number.isFinite(existingActive.expiresAtUnixSeconds)
+            ? Math.max(existingActive.expiresAtUnixSeconds, proposedActiveExp)
+            : proposedActiveExp
         for (let k = player.state.buffs.length - 1; k >= 0; k--) {
           if (player.state.buffs[k].buffId === buffId) player.state.buffs.splice(k, 1)
         }
         player.state.buffs.push({
           buffId,
-          expiresAtUnixSeconds: now + duration,
+          expiresAtUnixSeconds: mergedActiveExp,
           stacks: 1,
           name,
           sourceItemId: item.id,
@@ -935,10 +1169,12 @@ export function activateInstantConsumables(
           if (liveBattle) {
             const liveUnit = liveBattle.player
             for (const bb of battleBuffs) {
+              const proposedExp =
+                liveBattle.elapsedSeconds + (bb.expiresAtSeconds - battleExp.battleElapsedSeconds)
+              const existingBattleBuff = liveUnit.buffs.find((b) => b.buffId === bb.buffId)
               liveUnit.setBuff({
                 ...bb,
-                expiresAtSeconds:
-                  liveBattle.elapsedSeconds + (bb.expiresAtSeconds - battleExp.battleElapsedSeconds),
+                expiresAtSeconds: mergeBuffExpiry(existingBattleBuff?.expiresAtSeconds, proposedExp),
               })
             }
           }
@@ -946,10 +1182,12 @@ export function activateInstantConsumables(
             const ps = head.expedition.playerState
             const merged = ps.buffs && ps.buffs.length > 0 ? ps.buffs.slice() : []
             for (const bb of battleBuffs) {
+              const prev = merged.find((current) => current.buffId === bb.buffId)
+              const mergedExp = mergeBuffExpiry(prev?.expiresAtSeconds, bb.expiresAtSeconds)
               for (let k = merged.length - 1; k >= 0; k--) {
                 if (merged[k].buffId === bb.buffId) merged.splice(k, 1)
               }
-              merged.push(bb)
+              merged.push({ ...bb, expiresAtSeconds: mergedExp })
             }
             head.expedition = {
               ...head.expedition,
@@ -960,8 +1198,7 @@ export function activateInstantConsumables(
         }
       }
     }
-    slots[i] = { ...slot, cooldownUntilUnixSeconds: now + cooldown }
-    player.markDirty(PlayerSectionKind.Settings)
+    commitSlotCooldown()
     player.markDirty(PlayerSectionKind.Buffs)
     player.markDirty(PlayerSectionKind.Combat)
     deltas.push({ itemId: item.id, variant: '', quantityDelta: -1 })

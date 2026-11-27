@@ -20,12 +20,12 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本（v50：actionQueue 斗法回放 DuelScriptEvent 新增 AttackerUnitIndex/TargetUnitIndex、DuelPlaybackState 新增 SelfUnitIndex/SelfUnits/OpponentUnits 多方 1~5v1~5 队伍斗法载荷，均可缺省解码；最低可读版本保持 v41）。
+    /// <summary>当前分段编解码模式版本（v51：CombatantSnapshot 新增 Shield/LastShanshenbuTriggerAtSeconds/LastDirectDamageAtSeconds、PlayerCombatStateDocument 新增 TalismanCooldowns，均可缺省解码；最低可读版本保持 v41）。
     /// 历次版本变动与存量处理台账见 docs/backend/db-version-changes.md。
     /// 升级约定：每次 bump 时同步递增 PostgresSchema.Version，在 docs/backend/db-version-changes.md
     /// 登记字段变动、缺省语义、最低可读版本及存量处理，并随版本编写 migrations/ 单步脚本。
     /// 本地开发由 reset-outdated-players.sh 优先执行已有迁移；缺失时须交互确认重置。运行时只解码当前版本。</summary>
-    public const int CurrentSchemaVersion = 50;
+    public const int CurrentSchemaVersion = 51;
     /// <summary>
     /// 仍可解码当前快照载荷的最老客户端 schema 版本——快照协议随 DTO 下发的「读者地板」。
     /// 客户端按 <c>minReaderSchemaVersion &lt;= 自身版本</c> 判定可读性，替代旧的全等门禁：

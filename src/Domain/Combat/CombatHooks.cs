@@ -54,6 +54,8 @@ public sealed class CombatHitContext
     public bool DoubleAccuracy { get; init; }
     /// <summary>零直伤标志（如「灼心」：仅判定破招/化解与命中，不计攻击力、固定伤害与暴击直伤）。</summary>
     public bool ZeroDirectDamage { get; init; }
+    /// <summary>独立终伤额外乘区（如「天罡断岳」消耗天罡层数按 1+0.20×层数 在吃到天罡自身增伤后再独立放大）。</summary>
+    public double PostFinalDamageMultiplier { get; init; } = 1.0;
     /// <summary>是否技能结算（AbilityId 非空）。</summary>
     public bool IsSkill => AbilityId is not null;
     /// <summary>攻击方阵营侧位（确定性抽样维度）。</summary>

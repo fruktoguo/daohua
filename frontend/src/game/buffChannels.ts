@@ -28,6 +28,8 @@ export type BuffEffectChannel =
   | 'fireSpellDamagePerSecond'
   | 'parryPostRatio'
   | 'decayStacksPerSecond'
+  | 'attackPowerPostRatio'
+  | 'criticalPostRatio'
 
 /** 单条效果载荷：通道 + 每层基础值（resistancePoints 实例型通道为总值）。 */
 export interface BuffEffectEntry {
@@ -40,6 +42,7 @@ export type BuffChannelFormat =
   | 'flat' // +N 固定值
   | 'percentPoint' // 点数 → signedPercent(v/100)
   | 'percentRaw' // 比率原值 → signedPercent(v)
+  | 'softPercentRaw' // 普通数值百分比乘区：正值 +v、负值双曲软着陆 -|v|/(1+|v|)
   | 'absorption' // NonLinear 减伤 x/(100+|x|)
   | 'resistance' // 正值 1+x/100、负值 -|x|/(100+|x|)
   | 'threatPerSecond' // +x.x%（每秒威胁）
@@ -79,13 +82,15 @@ export const BUFF_CHANNELS: Record<BuffEffectChannel, BuffChannelDisplay> = {
   resistancePoints: { labelKey: 'market.effect.badgeResistance', glyph: 'foundation', positiveTone: 'jade', negativeTone: 'crimson', format: 'resistance', perStack: false },
   threatPoints: { labelKey: 'market.effect.badgeThreat', glyph: 'threat-bonus', positiveTone: 'amber', negativeTone: 'crimson', format: 'percentPoint', perStack: false },
   evasion: { labelKey: 'market.effect.badgeEvasion', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'flat', perStack: true },
-  evasionPostRatio: { labelKey: 'market.effect.badgeEvasionPostRatio', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'percentRaw', perStack: false },
+  evasionPostRatio: { labelKey: 'market.effect.badgeEvasionPostRatio', glyph: 'evasion', positiveTone: 'cyan', negativeTone: 'crimson', format: 'softPercentRaw', perStack: true },
   actionSpeedPoints: { labelKey: 'market.effect.badgeActionSpeed', glyph: 'action-speed', positiveTone: 'purple', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   criticalDamagePoints: { labelKey: 'market.effect.badgeCriticalDamage', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   healingBonusPoints: { labelKey: 'market.effect.badgeHealingBonus', glyph: 'hp-regen', positiveTone: 'emerald', negativeTone: 'crimson', format: 'percentPoint', perStack: true },
   fireSpellDamagePerSecond: { labelKey: 'market.effect.badgeFireDamagePerSecond', glyph: 'element-fire', positiveTone: 'crimson', negativeTone: 'crimson', format: 'flat', perStack: true },
-  parryPostRatio: { labelKey: 'market.effect.badgeParry', glyph: 'parry-resolve', positiveTone: 'jade', negativeTone: 'crimson', format: 'percentRaw', perStack: false },
+  parryPostRatio: { labelKey: 'market.effect.badgeParry', glyph: 'parry-resolve', positiveTone: 'jade', negativeTone: 'crimson', format: 'softPercentRaw', perStack: true },
   decayStacksPerSecond: { labelKey: 'market.effect.badgeDecayStacksPerSecond', glyph: 'lifespan', positiveTone: 'amber', negativeTone: 'crimson', format: 'flat', perStack: false },
+  attackPowerPostRatio: { labelKey: 'market.effect.badgeAttackPower', glyph: 'phys-atk', positiveTone: 'gold', negativeTone: 'crimson', format: 'softPercentRaw', perStack: true },
+  criticalPostRatio: { labelKey: 'market.effect.badgeCritical', glyph: 'crit', positiveTone: 'gold', negativeTone: 'crimson', format: 'softPercentRaw', perStack: true },
 }
 
 /** wire 通道名 → 是否已登记（未登记通道不参与展示渲染）。 */
@@ -116,6 +121,10 @@ export function formatBuffChannelValue(
       return `${signedPercent(scaled / 100)}${perStackSuffix}`
     case 'percentRaw':
       return signedPercent(scaled)
+    case 'softPercentRaw': {
+      const ratio = scaled >= 0 ? scaled : -Math.abs(scaled) / (1 + Math.abs(scaled))
+      return `${signedPercent(ratio)}${perStackSuffix}`
+    }
     case 'absorption': {
       const percent = Math.abs(+(scaled / (100 + Math.abs(scaled)) * 100).toFixed(1))
       return `${scaled > 0 ? '+' : '-'}${percent}%${perStackSuffix}`

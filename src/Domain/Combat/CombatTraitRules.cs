@@ -43,10 +43,72 @@ public static class CombatTraitRules
     public const string YixingBuffId = "buff.yixing", JianyuxinTraitId = "trait.jianyuxin";
     /// <summary>火神特质标识。</summary>
     public const string HuoshenTraitId = "trait.huoshen";
+    /// <summary>阵法大师特质标识。</summary>
+    public const string ZhenfadashiTraitId = "trait.zhenfadashi";
+    /// <summary>符法·疾特质标识。</summary>
+    public const string FufajiTraitId = "trait.fufaji";
+    /// <summary>符法·破阵特质标识。</summary>
+    public const string FufapozhenTraitId = "trait.fufapozhen";
+    /// <summary>符法·天罡特质标识。</summary>
+    public const string FufatiangangTraitId = "trait.fufatiangang";
+    /// <summary>符法·天命特质标识。</summary>
+    public const string FufatianmingTraitId = "trait.fufatianming";
+    /// <summary>养剑术特质与剑意状态标识。</summary>
+    public const string YangjianshuTraitId = "trait.yangjianshu", JianyiBuffId = "buff.jianyi";
+    /// <summary>藏锋特质标识。</summary>
+    public const string CangfengTraitId = "trait.cangfeng";
+    /// <summary>血气化盾特质标识。</summary>
+    public const string XueqihuadunTraitId = "trait.xueqihuadun";
+    /// <summary>闪身步特质标识。</summary>
+    public const string ShanshenbuTraitId = "trait.shanshenbu";
+    /// <summary>天罡断岳引导受击状态与神行符状态标识。</summary>
+    public const string TiangangBuffId = "buff.tiangang", ShenxingBuffId = "buff.shenxing";
 
     /// <summary>解析携带「火神」特质后的实际伤害五行属性（仅覆写/附加元素，不改变伤害大类）。</summary>
     public static CombatElement ResolveDamageElement(IReadOnlyList<string>? traits, CombatElement baseElement)
         => ContainsTrait(traits, HuoshenTraitId) ? CombatElement.Fire : baseElement;
+
+    /// <summary>解析符箓冷却加速点数（符法·疾：基础 400 点即冷却减少 80%，每级 +5% 线性成长）。</summary>
+    public static double TalismanCooldownSpeedPoints(IReadOnlyList<string>? traits, IReadOnlyDictionary<string, int>? traitLevels = null)
+    {
+        if (!ContainsTrait(traits, FufajiTraitId)) return 0;
+        var lv = traitLevels is not null && traitLevels.TryGetValue(FufajiTraitId, out var v) ? Math.Max(1, v) : 1;
+        return 400.0 * (1.0 + 0.05 * (lv - 1));
+    }
+
+    /// <summary>解析符箓灵力消耗倍率（符法·疾：消耗提升 300% 即变为 400%，负面代价锁定不变）。</summary>
+    public static double TalismanManaCostMultiplier(IReadOnlyList<string>? traits)
+        => ContainsTrait(traits, FufajiTraitId) ? 4.0 : 1.0;
+
+    /// <summary>判断符箓是否可触发暴击（符法·破阵）。</summary>
+    public static bool CanTalismanCrit(IReadOnlyList<string>? traits)
+        => ContainsTrait(traits, FufapozhenTraitId);
+
+    /// <summary>判断主动术法槽位是否允许装配符箓（符法·天命）。</summary>
+    public static bool CanEquipTalismanInAbilitySlot(IReadOnlyList<string>? traits)
+        => ContainsTrait(traits, FufatianmingTraitId);
+
+    /// <summary>解析「闪身步」内置触发冷却（基础 3.0s，随等级按反比例曲线缩短，20 级满级加速 100% 缩至 1.5s）。</summary>
+    public static double ShanshenbuCooldownSeconds(IReadOnlyList<string>? traits, IReadOnlyDictionary<string, int>? traitLevels = null)
+    {
+        if (!ContainsTrait(traits, ShanshenbuTraitId)) return double.PositiveInfinity;
+        var lv = traitLevels is not null && traitLevels.TryGetValue(ShanshenbuTraitId, out var v) ? Math.Clamp(v, 1, 20) : 1;
+        return 3.0 / (1.0 + (lv - 1) / 19.0);
+    }
+
+    /// <summary>解析「血气化盾」超出 20% 最大生命部分转化为护盾的比例（Lv1 为 100%，每级 +5%）。</summary>
+    public static double XueqihuadunConversionRatio(IReadOnlyList<string>? traits, IReadOnlyDictionary<string, int>? traitLevels = null)
+    {
+        if (!ContainsTrait(traits, XueqihuadunTraitId)) return 0;
+        var lv = traitLevels is not null && traitLevels.TryGetValue(XueqihuadunTraitId, out var v) ? Math.Max(1, v) : 1;
+        return 1.0 + 0.05 * (lv - 1);
+    }
+
+    /// <summary>同源不固定时长 Buff 的到期时间「保高不降」合并：保留原剩余时长与新赋予时长中的较大值。</summary>
+    public static double MergeBuffExpiry(double? existingExpiresAt, double proposedExpiresAt)
+        => existingExpiresAt is { } cur && cur < BattleLifetimeSeconds && proposedExpiresAt < BattleLifetimeSeconds
+            ? Math.Max(cur, proposedExpiresAt)
+            : proposedExpiresAt;
     /// <summary>常驻战内状态使用有限最大到期值，每波清理。</summary>
     public const double BattleLifetimeSeconds = double.MaxValue;
     /// <summary>隐身 buff：看不到我特质的开战授予效果（威胁增幅点数 -100）。</summary>
@@ -219,7 +281,8 @@ public static class CombatTraitRules
         {
             var level = traitLevels is not null && traitLevels.TryGetValue(UnseenTraitId, out var lv) ? Math.Max(1, lv) : 1;
             var duration = UnseenBuffDurationSeconds * (1.0 + 0.05 * (level - 1));
-            unit.AddBuff(new CombatBuffState(UnseenBuffId, duration,
+            var existing = unit.Buffs.FirstOrDefault(b => b.BuffId == UnseenBuffId);
+            unit.SetBuff(new CombatBuffState(UnseenBuffId, MergeBuffExpiry(existing?.ExpiresAtSeconds, duration),
                 Name: "隐身", ResetOnWave: true,
                 Effects: [new BuffEffect(BuffEffectChannel.ThreatPoints, -100)]));
         }
@@ -361,6 +424,40 @@ public static class CombatTraitRules
         Add(new(HuoshenTraitId, "火神", 5, 12,
             Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["fireDamageBonusPoints"] = 10 },
             Description: "火焰尊主，万法归炎。自身所有伤害转为火属性（保留物理、术法与真实伤害类别），火属性增伤提升 10%。"));
+        Add(new(ZhenfadashiTraitId, "阵法大师", 5, 16,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal)
+            {
+                ["formationDamageBonusPoints"] = 200,
+                ["skillBonusPoints"] = -500,
+                ["basicAttackBonusPoints"] = -500
+            },
+            Description: "盘坐阵眼执乾坤。阵法造成的伤害提升 200%，技能增幅降低 500%，普通攻击伤害降低 500%。"));
+        Add(new(FufajiTraitId, "符法·疾", 5, 16,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal)
+            {
+                ["skillBonusPoints"] = -500,
+                ["basicAttackBonusPoints"] = -500
+            },
+            Description: "袖藏万符疾如电。符箓冷却减少 80%（400 点加速随等级提升），但符箓消耗灵力提升 300%，技能增幅与普攻伤害各降低 500%。"));
+        Add(new(FufapozhenTraitId, "符法·破阵", 4, 12,
+            StatRatios: new Dictionary<string, double>(StringComparer.Ordinal) { ["criticalChance"] = 0.10 },
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["criticalDamageBonusPoints"] = 10 },
+            Description: "符敕破罡洞玄机。符箓可以触发暴击，暴击提升 10%，暴击伤害提升 10%。"));
+        Add(new(FufatiangangTraitId, "符法·天罡", 3, 8,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["talismanDamageBonusPoints"] = 30 },
+            Description: "天罡入墨威自生。符箓造成的伤害提升 30%。"));
+        Add(new(FufatianmingTraitId, "符法·天命", 5, 16,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["talismanDamageBonusPoints"] = 10 },
+            Description: "以符代法顺天命。主动术法槽位可以装配符箓（全栏同名互斥、无吟唱瞬发），符箓造成的伤害提升 10%。"));
+        Add(new(YangjianshuTraitId, "养剑术", 5, 16,
+            Description: "十年藏锋养剑意。每秒未造成直接伤害获得 1 层剑意（持续最多 10 秒，获层刷新）；每层提升 30% 物理攻击、30% 暴击与 30% 暴击伤害，造成直接伤害后散去。"));
+        Add(new(CangfengTraitId, "藏锋", 4, 12,
+            Points: new Dictionary<string, double>(StringComparer.Ordinal) { ["skillBonusPoints"] = 20 },
+            Description: "收剑入鞘待惊雷。战斗中不再进行普通攻击，技能增幅提升 20%。"));
+        Add(new(XueqihuadunTraitId, "血气化盾", 6, 20,
+            Description: "燃血凝罡战归源。开战及每 5 秒将超出 20% 最大生命的部分作为受击伤害扣除并 100% 转化为永久护盾；每波战罢剩余护盾转化为治疗（受治疗增幅加成）。"));
+        Add(new(ShanshenbuTraitId, "闪身步", 5, 15,
+            Description: "擦锋掠影步生莲。闪避攻击时获得 1 层移形，每 3 秒最多触发一次（等级按反比例缩短冷却，20 级缩至 1.5 秒）。"));
         return dict;
     }
 }

@@ -35,6 +35,9 @@ export const catalogZh = {
     "ability.tianlei-po": { name: "天雷破", description: "引动枯木神雷劈落，随机击中至多两名敌方并令其周身麻痹，迟滞身法步履。" },
     "ability.zhuoxin": { name: "灼心", description: "隔空种下无形毒炎咒印，不造成直接破体伤害，命中后于敌方肺腑间引燃大量业火余烬。" },
     "ability.shangui-yao": { name: "山鬼谣", description: "轻吟楚辞山鬼灵祝，降下漫天碧水灵露滋养全体友方，持续疗愈周身气血。" },
+    "ability.gangqi-huti": { name: "罡气护体", description: "引周身精元凝作厚重护体罡罩，在战局中常驻抵御外邪锋芒。" },
+    "ability.benglie": { name: "迸裂", description: "燃耗精血引爆周身护体罡盾，化作崩山裂地之厚土狂澜席卷全体敌阵。" },
+    "ability.tiangang-duanyue": { name: "天罡断岳", description: "横刀驻足蓄势五息，任凭万刃加身皆化作护体天罡；待刀势圆满一斩断岳，尽倾所蓄天罡以雷霆万钧之威横扫敌群。" },
   },
   building: {
     "building.meditation-circle": { name: "蒲团", description: "以灵草茎秆编织的打坐蒲团，四周布下简易聚灵阵纹，盘坐其上可安心纳气。" },

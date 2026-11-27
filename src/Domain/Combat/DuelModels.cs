@@ -90,7 +90,9 @@ public sealed record DuelScriptEvent(
     bool Parried = false,
     string? AbilityNameOverride = null,
     int AttackerUnitIndex = 0,
-    int TargetUnitIndex = 0)
+    int TargetUnitIndex = 0,
+    double AttackerShieldAfter = 0,
+    double TargetShieldAfter = 0)
 {
     /// <summary>持续消耗品（阵盘）充能事件标记：回放扣件并刷新槽位持续时间，不下发前端动作表现。</summary>
     public const string SustainedActivateMarker = "@sustained-activate";
@@ -108,7 +110,8 @@ public sealed record DuelPlaybackUnit(
     double Hitpoints,
     double Manapoints,
     IReadOnlyList<PlayerAbilitySlot>? Skills = null,
-    IReadOnlyList<PlayerEquipmentSlot>? Equipment = null)
+    IReadOnlyList<PlayerEquipmentSlot>? Equipment = null,
+    double Shield = 0)
 {
     /// <summary>校验单名斗法参战单位镜像不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(PlayerId) && PlayerId.Length <= 64
@@ -119,6 +122,7 @@ public sealed record DuelPlaybackUnit(
         && double.IsFinite(Stats.MaxManapoints) && Stats.MaxManapoints >= 0
         && double.IsFinite(Hitpoints) && Hitpoints >= 0 && Hitpoints <= Stats.MaxHitpoints
         && double.IsFinite(Manapoints) && Manapoints >= 0 && Manapoints <= Stats.MaxManapoints
+        && double.IsFinite(Shield) && Shield >= 0
         && (Skills is null || (Skills.Count <= 16 && Skills.All(slot => slot is not null
             && (slot.AbilityId?.Length ?? 0) <= 128
             && double.IsFinite(slot.Level) && slot.Level >= 1)))

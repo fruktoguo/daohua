@@ -1249,6 +1249,83 @@ export const TRAIT_DEFINITIONS: Readonly<Record<string, TraitMeta>> = Object.fre
     cost: 12,
     description: '火焰尊主，万法归炎。自身所有伤害转为火属性（保留物理、术法与真实伤害类别），火属性增伤提升 10%',
   },
+  'trait.zhenfadashi': {
+    id: 'trait.zhenfadashi',
+    name: '阵法大师',
+    quality: 5,
+    cost: 16,
+    description: '阵眼通玄御万象。阵法伤害提升 200%，技能与普攻增幅各降低 500 点',
+  },
+  'trait.fufaji': {
+    id: 'trait.fufaji',
+    name: '符法·疾',
+    quality: 5,
+    cost: 16,
+    description: '疾书神符若惊电。符箓冷却加速 400 点（冷却时间缩短 80%），符箓灵力消耗变为 400%，技能与普攻增幅各降低 500 点',
+  },
+  'trait.fufapozhen': {
+    id: 'trait.fufapozhen',
+    name: '符法·破阵',
+    quality: 4,
+    cost: 12,
+    description: '符芒破阵贯玄关。直接伤害型符箓可触发暴击，暴击提升 10%、暴击伤害提升 10 点',
+  },
+  'trait.fufatiangang': {
+    id: 'trait.fufatiangang',
+    name: '符法·天罡',
+    quality: 3,
+    cost: 8,
+    description: '天罡凝笔镇邪祟。符箓伤害提升 30%',
+  },
+  'trait.fufatianming': {
+    id: 'trait.fufatianming',
+    name: '符法·天命',
+    quality: 5,
+    cost: 16,
+    description: '符应天命化神通。主动术法槽位可装配符箓并按神通序列瞬发，符箓伤害提升 10%',
+  },
+  'trait.yangjianshu': {
+    id: 'trait.yangjianshu',
+    name: '养剑术',
+    quality: 5,
+    cost: 16,
+    description: '匣中养剑蓄绝锋。战斗中每 1 秒未造成直接伤害获得 1 层「剑意」（持续 10 秒，叠层刷新），每层使物理攻击提升 30%、暴击提升 30%、暴击伤害提升 30 点；造成直接伤害后移除全部剑意',
+    buff: {
+      buffId: 'buff.jianyi',
+      name: '剑意',
+      durationSeconds: 10,
+      attackPowerPostRatio: 0.3,
+      criticalPostRatio: 0.3,
+      criticalDamagePoints: 30,
+    },
+  },
+  'trait.cangfeng': {
+    id: 'trait.cangfeng',
+    name: '藏锋',
+    quality: 4,
+    cost: 12,
+    description: '敛锷藏锋待天时。战斗中不再施展普通攻击，技能增幅提升 20%',
+  },
+  'trait.xueqihuadun': {
+    id: 'trait.xueqihuadun',
+    name: '血气化盾',
+    quality: 6,
+    cost: 20,
+    description: '燃血凝罡铸坚壁。开战及每 5 秒将超出 20% 最大生命值的当前气血视作受击扣除（计入受击反应），并按 100% 转化为战内永久护盾；战斗结束时将剩余护盾等量转化为治疗（受治疗增幅加成）',
+  },
+  'trait.shanshenbu': {
+    id: 'trait.shanshenbu',
+    name: '闪身步',
+    quality: 5,
+    cost: 15,
+    description: '足踏虚空避寒芒。闪避攻击时获得 1 层「移形」（持续 5 秒），每 3 秒最多触发一次（随特质等级反比例缩短，20 级缩至 1.5 秒）',
+    buff: {
+      buffId: 'buff.yixing',
+      name: '移形',
+      durationSeconds: 5,
+      evasionPostRatio: 1,
+    },
+  },
 })
 /**
  * 根据角色境界等级计算当前特质点数容量上限（总纲 §7.12.1）：
@@ -1325,6 +1402,31 @@ export function formatTraitDescription(id: string, level = 1): string {
   if (id === 'trait.liweifanfou') {
     const pct = Math.round(100 * scale)
     return `不动如山撼未动。受到伤害时以坚韧气魄招引敌意，将所受之威的 ${pct}% 化为敌方瞩目`
+  }
+  if (id === 'trait.zhenfadashi') {
+    return `阵眼通玄御万象。阵法伤害提升 ${number(200 * scale)}%，技能与普攻增幅各降低 500 点`
+  }
+  if (id === 'trait.fufaji') {
+    const pts = number(400 * scale)
+    const cdPct = number((pts / (100 + pts)) * 100)
+    return `疾书神符若惊电。符箓冷却加速 ${pts} 点（冷却时间缩短 ${cdPct}%），符箓灵力消耗变为 400%，技能与普攻增幅各降低 500 点`
+  }
+  if (id === 'trait.fufapozhen') {
+    const val = number(10 * scale)
+    return `符芒破阵贯玄关。直接伤害型符箓可触发暴击，暴击提升 ${val}%、暴击伤害提升 ${val} 点`
+  }
+  if (id === 'trait.yangjianshu') {
+    const val = number(30 * scale)
+    return `匣中养剑蓄绝锋。战斗中每 1 秒未造成直接伤害获得 1 层「剑意」（持续 10 秒，叠层刷新），每层使物理攻击提升 ${val}%、暴击提升 ${val}%、暴击伤害提升 ${val} 点；造成直接伤害后移除全部剑意`
+  }
+  if (id === 'trait.xueqihuadun') {
+    const conv = number(100 * scale)
+    return `燃血凝罡铸坚壁。开战及每 5 秒将超出 20% 最大生命值的当前气血视作受击扣除（计入受击反应），并按 ${conv}% 转化为战内永久护盾；战斗结束时将剩余护盾等量转化为治疗（受治疗增幅加成）`
+  }
+  if (id === 'trait.shanshenbu') {
+    const clampedLv = Math.max(1, Math.min(20, Math.floor(level)))
+    const cd = Number((3.0 / (1.0 + (clampedLv - 1) / 19.0)).toFixed(2))
+    return `足踏虚空避寒芒。闪避攻击时获得 1 层「移形」（持续 5 秒），每 ${cd} 秒最多触发一次（随特质等级反比例缩短，20 级缩至 1.5 秒）`
   }
   // 普通数值特质：按正则将正向百分比提取并缩放（双刃剑惩罚锁定不放大）
   return meta.description.replace(/([+-])?(\d+(?:\.\d+)?)%/g, (match, prefix, numStr, offset, fullStr) => {

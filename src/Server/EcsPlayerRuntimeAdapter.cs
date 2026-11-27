@@ -844,7 +844,14 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     traitIds.Add(elem.GetString()!.Trim());
                             }
                         }
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Progression.SetTraits(traitIds));
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            aggregate.Progression.SetTraits(traitIds);
+                            if (aggregate.ReconcileTalismanAbilitySlots())
+                                aggregate.Touch(PlayerSectionKind.Progression, PlayerSectionKind.Loadout);
+                            else
+                                aggregate.Touch(PlayerSectionKind.Progression);
+                        });
                         break;
                     }
                     case "item.use":
@@ -871,6 +878,7 @@ public sealed partial class EcsPlayerRuntimeAdapter(
                                     var (traitId, level, exp, leveledUp, isNew) = aggregate.Progression.AwakenTrait(Random.Shared);
                                     awakenedList.Add(new AwakenedTraitResultDto(traitId, level, exp, leveledUp, isNew));
                                 }
+                                aggregate.Touch(PlayerSectionKind.Progression);
                             });
                             customData = new { awakenedTraits = awakenedList };
 

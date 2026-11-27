@@ -1,7 +1,7 @@
-import { memo, useEffect, useMemo, useState } from 'react'
-import { assignAbilityToSlot, learnedAbilityLevel } from '../game/ids'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { assignAbilityToSlot, findItemInCatalog, learnedAbilityLevel, resolveCatalogItemMetadata, resolveItemCategoryLabel, resolveItemSubCategory } from '../game/ids'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { describeAbility, formatAbilityCategory } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
@@ -10,27 +10,34 @@ import type { CombatTrigger } from '../game/types'
 import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { ConditionedTile } from './ConditionedTile'
+import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
+
+type TriggerEditTarget = { kind: 'ability' | 'item'; id: string }
 
 /**
  * 功法神通管理面板 (AbilitiesPanel)
  *
  * 核心特性：
  * 1. 【横排动态装配槽】：横排排布功法槽位，首格固定为「内功」（心法/本命功法），后续格为「术法」（神通技法），支持后续任意动态扩增；
- *    槽位与功法类别互斥——内功位只收 discipline=internal 的心法，术法位只收术法，与服务端 loadout.replace 校验一致；
+ *    槽位与功法类别互斥——内功位只收 discipline=internal 的心法，术法位收术法（及「符法·天命」激活时的符箓），与服务端 loadout.replace 校验一致；
  * 2. 【已学功法分组总览】：已习得功法按内功心法 / 神通术法两组分列，支持查看详细词条、五行属性、灵力消耗与装配状态。
  */
 export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked: boolean }): React.JSX.Element {
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
+  const items = useGameStore(state => state.items)
+  const inventory = useGameStore(state => state.inventory)
+  const traitIds = useGameStore(state => state.stats?.traitIds)
+  const combatAutoUseSlots = useGameStore(state => state.queue.autoUseSlots.combat)
 
   const [activePicker, setActivePicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
-  // 触发条件按功法 ID 编辑（跟随功法而非槽位），编辑器打开的是功法维度的条件配置。
-  const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
+  // 触发条件按功法 ID 或符箓物品 ID 编辑（跟随实体而非槽位）。
+  const [editingTrigger, setEditingTrigger] = useState<TriggerEditTarget | null>(null)
   useEffect(() => {
     if (!locked) return
     setActivePicker(null)
-    setEditingTriggerAbilityId(null)
+    setEditingTrigger(null)
   }, [locked])
 
   const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
@@ -47,22 +54,47 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
     [learnedAbilities],
   )
 
+  const hasFufaTianming = useMemo(() => Boolean(traitIds?.includes('trait.fufatianming')), [traitIds])
+  const itemAmountFor = useCallback((itemId: string): number => {
+    return inventory.reduce((sum, entry) => entry.itemId === itemId && !entry.variant ? sum + entry.amount : sum, 0)
+  }, [inventory])
+  const pickerTalismanItems = useMemo(() => {
+    if (!hasFufaTianming) return undefined
+    const autoUsedIds = new Set((combatAutoUseSlots ?? []).map(s => s.itemId).filter((id): id is string => Boolean(id)))
+    return items.filter(item =>
+      item.category === 'consumable'
+      && item.subCategory === 'talisman'
+      && item.usableBars.includes('combat')
+      && !autoUsedIds.has(item.itemId)
+      && itemAmountFor(item.itemId) > 0,
+    )
+  }, [combatAutoUseSlots, hasFufaTianming, itemAmountFor, items])
+
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
 
   // 装配变更统一经 sendLoadoutReplace 发送：内部完成槽位类别互斥与等级归一化。
   const update = (patch: Partial<typeof combat>) => sendLoadoutReplace(patch)
 
-  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
+  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法或符箓从原槽位移到新槽位。
   const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
 
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
-    if (editingTriggerAbilityId === null) return
-    update({
-      abilityTriggers: {
-        ...(combat.abilityTriggers ?? {}),
-        [editingTriggerAbilityId]: triggers ?? [],
-      },
-    })
+    if (editingTrigger === null) return
+    if (editingTrigger.kind === 'item') {
+      update({
+        consumableTriggers: {
+          ...(combat.consumableTriggers ?? {}),
+          [editingTrigger.id]: triggers ?? [],
+        },
+      })
+    } else {
+      update({
+        abilityTriggers: {
+          ...(combat.abilityTriggers ?? {}),
+          [editingTrigger.id]: triggers ?? [],
+        },
+      })
+    }
   }
 
   // 已习得技能的参悟等级由技能经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
@@ -77,8 +109,11 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
   const currentPickerValue = activePickerSlotIndex !== null
     ? combat.abilitySlots[activePickerSlotIndex]?.abilityId ?? null
     : null
-  const currentPickerAbility = currentPickerValue !== null
+  const currentPickerAbility = currentPickerValue !== null && !currentPickerValue.startsWith('item.')
     ? abilities.find(entry => entry.abilityId === currentPickerValue) ?? null
+    : null
+  const currentPickerItem = currentPickerValue !== null && currentPickerValue.startsWith('item.')
+    ? findItemInCatalog(items, currentPickerValue) ?? null
     : null
   const isPickingInternal = activePickerSlotIndex === 0
   const pickerTitle = activePickerSlotIndex !== null
@@ -94,12 +129,75 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
 
   const renderSlot = (slot: typeof combat.abilitySlots[0], index: number) => {
     const isInternal = index === 0
-    const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
+    const isTalismanSlot = !isInternal && Boolean(slot.abilityId?.startsWith('item.'))
+    const talismanItem = isTalismanSlot && slot.abilityId ? findItemInCatalog(items, slot.abilityId) : undefined
+    const ability = !isTalismanSlot ? abilities.find(entry => entry.abilityId === slot.abilityId) : undefined
     const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
 
     const slotTypeTag = isInternal
       ? t('app.abilitiesPanel.slotInternal')
       : t('app.abilitiesPanel.slotSpell', { n: index })
+
+    if (isTalismanSlot && slot.abilityId) {
+      const talismanId = slot.abilityId
+      const metadata = resolveCatalogItemMetadata(talismanId, { itemDefinition: talismanItem, glyph: '符', tone: 'gold', t })
+      const talismanName = talismanItem?.name ?? metadata.label
+      const amount = itemAmountFor(talismanId)
+      const itemTriggers = combat.consumableTriggers?.[talismanId] ?? talismanItem?.triggers ?? []
+      const triggerCount = itemTriggers.length
+      const categoryLabel = resolveItemCategoryLabel(resolveItemSubCategory(talismanId, talismanItem), t)
+      return (
+        <div
+          className={`conditioned-tile abilities-slot-card${activePicker?.index === index ? ' is-picking' : ''}`}
+          key={index}
+        >
+          <ItemTooltipTarget
+            amount={amount}
+            className="combat-ability-slot-shell"
+            definition={talismanItem}
+            itemId={talismanId}
+            metadata={metadata}
+            tabIndex={locked ? 0 : -1}
+          >
+            <button
+              aria-label={t('app.combatPanel.currentAbilityAria', { name: talismanName })}
+              className="combat-ability-slot is-spell-slot"
+              disabled={locked}
+              onClick={event => {
+                const anchor = event.currentTarget
+                setActivePicker(prev => prev?.index === index ? null : { index, anchor })
+              }}
+              type="button"
+            >
+              <span className="abilities-slot-tag-badge">{slotTypeTag}</span>
+              <ItemTile
+                amount={amount}
+                category={categoryLabel}
+                className="combat-ability-cell"
+                itemId={talismanId}
+                level={metadata.level}
+                name={talismanName}
+                rarity={metadata.rarity}
+              />
+            </button>
+          </ItemTooltipTarget>
+          {!locked && (
+            <button
+              aria-label={t('app.combatPanel.editTriggersAria', { name: talismanName, count: triggerCount })}
+              className={`item-slot-inline-action item-slot-inline-action--condition${triggerCount > 0 ? ' has-triggers' : ''}`}
+              onClick={e => {
+                e.stopPropagation()
+                setEditingTrigger({ kind: 'item', id: talismanId })
+              }}
+              title={t('app.combatPanel.editTriggersTitle')}
+              type="button"
+            >
+              {t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? formatNumber(triggerCount) : '' })}
+            </button>
+          )}
+        </div>
+      )
+    }
 
     const ribbonLabel = isInternal
       ? t('app.combatPanel.internalRibbon')
@@ -164,7 +262,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
           ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
           hasTriggers: triggerCount > 0,
           label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-          onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+          onClick: () => setEditingTrigger({ kind: 'ability', id: ability.abilityId }),
           title: t('app.combatPanel.editTriggersTitle'),
         } : null}
         content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
@@ -260,7 +358,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
                         ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
                         hasTriggers: triggerCount > 0,
                         label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-                        onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                        onClick: () => setEditingTrigger({ kind: 'ability', id: ability.abilityId }),
                         title: t('app.combatPanel.editTriggersTitle'),
                       } : null}
                       content={describeAbility(ability, learnedLevel)}
@@ -271,7 +369,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
                         className={`item-tile combat-ability-cell${equippedIndex !== null ? ' is-equipped' : ''}`}
                         data-rarity={group.key === 'internal' ? 'emperor' : 'mystic'}
                         disabled={locked}
-                        onClick={() => setEditingTriggerAbilityId(ability.abilityId)}
+                        onClick={() => setEditingTrigger({ kind: 'ability', id: ability.abilityId })}
                         title={locked ? undefined : t('app.combatPanel.editTriggersTitle')}
                         type="button"
                       >
@@ -308,9 +406,16 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
         abilityExperiences={combat.abilityExperiences}
         allowEmpty
         anchor={activePicker?.anchor ?? null}
+        itemAmountFor={itemAmountFor}
         levelFor={abilityLevelFor}
         onClose={() => setActivePicker(null)}
-        onEditCondition={currentPickerAbility ? () => setEditingTriggerAbilityId(currentPickerAbility.abilityId) : undefined}
+        onEditCondition={
+          currentPickerAbility
+            ? () => setEditingTrigger({ kind: 'ability', id: currentPickerAbility.abilityId })
+            : currentPickerItem
+              ? () => setEditingTrigger({ kind: 'item', id: currentPickerItem.itemId })
+              : undefined
+        }
         onSelect={value => {
           if (activePicker !== null) {
             update({ abilitySlots: withAbility(activePicker.index, value) })
@@ -319,20 +424,33 @@ export const AbilitiesPanel = memo(function AbilitiesPanel({ locked }: { locked:
         }}
         open={!locked && activePicker !== null}
         slotIndex={activePicker?.index}
+        talismanItems={pickerTalismanItems}
         title={pickerTitle}
-        triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
+        triggerCount={
+          currentPickerAbility
+            ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0)
+            : currentPickerItem
+              ? ((combat.consumableTriggers?.[currentPickerItem.itemId] ?? currentPickerItem.triggers ?? []).length)
+              : 0
+        }
         value={currentPickerValue}
       />
-      {/* 触发条件编辑器（功法维度：title 用功法名） */}
-      {!locked && editingTriggerAbilityId !== null && (
+      {/* 触发条件编辑器（功法或符箓维度） */}
+      {!locked && editingTrigger !== null && (
         <CombatTriggerEditor
-          defaultTriggers={abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}
-          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.defaultTriggers ?? []}
-          onClose={() => setEditingTriggerAbilityId(null)}
+          defaultTriggers={editingTrigger.kind === 'item'
+            ? (findItemInCatalog(items, editingTrigger.id)?.triggers ?? [])
+            : (abilities.find(entry => entry.abilityId === editingTrigger.id)?.defaultTriggers ?? [])}
+          initialTriggers={editingTrigger.kind === 'item'
+            ? (combat.consumableTriggers?.[editingTrigger.id] ?? findItemInCatalog(items, editingTrigger.id)?.triggers ?? [])
+            : (combat.abilityTriggers?.[editingTrigger.id] ?? abilities.find(entry => entry.abilityId === editingTrigger.id)?.defaultTriggers ?? [])}
+          onClose={() => setEditingTrigger(null)}
           onSave={saveTriggers}
           open
           title={t('app.abilitiesPanel.triggerEditorTitle', {
-            name: abilities.find(entry => entry.abilityId === editingTriggerAbilityId)?.name ?? editingTriggerAbilityId,
+            name: editingTrigger.kind === 'item'
+              ? (findItemInCatalog(items, editingTrigger.id)?.name ?? editingTrigger.id)
+              : (abilities.find(entry => entry.abilityId === editingTrigger.id)?.name ?? editingTrigger.id),
           })}
         />
       )}

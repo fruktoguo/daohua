@@ -16,6 +16,7 @@ import {
   growthSkillBonusPoints,
   isDungeonReality,
   parseCombatElement,
+  parseDamageKind,
   PartyWipeRule,
   resolveDungeonDynamicMonsterLevel,
   resolveDungeonTargetBaseLevel,
@@ -575,6 +576,16 @@ function parseItem(entry: Record<string, unknown>, id: string): ItemDefinition {
         manaDamageRatio: num(rawStrike, 'manaDamageRatio', 0),
         spellAttackRatio: num(rawStrike, 'spellAttackRatio', 0),
         element: parseCombatElement(typeof rawStrike.element === 'string' ? rawStrike.element : 'none'),
+        physicalAttackRatio: num(rawStrike, 'physicalAttackRatio', 0),
+        flatDamage: num(rawStrike, 'flatDamage', 0),
+        damageKind: parseDamageKind(typeof rawStrike.damageKind === 'string' ? rawStrike.damageKind : 'spell'),
+        targetType: typeof rawStrike.targetType === 'string' ? rawStrike.targetType : 'targetEnemy',
+        ranhunSpellAttackRatio: num(rawStrike, 'ranhunSpellAttackRatio', 0),
+        ranhunBaseStacks: num(rawStrike, 'ranhunBaseStacks', 0),
+        onHitBuff:
+          rawStrike.onHitBuff && typeof rawStrike.onHitBuff === 'object'
+            ? (rawStrike.onHitBuff as Record<string, unknown>)
+            : null,
       };
     }
     consumable = {
@@ -591,6 +602,7 @@ function parseItem(entry: Record<string, unknown>, id: string): ItemDefinition {
       techniqueSpeedRatio: num(rawCons, 'techniqueSpeedRatio', 0),
       enhancementSuccessBonus: num(rawCons, 'enhancementSuccessBonus', 0),
       stackableSlotCount: Math.trunc(num(rawCons, 'stackableSlotCount', 0)),
+      manaCostRatio: num(rawCons, 'manaCostRatio', 0),
     };
   }
   const category = typeof entry.category === 'string' ? entry.category : 'general';
@@ -1046,21 +1058,37 @@ function deriveTriggerBuffIds(
   };
   for (const raw of rawItems.values()) {
     const cons = raw.consumable as Record<string, unknown> | undefined;
-    if (!cons || !Array.isArray(cons.buffs)) continue;
-    for (const buff of cons.buffs as Record<string, unknown>[]) add(buff?.buffId);
+    if (!cons) continue;
+    if (Array.isArray(cons.buffs)) {
+      for (const buff of cons.buffs as Record<string, unknown>[]) add(buff?.buffId);
+    }
+    const rawStrike = cons.strike as Record<string, unknown> | undefined;
+    if (rawStrike && rawStrike.onHitBuff && typeof rawStrike.onHitBuff === 'object') {
+      add((rawStrike.onHitBuff as Record<string, unknown>).buffId);
+    }
   }
-  for (const [abilityId, ability] of abilities.entries()) {
-    if (Array.isArray(ability.buffs)) {
-      for (const entry of ability.buffs) {
+  const addAbilityBuffGroup = (
+    abilityId: string,
+    single: unknown,
+    arr: unknown,
+  ) => {
+    if (Array.isArray(arr)) {
+      for (const entry of arr) {
         if (entry && typeof entry === 'object') {
-          add((entry.buffId as string | undefined) ?? `ability-buff:${abilityId}`);
+          add(((entry as Record<string, unknown>).buffId as string | undefined) ?? `ability-buff:${abilityId}`);
         }
       }
-      continue;
+      return;
     }
-    if (ability.buff && typeof ability.buff === 'object') {
-      add((ability.buff.buffId as string | undefined) ?? `ability-buff:${abilityId}`);
+    if (single && typeof single === 'object') {
+      add(((single as Record<string, unknown>).buffId as string | undefined) ?? `ability-buff:${abilityId}`);
     }
+  };
+  for (const [abilityId, ability] of abilities.entries()) {
+    addAbilityBuffGroup(abilityId, ability.buff, ability.buffs);
+    addAbilityBuffGroup(abilityId, ability.onHitBuff, ability.onHitBuffs);
+    addAbilityBuffGroup(abilityId, ability.selfBuff, ability.selfBuffs);
+    addAbilityBuffGroup(abilityId, ability.channelingAttackedBuff, undefined);
   }
   if (Array.isArray(actionYieldBuffs)) {
     for (const grant of actionYieldBuffs) add(grant.buffId);
@@ -1075,6 +1103,10 @@ function deriveTriggerBuffIds(
   buffs.add(BuffIds.Xuyi);
   buffs.add(BuffIds.Ranhun);
   buffs.add(BuffIds.Yixing);
+  buffs.add(BuffIds.Jianyi);
+  buffs.add(BuffIds.Tiangang);
+  buffs.add(BuffIds.Mabi);
+  buffs.add(BuffIds.Shenxing);
   // 保持与 TraitIds 引用的机制一致
   void TraitIds;
   return buffs;

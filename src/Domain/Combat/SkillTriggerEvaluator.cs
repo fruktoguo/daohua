@@ -90,13 +90,22 @@ public static class SkillTriggerEvaluator
         var buffElements = CollectAbilityBuffElements(ability, "buff", "buffs");
         var onHitBuffElements = CollectAbilityBuffElements(ability, "onHitBuff", "onHitBuffs");
         var selfBuffElements = CollectAbilityBuffElements(ability, "selfBuff", "selfBuffs");
+        var channelingBuffElements = CollectAbilityBuffElements(ability, "channelingAttackedBuff", "channelingAttackedBuffs");
         var hasBuff = buffElements.Count > 0;
+        var shieldMaxHpRatio = JsonRead.Number(ability, "shieldMaxHpRatio");
+        var hpCostMaxHpRatio = JsonRead.Number(ability, "hpCostMaxHpRatio");
+        var maxHpDamageRatio = JsonRead.Number(ability, "maxHpDamageRatio");
+        var shieldDamageRatio = JsonRead.Number(ability, "shieldDamageRatio");
+        var consumeBuffExtra = JsonRead.Number(ability, "consumeBuffExtraDamagePerStack");
         var ranhunBase = JsonRead.Number(ability, "ranhunBaseStacks");
         var ranhunRatio = JsonRead.Number(ability, "ranhunSpellAttackRatio");
         var hasEffect = ratio + flat > 0 || healing
-            || (!supportive && (ranhunBase > 0 || ranhunRatio > 0 || onHitBuffElements.Count > 0))
-            || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatPoints") > 0 || hasBuff);
-        if (ratio < 0 || flat < 0 || ranhunBase < 0 || ranhunRatio < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
+            || (!supportive && (ranhunBase > 0 || ranhunRatio > 0 || onHitBuffElements.Count > 0 || maxHpDamageRatio > 0 || shieldDamageRatio > 0))
+            || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatPoints") > 0 || hasBuff || shieldMaxHpRatio > 0);
+        if (ratio < 0 || flat < 0 || ranhunBase < 0 || ranhunRatio < 0
+            || shieldMaxHpRatio < 0 || hpCostMaxHpRatio < 0 || hpCostMaxHpRatio >= 1
+            || maxHpDamageRatio < 0 || shieldDamageRatio < 0 || consumeBuffExtra < 0
+            || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
             || JsonRead.Number(ability, "manaCost") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能未配置可执行效果或有效施放周期。");
         if (JsonRead.Text(ability, "category") is not ("physical" or "spell")
@@ -109,6 +118,7 @@ public static class SkillTriggerEvaluator
         foreach (var spec in buffElements) ValidateAbilityBuff(spec);
         foreach (var spec in onHitBuffElements) ValidateAbilityBuff(spec);
         foreach (var spec in selfBuffElements) ValidateAbilityBuff(spec);
+        foreach (var spec in channelingBuffElements) ValidateAbilityBuff(spec);
         if (ability.TryGetProperty("defaultTriggers", out var triggers) && triggers.ValueKind == JsonValueKind.Array)
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
     }

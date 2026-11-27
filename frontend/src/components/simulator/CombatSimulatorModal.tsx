@@ -37,12 +37,16 @@ const SIMULATED_CONSUMABLE_STOCK = 1_000_000
 const INT64_MIN = -(1n << 63n)
 const INT64_MAX = (1n << 63n) - 1n
 
-/** 模拟推演前补足已启用消耗品槽位所需虚拟库存，不污染面板状态且不在 UI 展示库存。 */
+/** 模拟推演前补足已启用消耗品槽位及主动术法槽符箓所需虚拟库存，不污染面板状态且不在 UI 展示库存。 */
 function withSimulatedConsumableStock(members: readonly SimulatorProfileDto[]): SimulatorProfileDto[] {
   return members.map(member => {
     const enabledIds = new Set<string>()
     for (const slot of member.combatAutoUseSlots) {
       if (slot.enabled && slot.itemId) enabledIds.add(slot.itemId)
+    }
+    for (let i = 1; i < member.abilitySlots.length; i++) {
+      const aid = member.abilitySlots[i]?.abilityId
+      if (aid && aid.startsWith('item.')) enabledIds.add(aid)
     }
     if (enabledIds.size === 0) return member
     const assets = member.assets.map(a =>

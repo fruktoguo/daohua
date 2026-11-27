@@ -4,6 +4,8 @@ using DaoHua.Ecs.Components;
 using DaoHua.Ecs.Systems;
 using Domain.Combat;
 using Domain.Common;
+using Domain.Economy;
+using Domain.Player;
 using Xunit;
 using YuoCore.Ecs;
 using YuoCore.Runtime;
@@ -20,7 +22,7 @@ public sealed class CombatMechanicTraitTests
     [Fact]
     public void TraitCatalog_RegistersRequestedGradesAndCosts()
     {
-        Assert.Equal(38, CombatTraitRules.AllTraitIds.Count);
+        Assert.Equal(47, CombatTraitRules.AllTraitIds.Count);
         foreach (var (id, quality, cost) in new[]
         {
             ("trait.chujian", 3, 8), ("trait.yusuzebuda", 4, 10), ("trait.woyaodashige", 4, 12),
@@ -785,6 +787,57 @@ public sealed class CombatMechanicTraitTests
         Assert.Equal((200.0 * 200.0 / 201.0) * 1.1 / 2.0, splashBurst.Damage, 8);
     }
 
+    /// <summary>
+    /// 单人战斗中进行中切换特质时，雷击符打击的火神转火判定必须沿用入战定格特质，
+    /// 与燃魂落账读 liveBattle.Player.Stats.Traits 保持同一口径。
+    /// </summary>
+    [Fact]
+    public void SinglePlayerTalisman_UsesFrozenCombatTraitsWhenPlayerSwapsTraitsMidBattle()
+    {
+        var catalog = Domain.GameData.GameDataCatalog.LoadEmbedded();
+        var at = new DateTimeOffset(2026, 11, 27, 0, 0, 0, TimeSpan.Zero);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "符修", at, catalog.Fingerprint);
+        player.Progression.RealmLevel = 30;
+        player.Progression.UnlockedTraits[CombatTraitRules.HuoshenTraitId] = new(CombatTraitRules.HuoshenTraitId, 1, 0);
+        player.Progression.UnlockedTraits[CombatTraitRules.RanhunTraitId] = new(CombatTraitRules.RanhunTraitId, 1, 0);
+        // 入战时只带燃魂，不带火神
+        player.Progression.SetTraits([CombatTraitRules.RanhunTraitId]);
+        var statsBefore = PlayerAttributeResolver.Resolve(player, catalog);
+        player.Resources.MaxHitpoints = statsBefore.MaxHitpoints;
+        player.Resources.Hitpoints = statsBefore.MaxHitpoints;
+        player.Resources.MaxManapoints = statsBefore.MaxManapoints;
+        player.Resources.Manapoints = statsBefore.MaxManapoints;
+
+        var monsterId = catalog.CombatMonsters.Keys.First();
+        var battle = CombatEventAdvanceSystem.Start("talisman-frozen-traits", 5,
+            new CombatantTemplate(statsBefore.ToCombatant(player.Progression.CombatExperience)),
+            [new CombatantTemplate(Stats(hp: 20_000, interval: 100), DefinitionId: monsterId)]);
+        battle.Enemies[0].DefinitionId = monsterId;
+        var action = player.EnqueuePriority(new ActionIntent(new ActionId("combat.hunt-qi-beast"), 1), at, catalog.Actions);
+        action.Expedition = new CombatExpeditionState(
+            "talisman-frozen-traits", CombatExpeditionPhase.Combat, 0, 0, 5, 0,
+            battle.Player.Hitpoints, battle.Player.Manapoints, battle.Player.NextAttackAtSeconds,
+            battle.Player.AttackCount, battle.Player.Threat, CombatOutcome.Running, 1,
+            [new ExpeditionEnemyState(monsterId, CombatEncounterState.Snapshot(battle.Enemies[0]))])
+        {
+            PlayerState = CombatEncounterState.Snapshot(battle.Player)
+        };
+        player.Settings.AutoUseSlots.Add(new AutoUseSlotState(
+            Domain.GameData.AutoUseBar.Combat, 0, "item.leiji-talisman", 1, true, Group: AutoUseSlotState.SlotGroupGeneral));
+
+        // 战中临时换上火神：按入战定格规则，本场雷击符仍应保持原木属性，不应被新装的火神转火并触发燃魂。
+        player.Progression.SetTraits([CombatTraitRules.HuoshenTraitId, CombatTraitRules.RanhunTraitId]);
+
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Apply(new AssetDelta(player.PlayerId, new AssetKey(new ItemId("item.leiji-talisman")), 1, "test"));
+        var events = new SimulationEngine.SimulationEventTail();
+        var spent = ActionExecutionRules.ActivateInstantConsumables(
+            player, catalog, wallet, at, events, liveState: battle);
+
+        Assert.Single(spent);
+        Assert.Equal(0, battle.Enemies[0].BuffStacks(CombatTraitRules.RanhunBuffId));
+    }
+
     [Fact]
     public void WumengSkills_AllFiveMechanicsAndMonsterInvariantsBehaveAsDesigned()
     {
@@ -795,7 +848,7 @@ public sealed class CombatMechanicTraitTests
         var shanguiYao = catalog.Abilities["ability.shangui-yao"];
         var pojun = catalog.Abilities["ability.pojun"];
 
-        // 1. 天雷破：至多命中 2 名存活敌人并施加 5s 麻痹（闪避/化解 ×0.8，行动速度 -10，且均不吃技能等级成长）
+        // 1. 天雷破：至多命中 2 名存活敌人并施加 5s 麻痹（闪避/化解按反比例软着陆 ×(1/1.2)，行动速度 -10，且均不吃技能等级成长）
         var spellCaster = Stats(hp: 2000, attack: 10, interval: 100) with
         {
             SpellAttack = 100,
@@ -812,8 +865,8 @@ public sealed class CombatMechanicTraitTests
         Assert.Equal(2, paralysed.Length);
         foreach (var e in paralysed)
         {
-            Assert.Equal(40.0, e.EffectiveStats.Evasion, 12);
-            Assert.Equal(40.0, e.EffectiveStats.ParryResolve, 12);
+            Assert.Equal(50.0 / 1.2, e.EffectiveStats.Evasion, 12);
+            Assert.Equal(50.0 / 1.2, e.EffectiveStats.ParryResolve, 12);
             Assert.Equal(-10.0, e.EffectiveStats.ActionSpeedPoints, 12);
         }
 

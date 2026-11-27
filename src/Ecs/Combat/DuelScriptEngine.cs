@@ -41,18 +41,25 @@ public static class DuelScriptEngine
 
     private readonly record struct PlannedStrike(
         CombatantState Caster,
-        CombatantState Opponent,
+        IReadOnlyList<CombatantState> Targets,
         DuelConsumableRuntime Runtime,
         DuelSlotRuntime Slot,
         double ManaCost,
+        double CooldownSeconds,
+        CombatDamageKind DamageKind,
         CombatElement Element,
+        bool HasDirectDamage,
         double RawPower,
-        double Damage);
+        IReadOnlyList<(double Damage, bool Critical)> TargetDamages,
+        double RanhunStacks,
+        JsonElement? OnHitBuff);
 
     private readonly record struct PlannedPotion(
         CombatantState Caster,
         DuelConsumableRuntime Runtime,
         DuelSlotRuntime Slot,
+        double ManaCost,
+        double CooldownSeconds,
         double HpRestore,
         double MpRestore,
         bool HasBuffs,
@@ -132,32 +139,36 @@ public static class DuelScriptEngine
         var trackedSideBHp = InitHp(sideBCombatants);
         var trackedSideAMp = InitMp(sideACombatants);
         var trackedSideBMp = InitMp(sideBCombatants);
+        var trackedSideAShield = new double[sideACombatants.Count];
+        var trackedSideBShield = new double[sideBCombatants.Count];
 
         // 开打前先对空持续槽双侧同步补能并注入阵盘 Buff（阵法类全队生效），再基于同一开局快照并行决策首次出手。
         if (hasConsumables)
         {
             EvaluateSymmetricConsumables(encounter, initiatorCombatSide, sideARuntimes, sideBRuntimes,
                 evaluateSustained: true, evaluateInstant: false,
-                statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
         }
 
         Systems.CombatActSystem.DecideInitialActions(encounter);
+        EmitResourceSyncIfChanged(encounter, initiatorCombatSide, events,
+            trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
 
         // 开打首帧双侧同步收敛即时消耗品（同刻双雷击符互秒判平，被打残后同刻下一波收敛吃止血散）。
         if (hasConsumables)
         {
             EvaluateSymmetricConsumables(encounter, initiatorCombatSide, sideARuntimes, sideBRuntimes,
                 evaluateSustained: true, evaluateInstant: true,
-                statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
         }
 
         if (!hasConsumables)
         {
             var result = Systems.CombatEventAdvanceSystem.AdvanceTo(encounter, settings.MaxDuelSeconds);
             AppendCombatEvents(encounter, initiatorCombatSide, result.Events, events,
-                trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
             EmitResourceSyncIfChanged(encounter, initiatorCombatSide, events,
-                trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
         }
         else
         {
@@ -172,15 +183,15 @@ public static class DuelScriptEngine
                     NextConsumableWake(encounter.ElapsedSeconds, sideARuntimes, sideBRuntimes, sideACombatants, sideBCombatants));
                 var step = Systems.CombatEventAdvanceSystem.AdvanceOneBoundary(encounter, stepTarget);
                 AppendCombatEvents(encounter, initiatorCombatSide, step.Events, events,
-                    trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                    trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
                 EmitResourceSyncIfChanged(encounter, initiatorCombatSide, events,
-                    trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                    trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
                 if (encounter.Outcome != CombatOutcome.Running) break;
                 ExpireSideSustainedSlots(sideARuntimes, encounter.ElapsedSeconds);
                 ExpireSideSustainedSlots(sideBRuntimes, encounter.ElapsedSeconds);
                 EvaluateSymmetricConsumables(encounter, initiatorCombatSide, sideARuntimes, sideBRuntimes,
                     evaluateSustained: true, evaluateInstant: true,
-                    statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                    statsBook, events, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
             }
         }
 
@@ -459,7 +470,9 @@ public static class DuelScriptEngine
         double[] trackedSideAHp,
         double[] trackedSideBHp,
         double[] trackedSideAMp,
-        double[] trackedSideBMp)
+        double[] trackedSideBMp,
+        double[] trackedSideAShield,
+        double[] trackedSideBShield)
     {
         var flipTieOrder = (encounter.Seed & 1L) != 0;
         var firstSide = flipTieOrder ? CombatSide.SideB : CombatSide.SideA;
@@ -473,7 +486,7 @@ public static class DuelScriptEngine
             List<PlannedStrike>? plannedStrikes = null;
             List<PlannedPotion>? plannedPotions = null;
 
-            // 1. 持续槽双侧同步快照扫描（持续槽只挂增益/消耗库存，先全部同步规划再落账，保证本波即时槽能读到刚充能的持续状态）。
+            // 1. 持续槽双侧同步快照扫描。
             if (evaluateSustained)
             {
                 PlanSideSustained(firstSide);
@@ -514,7 +527,9 @@ public static class DuelScriptEngine
                             plan.Caster.Manapoints,
                             AbilityNameOverride: DuelScriptEvent.SustainedActivateMarker,
                             AttackerUnitIndex: plan.Caster.SideIndex,
-                            TargetUnitIndex: plan.Caster.SideIndex));
+                            TargetUnitIndex: plan.Caster.SideIndex,
+                            AttackerShieldAfter: plan.Caster.Shield,
+                            TargetShieldAfter: plan.Caster.Shield));
                     }
                 }
             }
@@ -543,50 +558,62 @@ public static class DuelScriptEngine
                         {
                             var strike = plannedStrikes[s];
                             var itemId = strike.Slot.Item.Id.Value;
-                            var wasOpponentAlive = strike.Opponent.IsAlive;
                             strike.Caster.Manapoints = Math.Max(0, strike.Caster.Manapoints - strike.ManaCost);
-                            var settled = CombatDamageSettlement.Apply(encounter, strike.Caster, strike.Opponent, strike.Damage);
-                            var damage = settled.Damage;
-                            if (encounter.ActionRecorder is { } strikeRecorder)
+                            encounter.ActionRecorder?.BeginAction(encounter.ElapsedSeconds, strike.Caster, DuelRecordActionKind.Item, itemId);
+                            try
                             {
-                                strikeRecorder.BeginAction(encounter.ElapsedSeconds, strike.Caster, DuelRecordActionKind.Item, itemId);
-                                try
+                                for (var tIdx = 0; tIdx < strike.Targets.Count; tIdx++)
                                 {
-                                    strikeRecorder.RecordDamage(strike.Caster, strike.Opponent, DuelRecordEffectKind.Damage,
-                                        CombatDamageKind.Spell, strike.Element, DuelRecordHitMark.Hit,
-                                        damage, itemId, targetDowned: wasOpponentAlive && !strike.Opponent.IsAlive);
-                                    CombatTraitReactions.ApplyRanhun(strike.Caster, strike.Opponent, strike.Element, settled.Actual, encounter.ElapsedSeconds, encounter);
-                                }
-                                finally
-                                {
-                                    strikeRecorder.EndAction();
+                                    var foe = strike.Targets[tIdx];
+                                    var wasOpponentAlive = foe.IsAlive;
+                                    var damage = 0d;
+                                    var isCrit = false;
+                                    if (strike.HasDirectDamage)
+                                    {
+                                        var precomputed = strike.TargetDamages[tIdx];
+                                        isCrit = precomputed.Critical;
+                                        var settled = CombatDamageSettlement.Apply(encounter, strike.Caster, foe, precomputed.Damage);
+                                        damage = settled.Damage;
+                                        var hitFlags = DuelRecordHitMark.Hit | (isCrit ? DuelRecordHitMark.Crit : DuelRecordHitMark.None);
+                                        encounter.ActionRecorder?.RecordDamage(strike.Caster, foe, DuelRecordEffectKind.Damage,
+                                            strike.DamageKind, strike.Element, hitFlags,
+                                            damage, itemId, targetDowned: wasOpponentAlive && !foe.IsAlive);
+                                        CombatTraitReactions.ApplyRanhun(strike.Caster, foe, strike.Element, settled.Actual, encounter.ElapsedSeconds, encounter);
+                                        statsBook.RecordHit(strike.Caster, foe, strike.DamageKind,
+                                            damage, Math.Max(0, strike.RawPower - damage));
+                                    }
+                                    if (strike.RanhunStacks > 0 && foe.IsAlive)
+                                        CombatTraitReactions.AddRanhunStacks(strike.Caster, foe, strike.RanhunStacks, encounter.ElapsedSeconds, encounter);
+                                    if (strike.OnHitBuff is { ValueKind: JsonValueKind.Object } onHitSpec && foe.IsAlive)
+                                        Systems.CombatActSystem.GrantBuff(onHitSpec, strike.Caster, foe, encounter.ElapsedSeconds, 1.0, itemId, encounter, includeCasterSkillBonus: false);
+                                    Systems.CombatActSystem.NotifyUnitAttacked(encounter, strike.Caster, foe, encounter.ElapsedSeconds);
+                                    SyncTrackedUnit(strike.Caster, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
+                                    SyncTrackedUnit(foe, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
+                                    events.Add(new DuelScriptEvent(
+                                        encounter.ElapsedSeconds,
+                                        strike.Caster.Side == initiatorCombatSide,
+                                        foe.Side == initiatorCombatSide,
+                                        damage,
+                                        true,
+                                        isCrit,
+                                        foe.Hitpoints,
+                                        itemId,
+                                        0,
+                                        strike.Caster.Manapoints,
+                                        foe.Manapoints,
+                                        AttackerUnitIndex: strike.Caster.SideIndex,
+                                        TargetUnitIndex: foe.SideIndex,
+                                        AttackerShieldAfter: strike.Caster.Shield,
+                                        TargetShieldAfter: foe.Shield));
                                 }
                             }
-                            else
+                            finally
                             {
-                                CombatTraitReactions.ApplyRanhun(strike.Caster, strike.Opponent, strike.Element, settled.Actual, encounter.ElapsedSeconds);
+                                encounter.ActionRecorder?.EndAction();
                             }
-                            statsBook.RecordHit(strike.Caster, strike.Opponent, CombatDamageKind.Spell,
-                                damage, Math.Max(0, strike.RawPower - damage));
                             strike.Runtime.Balances[itemId] = strike.Runtime.Balances.GetValueOrDefault(itemId) - 1d;
-                            strike.Slot.AvailableAtSeconds = encounter.ElapsedSeconds + strike.Slot.Consumable.CooldownSeconds;
+                            strike.Slot.AvailableAtSeconds = encounter.ElapsedSeconds + strike.CooldownSeconds;
                             strike.Runtime.StrikeUseCount += 1;
-                            SyncTrackedUnit(strike.Caster, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
-                            SyncTrackedUnit(strike.Opponent, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
-                            events.Add(new DuelScriptEvent(
-                                encounter.ElapsedSeconds,
-                                strike.Caster.Side == initiatorCombatSide,
-                                strike.Opponent.Side == initiatorCombatSide,
-                                damage,
-                                true,
-                                false,
-                                strike.Opponent.Hitpoints,
-                                itemId,
-                                0,
-                                strike.Caster.Manapoints,
-                                strike.Opponent.Manapoints,
-                                AttackerUnitIndex: strike.Caster.SideIndex,
-                                TargetUnitIndex: strike.Opponent.SideIndex));
                         }
                     }
 
@@ -597,8 +624,11 @@ public static class DuelScriptEngine
                         {
                             var potion = plannedPotions[p];
                             if (!potion.Caster.IsAlive) continue;
+                            if (potion.ManaCost > 0 && potion.Caster.Manapoints < potion.ManaCost - 1e-9) continue;
                             var itemId = potion.Slot.Item.Id.Value;
                             var hpBefore = potion.Caster.Hitpoints;
+                            if (potion.ManaCost > 0)
+                                potion.Caster.Manapoints = Math.Max(0, potion.Caster.Manapoints - potion.ManaCost);
                             var mpBefore = potion.Caster.Manapoints;
                             potion.Caster.Hitpoints = Math.Min(potion.Caster.Stats.MaxHitpoints, potion.Caster.Hitpoints + potion.HpRestore);
                             potion.Caster.Manapoints = Math.Min(potion.Caster.Stats.MaxManapoints, potion.Caster.Manapoints + potion.MpRestore);
@@ -620,7 +650,9 @@ public static class DuelScriptEngine
                                         var duration = JsonRead.Number(buff, "durationSeconds");
                                         if (duration <= 0) continue;
                                         var effects = BuffEffectParser.Parse(buff, 1.0);
-                                        potion.Caster.SetBuff(new CombatBuffState(buffId, encounter.ElapsedSeconds + duration, 1,
+                                        var existingBuff = potion.Caster.Buffs.FirstOrDefault(b => b.BuffId == buffId);
+                                        var mergedExp = CombatTraitRules.MergeBuffExpiry(existingBuff?.ExpiresAtSeconds, encounter.ElapsedSeconds + duration);
+                                        potion.Caster.SetBuff(new CombatBuffState(buffId, mergedExp, 1,
                                             JsonRead.Text(buff, "name") ?? buffId, ResetOnWave: true, Effects: effects));
                                         encounter.ActionRecorder?.RecordBuff(potion.Caster, potion.Caster, buffId, 1);
                                     }
@@ -631,8 +663,8 @@ public static class DuelScriptEngine
                                 encounter.ActionRecorder?.EndAction();
                             }
                             potion.Runtime.Balances[itemId] = potion.Runtime.Balances.GetValueOrDefault(itemId) - 1d;
-                            potion.Slot.AvailableAtSeconds = encounter.ElapsedSeconds + potion.Slot.Consumable.CooldownSeconds;
-                            SyncTrackedUnit(potion.Caster, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp);
+                            potion.Slot.AvailableAtSeconds = encounter.ElapsedSeconds + potion.CooldownSeconds;
+                            SyncTrackedUnit(potion.Caster, trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
                             var isInitiator = potion.Caster.Side == initiatorCombatSide;
                             events.Add(new DuelScriptEvent(
                                 encounter.ElapsedSeconds,
@@ -647,7 +679,9 @@ public static class DuelScriptEngine
                                 potion.Caster.Manapoints,
                                 potion.Caster.Manapoints,
                                 AttackerUnitIndex: potion.Caster.SideIndex,
-                                TargetUnitIndex: potion.Caster.SideIndex));
+                                TargetUnitIndex: potion.Caster.SideIndex,
+                                AttackerShieldAfter: potion.Caster.Shield,
+                                TargetShieldAfter: potion.Caster.Shield));
                         }
                     }
                 }
@@ -657,7 +691,15 @@ public static class DuelScriptEngine
                 }
 
                 UpdateDuelOutcome(encounter);
-                if (encounter.Outcome != CombatOutcome.Running) break;
+                if (encounter.Outcome != CombatOutcome.Running)
+                {
+                    List<CombatEvent>? endEvents = null;
+                    CombatTraitReactions.SettleWaveEndShields(encounter, ref endEvents);
+                    if (endEvents is { Count: > 0 })
+                        AppendCombatEvents(encounter, initiatorCombatSide, endEvents, events,
+                            trackedSideAHp, trackedSideBHp, trackedSideAMp, trackedSideBMp, trackedSideAShield, trackedSideBShield);
+                    break;
+                }
             }
 
             void PlanSideSustained(CombatSide side)
@@ -708,32 +750,73 @@ public static class DuelScriptEngine
                                 opponent, units, opponents, encounter.ElapsedSeconds))
                             continue;
 
+                        var effectiveCooldown = DeterministicCombatEngine.ResolveConsumableCooldownSeconds(
+                            slot.Item, slot.Consumable, caster.Stats.Traits, caster.Stats.TraitLevels);
+
                         if (slot.Consumable.Strike is { } strike)
                         {
-                            var manaCost = strike.ManaCostRatio * caster.Stats.MaxManapoints;
-                            if (opponent is null || !opponent.IsAlive || caster.Manapoints < manaCost - 1e-9) continue;
+                            var manaCost = DeterministicCombatEngine.ResolveConsumableManaCost(
+                                slot.Item, strike.ManaCostRatio, caster.Stats);
+                            if (caster.Manapoints < manaCost - 1e-9) continue;
+                            var isAoE = string.Equals(strike.TargetType, "allEnemies", StringComparison.Ordinal);
+                            List<CombatantState> targets;
+                            if (isAoE)
+                            {
+                                targets = new List<CombatantState>(opponents.Count);
+                                for (var o = 0; o < opponents.Count; o++)
+                                    if (opponents[o].IsAlive) targets.Add(opponents[o]);
+                                if (targets.Count == 0) continue;
+                            }
+                            else
+                            {
+                                if (opponent is null || !opponent.IsAlive) continue;
+                                targets = [opponent];
+                            }
+                            var hasDirectDamage = strike.ManaDamageRatio > 0 || strike.SpellAttackRatio > 0
+                                || strike.PhysicalAttackRatio > 0 || strike.FlatDamage > 0;
+                            var ranhunStacks = DeterministicCombatEngine.ResolveConsumableRanhunStacks(slot.Item, strike, caster.Stats);
                             var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, strike.Element);
-                            // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
-                            var rawPower = DeterministicCombatEngine.ResolveConsumableStrikePower(slot.Item, strike, caster.Stats);
-                            var strikeStats = caster.Stats with
+                            var effectiveCaster = caster.EffectiveStats;
+                            var rawPower = hasDirectDamage
+                                ? DeterministicCombatEngine.ResolveConsumableStrikePower(slot.Item, strike, effectiveCaster)
+                                : 0;
+                            var strikeStats = effectiveCaster with
                             {
                                 AttackPower = rawPower,
-                                DamageKind = CombatDamageKind.Spell,
+                                DamageKind = strike.DamageKind,
                                 Element = strikeElement,
                                 TotalDamageBonusPoints = caster.Stats.TotalDamageBonusPoints
                                     + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints)
                             };
-                            var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, opponent);
-                            (plannedStrikes ??= []).Add(new PlannedStrike(caster, opponent, runtime, slot, manaCost, strikeElement, rawPower, damage));
+                            var targetDamages = new (double Damage, bool Critical)[targets.Count];
+                            if (hasDirectDamage)
+                            {
+                                var sideTag = Systems.CombatActSystem.SymmetricUnitSide(encounter.Seed, caster.Side, caster.SideIndex);
+                                var rollBase = caster.AttackCount + runtime.StrikeUseCount;
+                                for (var t = 0; t < targets.Count; t++)
+                                {
+                                    var isCrit = DeterministicCombatEngine.RollTalismanCrit(
+                                        encounter.Seed, sideTag, rollBase + t, caster, targets[t]);
+                                    var dmg = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, targets[t], isCrit);
+                                    targetDamages[t] = (dmg, isCrit);
+                                }
+                            }
+                            (plannedStrikes ??= []).Add(new PlannedStrike(
+                                caster, targets, runtime, slot, manaCost, effectiveCooldown,
+                                strike.DamageKind, strikeElement, hasDirectDamage, rawPower,
+                                targetDamages, ranhunStacks, strike.OnHitBuff));
                             break;
                         }
 
+                        var selfManaCost = DeterministicCombatEngine.ResolveConsumableManaCost(
+                            slot.Item, slot.Consumable.ManaCostRatio, caster.Stats);
+                        if (selfManaCost > 0 && caster.Manapoints < selfManaCost - 1e-9) continue;
                         var hpRestore = JsonRead.Number(slot.RawConsumable, "hitpointRestore");
                         var mpRestore = JsonRead.Number(slot.RawConsumable, "manapointRestore");
                         var hasBuffs = slot.RawConsumable.TryGetProperty("buffs", out var buffsEl)
                             && buffsEl.ValueKind == JsonValueKind.Array;
                         if (!hasBuffs && hpRestore == 0 && mpRestore == 0) continue;
-                        (plannedPotions ??= []).Add(new PlannedPotion(caster, runtime, slot, hpRestore, mpRestore, hasBuffs, buffsEl));
+                        (plannedPotions ??= []).Add(new PlannedPotion(caster, runtime, slot, selfManaCost, effectiveCooldown, hpRestore, mpRestore, hasBuffs, buffsEl));
                         break;
                     }
                 }
@@ -750,17 +833,20 @@ public static class DuelScriptEngine
     }
 
     private static void SyncTrackedUnit(CombatantState unit,
-        double[] trackedSideAHp, double[] trackedSideBHp, double[] trackedSideAMp, double[] trackedSideBMp)
+        double[] trackedSideAHp, double[] trackedSideBHp, double[] trackedSideAMp, double[] trackedSideBMp,
+        double[] trackedSideAShield, double[] trackedSideBShield)
     {
         if (unit.Side == CombatSide.SideA)
         {
             trackedSideAHp[unit.SideIndex] = unit.Hitpoints;
             trackedSideAMp[unit.SideIndex] = unit.Manapoints;
+            trackedSideAShield[unit.SideIndex] = unit.Shield;
         }
         else
         {
             trackedSideBHp[unit.SideIndex] = unit.Hitpoints;
             trackedSideBMp[unit.SideIndex] = unit.Manapoints;
+            trackedSideBShield[unit.SideIndex] = unit.Shield;
         }
     }
 
@@ -789,21 +875,26 @@ public static class DuelScriptEngine
         double[] trackedSideAHp,
         double[] trackedSideBHp,
         double[] trackedSideAMp,
-        double[] trackedSideBMp)
+        double[] trackedSideBMp,
+        double[] trackedSideAShield,
+        double[] trackedSideBShield)
     {
-        SyncSide(encounter.SideA, trackedSideAHp, trackedSideAMp);
-        SyncSide(encounter.SideB, trackedSideBHp, trackedSideBMp);
+        SyncSide(encounter.SideA, trackedSideAHp, trackedSideAMp, trackedSideAShield);
+        SyncSide(encounter.SideB, trackedSideBHp, trackedSideBMp, trackedSideBShield);
 
-        void SyncSide(IReadOnlyList<CombatantState> units, double[] trackedHp, double[] trackedMp)
+        void SyncSide(IReadOnlyList<CombatantState> units, double[] trackedHp, double[] trackedMp, double[] trackedShield)
         {
             for (var i = 0; i < units.Count; i++)
             {
                 var unit = units[i];
-                if (Math.Abs(unit.Hitpoints - trackedHp[i]) <= 1e-9 && Math.Abs(unit.Manapoints - trackedMp[i]) <= 1e-9)
+                if (Math.Abs(unit.Hitpoints - trackedHp[i]) <= 1e-9
+                    && Math.Abs(unit.Manapoints - trackedMp[i]) <= 1e-9
+                    && Math.Abs(unit.Shield - trackedShield[i]) <= 1e-9)
                     continue;
                 var healed = Math.Max(0, unit.Hitpoints - trackedHp[i]);
                 trackedHp[i] = unit.Hitpoints;
                 trackedMp[i] = unit.Manapoints;
+                trackedShield[i] = unit.Shield;
                 var isInitiator = unit.Side == initiatorCombatSide;
                 events.Add(new DuelScriptEvent(
                     encounter.ElapsedSeconds,
@@ -818,7 +909,9 @@ public static class DuelScriptEngine
                     unit.Manapoints,
                     unit.Manapoints,
                     AttackerUnitIndex: unit.SideIndex,
-                    TargetUnitIndex: unit.SideIndex));
+                    TargetUnitIndex: unit.SideIndex,
+                    AttackerShieldAfter: unit.Shield,
+                    TargetShieldAfter: unit.Shield));
             }
         }
     }
@@ -831,7 +924,9 @@ public static class DuelScriptEngine
         double[] trackedSideAHp,
         double[] trackedSideBHp,
         double[] trackedSideAMp,
-        double[] trackedSideBMp)
+        double[] trackedSideBMp,
+        double[] trackedSideAShield,
+        double[] trackedSideBShield)
     {
         for (var i = 0; i < combatEvents.Count; i++)
         {
@@ -846,12 +941,18 @@ public static class DuelScriptEngine
             var targetHpArr = target.Side == CombatSide.SideA ? trackedSideAHp : trackedSideBHp;
             var targetMpArr = target.Side == CombatSide.SideA ? trackedSideAMp : trackedSideBMp;
             var attackerMpArr = attacker.Side == CombatSide.SideA ? trackedSideAMp : trackedSideBMp;
+            var targetShieldArr = target.Side == CombatSide.SideA ? trackedSideAShield : trackedSideBShield;
+            var attackerShieldArr = attacker.Side == CombatSide.SideA ? trackedSideAShield : trackedSideBShield;
 
             targetHpArr[target.SideIndex] = combatEvent.TargetHitpointsAfter;
             if (combatEvent.AttackerManapointsAfter is { } attackerMp)
                 attackerMpArr[attacker.SideIndex] = attackerMp;
             if (combatEvent.TargetManapointsAfter is { } targetMp)
                 targetMpArr[target.SideIndex] = targetMp;
+            if (combatEvent.AttackerShieldAfter is { } attackerSh)
+                attackerShieldArr[attacker.SideIndex] = attackerSh;
+            if (combatEvent.TargetShieldAfter is { } targetSh)
+                targetShieldArr[target.SideIndex] = targetSh;
 
             events.Add(new DuelScriptEvent(
                 combatEvent.AtSeconds,
@@ -869,7 +970,9 @@ public static class DuelScriptEngine
                 combatEvent.Parried,
                 combatEvent.AbilityNameOverride,
                 AttackerUnitIndex: attacker.SideIndex,
-                TargetUnitIndex: target.SideIndex));
+                TargetUnitIndex: target.SideIndex,
+                AttackerShieldAfter: attackerShieldArr[attacker.SideIndex],
+                TargetShieldAfter: targetShieldArr[target.SideIndex]));
         }
     }
 

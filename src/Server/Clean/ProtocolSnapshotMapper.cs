@@ -200,6 +200,11 @@ public static class ProtocolSnapshotMapper
                 && slot.CooldownUntilUnixSeconds > 0)
                 return true;
         }
+        if (state.Combat.TalismanCooldowns is { Count: > 0 } talismanCds)
+        {
+            foreach (var cdUntil in talismanCds.Values)
+                if (cdUntil > 0) return true;
+        }
         return false;
     }
 
@@ -534,6 +539,16 @@ public static class ProtocolSnapshotMapper
                 consumableCooldowns[index] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
             }
         }
+        Dictionary<string, double>? talismanCooldowns = null;
+        if (state.Combat.TalismanCooldowns is { Count: > 0 } rawTalismanCds)
+        {
+            foreach (var (talismanId, cdUntil) in rawTalismanCds)
+            {
+                var remainingMs = Math.Max(0, (cdUntil - nowUnix) * 1000);
+                if (remainingMs > 0)
+                    (talismanCooldowns ??= new Dictionary<string, double>(StringComparer.Ordinal))[talismanId] = remainingMs;
+            }
+        }
         // 吟唱总时长 = 配表吟唱毫秒 ÷(1+行动速度点数/100)，仅在吟唱中下发；前端行动条不得回读配表推算。
         double? castTotalMilliseconds = null;
         if (state.Combat.Skills.CastingAbilityId is { } castingId
@@ -562,6 +577,7 @@ public static class ProtocolSnapshotMapper
                 castTotalMilliseconds
             },
             consumableCooldownMilliseconds = consumableCooldowns,
+            talismanCooldownMilliseconds = talismanCooldowns,
             // 威胁增幅折入战内 Buff 点数：战斗相位取波中实时快照，脱战取跨波携带态（与有效威胁同乘区）。
             attributes = ToAttributesDto(a,
                 state.Actions.Count > 0 && state.Actions[0].Expedition is
@@ -708,6 +724,13 @@ public static class ProtocolSnapshotMapper
             expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
             expedition.BattleElapsedSeconds,
             expedition.PlayerHitpoints, expedition.PlayerManapoints,
+            playerShield = expedition.Phase == CombatExpeditionPhase.Combat
+                ? (expedition.PlayerState?.Shield ?? 0d)
+                : expedition.Phase == CombatExpeditionPhase.Duel
+                    && expedition.Duel?.SelfUnits is { Count: > 0 } duelSelf
+                    && (uint)expedition.Duel.SelfUnitIndex < (uint)duelSelf.Count
+                        ? duelSelf[expedition.Duel.SelfUnitIndex].Shield
+                        : 0d,
             expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount,
             // 本机有效威胁：镜像基础值 ×(1+面板增幅+PlayerState 修正/战内 Buff 点数/100)。
             playerThreat = CombatantState.ComputeEffectiveThreat(
@@ -743,7 +766,9 @@ public static class ProtocolSnapshotMapper
                 broken = e.Break,
                 parried = e.Parried,
                 abilityId = e.AbilityId,
-                targetHp = e.TargetHitpointsAfter
+                targetHp = e.TargetHitpointsAfter,
+                attackerShield = e.AttackerShieldAfter,
+                targetShield = e.TargetShieldAfter
             }).ToArray(),
             // 组队讨伐盟友阵列（§21.13）：按规格成员序下发全部在场成员（含本机位由标量镜像合成）。
             selfIndex = spec is null ? (int?)null : expedition.SelfIndex,
@@ -806,6 +831,7 @@ public static class ProtocolSnapshotMapper
                 member.DisplayName,
                 avatar = member.Avatar,
                 state.Hitpoints, state.Manapoints,
+                shield = state.Shield,
                 maxHitpoints = member.Stats.MaxHitpoints,
                 maxManapoints = member.Stats.MaxManapoints,
                 state.NextAttackAtSeconds, state.AttackCount,
@@ -899,6 +925,7 @@ public static class ProtocolSnapshotMapper
             },
             visual,
             enemy.State.Hitpoints, enemy.State.Manapoints,
+            shield = enemy.State.Shield,
             enemy.State.NextAttackAtSeconds, enemy.State.AttackCount,
             // 有效威胁：镜像基础值 ×(1+配表面板增幅+镜像修正/战内 Buff 点数/100)。
             threat = CombatantState.ComputeEffectiveThreat(
@@ -1032,6 +1059,7 @@ public static class ProtocolSnapshotMapper
                     u.Avatar,
                     u.Hitpoints,
                     u.Manapoints,
+                    u.Shield,
                     maxHitpoints = u.Stats.MaxHitpoints,
                     maxManapoints = u.Stats.MaxManapoints,
                     attributes = attrs,
@@ -1058,6 +1086,7 @@ public static class ProtocolSnapshotMapper
                     u.Avatar,
                     u.Hitpoints,
                     u.Manapoints,
+                    u.Shield,
                     maxHitpoints = u.Stats.MaxHitpoints,
                     maxManapoints = u.Stats.MaxManapoints,
                     attributes = attrs,
@@ -1078,6 +1107,7 @@ public static class ProtocolSnapshotMapper
             duel.DurationSeconds,
             duel.OpponentHitpoints,
             duel.OpponentManapoints,
+            opponentShield = duel.OpponentUnits is { Count: > 0 } oppLead ? oppLead[0].Shield : 0d,
             // 镜像血蓝条分母：常驻标量（与敌怪 maxHitpoints/maxManapoints 同一取舍）。
             opponentMaxHitpoints = duel.OpponentStats.MaxHitpoints,
             opponentMaxManapoints = duel.OpponentStats.MaxManapoints,
@@ -1113,7 +1143,9 @@ public static class ProtocolSnapshotMapper
                 duelEvent.AbilityId,
                 duelEvent.Healing,
                 duelEvent.AttackerManapointsAfter,
-                duelEvent.TargetManapointsAfter
+                duelEvent.TargetManapointsAfter,
+                duelEvent.AttackerShieldAfter,
+                duelEvent.TargetShieldAfter
             }).ToArray()
         };
     }

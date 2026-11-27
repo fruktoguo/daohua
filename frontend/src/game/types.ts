@@ -517,6 +517,8 @@ export interface ExpeditionEnemy {
   hitpoints: number
   /** 当前灵力 */
   manapoints: number
+  /** 当前护盾值 */
+  shield?: number
   /** 气血上限（血蓝条分母，配表缺失时为 null） */
   maxHitpoints?: number | null
   /** 灵力上限 */
@@ -555,6 +557,8 @@ export interface ExpeditionAlly {
   hitpoints: number
   /** 当前灵力 */
   manapoints: number
+  /** 当前护盾值 */
+  shield?: number
   /** 气血上限（血蓝条分母，快照缺失时为 null） */
   maxHitpoints?: number | null
   /** 灵力上限 */
@@ -608,6 +612,10 @@ export interface CombatRecentEvent {
   abilityId?: string | null
   /** 结算后的受击方剩余气血 */
   targetHp?: number
+  /** 结算后的出手方剩余护盾 */
+  attackerShield?: number
+  /** 结算后的受击方剩余护盾 */
+  targetShield?: number
 }
 
 /**
@@ -628,6 +636,8 @@ export interface ExpeditionProgress {
   playerHitpoints?: number | null
   /** 玩家当前灵力值 */
   playerManapoints?: number | null
+  /** 玩家当前护盾值 */
+  playerShield?: number | null
   /** 本场战斗已流逝的战斗时钟秒数（出手/技能时刻表的参照系） */
   battleElapsedSeconds?: number
   /** 玩家下一次出手的战斗时刻（秒），配合 battleElapsedSeconds 推导行动条 */
@@ -953,6 +963,10 @@ export interface ExpeditionDuelEvent {
   attackerManapointsAfter: number
   /** 受击方结算后剩余灵力 */
   targetManapointsAfter: number
+  /** 出手方结算后剩余护盾 */
+  attackerShieldAfter?: number
+  /** 受击方结算后剩余护盾 */
+  targetShieldAfter?: number
   /** 本次攻击是否命中（false 为闪避） */
   hit?: boolean
   /** 结算伤害 */
@@ -976,6 +990,7 @@ export interface ExpeditionDuelUnit {
   avatar: string
   hitpoints: number
   manapoints: number
+  shield?: number
   maxHitpoints: number
   maxManapoints: number
   attributes?: CombatAttributes | null
@@ -1012,6 +1027,8 @@ export interface ExpeditionDuel {
   opponentHitpoints: number
   /** 对手当前灵力值（随回放事件推进） */
   opponentManapoints: number
+  /** 对手当前护盾值（随回放事件推进） */
+  opponentShield?: number
   /** 本机玩家在己方斗法阵容中的下标（0..4；1v1 为 0） */
   selfUnitIndex?: number
   /** 己方全体参战玩家镜像（1~5 人，旧 1v1 存档缺省为 null） */
@@ -1066,6 +1083,8 @@ export interface CombatResourceState {
   maxManapoints: number
   /** 功法冷却表：abilityId -> 剩余冷却毫秒 */
   abilityCooldownMilliseconds?: Record<string, number> | null
+  /** 术法槽符箓冷却表（符法·天命）：itemId -> 剩余冷却毫秒 */
+  talismanCooldownMilliseconds?: Record<string, number> | null
   /** 战斗消耗品冷却表：槽位下标 -> 剩余冷却毫秒 */
   consumableCooldownMilliseconds?: number[] | null
   /** 当前吟唱中的功法 ID（无则 null） */
@@ -1253,7 +1272,9 @@ export interface ItemDefinition {
   uniqueEffectType?: number
   /** 耐久型持续消耗品（true 时槽位持有即生效，不消耗不耗竭；如聚灵阵盘） */
   durable?: boolean
-  /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
+  /** 增益类符箓消耗最大灵力比例（如神行符 0.05、隐身符 0.1） */
+  manaCostRatio?: number
+  /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法/物理伤害或附加减益） */
   strike?: ConsumableStrikeDefinition | null
   /** 出厂默认战斗触发条件（如气血低于 50% 自动吃药） */
   triggers?: CombatTrigger[] | null
@@ -1270,7 +1291,7 @@ export const ConsumableUniqueEffect = {
 } as const
 
 /**
- * 消耗品即时打击定义（雷击符等：按灵力消耗换算元素术法伤害直取敌首）
+ * 消耗品即时打击定义（雷击符/剑符/怒焰符/定神符等）
  */
 export interface ConsumableStrikeDefinition {
   /** 祭出消耗灵力占比（×最大灵力值） */
@@ -1279,7 +1300,21 @@ export interface ConsumableStrikeDefinition {
   manaDamageRatio: number
   /** 术法攻击加成占比（×术法攻击） */
   spellAttackRatio: number
-  /** 五行元素类别（metal/wood/water/fire/earth） */
+  /** 物理攻击加成占比（×物理攻击，如剑符 3.2） */
+  physicalAttackRatio?: number
+  /** 固定附加伤害（如剑符 30） */
+  flatDamage?: number
+  /** 伤害大类：'physical' | 'spell'（缺省 'spell'） */
+  damageKind?: string
+  /** 目标范围：'enemy' | 'allEnemies'（缺省 'enemy'） */
+  targetType?: string
+  /** 附加燃魂层数的术法攻击比例（如怒焰符 0.1） */
+  ranhunSpellAttackRatio?: number
+  /** 附加燃魂的基础层数（如怒焰符 10） */
+  ranhunBaseStacks?: number
+  /** 打击命中附加的战内减益规格（如定神符附带 5 层麻痹） */
+  onHitBuff?: AbilityBuffSpec | null
+  /** 五行元素类别（metal/wood/water/fire/earth/none） */
   element: string
 }
 
@@ -1294,8 +1329,12 @@ export interface BuffModifiers {
   mpRegen?: number
   /** 攻击速度点数（NonLinear） */
   attackSpeedPoints?: number
+  /** 行动速度点数（NonLinear，如神行符 +10） */
+  actionSpeedPoints?: number
   /** 免伤点数（NonLinear 总减伤乘区） */
   damageAbsorptionPoints?: number
+  /** 威胁增幅点数（Linear，如隐身符 -100） */
+  threatPoints?: number
   /** 气血回复后段比率（生效值 = 基础回复 ×(1+Σ比率)，与 mpRegenPostRatio 同为回复乘区末段） */
   hpRegenPostRatio?: number
   /** 灵力回复后段比率 */
@@ -1561,10 +1600,14 @@ export interface AbilityBuffSpec {
   threatPerSecondMaxHpPoints?: number
   /** 每层物理攻击力加成 */
   attackPower?: number
+  /** 每层物理攻击后段乘区比率（剑意为 0.30，走 SoftRatio） */
+  attackPowerPostRatio?: number
   /** 每层命中点数加成 */
   accuracy?: number
   /** 每层暴击点数加成 */
   critical?: number
+  /** 每层暴击点数后段乘区比率（剑意为 0.30，走 SoftRatio） */
+  criticalPostRatio?: number
   /** 双抗点数：负值即破防，Linear 曲线（-400 点 ≡ 双抗 ×0.2 即降低 80%） */
   resistancePoints?: number
   /** 每层每秒气血回复量（独立于面板 5 秒自动回复通道） */
@@ -1621,10 +1664,20 @@ export interface CombatAbilityDefinition {
   castMilliseconds?: number
   /** 灵力消耗（缺省按 0） */
   manaCost?: number
+  /** 气血消耗占自身最大生命值比例（迸裂为 0.05，需当前气血严格大于消耗） */
+  hpCostMaxHpRatio?: number
   /** 伤害倍率（相对攻击属性的比例点数，缺省按 0） */
   damageRatio?: number
+  /** 附加伤害占自身最大生命值比例（迸裂为 0.1） */
+  maxHpDamageRatio?: number
+  /** 附加伤害占消耗护盾值比例（迸裂为 1.0） */
+  shieldDamageRatio?: number
+  /** 施放时是否消耗自身全部当前护盾（迸裂为 true） */
+  consumeAllShield?: boolean
   /** 固定附加伤害（缺省按 0） */
   flatDamage?: number
+  /** 支援类：获得护盾占自身最大生命值比例（罡气护体为 0.2） */
+  shieldMaxHpRatio?: number
   /** 效果大类（伤害/治疗），缺省视为伤害 */
   effectType?: CombatAbilityEffectType
   /** 治疗倍率 */
@@ -1659,6 +1712,12 @@ export interface CombatAbilityDefinition {
   selfBuff?: AbilityBuffSpec | null
   /** 进攻类技能结算后附加给施法者自身的战内增益列表 */
   selfBuffs?: AbilityBuffSpec[] | null
+  /** 吟唱引导期间每次被独立攻击行为选中时获得的战内 Buff（天罡断岳授予天罡） */
+  channelingAttackedBuff?: AbilityBuffSpec | null
+  /** 施放结算完成后消耗的目标 Buff ID（天罡断岳消耗 buff.tiangang） */
+  consumeBuffId?: string | null
+  /** 消耗目标 Buff 每层提供的独立终伤加成比例（天罡断岳为 0.2） */
+  consumeBuffExtraDamagePerStack?: number
   /** 击杀连锁次数：单体技能击杀目标后对另一存活敌方追加一次完整结算（贯星等），缺省 0 */
   chainOnKillCount?: number
   /** 多段打击次数：对同一目标逐段独立结算完整技能伤害（连环等），缺省 1 */

@@ -313,7 +313,7 @@ static void ValidateReferences(string directory)
     }
 
     // 技能 Buff 与消耗品 Buff 修饰键同样是授权词汇表；ratio 后缀旧键已废除。
-    string[] abilitySingleBuffProps = ["buff", "onHitBuff", "selfBuff"];
+    string[] abilitySingleBuffProps = ["buff", "onHitBuff", "selfBuff", "channelingAttackedBuff"];
     string[] abilityArrayBuffProps = ["buffs", "onHitBuffs", "selfBuffs"];
     foreach (var file in JsonFiles(directory, "abilities"))
     {
@@ -383,11 +383,24 @@ static void ValidateReferences(string directory)
             {
                 Require(Number(strike, "manaCostRatio", 0) > 0
                         && Number(strike, "manaDamageRatio", 0) >= 0
-                        && Number(strike, "spellAttackRatio", 0) >= 0,
+                        && Number(strike, "spellAttackRatio", 0) >= 0
+                        && Number(strike, "physicalAttackRatio", 0) >= 0
+                        && Number(strike, "flatDamage", 0) >= 0
+                        && Number(strike, "ranhunBaseStacks", 0) >= 0
+                        && Number(strike, "ranhunSpellAttackRatio", 0) >= 0,
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike 比率必须为非负且 manaCostRatio>0。");
                 var element = Text(strike, "element");
                 Require(element.Length == 0 || CombatElementVocabulary().Contains(element),
                     $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.element={element} 不是合法元素。");
+                var damageKind = Text(strike, "damageKind");
+                Require(damageKind.Length == 0 || damageKind is "spell" or "physical",
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.damageKind={damageKind} 不是合法伤害类别。");
+                var targetType = Text(strike, "targetType");
+                Require(targetType.Length == 0 || targetType is "targetEnemy" or "allEnemies",
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.targetType={targetType} 不是合法目标范围。");
+                foreach (var key in ObjectKeys(Property(strike, "onHitBuff")))
+                    Require(abilityBuffKeys.Contains(key),
+                        $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.onHitBuff.{key} 不在授权词汇表内。");
             }
         }
     }
@@ -627,16 +640,18 @@ static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
     "attackPower", "accuracy", "critical", "resistancePoints", "hpRegenPerSecond",
     "missingHitpointsPerStack", "resistancePerStack", "resistanceStackRatio",
     "evasion", "evasionPostRatio", "parryPostRatio", "decayStacksPerSecond",
-    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond"
+    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond",
+    "attackPowerPostRatio", "criticalPostRatio"
 };
 
 /// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>
 static HashSet<string> ConsumableBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
-    "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "statRatios",
+    "attackSpeedPoints", "damageAbsorptionPoints", "damageBonusPoints", "threatPoints", "statRatios",
     "hpRegenPostRatio", "mpRegenPostRatio", "evasion", "evasionPostRatio", "parryPostRatio", "decayStacksPerSecond",
-    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond", "teamWide"
+    "actionSpeedPoints", "criticalDamagePoints", "healingBonusPoints", "fireSpellDamagePerSecond", "teamWide",
+    "attackPowerPostRatio", "criticalPostRatio"
 };
 
 /// <summary>消耗品顶层授权键（durable 阵盘与 strike 雷击符规格）。</summary>
@@ -644,14 +659,15 @@ static HashSet<string> ConsumableKeys() => new(StringComparer.Ordinal)
 {
     "usableInActionTypes", "durationSeconds", "isContinuous", "durable",
     "cultivationMultiplier", "gatheringMultiplier", "alchemyMultiplier",
-    "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike",
+    "cooldownSeconds", "manaCostRatio", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike",
     "techniqueSpeedRatio", "enhancementSuccessBonus", "stackableSlotCount", "uniqueEffectType"
 };
 
 /// <summary>雷击符打击规格授权键。</summary>
 static HashSet<string> StrikeKeys() => new(StringComparer.Ordinal)
 {
-    "manaCostRatio", "manaDamageRatio", "spellAttackRatio", "element"
+    "manaCostRatio", "manaDamageRatio", "spellAttackRatio", "physicalAttackRatio", "flatDamage",
+    "damageKind", "targetType", "element", "ranhunBaseStacks", "ranhunSpellAttackRatio", "onHitBuff"
 };
 
 /// <summary>行动类型词汇表：与 GameDataCatalog.ParseKind 同口径。</summary>

@@ -39,6 +39,8 @@ import {
 } from './resourceBoundaries.ts'
 import {
   ALL_TRAITS,
+  BUFF_CHANNELS,
+  BuffOutOfCombatPanel,
   CombatMonsterRank,
   CombatRespawnPolicy,
   DUNGEON_IN_BATTLE_RESPAWN_SECONDS,
@@ -58,10 +60,12 @@ import {
   dungeonEnergyCostScale,
   dungeonRareDropRateMultiplier,
   dungeonTotalRewardMultiplier,
+  mergeBuffExpiry,
   parseBuffEffects,
   percentMultiplier,
   scaleDungeonMonsterStats,
   weakenMonsterStats,
+  type BuffEffect,
 } from './rules.ts'
 import {
   ActionQueueStatus,
@@ -584,6 +588,49 @@ function rechargeCombatSustainedSlots(
   return recharged
 }
 
+function injectCombatOnlyActiveBuffs(
+  player: SimPlayerRuntime,
+  unit: CombatantState,
+  entryUnix: number,
+  battleElapsedSeconds: number,
+): void {
+  const activeList = player.state.buffs
+  for (let i = 0; i < activeList.length; i++) {
+    const active = activeList[i]
+    const remaining = active.expiresAtUnixSeconds - entryUnix
+    if (remaining <= 0 || !active.effects || active.effects.length === 0) continue
+    let combatOnly: BuffEffect[] | null = null
+    for (let e = 0; e < active.effects.length; e++) {
+      const effect = active.effects[e]
+      if (BUFF_CHANNELS[effect.channel].outOfCombatPanel === BuffOutOfCombatPanel.None) {
+        ;(combatOnly ??= []).push(effect)
+      }
+    }
+    if (combatOnly === null) continue
+    const proposedExpiresAt = Number.isFinite(remaining)
+      ? battleElapsedSeconds + remaining
+      : Number.POSITIVE_INFINITY
+    let mergedExpiresAt = proposedExpiresAt
+    for (let b = 0; b < unit.buffs.length; b++) {
+      if (unit.buffs[b].buffId === active.buffId) {
+        mergedExpiresAt = mergeBuffExpiry(unit.buffs[b].expiresAtSeconds, proposedExpiresAt)
+        break
+      }
+    }
+    unit.setBuff({
+      buffId: active.buffId,
+      expiresAtSeconds: mergedExpiresAt,
+      stacks: active.stacks,
+      name: active.name,
+      resetOnWave: true,
+      missingHitpointsPerStack: 0,
+      effects: combatOnly,
+      statRatios: null,
+      sourceUnitId: null,
+    })
+  }
+}
+
 function injectSustainedCombatBuffs(
   player: SimPlayerRuntime,
   catalog: GameDataCatalog,
@@ -859,6 +906,7 @@ export function prepareCombatEntry(
       sumUnmergedActiveBuffStacks(battle.player.buffs, activeBuffs, buffId, entryUnix + battle.elapsedSeconds)
     applyCombatSkillsToCombatant(player.state.combatSkills, battle.player)
     applyCombatBuffsToCombatant(player.state.combatBuffCarry, battle.player, battle.elapsedSeconds)
+    injectCombatOnlyActiveBuffs(player, battle.player, entryUnix, battle.elapsedSeconds)
   }
 
   if (dungeon) {
@@ -1150,6 +1198,7 @@ export function advanceCombatPreparationCore(
       ? respawnMember.stats.maxManapoints
       : player.state.maxManapoints
     player.state.combatSkills = createEmptyCombatSkillState()
+    player.state.talismanCooldowns = {}
     for (let i = 0; i < player.state.autoUseSlots.length; i++) {
       player.state.autoUseSlots[i] = {
         ...player.state.autoUseSlots[i],
@@ -1221,7 +1270,9 @@ function abilityDisplayName(catalog: GameDataCatalog, abilityId: string): string
   if (ab && typeof ab.name === 'string' && ab.name.length > 0) return ab.name
   if (ab) return abilityId
   const tr = ALL_TRAITS.get(abilityId)
-  return tr ? tr.name : abilityId
+  if (tr) return tr.name
+  const it = catalog.items.get(abilityId)
+  return it ? it.name : abilityId
 }
 
 function formatCombatantLabel(
@@ -1299,9 +1350,11 @@ function buildCastMessage(
       : abilityDisplayName(catalog, abilityId)
   const prefix = ALL_TRAITS.has(abilityId)
     ? `${attackerLabel}触发 ${abilityDisplayName(catalog, abilityId)}`
-    : `${attackerLabel}施放 {{ability:${abilityId}|${displayName}}}`
+    : !catalog.abilities.has(abilityId) && catalog.items.has(abilityId)
+      ? `${attackerLabel}施放 {{item:${abilityId}|${displayName}}}`
+      : `${attackerLabel}施放 {{ability:${abilityId}|${displayName}}}`
   if (clauses.length === 0) {
-    return `${prefix}，。`
+    return `${prefix}。`
   }
   if (clauses.length === 1) {
     return `${prefix}，${clauses[0]}。`

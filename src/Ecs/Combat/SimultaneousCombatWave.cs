@@ -16,6 +16,7 @@ internal sealed class SimultaneousCombatWave
         CombatantState Target,
         double Damage,
         bool AccumulateXuyi,
+        bool BypassShield,
         object? RecorderActionHandle);
 
     private readonly record struct PendingHealEntry(
@@ -28,12 +29,16 @@ internal sealed class SimultaneousCombatWave
         object? RecorderActionHandle);
 
     private readonly Dictionary<CombatantState, double> _localVirtualHp = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<CombatantState, double> _localVirtualShield = new(ReferenceEqualityComparer.Instance);
     private readonly List<PendingDamageEntry> _damages = [];
     private readonly List<PendingHealEntry> _heals = [];
     private readonly Dictionary<CombatantState, double> _manaDeltas = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<CombatantState, double> _shieldGains = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<CombatantState> _shieldConsumed = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<CombatantState, double> _threatDeltas = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<CombatantState, double> _threatBonusDeltas = new(ReferenceEqualityComparer.Instance);
     private readonly List<Action> _buffOps = [];
+    private readonly Dictionary<CombatantState, double> _pendingRanhunStacks = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<CombatantState> _xuyiConsumed = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<CombatantState> _downedRecorded = new(ReferenceEqualityComparer.Instance);
     private readonly int _eventsStartIndex;
@@ -43,35 +48,67 @@ internal sealed class SimultaneousCombatWave
         _eventsStartIndex = eventsStartIndex;
     }
 
-    /// <summary>切换至本波次下一名出手单位前重置本地虚拟气血，隔离不同出手者之间的同刻互杀影响。</summary>
-    public void BeginActor() => _localVirtualHp.Clear();
+    /// <summary>切换至本波次下一名出手单位前重置本地虚拟气血与护盾，隔离不同出手者之间的同刻互杀影响。</summary>
+    public void BeginActor()
+    {
+        _localVirtualHp.Clear();
+        _localVirtualShield.Clear();
+    }
 
     /// <summary>读取目标在当前出手者视角下的剩余气血（反映同一出手者多段连击的递减，不受同波其他出手者干扰）。</summary>
     public double GetLocalVirtualHp(CombatantState target)
         => _localVirtualHp.TryGetValue(target, out var hp) ? hp : target.Hitpoints;
 
+    /// <summary>读取目标在当前出手者视角下的剩余护盾。</summary>
+    public double GetLocalVirtualShield(CombatantState target)
+        => _localVirtualShield.TryGetValue(target, out var shield) ? shield : target.Shield;
+
     /// <summary>判断目标在当前出手者本次动作内是否仍存活。</summary>
     public bool IsLocallyAlive(CombatantState target) => GetLocalVirtualHp(target) > 1e-12;
 
-    /// <summary>登记一次同刻伤害（返回按当前出手者虚拟气血裁决的伤害与实伤，用于吸血/燃魂/反伤计算）。</summary>
+    /// <summary>登记一次同刻护盾获取（波末仅对仍存活目标落账）。</summary>
+    public void AddShieldGain(CombatantState target, double amount)
+    {
+        if (!double.IsFinite(amount) || amount <= 1e-9) return;
+        _shieldGains[target] = _shieldGains.GetValueOrDefault(target) + amount;
+    }
+
+    /// <summary>登记本波次单位主动引爆并消耗全部护盾（如「迸裂」）。</summary>
+    public void ConsumeAllShield(CombatantState unit) => _shieldConsumed.Add(unit);
+
+    /// <summary>登记一次同刻伤害（返回按当前出手者虚拟护盾与气血裁决的伤害与实伤，用于吸血/燃魂/反伤计算）。</summary>
     public (double Damage, double Actual, bool LocalDowned) RecordDamage(
         CombatEncounterState encounter,
         CombatantState attacker,
         CombatantState target,
         double damage,
-        bool accumulateXuyi)
+        bool accumulateXuyi,
+        bool bypassShield = false)
     {
         var virtualHp = GetLocalVirtualHp(target);
         if (virtualHp <= 1e-12) return (0, 0, false);
-        var limited = CombatDamageSettlement.Limit(attacker, virtualHp, Math.Max(0, damage));
-        var nextVirtualHp = Math.Max(0, virtualHp - limited);
+        var remaining = Math.Max(0, damage);
+        var shieldAbsorbed = 0d;
+        if (!bypassShield)
+        {
+            var virtualShield = GetLocalVirtualShield(target);
+            if (virtualShield > 0 && remaining > 0)
+            {
+                shieldAbsorbed = Math.Min(virtualShield, remaining);
+                _localVirtualShield[target] = Math.Max(0, virtualShield - shieldAbsorbed);
+                remaining -= shieldAbsorbed;
+            }
+        }
+        var limitedHp = remaining > 0 ? CombatDamageSettlement.Limit(attacker, virtualHp, remaining) : 0;
+        var nextVirtualHp = Math.Max(0, virtualHp - limitedHp);
         var actual = virtualHp - nextVirtualHp;
         _localVirtualHp[target] = nextVirtualHp;
+        var totalDealt = shieldAbsorbed + limitedHp;
         var handle = (encounter.ActionRecorder as DuelActionRecorder)?.CaptureActiveAction();
-        _damages.Add(new PendingDamageEntry(attacker, target, limited, accumulateXuyi, handle));
+        _damages.Add(new PendingDamageEntry(attacker, target, totalDealt, accumulateXuyi, bypassShield, handle));
         var localDowned = virtualHp > 1e-12 && nextVirtualHp <= 1e-12;
         if (localDowned) _downedRecorded.Add(target);
-        return (limited, actual, localDowned);
+        return (totalDealt, actual, localDowned);
     }
 
     /// <summary>登记一次同刻治疗/吸血（波末扣伤之后，仅对仍存活目标按缺血上限实际落账）。</summary>
@@ -117,6 +154,17 @@ internal sealed class SimultaneousCombatWave
     /// <summary>延迟一项 Buff 变更操作至波末统一应用（防止同刻先结算侧的麻痹/移形/燃魂改变同刻后结算侧判定）。</summary>
     public void DeferBuffOp(Action op) => _buffOps.Add(op);
 
+    /// <summary>累加同刻波次内目标的燃烧预览层数，返回叠加后的累计总层数供战报记录与技能 Buff 口径保持一致。</summary>
+    public double AddPreviewRanhunStacks(CombatantState target, double addedStacks)
+    {
+        var baseStacks = _pendingRanhunStacks.TryGetValue(target, out var pending)
+            ? pending
+            : target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId)?.Stacks ?? 0;
+        var next = baseStacks + addedStacks;
+        _pendingRanhunStacks[target] = next;
+        return next;
+    }
+
     /// <summary>同一单位在同刻波次内至多消费一次「蓄意」爆发，防止多段连击重复触发。</summary>
     public bool TryConsumeXuyi(CombatantState attacker) => _xuyiConsumed.Add(attacker);
 
@@ -129,15 +177,26 @@ internal sealed class SimultaneousCombatWave
         for (var i = 0; i < encounter.SideA.Count; i++) wasAliveBefore[encounter.SideA[i]] = encounter.SideA[i].IsAlive;
         for (var i = 0; i < encounter.SideB.Count; i++) wasAliveBefore[encounter.SideB[i]] = encounter.SideB[i].IsAlive;
 
-        // 1. 统一应用全部同刻伤害（遵守欲速则不达留一与蓄意积累）。
+        // 1. 统一应用本波主动消耗护盾与全部同刻伤害（护盾先吸收，溢出遵守欲速则不达留一与蓄意积累）。
+        foreach (var consumedUnit in _shieldConsumed)
+            consumedUnit.Shield = 0;
+
         for (var i = 0; i < _damages.Count; i++)
         {
             var entry = _damages[i];
             if (!entry.Target.IsAlive) continue;
-            var applied = CombatDamageSettlement.Limit(entry.Attacker, entry.Target.Hitpoints, entry.Damage);
+            var remaining = Math.Max(0, entry.Damage);
+            if (!entry.BypassShield && entry.Target.Shield > 0 && remaining > 0)
+            {
+                var absorbed = Math.Min(entry.Target.Shield, remaining);
+                entry.Target.Shield = Math.Max(0, entry.Target.Shield - absorbed);
+                remaining -= absorbed;
+            }
+            var applied = remaining > 0 ? CombatDamageSettlement.Limit(entry.Attacker, entry.Target.Hitpoints, remaining) : 0;
             var before = entry.Target.Hitpoints;
             entry.Target.Hitpoints = Math.Max(0, before - applied);
             var actual = before - entry.Target.Hitpoints;
+            if (!entry.Target.IsAlive) entry.Target.Shield = 0;
             if (entry.AccumulateXuyi && actual > 0
                 && CombatTraitRules.ContainsTrait(entry.Target.Stats.Traits, CombatTraitRules.XuyiTraitId))
             {
@@ -148,7 +207,12 @@ internal sealed class SimultaneousCombatWave
                 recorder?.AppendDeferredDowned(entry.RecorderActionHandle, entry.Attacker, entry.Target);
         }
 
-        // 2. 仍存活单位结算蓄意层数积累与同刻治疗/吸血（倒地单位不再被同刻吸血拉起，双方完全对称）。
+        // 2. 仍存活单位结算护盾获取、蓄意层数积累与同刻治疗/吸血（倒地单位不再被同刻吸血拉起，双方完全对称）。
+        foreach (var (unit, shieldGain) in _shieldGains)
+        {
+            if (unit.IsAlive && shieldGain > 0)
+                unit.Shield += shieldGain;
+        }
         foreach (var (unit, gain) in xuyiGains)
         {
             if (!unit.IsAlive || gain <= 0) continue;
@@ -243,6 +307,12 @@ internal sealed class SimultaneousCombatWave
                         : null,
                     TargetManapointsAfter = ev.TargetManapointsAfter.HasValue
                         ? (target?.Manapoints ?? ev.TargetManapointsAfter)
+                        : null,
+                    AttackerShieldAfter = ev.AttackerShieldAfter.HasValue
+                        ? (attacker?.Shield ?? ev.AttackerShieldAfter)
+                        : null,
+                    TargetShieldAfter = ev.TargetShieldAfter.HasValue
+                        ? (target?.Shield ?? ev.TargetShieldAfter)
                         : null
                 };
             }

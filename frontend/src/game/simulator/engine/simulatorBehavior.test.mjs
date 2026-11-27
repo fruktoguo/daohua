@@ -686,7 +686,7 @@ test('火神特质：全伤害转火（不改物理/术法/真伤类别）、等
   const { CombatUnitStatsBook } = await import('./combatModels.ts')
 
   assert.equal(rules.TraitIds.Huoshen, 'trait.huoshen')
-  assert.equal(rules.ALL_TRAITS.size, 38)
+  assert.equal(rules.ALL_TRAITS.size, 47)
   const huoshenDef = rules.ALL_TRAITS.get('trait.huoshen')
   assert.ok(huoshenDef && huoshenDef.quality === 5 && huoshenDef.cost === 12)
 
@@ -914,8 +914,8 @@ test('雾梦泽 20 级五技能在 TS 模拟器中与服务端语义 1:1 一致�
   const paralysed = tianleiEnc.enemies.filter(e => e.buffStacks('buff.mabi') > 0)
   assert.equal(paralysed.length, 2)
   for (const foe of paralysed) {
-    assert.ok(Math.abs(foe.effectiveStats.evasion - 40) <= 1e-9)
-    assert.ok(Math.abs(foe.effectiveStats.parryResolve - 40) <= 1e-9)
+    assert.ok(Math.abs(foe.effectiveStats.evasion - 50 / 1.2) <= 1e-9)
+    assert.ok(Math.abs(foe.effectiveStats.parryResolve - 50 / 1.2) <= 1e-9)
     assert.ok(Math.abs(foe.effectiveStats.actionSpeedPoints - (-10)) <= 1e-9)
   }
 
@@ -1432,4 +1432,223 @@ test('前端模拟器对称遭遇：双侧均识别为玩家、右侧阵盘反�
     diskRes.events.some(e => e.attackerId === diskEnc.sideB[0].id && e.targetId === diskEnc.sideA[0].id && e.abilityId === 'item.tianlei-formation-disk' && e.damage > 0),
     '右侧单位携带天雷阵盘时必须能正常触发反击',
   )
+})
+
+test('新流派机制模拟：护盾卖血与迸裂、天罡断岳独立受击叠层、养剑藏锋闪身步、五符箓与符法天命组队结算', () => {
+  const liveCatalogJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../data/simulatorCatalog.json'), 'utf8'),
+  )
+  const liveCatalog = buildGameDataCatalog(liveCatalogJson)
+  const gangqi = liveCatalog.abilities.get('ability.gangqi-huti')
+  const benglie = liveCatalog.abilities.get('ability.benglie')
+  const tiangang = liveCatalog.abilities.get('ability.tiangang-duanyue')
+  assert.ok(gangqi && benglie && tiangang, '三项新增武学应存在于模拟器目录')
+
+  // 1. 血气化盾 + 蓄意 + 战后盾转血（受治疗增幅加成）
+  const xueqiStats = createCombatantStats(1_000, 500, 0, 1.0, 1_000_000, 0, CombatDamageKind.Physical, {
+    traits: ['trait.xueqihuadun', 'trait.xuyi'],
+    effects: { hpDrainPoints: 0, mpDrainPoints: 0, damageReflectPoints: 0, healingBonusPoints: 50, threatOnTakenPoints: 0 },
+  })
+  const weakDummy = createCombatantStats(300, 0, 0, 100, 0, 0, CombatDamageKind.Physical)
+  const xueqiEnc = CombatEncounterState.create('ts-xueqi', 101n, { stats: xueqiStats, skills: [] }, [{ stats: weakDummy, skills: [] }])
+  decideInitialActions(xueqiEnc)
+  assert.ok(Math.abs(xueqiEnc.player.hitpoints - 200) < 1e-9)
+  assert.ok(Math.abs(xueqiEnc.player.shield - 800) < 1e-9)
+  assert.ok(Math.abs(xueqiEnc.player.buffStacks('buff.xuyi') - 800) < 1e-9)
+  const xueqiRes = advanceCombatTo(xueqiEnc, 5.0)
+  assert.equal(xueqiRes.outcome, 1)
+  assert.ok(Math.abs(xueqiEnc.player.hitpoints - 1_000) < 1e-9)
+  assert.equal(xueqiEnc.player.shield, 0)
+  assert.ok(xueqiRes.events.some(e => e.abilityId === 'trait.xueqihuadun' && e.healing > 0))
+
+  // 2. 罡气护体 + 迸裂（5% 最大生命消耗、清空护盾并按 100%AD + 10%MaxHP + 100%消耗护盾 + 50 爆发）
+  const shieldCasterStats = createCombatantStats(2_000, 100, 0, 100, 1_000_000, 0, CombatDamageKind.Physical, {
+    maxManapoints: 500,
+  })
+  const zeroArmorEnemy = createCombatantStats(20_000, 0, 0, 100, 0, 0, CombatDamageKind.Physical)
+  const benglieEnc = CombatEncounterState.create(
+    'ts-benglie',
+    102n,
+    {
+      stats: shieldCasterStats,
+      skills: [
+        { ability: gangqi, abilityId: 'ability.gangqi-huti', level: 1, triggers: [] },
+        { ability: benglie, abilityId: 'ability.benglie', level: 1, triggers: [] },
+      ],
+    },
+    [{ stats: zeroArmorEnemy, skills: [] }],
+  )
+  decideInitialActions(benglieEnc)
+  advanceCombatTo(benglieEnc, 1.05)
+  assert.ok(Math.abs(benglieEnc.player.shield - 400) < 1e-9)
+  assert.ok(Math.abs(benglieEnc.player.hitpoints - 1_900) < 1e-9)
+  const benglieRes = advanceCombatTo(benglieEnc, 2.6)
+  assert.equal(benglieEnc.player.shield, 0)
+  const benglieHit = benglieRes.events.find(e => e.abilityId === 'ability.benglie')
+  assert.ok(benglieHit && Math.abs(benglieHit.damage - (750 * 750) / 751) < 1e-6)
+
+  // 3. 天罡断岳：5s 吟唱期间多段连击只算 1 次受击叠 1 层天罡，释放时先吃天罡 +10%/层再乘 (1 + 0.2*层) 后清空天罡
+  const multiHitSkill = {
+    id: 'test.multihit',
+    name: '十连击',
+    category: 'physical',
+    element: 'none',
+    targetType: 'targetEnemy',
+    cooldownMilliseconds: 10000,
+    castMilliseconds: 1000,
+    manaCost: 0,
+    damageRatio: 0.1,
+    flatDamage: 1,
+    hitCount: 5,
+  }
+  const tgCaster = createCombatantStats(10_000, 100, 0, 100, 1_000_000, 0, CombatDamageKind.Physical, { maxManapoints: 500 })
+  const multiAttacker = createCombatantStats(50_000, 10, 0, 2.0, 1_000_000, 0, CombatDamageKind.Physical)
+  const tgEnc = CombatEncounterState.create(
+    'ts-tiangang',
+    103n,
+    { stats: tgCaster, skills: [{ ability: tiangang, abilityId: 'ability.tiangang-duanyue', level: 1, triggers: [] }] },
+    [{ stats: multiAttacker, skills: [{ ability: multiHitSkill, abilityId: 'test.multihit', level: 1, triggers: [] }] }],
+  )
+  decideInitialActions(tgEnc)
+  advanceCombatTo(tgEnc, 1.1)
+  assert.equal(tgEnc.player.buffStacks('buff.tiangang'), 1)
+  advanceCombatTo(tgEnc, 3.1)
+  assert.equal(tgEnc.player.buffStacks('buff.tiangang'), 2)
+  const tgRes = advanceCombatTo(tgEnc, 5.1)
+  const tgHit = tgRes.events.find(e => e.abilityId === 'ability.tiangang-duanyue')
+  assert.ok(tgHit)
+  const expectedTgDmg = ((400 * 400) / 401) * 1.2 * 1.4
+  assert.ok(Math.abs(tgHit.damage - expectedTgDmg) < 1e-6, `天罡断岳 2 层伤害应为 ${expectedTgDmg}，实际 ${tgHit.damage}`)
+  assert.equal(tgEnc.player.buffStacks('buff.tiangang'), 0)
+
+  // 4. 养剑术 + 藏锋：不普攻，每整秒叠 1 层剑意，技能造成直伤后清空剑意
+  const delayedSlash = {
+    id: 'test.slash',
+    name: '拔剑',
+    category: 'physical',
+    element: 'metal',
+    targetType: 'targetEnemy',
+    cooldownMilliseconds: 10000,
+    castMilliseconds: 500,
+    manaCost: 0,
+    damageRatio: 1.0,
+    flatDamage: 0,
+  }
+  const cangfengCaster = createCombatantStats(5_000, 100, 0, 0.5, 1_000_000, 0, CombatDamageKind.Physical, {
+    traits: ['trait.yangjianshu', 'trait.cangfeng'],
+    skillBonusPoints: 20,
+  })
+  const cfEnc = CombatEncounterState.create(
+    'ts-yangjian-cangfeng',
+    104n,
+    {
+      stats: cangfengCaster,
+      skills: [
+        {
+          ability: delayedSlash,
+          abilityId: 'test.slash',
+          level: 1,
+          triggers: [{ dependency: 'self', condition: 'buff-stacks', buffId: 'buff.jianyi', comparator: 'greater-than-equal', value: 2 }],
+        },
+      ],
+    },
+    [{ stats: zeroArmorEnemy, skills: [] }],
+  )
+  decideInitialActions(cfEnc)
+  const cfWait = advanceCombatTo(cfEnc, 2.05)
+  assert.equal(cfWait.events.filter(e => e.attackerId === 'player').length, 0, '藏锋期间不得打出普通攻击')
+  assert.equal(cfEnc.player.buffStacks('buff.jianyi'), 2, '2 秒未造成直伤应叠 2 层剑意')
+  assert.ok(Math.abs(cfEnc.player.effectiveStats.attackPower - 160) < 1e-9, '2 层剑意应提升 60% 物理攻击')
+  const cfSlash = advanceCombatTo(cfEnc, 2.6)
+  assert.equal(cfSlash.events.length, 1)
+  assert.equal(cfEnc.player.buffStacks('buff.jianyi'), 0, '造成直接伤害后剑意应全部清空')
+
+  // 5. 闪身步：闪避获移形，Lv.1 冷却 3s，Lv.20 反比例缩至 1.5s
+  const dodgeMaster = createCombatantStats(5_000, 10, 0, 100, 100, 1_000_000, CombatDamageKind.Physical, {
+    traits: ['trait.shanshenbu'],
+    traitLevels: { 'trait.shanshenbu': 20 },
+  })
+  const fastPoker = createCombatantStats(5_000, 10, 0, 1.0, 1, 0, CombatDamageKind.Physical)
+  const ssbEnc = CombatEncounterState.create('ts-shanshenbu', 105n, { stats: dodgeMaster, skills: [] }, [{ stats: fastPoker, skills: [] }])
+  decideInitialActions(ssbEnc)
+  advanceCombatTo(ssbEnc, 1.05)
+  assert.equal(ssbEnc.player.buffStacks('buff.yixing'), 1)
+  advanceCombatTo(ssbEnc, 2.05)
+  assert.equal(ssbEnc.player.buffStacks('buff.yixing'), 1)
+  advanceCombatTo(ssbEnc, 3.05)
+  assert.equal(ssbEnc.player.buffStacks('buff.yixing'), 2)
+
+  // 6. 符法·天命 + 符法·疾 + 符法·破阵 + 符法·天罡 + 五种新符箓（单人与组队 runSimulation）
+  const nodes = listCombatNodeIds(liveCatalog)
+  assert.ok(nodes.length > 0)
+  const nodeId = nodes[0]
+  const makeTalismanMage = (name) => {
+    const p = createDefaultProfile(liveCatalog)
+    p.displayName = name
+    p.realmLevel = 25
+    p.maxHitpoints = 10_000
+    p.hitpoints = 10_000
+    p.maxManapoints = 10_000
+    p.manapoints = 10_000
+    p.traitIds = ['trait.fufatianming', 'trait.fufaji', 'trait.fufapozhen', 'trait.fufatiangang', 'trait.bukandaowo']
+    p.unlockedTraits = [
+      { id: 'trait.fufatianming', level: 1, exp: 0 },
+      { id: 'trait.fufaji', level: 1, exp: 0 },
+      { id: 'trait.fufapozhen', level: 10, exp: 0 },
+      { id: 'trait.fufatiangang', level: 1, exp: 0 },
+      { id: 'trait.bukandaowo', level: 5, exp: 0 },
+    ]
+    p.abilitySlots = [
+      { abilityId: null, level: 1 },
+      { abilityId: 'item.jian-talisman', level: 1 },
+      { abilityId: 'item.nuyan-talisman', level: 1 },
+      { abilityId: 'item.dingshen-talisman', level: 1 },
+      { abilityId: null, level: 1 },
+    ]
+    p.combatAutoUseSlots = [
+      { actionType: 'combat', slotIndex: 0, itemId: 'item.shenxing-talisman', quantity: 50, enabled: true, remainingDurationSeconds: 0, cooldownUntilUnixSeconds: 0, group: 'general' },
+      { actionType: 'combat', slotIndex: 1, itemId: 'item.yinshen-talisman', quantity: 50, enabled: true, remainingDurationSeconds: 0, cooldownUntilUnixSeconds: 0, group: 'general' },
+    ]
+    p.assets = [
+      { itemId: 'item.jian-talisman', variant: '', quantity: 50 },
+      { itemId: 'item.nuyan-talisman', variant: '', quantity: 50 },
+      { itemId: 'item.dingshen-talisman', variant: '', quantity: 50 },
+      { itemId: 'item.shenxing-talisman', variant: '', quantity: 50 },
+      { itemId: 'item.yinshen-talisman', variant: '', quantity: 50 },
+    ]
+    return p
+  }
+  const env = {
+    formatVersion: 1,
+    gameDataFingerprint: liveCatalog.fingerprint,
+    capturedAtUnixSeconds: 1_700_000_000,
+    nodes: [{ nodeId, buildings: [], effects: { combatHitpointRegen: 0, combatManapointRegen: 500, combatDamageReductionRatio: 0, monsterWeakenRatio: 0 }, usages: [] }],
+  }
+  const soloTalismanRes = runSimulation({
+    formatVersion: 1,
+    nodeId,
+    difficulty: 0,
+    durationSeconds: 60,
+    seed: '20261127',
+    members: [makeTalismanMage('天命符师')],
+    environment: env,
+  }, liveCatalog)
+  const m0 = soloTalismanRes.members[0]
+  assert.ok(m0.itemsLost.some(x => x.itemId === 'item.jian-talisman' && x.quantity >= 2), '符法·疾缩短 80% 冷却至 12s，60 秒内术法槽剑符应多次瞬发')
+  assert.ok(m0.itemsLost.some(x => x.itemId === 'item.shenxing-talisman'), '神行符应正常消耗触发')
+  assert.ok(m0.itemsLost.some(x => x.itemId === 'item.yinshen-talisman'), '隐身符应正常消耗触发')
+  assert.ok(m0.combatAutoUseSlots.some(s => s.group === 'ability' && s.itemId === 'item.jian-talisman' && s.cooldownUntilUnixSeconds > 0), '结算快照应导出主动术法槽符箓冷却')
+
+  const partyTalismanRes = runSimulation({
+    formatVersion: 1,
+    nodeId,
+    difficulty: 0,
+    durationSeconds: 45,
+    seed: '20261127',
+    members: [makeTalismanMage('符修甲'), makeTalismanMage('符修乙')],
+    environment: env,
+  }, liveCatalog)
+  assert.ok(partyTalismanRes.members[0].itemsLost.some(x => x.itemId === 'item.jian-talisman'))
+  assert.ok(partyTalismanRes.members[1].itemsLost.some(x => x.itemId === 'item.jian-talisman'))
+  assert.ok(partyTalismanRes.members[1].combatAutoUseSlots.some(s => s.group === 'ability'))
 })

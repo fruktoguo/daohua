@@ -157,4 +157,87 @@ public sealed class DuelRecordSimulationTests
         Assert.Contains(script.InitiatorRecord.Actions!, a => a.Actor == 0 && a.Kind == DuelRecordActionKind.Item && a.DefIndex == talismanDefIdx);
         Assert.Contains(script.InitiatorRecord.Actions!, a => a.Actor == 1 && a.Kind == DuelRecordActionKind.Item && a.DefIndex == talismanDefIdx);
     }
+
+    /// <summary>
+    /// 火神 + 燃魂在同刻对称斗法中：多次普攻及技能（火焰风暴）叠加燃烧时，
+    /// 斗法战报记录的是累计总层数（与 GrantBuff 口径一致），且后续每秒灼烧伤害随层数递增。
+    /// </summary>
+    [Fact]
+    public void DuelScriptEngine_HuoshenAndRanhun_RecordsCumulativeBurnStacksAcrossHitsAndWaves()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var huoyan = catalog.Abilities["ability.huoyan-fengbao"];
+
+        // 1. 双侧 1.0s 同刻普攻（进入 SimultaneousCombatWave）：甲修携带火神 + 燃魂，单击实伤 < 100 每次 +1 层，战报记录应按 1 -> 2 -> 3 递增。
+        var attackerStats = CombatantStats.Create(50_000, 40, 0, 1.0) with
+        {
+            Accuracy = 1_000_000,
+            Evasion = 0,
+            Traits = [CombatTraitRules.HuoshenTraitId, CombatTraitRules.RanhunTraitId]
+        };
+        var dummyStats = CombatantStats.Create(50_000, 10, 0, 1.0) with
+        {
+            Accuracy = 1_000_000,
+            Evasion = 0
+        };
+        var basicScript = DuelScriptEngine.Resolve(
+            new DuelCombatant(PlayerId.New(), "炎修", 100, attackerStats, [], [], []),
+            new DuelCombatant(PlayerId.New(), "木桩", 100, dummyStats, [], [], []),
+            seed: 7, new DuelSettings(MaxDuelSeconds: 4.5), catalog);
+
+        var basicRecord = basicScript.InitiatorRecord!;
+        var burnDefIdx = basicRecord.Defs!.ToList().IndexOf(CombatTraitRules.RanhunBuffId);
+        Assert.True(burnDefIdx >= 0);
+
+        var basicBurnGrants = basicRecord.Actions!
+            .Where(a => a.Actor == 0 && a.Kind == DuelRecordActionKind.BasicAttack)
+            .SelectMany(a => a.Effects!)
+            .Where(e => e.Kind == DuelRecordEffectKind.BuffGrant && e.DefIndex == burnDefIdx)
+            .Select(e => e.Value)
+            .ToArray();
+
+        Assert.Equal([1d, 2d, 3d, 4d], basicBurnGrants);
+
+        var burnTickDamages = basicRecord.Actions!
+            .Where(a => a.Actor == 0 && a.Kind == DuelRecordActionKind.Trait)
+            .SelectMany(a => a.Effects!)
+            .Where(e => e.Kind == DuelRecordEffectKind.Damage && e.Element == CombatElement.Fire)
+            .Select(e => e.Value)
+            .ToArray();
+        Assert.True(burnTickDamages.Length >= 3);
+        Assert.True(burnTickDamages[1] > burnTickDamages[0]);
+        Assert.True(burnTickDamages[2] > burnTickDamages[1]);
+
+        // 2. 同刻波次内「火焰风暴」单次施放触发特质燃魂 + 技能附着两次叠加：战报两次 BuffGrant 依次记录累加后的总层数。
+        var casterStats = CombatantStats.Create(50_000, 40, 0, 3.0) with
+        {
+            SpellAttack = 100,
+            MaxManapoints = 500,
+            Accuracy = 1_000_000,
+            Evasion = 0,
+            Traits = [CombatTraitRules.HuoshenTraitId, CombatTraitRules.RanhunTraitId]
+        };
+        var slowDummyStats = CombatantStats.Create(50_000, 10, 0, 3.0) with
+        {
+            Accuracy = 1_000_000,
+            Evasion = 0
+        };
+        var skillScript = DuelScriptEngine.Resolve(
+            new DuelCombatant(PlayerId.New(), "火法", 100, casterStats, [new SkillSlot(huoyan, 1, Triggers: [])], [], []),
+            new DuelCombatant(PlayerId.New(), "木桩", 100, slowDummyStats, [], [], []),
+            seed: 11, new DuelSettings(MaxDuelSeconds: 3.5), catalog);
+
+        var skillRecord = skillScript.InitiatorRecord!;
+        var skillBurnDefIdx = skillRecord.Defs!.ToList().IndexOf(CombatTraitRules.RanhunBuffId);
+        var stormGrants = skillRecord.Actions!
+            .Single(a => a.Actor == 0 && a.Kind == DuelRecordActionKind.Skill)
+            .Effects!
+            .Where(e => e.Kind == DuelRecordEffectKind.BuffGrant && e.DefIndex == skillBurnDefIdx)
+            .Select(e => e.Value)
+            .ToArray();
+
+        Assert.Equal(2, stormGrants.Length);
+        Assert.True(stormGrants[0] >= 1);
+        Assert.Equal(stormGrants[0] + 25, stormGrants[1]);
+    }
 }

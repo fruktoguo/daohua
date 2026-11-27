@@ -70,6 +70,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.benglie",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.benglie",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [

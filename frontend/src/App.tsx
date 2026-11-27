@@ -20,7 +20,7 @@ import { resolveAbilityAsideCards } from './components/EffectTooltip'
 import { ValueText } from './components/ValueText'
 import { MOBILE_LAYOUT_QUERY } from './game/chatShare'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ActionDetailItem, ItemIcon, ItemTooltipTarget } from './components/ItemDisplay'
+import { ActionDetailItem, ItemIcon, ItemTile, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { Modal, hasOpenModalLayer } from './components/Modal'
 import type { PillTone } from './components/PillLabel'
@@ -42,8 +42,8 @@ import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgress
 import { UnitNumber } from './components/UnitNumber'
 import { StatGlyph } from './components/StatGlyph'
 import { Icon, type IconName } from './components/Icon'
-import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
-import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory, resolveQueueActionName, resolveWorldLocationName } from './game/ids'
+import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueExperience, calculateTechniqueProgress, getTraitLevelScale, serverExpToNextCap, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
+import { ACTION_TAB_META, assignAbilityToSlot, autoUseBarFor, autoUseBarLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findEquipmentInCatalog, findItemInCatalog, getOccupiedEquipmentCounts, isActionUnlocked, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveCatalogItemMetadata, resolveItemCategoryLabel, resolveItemSubCategory, resolveQueueActionName, resolveWorldLocationName } from './game/ids'
 import { getDifficultyBracket } from './game/combatDifficulty'
 import { computeDungeonEnergy, getDungeonDifficultyMeta } from './game/dungeonRules'
 import { useGameStore, useGameStoreWhenVisible } from './game/gameStore'
@@ -1723,8 +1723,16 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       },
     })
   }, [editingTriggerItemId, combat?.consumableTriggers])
+  const slottedTalismanIds = useMemo(() => new Set(
+    isCombat
+      ? (combat?.abilitySlots ?? [])
+          .map(s => s.abilityId)
+          .filter((id): id is string => Boolean(id && id.startsWith('item.')))
+      : [],
+  ), [combat?.abilitySlots, isCombat])
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
       .filter(item => item.category === 'consumable' && item.usableBars.includes(bar) && itemAmount(inventory, item.itemId) > 0
+        && !slottedTalismanIds.has(item.itemId)
         // 药品栏只放药品类即时消耗品；通用栏任意适用自动消耗品皆可（手动消耗品不入栏）。
         && (slotGroup !== 'potion' || (item.subCategory === 'pill' && !item.isContinuous)))
       .map(item => ({
@@ -2519,47 +2527,81 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
   const t = useT()
   const combat = useGameStoreWhenVisible(hidden, state => state.combat)
   const abilities = useGameStoreWhenVisible(hidden, state => state.abilities)
+  const itemCatalog = useGameStoreWhenVisible(hidden, state => state.items)
+  const inventory = useGameStoreWhenVisible(hidden, state => state.inventory)
+  const traitIds = useGameStoreWhenVisible(hidden, state => state.stats?.traitIds)
+  const combatAttributes = useGameStoreWhenVisible(hidden, state => state.combatAttributes)
+  const combatAutoUseSlots = useGameStoreWhenVisible(hidden, state => state.queue.autoUseSlots.combat)
   const abilityCooldowns = useGameStoreWhenVisible(
     hidden,
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
-  const [editingTriggerAbilityId, setEditingTriggerAbilityId] = useState<string | null>(null)
+  const talismanCooldowns = useGameStoreWhenVisible(
+    hidden,
+    state => state.combatResources?.talismanCooldownMilliseconds,
+  ) ?? EMPTY_ABILITY_COOLDOWNS
+  const [editingTrigger, setEditingTrigger] = useState<{ kind: 'ability' | 'item'; id: string } | null>(null)
   const [pickerTarget, setPickerTarget] = useState<CombatPickerTarget | null>(null)
   const locked = useSocialStore(selectPartyLoadoutLocked)
   useEffect(() => {
     if (!locked) return
     setPickerTarget(null)
-    setEditingTriggerAbilityId(null)
+    setEditingTrigger(null)
   }, [locked])
   // hooks 必须在早退之前调用：combat 在 undefined 与对象间切换时保持 hook 数量稳定。
   const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
   const learnedAbilities = useMemo(() => {
     return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
   }, [abilities, learnedAbilityIds])
+  const hasFufaTianming = useMemo(() => Boolean(traitIds?.includes('trait.fufatianming')), [traitIds])
+  const itemAmountFor = useCallback((id: string) => itemAmount(inventory, id), [inventory])
+  const pickerTalismanItems = useMemo(() => {
+    if (!hasFufaTianming) return undefined
+    const autoUsedIds = new Set((combatAutoUseSlots ?? []).map(s => s.itemId).filter((id): id is string => Boolean(id)))
+    return itemCatalog.filter(item =>
+      item.category === 'consumable'
+      && item.subCategory === 'talisman'
+      && item.usableBars.includes('combat')
+      && !autoUsedIds.has(item.itemId)
+      && itemAmount(inventory, item.itemId) > 0,
+    )
+  }, [combatAutoUseSlots, hasFufaTianming, inventory, itemCatalog])
   if (!combat) return null
 
   // 装配变更统一经 sendLoadoutReplace 发送：内部完成槽位类别互斥与等级归一化。
   const update = (patch: Partial<typeof combat>) => sendLoadoutReplace(patch)
   // 已参悟等级由功法经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
   const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
-  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
+  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法或符箓从原槽位移到新槽位。
   const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
-  // 触发条件跟随功法而非槽位：按功法 ID 读写 combat.abilityTriggers。
+  // 触发条件跟随功法或符箓：分别读写 combat.abilityTriggers / combat.consumableTriggers。
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
-    if (editingTriggerAbilityId === null) return
-    update({
-      abilityTriggers: {
-        ...(combat.abilityTriggers ?? {}),
-        [editingTriggerAbilityId]: triggers ?? [],
-      },
-    })
+    if (editingTrigger === null) return
+    if (editingTrigger.kind === 'item') {
+      update({
+        consumableTriggers: {
+          ...(combat.consumableTriggers ?? {}),
+          [editingTrigger.id]: triggers ?? [],
+        },
+      })
+    } else {
+      update({
+        abilityTriggers: {
+          ...(combat.abilityTriggers ?? {}),
+          [editingTrigger.id]: triggers ?? [],
+        },
+      })
+    }
   }
 
   const pickerValue = pickerTarget === null
     ? null
     : combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
-  const currentPickerAbility = pickerValue !== null
+  const currentPickerAbility = pickerValue !== null && !pickerValue.startsWith('item.')
     ? findAbilityInCatalog(abilities, pickerValue)
+    : null
+  const currentPickerItem = pickerValue !== null && pickerValue.startsWith('item.')
+    ? findItemInCatalog(itemCatalog, pickerValue)
     : null
   const pickerTitle = pickerTarget === null
       ? ''
@@ -2568,6 +2610,11 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
     if (!pickerTarget) return
     update({ abilitySlots: withAbility(pickerTarget.index, value) })
   }
+
+  const hasFufaji = Boolean(traitIds?.includes('trait.fufaji'))
+  const fufajiLv = hasFufaji ? Math.max(1, combatAttributes?.traitLevels?.['trait.fufaji'] ?? 1) : 1
+  const talismanCdPts = (combatAttributes?.cooldownReductionPoints ?? 0) + (hasFufaji ? 400 * getTraitLevelScale(fufajiLv) : 0)
+  const talismanCdFactor = talismanCdPts >= 0 ? 100 / (100 + talismanCdPts) : (100 - talismanCdPts) / 100
 
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
@@ -2583,11 +2630,85 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
           <div className="combat-slot-grid combat-slot-grid--abilities">
             {combat.abilitySlots.map((slot, index) => {
               const isInternal = index === 0
-              const ability = slot.abilityId ? findAbilityInCatalog(abilities, slot.abilityId) : undefined
-              const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
+              const isTalismanSlot = !isInternal && Boolean(slot.abilityId?.startsWith('item.'))
               const slotTypeTag = isInternal
                 ? t('app.combatPanel.slotInternal')
                 : t('app.combatPanel.slotSpell', { n: index })
+
+              if (isTalismanSlot && slot.abilityId) {
+                const talismanId = slot.abilityId
+                const talismanDef = findItemInCatalog(itemCatalog, talismanId)
+                const metadata = resolveCatalogItemMetadata(talismanId, { itemDefinition: talismanDef, glyph: '符', tone: 'gold', t })
+                const talismanName = talismanDef?.name ?? metadata.label
+                const amount = itemAmount(inventory, talismanId)
+                const itemTriggers = combat.consumableTriggers?.[talismanId] ?? talismanDef?.triggers ?? []
+                const triggerCount = itemTriggers.length
+                const categoryLabel = resolveItemCategoryLabel(resolveItemSubCategory(talismanId, talismanDef), t)
+                const remainingCdMs = talismanCooldowns[talismanId] ?? 0
+                const totalCdMs = Math.max(100, Math.round((talismanDef?.cooldownSeconds ?? 60) * 1000 * talismanCdFactor))
+                return (
+                  <div
+                    className={`conditioned-tile combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`}
+                    key={index}
+                  >
+                    <ItemTooltipTarget
+                      amount={amount}
+                      className="combat-ability-slot-shell"
+                      definition={talismanDef}
+                      itemId={talismanId}
+                      metadata={metadata}
+                      tabIndex={locked ? 0 : -1}
+                    >
+                      <button
+                        aria-label={t('app.combatPanel.currentAbilityAria', { name: talismanName })}
+                        className="combat-ability-slot is-spell-slot"
+                        disabled={locked}
+                        onClick={event => {
+                          const anchor = event.currentTarget
+                          setPickerTarget(prev => prev?.index === index ? null : { kind: 'ability', index, anchor })
+                        }}
+                        type="button"
+                      >
+                        <span className="abilities-slot-tag-badge">{slotTypeTag}</span>
+                        <span className={`item-use-slot-shell${amount <= 0 ? ' is-depleted' : ''}`} data-rarity={metadata.rarity}>
+                          <ItemTile
+                            amount={amount}
+                            category={categoryLabel}
+                            className="combat-ability-cell"
+                            itemId={talismanId}
+                            level={metadata.level}
+                            name={talismanName}
+                            rarity={metadata.rarity}
+                          />
+                          {remainingCdMs > 0 && (
+                            <AbilityCooldownOverlay
+                              remainingMilliseconds={remainingCdMs}
+                              totalMilliseconds={totalCdMs}
+                            />
+                          )}
+                        </span>
+                      </button>
+                    </ItemTooltipTarget>
+                    {!locked && (
+                      <button
+                        aria-label={t('app.combatPanel.editTriggersAria', { name: talismanName, count: triggerCount })}
+                        className={`item-slot-inline-action item-slot-inline-action--condition${triggerCount > 0 ? ' has-triggers' : ''}`}
+                        onClick={e => {
+                          e.stopPropagation()
+                          setEditingTrigger({ kind: 'item', id: talismanId })
+                        }}
+                        title={t('app.combatPanel.editTriggersTitle')}
+                        type="button"
+                      >
+                        {t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' })}
+                      </button>
+                    )}
+                  </div>
+                )
+              }
+
+              const ability = slot.abilityId ? findAbilityInCatalog(abilities, slot.abilityId) : undefined
+              const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
               const ribbonLabel = isInternal
                 ? t('app.combatPanel.internalRibbon')
                 : t('app.combatPanel.spellRibbon')
@@ -2646,7 +2767,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
                     ariaLabel: t('app.combatPanel.editTriggersAria', { name: ability.name, count: triggerCount }),
                     hasTriggers: triggerCount > 0,
                     label: t('app.combatPanel.triggerConditionBtn', { count: triggerCount > 0 ? triggerCount : '' }),
-                    onClick: () => setEditingTriggerAbilityId(ability.abilityId),
+                    onClick: () => setEditingTrigger({ kind: 'ability', id: ability.abilityId }),
                     title: t('app.combatPanel.editTriggersTitle'),
                   } : null}
                   content={ability ? describeAbility(ability, abilityLevelFor(ability.abilityId)) : null}
@@ -2674,25 +2795,45 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel({ hidden = false }: 
         abilityExperiences={combat.abilityExperiences}
         allowEmpty
         anchor={pickerTarget?.anchor ?? null}
+        itemAmountFor={itemAmountFor}
         levelFor={abilityLevelFor}
         onClose={() => setPickerTarget(null)}
-        onEditCondition={currentPickerAbility ? () => setEditingTriggerAbilityId(currentPickerAbility.abilityId) : undefined}
+        onEditCondition={
+          currentPickerAbility
+            ? () => setEditingTrigger({ kind: 'ability', id: currentPickerAbility.abilityId })
+            : currentPickerItem
+              ? () => setEditingTrigger({ kind: 'item', id: currentPickerItem.itemId })
+              : undefined
+        }
         onSelect={selectPickerValue}
         open={!locked && pickerTarget !== null}
         slotIndex={pickerTarget?.index}
+        talismanItems={pickerTalismanItems}
         title={pickerTitle}
-        triggerCount={currentPickerAbility ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0) : 0}
+        triggerCount={
+          currentPickerAbility
+            ? (combat.abilityTriggers?.[currentPickerAbility.abilityId]?.length ?? 0)
+            : currentPickerItem
+              ? ((combat.consumableTriggers?.[currentPickerItem.itemId] ?? currentPickerItem.triggers ?? []).length)
+              : 0
+        }
         value={pickerValue}
       />
-      {!locked && editingTriggerAbilityId !== null && (
+      {!locked && editingTrigger !== null && (
         <CombatTriggerEditor
-          defaultTriggers={findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}
-          initialTriggers={combat.abilityTriggers?.[editingTriggerAbilityId] ?? findAbilityInCatalog(abilities, editingTriggerAbilityId)?.defaultTriggers ?? []}
-          onClose={() => setEditingTriggerAbilityId(null)}
+          defaultTriggers={editingTrigger.kind === 'item'
+            ? (findItemInCatalog(itemCatalog, editingTrigger.id)?.triggers ?? [])
+            : (findAbilityInCatalog(abilities, editingTrigger.id)?.defaultTriggers ?? [])}
+          initialTriggers={editingTrigger.kind === 'item'
+            ? (combat.consumableTriggers?.[editingTrigger.id] ?? findItemInCatalog(itemCatalog, editingTrigger.id)?.triggers ?? [])
+            : (combat.abilityTriggers?.[editingTrigger.id] ?? findAbilityInCatalog(abilities, editingTrigger.id)?.defaultTriggers ?? [])}
+          onClose={() => setEditingTrigger(null)}
           onSave={saveTriggers}
           open
           title={t('app.combatPanel.triggerEditorTitle', {
-            name: findAbilityInCatalog(abilities, editingTriggerAbilityId)?.name ?? editingTriggerAbilityId,
+            name: editingTrigger.kind === 'item'
+              ? (findItemInCatalog(itemCatalog, editingTrigger.id)?.name ?? editingTrigger.id)
+              : (findAbilityInCatalog(abilities, editingTrigger.id)?.name ?? editingTrigger.id),
           })}
         />
       )}

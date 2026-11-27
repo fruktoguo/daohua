@@ -55,28 +55,32 @@ internal static class CombatTraitReactions
         }
     }
 
-    /// <summary>向目标直接追加指定层数的燃烧状态，并刷新到期时间与伤害归属。</summary>
+    /// <summary>向目标直接追加指定层数的燃烧状态，并按保高不降原则刷新到期时间与伤害归属。</summary>
     internal static void AddRanhunStacks(CombatantState attacker, CombatantState target, double stacks, double at,
         CombatEncounterState? encounter = null)
     {
         if (stacks <= 0 || !CombatDamageSettlement.IsTargetAlive(encounter, target)) return;
         if (encounter?.ActiveWave is SimultaneousCombatWave wave)
         {
+            var previewTotal = wave.AddPreviewRanhunStacks(target, stacks);
             wave.DeferBuffOp(() =>
             {
                 if (!target.IsAlive) return;
                 var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
-                target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existing?.Stacks ?? 0),
+                var exp = CombatTraitRules.MergeBuffExpiry(existing?.ExpiresAtSeconds, at + 5);
+                target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, exp, stacks + (existing?.Stacks ?? 0),
                     "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
             });
-            encounter.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, stacks,
+            encounter.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, previewTotal,
                 DuelRecordActionKind.Trait, at, CombatTraitRules.RanhunTraitId);
             return;
         }
         var existingNow = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.RanhunBuffId);
-        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, at + 5, stacks + (existingNow?.Stacks ?? 0),
+        var totalNow = stacks + (existingNow?.Stacks ?? 0);
+        var expiresAtNow = CombatTraitRules.MergeBuffExpiry(existingNow?.ExpiresAtSeconds, at + 5);
+        target.SetBuff(new CombatBuffState(CombatTraitRules.RanhunBuffId, expiresAtNow, totalNow,
             "燃烧", ResetOnWave: true, Effects: [new(BuffEffectChannel.FireSpellDamagePerSecond, 1)], SourceUnitId: attacker.Id));
-        encounter?.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, stacks,
+        encounter?.ActionRecorder?.RecordBuff(attacker, target, CombatTraitRules.RanhunBuffId, totalNow,
             DuelRecordActionKind.Trait, at, CombatTraitRules.RanhunTraitId);
     }
 
@@ -90,7 +94,97 @@ internal static class CombatTraitReactions
         AddRanhunStacks(attacker, target, stacks, at, encounter);
     }
 
-    /// <summary>整秒自然边界结算火属性术法持续伤害，不回流命中触发器。</summary>
+    /// <summary>开战第 0 秒特质反应统一执行（血气化盾等依赖真实入场生命值的机制）；恢复快照不重复触发。</summary>
+    internal static void ApplyBattleStartReactions(CombatEncounterState encounter)
+    {
+        if (encounter.BattleStartReactionsApplied || encounter.ElapsedSeconds > 1e-12) return;
+        encounter.BattleStartReactionsApplied = true;
+        for (var i = 0; i < encounter.PlayerAllies.Count; i++)
+            ApplyXueqihuadun(encounter, encounter.PlayerAllies[i], 0);
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+            ApplyXueqihuadun(encounter, encounter.Enemies[i], 0);
+    }
+
+    /// <summary>血气化盾：将超出 20% 最大生命的气血作为绕过自身护盾的受击伤害扣除（触发蓄意与受击涨威胁），转化为战内永久护盾。</summary>
+    internal static double ApplyXueqihuadun(CombatEncounterState? encounter, CombatantState unit, double at)
+    {
+        if (!unit.IsAlive || !CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.XueqihuadunTraitId))
+            return 0;
+        var threshold = unit.Stats.MaxHitpoints * 0.20;
+        if (unit.Hitpoints <= threshold + 1e-9) return 0;
+        var excess = unit.Hitpoints - threshold;
+        var settled = CombatDamageSettlement.Apply(encounter, unit, unit, excess, accumulateXuyi: true, bypassShield: true);
+        if (settled.Actual <= 0 || !unit.IsAlive) return 0;
+        var threatOnTaken = unit.Stats.Effects.ThreatOnTakenPoints;
+        if (threatOnTaken > 0)
+            unit.Threat += excess * threatOnTaken / 100.0;
+        var shieldGain = settled.Actual * CombatTraitRules.XueqihuadunConversionRatio(unit.Stats.Traits, unit.Stats.TraitLevels);
+        unit.Shield += shieldGain;
+        if (encounter?.ActionRecorder is { } recorder)
+        {
+            recorder.BeginAction(at, unit, DuelRecordActionKind.Trait, CombatTraitRules.XueqihuadunTraitId);
+            try
+            {
+                recorder.RecordUpkeep(unit, settled.Actual, CombatTraitRules.XueqihuadunTraitId);
+            }
+            finally
+            {
+                recorder.EndAction();
+            }
+        }
+        return shieldGain;
+    }
+
+    /// <summary>波次战斗终结收尾：将存活血气化盾持有者的剩余护盾按治疗增幅转化为生命恢复，并清空全场战内护盾。</summary>
+    internal static void SettleWaveEndShields(CombatEncounterState encounter, ref List<CombatEvent>? events)
+    {
+        if (encounter.WaveEndShieldsSettled || encounter.Outcome == CombatOutcome.Running) return;
+        encounter.WaveEndShieldsSettled = true;
+        SettleSide(encounter, encounter.PlayerAllies, ref events);
+        SettleSide(encounter, encounter.Enemies, ref events);
+
+        static void SettleSide(CombatEncounterState enc, IReadOnlyList<CombatantState> units, ref List<CombatEvent>? ev)
+        {
+            for (var i = 0; i < units.Count; i++)
+            {
+                var unit = units[i];
+                var remainingShield = unit.Shield;
+                unit.Shield = 0;
+                if (remainingShield <= 1e-9 || !unit.IsAlive
+                    || !CombatTraitRules.ContainsTrait(unit.Stats.Traits, CombatTraitRules.XueqihuadunTraitId))
+                    continue;
+                var rawHeal = remainingShield * PercentValue.Multiplier(unit.EffectiveStats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
+                var healed = Math.Min(unit.Stats.MaxHitpoints - unit.Hitpoints, Math.Max(0, rawHeal));
+                if (healed <= 1e-9) continue;
+                unit.Hitpoints += healed;
+                unit.SyncDerivedStacks();
+                enc.StatsBook?.RecordHealing(unit, autoRegen: false, healed);
+                if (enc.ActionRecorder is { } recorder)
+                {
+                    recorder.BeginAction(enc.ElapsedSeconds, unit, DuelRecordActionKind.Trait, CombatTraitRules.XueqihuadunTraitId);
+                    try
+                    {
+                        recorder.RecordHeal(unit, unit, DuelRecordEffectKind.Heal, healed, CombatTraitRules.XueqihuadunTraitId);
+                    }
+                    finally
+                    {
+                        recorder.EndAction();
+                    }
+                }
+                (ev ??= []).Add(new CombatEvent(enc.ElapsedSeconds, unit.Id, unit.Id, 0, true, CombatDamageKind.Physical, unit.Hitpoints)
+                {
+                    AbilityId = CombatTraitRules.XueqihuadunTraitId,
+                    Healing = healed,
+                    AttackerManapointsAfter = unit.Manapoints,
+                    TargetManapointsAfter = unit.Manapoints,
+                    AttackerShieldAfter = 0,
+                    TargetShieldAfter = 0
+                });
+            }
+        }
+    }
+
+    /// <summary>整秒自然边界结算火属性术法持续伤害与养剑术蓄意，不回流命中触发器。</summary>
     internal static void Tick(CombatEncounterState encounter, CombatantState target, double at, ref List<CombatEvent>? events)
     {
         if (!target.IsAlive) return;
@@ -121,9 +215,34 @@ internal static class CombatTraitReactions
                 }
             }
             (events ??= []).Add(new CombatEvent(at, source.Id, target.Id, settled.Damage, true, CombatDamageKind.Spell, target.Hitpoints)
-                { AbilityId = CombatTraitRules.RanhunTraitId, AttackerManapointsAfter = source.Manapoints, TargetManapointsAfter = target.Manapoints });
-            // 积蓄意可能修改目标 Buff 列表；燃魂当前仅一条，收尾后返回避免枚举失效。
-            return;
+            {
+                AbilityId = CombatTraitRules.RanhunTraitId,
+                AttackerManapointsAfter = source.Manapoints,
+                TargetManapointsAfter = target.Manapoints,
+                AttackerShieldAfter = source.Shield,
+                TargetShieldAfter = target.Shield
+            });
+            // 积蓄意可能修改目标 Buff 列表；燃魂当前仅一条，收尾后跳出循环避免枚举失效。
+            break;
+        }
+        if (at > 1e-9 && target.IsAlive
+            && CombatTraitRules.ContainsTrait(target.Stats.Traits, CombatTraitRules.YangjianshuTraitId)
+            && (target.LastDirectDamageAtSeconds < 0 || at - target.LastDirectDamageAtSeconds >= 1.0 - 1e-9))
+        {
+            var scale = CombatTraitRules.LevelScale(target, CombatTraitRules.YangjianshuTraitId);
+            var existing = target.Buffs.FirstOrDefault(buff => buff.BuffId == CombatTraitRules.JianyiBuffId);
+            var nextStacks = (existing?.Stacks ?? 0) + 1;
+            var expiresAt = CombatTraitRules.MergeBuffExpiry(existing?.ExpiresAtSeconds, at + 10.0);
+            target.SetBuff(new CombatBuffState(CombatTraitRules.JianyiBuffId, expiresAt, nextStacks, "剑意",
+                ResetOnWave: true,
+                Effects:
+                [
+                    new(BuffEffectChannel.AttackPowerPostRatio, 0.30 * scale),
+                    new(BuffEffectChannel.CriticalPostRatio, 0.30 * scale),
+                    new(BuffEffectChannel.CriticalDamagePoints, 30.0 * scale)
+                ]));
+            encounter.ActionRecorder?.RecordBuff(target, target, CombatTraitRules.JianyiBuffId, nextStacks,
+                DuelRecordActionKind.Trait, at, CombatTraitRules.YangjianshuTraitId);
         }
     }
 }

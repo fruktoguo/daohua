@@ -680,5 +680,71 @@
     "sellPrice": 25,
     "subCategory": "manualFragment",
     "level": 27
+  },
+  {
+    "id": "item.tome.gangqi-huti",
+    "name": "《罡气护体秘籍》",
+    "description": "真罡凝金钟，百刃莫能伤。\n炼体宗门外放护身真罡之秘传图录，字画雄浑敦厚，重若山岳。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "subCategory": "manualTome",
+    "level": 10
+  },
+  {
+    "id": "item.fragment.gangqi-huti",
+    "name": "《罡气护体·残卷》",
+    "description": "真罡凝金钟，百刃莫能伤。\n兽皮拓印的护体行气散页，触手沉凝温厚。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "subCategory": "manualFragment",
+    "level": 10
+  },
+  {
+    "id": "item.tome.benglie",
+    "name": "《迸裂秘籍》",
+    "description": "碎罡撼坤舆，崩石裂九渊。\n记载以血催罡、自震护盾化作灭敌崩岩之凶悍体修杀招。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 18
+  },
+  {
+    "id": "item.fragment.benglie",
+    "name": "《迸裂·残卷》",
+    "description": "碎罡撼坤舆，崩石裂九渊。\n布满裂痕的石刻拓片，隐有土石崩摧之震意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 18
+  },
+  {
+    "id": "item.tome.tiangang-duanyue",
+    "name": "《天罡断岳秘籍》",
+    "description": "万击铸天罡，一刀断苍岳。\n古刀宗镇派霸刀总纲，讲求立身万军之中受刃养势，刀落之时山河俱断。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "subCategory": "manualTome",
+    "level": 28
+  },
+  {
+    "id": "item.fragment.tiangang-duanyue",
+    "name": "《天罡断岳·残卷》",
+    "description": "万击铸天罡，一刀断苍岳。\n沉铁夹页中残存的半幅蓄刀图谱，锋芒内敛而霸气凛然。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "subCategory": "manualFragment",
+    "level": 28
   }
 ]

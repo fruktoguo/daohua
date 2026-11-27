@@ -398,6 +398,8 @@ public sealed class CombatantState
     public double Hitpoints { get; internal set; }
     /// <summary>当前剩余灵力值</summary>
     public double Manapoints { get; internal set; }
+    /// <summary>当前战内永久护盾值（减伤后优先抵扣伤害；阵亡或波次结束清零）。</summary>
+    public double Shield { get; internal set; }
     /// <summary>下一次普通攻击或出手的预定战斗时间（秒）</summary>
     public double NextAttackAtSeconds { get; internal set; }
     /// <summary>累计出手攻击次数</summary>
@@ -430,6 +432,10 @@ public sealed class CombatantState
     internal double LastTianleiTriggerAtSeconds { get; set; } = -1;
     /// <summary>血煞阵上次触发时刻（秒），保证单人每秒最多触发一次。</summary>
     internal double LastXueshaTriggerAtSeconds { get; set; } = -1;
+    /// <summary>闪身步上次触发时刻（秒），按特质等级反比例内置冷却。</summary>
+    internal double LastShanshenbuTriggerAtSeconds { get; set; } = -1;
+    /// <summary>上次造成普攻/伤害技能直伤的战斗时钟秒（-1 表示开战以来尚未造成直伤，供养剑术 1s 网格判定）。</summary>
+    internal double LastDirectDamageAtSeconds { get; set; } = -1;
     /// <summary>
     /// 倒地复活截止点（战斗时钟秒）：仅友方单位使用——阵亡瞬间置为 ElapsedSeconds + 遭遇复活读条，
     /// 起身后回 +∞；敌方单位与团灭即败遭遇恒为 +∞。倒地单位不出手，回复/冷却照常推进。
@@ -536,9 +542,12 @@ public sealed class CombatantState
             {
                 var effect = effects[j];
                 var info = BuffEffectRegistry.Info(effect.Channel);
-                totals[(int)effect.Channel] += info.StackMode == BuffEffectStackMode.PerStack
-                    ? effect.Value * buff.Stacks
-                    : effect.Value;
+                // 移形（buff.yixing）层数表示可消费位移次数，闪避后段固定按单实例生效；其余 PerStack 通道按层数线性放大。
+                var stackMult = info.StackMode == BuffEffectStackMode.PerStack
+                    && !(effect.Channel == BuffEffectChannel.EvasionPostRatio && buff.BuffId == CombatTraitRules.YixingBuffId)
+                    ? buff.Stacks
+                    : 1.0;
+                totals[(int)effect.Channel] += effect.Value * stackMult;
                 if (effect.Value == 0) continue;
                 if (info.TickGroup == BuffEffectTickGroup.Regen5s) regenPending = true;
                 else if (info.TickGroup == BuffEffectTickGroup.Tick1s) tick1sPending = true;
@@ -594,9 +603,12 @@ public sealed class CombatantState
         return total;
     }
 
+    private static double PostSoftRatio(double ratio)
+        => ratio >= 0 ? 1 + ratio : 1 / (1 - ratio);
+
     /// <summary>
     /// 折叠战内 Buff 后的实际参战面板：攻击力/命中/暴击按层数加成，双抗按 <see cref="BuffEffectChannel.ResistancePoints"/>
-    /// 合计缩放（Linear，-400 点 ≡ ×0.2）。伤害、命中与暴击判定一律读本面板，杜绝「Buff 已授予但结算仍读静态面板」的分叉。
+    /// 合计缩放（Linear，-400 点 ≡ ×0.2），普通属性后段比率统一走正乘负除软着陆。伤害、命中与暴击判定一律读本面板。
     /// 无 Buff 时零成本直读静态面板；有 Buff 时走脏标记缓存（Buff/层数/面板变更点统一失效）。
     /// </summary>
     public CombatantStats EffectiveStats
@@ -611,16 +623,16 @@ public sealed class CombatantState
                 : PercentValue.Multiplier(resistanceTotal, PercentCurveMode.Linear);
             return _effectiveStatsCache = Stats with
             {
-                AttackPower = Math.Max(0, Stats.AttackPower + totals[(int)BuffEffectChannel.AttackPower]),
+                AttackPower = Math.Max(0, (Stats.AttackPower + totals[(int)BuffEffectChannel.AttackPower]) * PostSoftRatio(totals[(int)BuffEffectChannel.AttackPowerPostRatio])),
                 Accuracy = Math.Max(0, Stats.Accuracy + totals[(int)BuffEffectChannel.Accuracy]),
-                Critical = Math.Max(0, Stats.Critical + totals[(int)BuffEffectChannel.Critical]),
+                Critical = Math.Max(0, (Stats.Critical + totals[(int)BuffEffectChannel.Critical]) * PostSoftRatio(totals[(int)BuffEffectChannel.CriticalPostRatio])),
                 ActionSpeedPoints = Stats.ActionSpeedPoints + totals[(int)BuffEffectChannel.ActionSpeedPoints],
                 CriticalDamagePoints = Stats.CriticalDamagePoints + totals[(int)BuffEffectChannel.CriticalDamagePoints],
                 Effects = Stats.Effects with { HealingBonusPoints = Stats.Effects.HealingBonusPoints + totals[(int)BuffEffectChannel.HealingBonusPoints] },
                 Defense = Math.Max(0, Stats.Defense * resistance),
                 MagicResistance = Math.Max(0, Stats.MagicResistance * resistance),
-                Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * (1 + totals[(int)BuffEffectChannel.EvasionPostRatio])),
-                ParryResolve = Math.Max(0, Stats.ParryResolve * (1 + totals[(int)BuffEffectChannel.ParryPostRatio]))
+                Evasion = Math.Max(0, (Stats.Evasion + totals[(int)BuffEffectChannel.Evasion]) * PostSoftRatio(totals[(int)BuffEffectChannel.EvasionPostRatio])),
+                ParryResolve = Math.Max(0, Stats.ParryResolve * PostSoftRatio(totals[(int)BuffEffectChannel.ParryPostRatio]))
             };
         }
     }
@@ -752,13 +764,20 @@ public sealed record CombatantSnapshot(
 {
     /// <summary>本场入战定格特质；恢复不读取玩家战中改动后的装配。</summary>
     public CombatTraitState Traits { get; init; } = CombatTraitState.Empty;
+    /// <summary>当前战内永久护盾值；缺省为 0。</summary>
+    public double Shield { get; init; }
     /// <summary>天雷阵上次触发的战斗时钟秒；null 表示没有触发记录。</summary>
     public double? LastTianleiTriggerAtSeconds { get; init; }
     /// <summary>血煞阵上次触发的战斗时钟秒；null 表示没有触发记录。</summary>
     public double? LastXueshaTriggerAtSeconds { get; init; }
+    /// <summary>闪身步上次触发的战斗时钟秒；null 表示没有触发记录。</summary>
+    public double? LastShanshenbuTriggerAtSeconds { get; init; }
+    /// <summary>上次造成普攻/伤害技能直伤的战斗时钟秒；null 表示开战以来尚未造成直伤。</summary>
+    public double? LastDirectDamageAtSeconds { get; init; }
     /// <summary>快照字段的有限性/取值域校验（不含上限比对——上限依赖施法时面板）。</summary>
     internal bool IsValid => Traits is not null && Traits.IsValid && double.IsFinite(Hitpoints) && Hitpoints >= 0
         && double.IsFinite(Manapoints) && Manapoints >= 0
+        && double.IsFinite(Shield) && Shield >= 0
         && double.IsFinite(NextAttackAtSeconds) && NextAttackAtSeconds >= 0
         && double.IsFinite(AttackCount) && AttackCount >= 0
         && double.IsFinite(Threat) && Threat >= 0
@@ -775,6 +794,8 @@ public sealed record CombatantSnapshot(
             || (double.IsFinite(RespawnWaitingUntilSeconds.Value) && RespawnWaitingUntilSeconds.Value >= 0))
         && (LastTianleiTriggerAtSeconds is not { } tianlei || (double.IsFinite(tianlei) && tianlei >= 0))
         && (LastXueshaTriggerAtSeconds is not { } xuesha || (double.IsFinite(xuesha) && xuesha >= 0))
+        && (LastShanshenbuTriggerAtSeconds is not { } shanshen || (double.IsFinite(shanshen) && shanshen >= 0))
+        && (LastDirectDamageAtSeconds is not { } lastDmg || (double.IsFinite(lastDmg) && lastDmg >= 0))
         && (SkillCooldownUntil is null || SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0))
         && (Buffs is null || Buffs.All(buff => buff is not null && buff.IsValid));
 }
@@ -938,11 +959,13 @@ public sealed class CombatEncounterState
     /// 只观察已结算结果，不参与任何随机数或状态裁决。
     /// </summary>
     public ICombatActionRecorder? ActionRecorder { get; set; }
-    /// <summary>
-    /// 对称同刻同时生效波次缓冲区（运行时，由 Ecs 层 <c>SimultaneousCombatWave</c> 挂载）；
-    /// 仅在 <see cref="IsSymmetric"/> 且同一自然边界存在 ≥2 名同时出手单位期间非空，不进入快照。
-    /// </summary>
+    /// <summary>对称同刻同时生效波次缓冲区（运行时，由 Ecs 层 <c>SimultaneousCombatWave</c> 挂载）；
+    /// 仅在 <see cref="IsSymmetric"/> 且同一自然边界存在 ≥2 名同时出手单位期间非空，不进入快照。</summary>
     internal object? ActiveWave { get; set; }
+    /// <summary>本场开战第 0 秒特质反应（如血气化盾）是否已执行；快照恢复恒置 true 不重复触发。</summary>
+    internal bool BattleStartReactionsApplied { get; set; }
+    /// <summary>本波终局护盾收尾（如血气化盾剩余护盾转治疗）是否已结算。</summary>
+    internal bool WaveEndShieldsSettled { get; set; }
     /// <summary>本机成员当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
@@ -1192,6 +1215,8 @@ public sealed class CombatEncounterState
         encounter.ElapsedSeconds = elapsedSeconds;
         encounter.Outcome = outcome;
         encounter.Sequence = sequence;
+        encounter.BattleStartReactionsApplied = true;
+        encounter.WaveEndShieldsSettled = outcome != CombatOutcome.Running;
         // 复活截止点只在倒地窗口内有意义：存活单位携带该字段、或截止点早于当前时钟、
         // 或遭遇禁止原地复活却携带截止点，均属损坏快照。
         for (var i = 0; i < allies.Count; i++)
@@ -1233,8 +1258,11 @@ public sealed class CombatEncounterState
             double.IsFinite(state.RespawnWaitingUntilSeconds) ? state.RespawnWaitingUntilSeconds : null)
         {
             Traits = state.TraitState,
+            Shield = state.Shield,
             LastTianleiTriggerAtSeconds = state.LastTianleiTriggerAtSeconds >= 0 ? state.LastTianleiTriggerAtSeconds : null,
-            LastXueshaTriggerAtSeconds = state.LastXueshaTriggerAtSeconds >= 0 ? state.LastXueshaTriggerAtSeconds : null
+            LastXueshaTriggerAtSeconds = state.LastXueshaTriggerAtSeconds >= 0 ? state.LastXueshaTriggerAtSeconds : null,
+            LastShanshenbuTriggerAtSeconds = state.LastShanshenbuTriggerAtSeconds >= 0 ? state.LastShanshenbuTriggerAtSeconds : null,
+            LastDirectDamageAtSeconds = state.LastDirectDamageAtSeconds >= 0 ? state.LastDirectDamageAtSeconds : null
         };
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
@@ -1244,6 +1272,7 @@ public sealed class CombatEncounterState
         // 上限来自恢复时点解析面板，随装备/Buff/境界/配表漂移；历史快照可合法超出，越界按上限钳制。
         state.Hitpoints = Math.Max(0, Math.Min(snapshot.Hitpoints, maxHitpoints));
         state.Manapoints = Math.Max(0, Math.Min(snapshot.Manapoints, maxManapoints));
+        state.Shield = state.Hitpoints > 1e-12 ? Math.Max(0, snapshot.Shield) : 0;
         state.NextAttackAtSeconds = snapshot.NextAttackAtSeconds;
         state.AttackCount = snapshot.AttackCount;
         state.Threat = snapshot.Threat;
@@ -1270,6 +1299,8 @@ public sealed class CombatEncounterState
         state.SkillCastCount = snapshot.SkillCastCount;
         state.LastTianleiTriggerAtSeconds = snapshot.LastTianleiTriggerAtSeconds ?? -1;
         state.LastXueshaTriggerAtSeconds = snapshot.LastXueshaTriggerAtSeconds ?? -1;
+        state.LastShanshenbuTriggerAtSeconds = snapshot.LastShanshenbuTriggerAtSeconds ?? -1;
+        state.LastDirectDamageAtSeconds = snapshot.LastDirectDamageAtSeconds ?? -1;
         // 倒地复活截止点随快照恢复（友方单位口径）；null 表示未倒地。
         state.RespawnAtSeconds = snapshot.RespawnAtSeconds ?? double.PositiveInfinity;
         // 复活时机策略与等待上限随快照恢复：等待期间跨进程重启不丢失门禁输入。
@@ -1311,6 +1342,10 @@ public sealed record CombatEvent(
     public double? AttackerManapointsAfter { get; init; }
     /// <summary>事件结算完成时刻受击方的剩余灵力；衍生事件不携带则为 null。</summary>
     public double? TargetManapointsAfter { get; init; }
+    /// <summary>事件结算完成时刻出手方的剩余护盾；衍生事件不携带则为 null。</summary>
+    public double? AttackerShieldAfter { get; init; }
+    /// <summary>事件结算完成时刻受击方的剩余护盾；衍生事件不携带则为 null。</summary>
+    public double? TargetShieldAfter { get; init; }
 }
 
 /// <summary>

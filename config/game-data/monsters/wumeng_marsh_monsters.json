@@ -162,6 +162,18 @@
         "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiangang-duanyue",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiangang-duanyue",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ],
     "skills": [
@@ -234,6 +246,18 @@
       },
       {
         "itemId": "item.fragment.huoyan-fengbao",
+        "dropChance": 0.03,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.tiangang-duanyue",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.tiangang-duanyue",
         "dropChance": 0.03,
         "minQuantity": 1,
         "maxQuantity": 1

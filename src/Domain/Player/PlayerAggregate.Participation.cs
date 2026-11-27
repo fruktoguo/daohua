@@ -132,8 +132,18 @@ public sealed partial class PlayerAggregate
             // 成员可能已等待到投影之后的墙钟；延迟消费不能把已过期周期重新充回槽位。
             var now = Math.Max(settlement.To.ToUnixTimeMilliseconds(), LastSimulatedAt.ToUnixTimeMilliseconds()) / 1000d;
             var slotsChanged = false;
+            var talismanCooldownsChanged = false;
             foreach (var clock in consumableSlots)
             {
+                if (clock.Group == AutoUseSlotState.SlotGroupAbility)
+                {
+                    if (clock.CooldownUntilUnixSeconds > 0)
+                        Combat.TalismanCooldowns[clock.ItemId] = clock.CooldownUntilUnixSeconds;
+                    else
+                        Combat.TalismanCooldowns.Remove(clock.ItemId);
+                    talismanCooldownsChanged = true;
+                    continue;
+                }
                 var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == AutoUseBar.Combat
                     && slot.Group == clock.Group && slot.SlotIndex == clock.SlotIndex && slot.ItemId == clock.ItemId);
                 if (index < 0) continue;
@@ -149,6 +159,7 @@ public sealed partial class PlayerAggregate
                 slotsChanged = true;
             }
             if (slotsChanged) MarkDirty(PlayerSectionKind.Settings);
+            if (talismanCooldownsChanged) MarkDirty(PlayerSectionKind.Combat);
         }
         action.Expedition = settlement.Expedition;
         action.ProgressSeconds = settlement.ProgressSeconds;
@@ -265,7 +276,9 @@ public sealed partial class PlayerAggregate
             CaptureSustainedBuffs(Settings.AutoUseSlots, gameData),
             Loadout.Equipment.ToArray(),
             Resources.RegenCarrySeconds,
-            CaptureConsumableSlots(Settings.AutoUseSlots, gameData),
+            CaptureConsumableSlots(Settings.AutoUseSlots, gameData,
+                CombatTraitRules.CanEquipTalismanInAbilitySlot(Progression.TraitIds) ? Loadout.AbilitySlots : null,
+                Combat.TalismanCooldowns),
             Avatar: Settings.Avatar,
             InternalArt: CaptureInternalArt(Loadout, gameData),
             RespawnPolicy: Settings.RespawnPolicy,
@@ -321,9 +334,13 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 冻结非耐久战斗消耗品的槽配置与时钟，不采集库存；数量由独立工作钱包或离线储备提供。
+    /// 冻结非耐久战斗消耗品的槽配置与时钟（含「符法·天命」主动术法槽符箓），不采集库存；数量由独立工作钱包或离线储备提供。
     /// </summary>
-    internal static List<ActionConsumableSlot>? CaptureConsumableSlots(IReadOnlyList<AutoUseSlotState> slots, GameDataCatalog gameData)
+    internal static List<ActionConsumableSlot>? CaptureConsumableSlots(
+        IReadOnlyList<AutoUseSlotState> slots,
+        GameDataCatalog gameData,
+        IReadOnlyList<PlayerAbilitySlot>? abilitySlots = null,
+        IReadOnlyDictionary<string, double>? talismanCooldowns = null)
     {
         List<ActionConsumableSlot>? list = null;
         for (var i = 0; i < slots.Count; i++)
@@ -341,6 +358,22 @@ public sealed partial class PlayerAggregate
             (list ??= []).Add(new ActionConsumableSlot(slot.ItemId, slot.ActionType, slot.Group, slot.SlotIndex,
                 slot.CooldownUntilUnixSeconds,
                 isSustained ? slot.RemainingDurationSeconds : 0));
+        }
+        if (abilitySlots is not null)
+        {
+            for (var i = 1; i < abilitySlots.Count; i++)
+            {
+                var itemIdText = abilitySlots[i].AbilityId;
+                if (itemIdText is null || !itemIdText.StartsWith("item.", StringComparison.Ordinal)) continue;
+                var itemId = new ItemId(itemIdText);
+                if (!itemId.IsValid || !gameData.Items.TryGetValue(itemId, out var item)
+                    || !string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal)
+                    || item.Consumable is not { IsContinuous: false, Durable: false } consumable
+                    || !consumable.UsableInBars.Contains(Domain.GameData.AutoUseBar.Combat)) continue;
+                var cdUntil = talismanCooldowns is not null && talismanCooldowns.TryGetValue(itemIdText, out var cd) ? cd : 0;
+                (list ??= []).Add(new ActionConsumableSlot(itemIdText, Domain.GameData.AutoUseBar.Combat,
+                    AutoUseSlotState.SlotGroupAbility, i, cdUntil, 0));
+            }
         }
         return list;
     }
@@ -408,7 +441,9 @@ public sealed partial record ActionParticipantSnapshot
             PlayerAggregate.CaptureSustainedBuffs(state.Settings.AutoUseSlots ?? [], catalog),
             loadout.Equipment,
             state.Combat.RegenCarrySeconds,
-            PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog),
+            PlayerAggregate.CaptureConsumableSlots(state.Settings.AutoUseSlots ?? [], catalog,
+                CombatTraitRules.CanEquipTalismanInAbilitySlot(state.Progression.TraitIds) ? loadout.AbilitySlots : null,
+                state.Combat.TalismanCooldowns),
             Avatar: state.Settings.Avatar,
             InternalArt: PlayerAggregate.CaptureInternalArt(loadout, catalog),
             RespawnPolicy: state.Settings.RespawnPolicy,

@@ -718,6 +718,23 @@ function autoUseSlotFromDto(
   };
 }
 
+function extractAbilityTalismanCooldowns(
+  slots: readonly SimulatorAutoUseSlotDto[],
+  sourceAtUnixSeconds: number,
+  targetAtUnixSeconds: number,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (let i = 0; i < slots.length; i++) {
+    const dto = slots[i];
+    if (dto.group !== 'ability' || !dto.itemId) continue;
+    const remaining = dto.cooldownUntilUnixSeconds - sourceAtUnixSeconds;
+    if (remaining > 0) {
+      result[dto.itemId] = targetAtUnixSeconds + remaining;
+    }
+  }
+  return result;
+}
+
 export function expireBuffs(state: PlayerState, atUnixSeconds: number): boolean {
   let changed = false;
   for (let i = state.buffs.length - 1; i >= 0; i--) {
@@ -937,12 +954,17 @@ export function restoreToState(
       castCount: profile.combatSkills.castCount,
     },
     combatBuffCarry: profile.combatBuffCarry.map(combatBuffCarryFromDto),
+    talismanCooldowns: extractAbilityTalismanCooldowns(
+      profile.combatAutoUseSlots,
+      profile.capturedAtUnixSeconds,
+      startAtUnixSeconds,
+    ),
     buffs: profile.buffs.map((b) =>
       activeBuffFromDto(b, profile.capturedAtUnixSeconds, startAtUnixSeconds),
     ),
-    autoUseSlots: profile.combatAutoUseSlots.map((s) =>
-      autoUseSlotFromDto(s, profile.capturedAtUnixSeconds, startAtUnixSeconds),
-    ),
+    autoUseSlots: profile.combatAutoUseSlots
+      .filter((s) => s.group !== 'ability')
+      .map((s) => autoUseSlotFromDto(s, profile.capturedAtUnixSeconds, startAtUnixSeconds)),
     respawnPolicy: profile.respawnPolicy,
     respawnTargetPlayerId: profile.respawnTargetPlayerId
       ? tryParseGuidOrNull(profile.respawnTargetPlayerId)

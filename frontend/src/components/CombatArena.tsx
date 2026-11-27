@@ -205,6 +205,7 @@ function ArenaResource({
   actorKey,
   value,
   max,
+  shield = 0,
   tone,
   recentEvents,
   frozen = false,
@@ -217,6 +218,8 @@ function ArenaResource({
   value: number
   /** 最大上限数值 */
   max: number
+  /** 当前护盾值（仅 hp 条渲染银金色护盾段） */
+  shield?: number
   /** 色调类型：hp 气血红 / mp 灵力蓝 */
   tone: 'hp' | 'mp'
   /** 最近产生的战斗对抗事件（普攻/技能命中/闪避/破招/拆招/暴击） */
@@ -231,6 +234,7 @@ function ArenaResource({
   const t = useT()
   const normalizedMax = Math.max(1, max)
   const normalizedValue = Math.max(0, Math.min(normalizedMax, value))
+  const normalizedShield = tone === 'hp' && !frozen ? Math.max(0, shield) : 0
   const [displayValue, setDisplayValue] = useState(normalizedValue)
   const previousRef = useRef({ actorKey, max: normalizedMax, value: normalizedValue })
   const nextEffectId = useRef(1)
@@ -475,11 +479,20 @@ function ArenaResource({
     timers.current.clear()
   }, [])
 
+  const totalDenom = normalizedShield > 0 ? Math.max(normalizedMax, displayValue + normalizedShield) : normalizedMax
+
   return (
     <div className={`arena-resource arena-resource--${tone}`}>
       <div className="arena-resource-meter">
         <div className="arena-resource-track">
-          <i style={{ transform: `scaleX(${displayValue / normalizedMax})` }} />
+          {normalizedShield > 0 && (
+            <b
+              aria-hidden="true"
+              className="arena-resource-shield-fill"
+              style={{ transform: `scaleX(${Math.min(1, (displayValue + normalizedShield) / totalDenom)})` }}
+            />
+          )}
+          <i style={{ transform: `scaleX(${Math.min(1, displayValue / totalDenom)})` }} />
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
           {vfxEnabled && tone === 'hp' && effects
@@ -509,7 +522,14 @@ function ArenaResource({
             })}
         </span>
         <span className="arena-resource-badge">
-          <UnitNumber disableTooltip value={displayValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
+          <UnitNumber disableTooltip value={displayValue} />
+          {normalizedShield >= 1 && (
+            <span className="arena-resource-shield-text">
+              +<UnitNumber disableTooltip value={Math.round(normalizedShield)} />
+            </span>
+          )}
+          {' / '}
+          <UnitNumber disableTooltip value={normalizedMax} />
         </span>
         <span className="arena-resource-floats" aria-live="polite">
           {effects.map(effect => {
@@ -1022,6 +1042,7 @@ function ArenaActor({
   role,
   hp,
   maxHp,
+  shield = 0,
   mp,
   maxMp,
   threat = null,
@@ -1045,6 +1066,7 @@ function ArenaActor({
   role: 'player' | 'enemy'
   hp: number
   maxHp: number
+  shield?: number
   mp: number
   maxMp: number
   /** 累积威胁值（灵力条下方实时展示；为 null 时不渲染该行） */
@@ -1334,6 +1356,7 @@ function ArenaActor({
               isVisible={isVisible}
               max={maxHp}
               recentEvents={recentEvents}
+              shield={shield}
               tone="hp"
               value={hp}
               vfxEnabled={vfxEnabled}
@@ -1962,6 +1985,7 @@ interface EnemyDisplayState {
   seal: string
   hp: number
   maxHp: number
+  shield?: number
   mp: number
   maxMp: number
   /** 累积威胁值；斗法镜像无威胁语义时为 null（不渲染威胁行） */
@@ -1984,6 +2008,7 @@ interface AllyDisplayState {
   seal: string
   hp: number
   maxHp: number
+  shield?: number
   mp: number
   maxMp: number
   isSelf: boolean
@@ -2472,6 +2497,7 @@ export const CombatArena = memo(function CombatArena({
   const playerMaxMp = Math.max(1, combatResources?.maxManapoints ?? combatAttributes?.maxManapoints ?? 1)
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
+  const playerShield = (isCombat ? expedition?.playerShield : undefined) ?? 0
   const playerThreat = expedition?.playerThreat ?? null
   // 玩家展示 Buff：战斗相位以战内列表（含开战注入的消耗品副本）为准，战外持久 Buff 按 buffId
   // 去重后补充；非战斗相位 PlayerState 为空，退回战外 ActiveBuff 视图。
@@ -2512,6 +2538,7 @@ export const CombatArena = memo(function CombatArena({
             seal: name.slice(0, 1),
             hp,
             maxHp,
+            shield: unit.shield ?? 0,
             mp,
             maxMp,
             threat: null,
@@ -2538,6 +2565,7 @@ export const CombatArena = memo(function CombatArena({
         seal: name.slice(0, 1),
         hp,
         maxHp,
+        shield: expedition.duel?.opponentShield ?? 0,
         mp,
         maxMp,
         threat: null,
@@ -2560,6 +2588,7 @@ export const CombatArena = memo(function CombatArena({
         seal: name.slice(0, 1),
         hp: entry.hitpoints,
         maxHp: Math.max(1, entry.maxHitpoints ?? 1, entry.attributes?.maxHitpoints ?? 1, entry.hitpoints),
+        shield: entry.shield ?? 0,
         mp: entry.manapoints,
         maxMp: Math.max(1, entry.maxManapoints ?? entry.attributes?.maxManapoints ?? entry.manapoints),
         threat: entry.threat,
@@ -2589,6 +2618,7 @@ export const CombatArena = memo(function CombatArena({
         seal: unit.displayName.slice(0, 1) || '?',
         hp: unit.hitpoints,
         maxHp: Math.max(1, unit.maxHitpoints ?? unit.attributes?.maxHitpoints ?? unit.hitpoints),
+        shield: unit.shield ?? 0,
         mp: unit.manapoints,
         maxMp: Math.max(1, unit.maxManapoints ?? unit.attributes?.maxManapoints ?? unit.manapoints),
         isSelf: idx === selfIdx,
@@ -2624,6 +2654,7 @@ export const CombatArena = memo(function CombatArena({
         seal: ally.displayName.slice(0, 1) || '?',
         hp: ally.hitpoints,
         maxHp: Math.max(1, ally.maxHitpoints ?? ally.hitpoints),
+        shield: ally.shield ?? 0,
         mp: ally.manapoints,
         maxMp: Math.max(1, ally.maxManapoints ?? ally.manapoints),
         isSelf: ally.memberIndex === selfIndex,
@@ -2660,7 +2691,7 @@ export const CombatArena = memo(function CombatArena({
       if (prevPhase === 'combat' || prevPhase === 'duel') {
         const wave = combatWaveRef.current
         setCorpseWave(wave !== null && wave.entryId === entryId && wave.entries.length > 0
-          ? wave.entries.map(entry => ({ ...entry, hp: 0, action: null }))
+          ? wave.entries.map(entry => ({ ...entry, hp: 0, shield: 0, action: null }))
           : null)
         setCorpseDissipating(false)
       }
@@ -2716,6 +2747,7 @@ export const CombatArena = memo(function CombatArena({
     return wave.entries.map(entry => ({
       ...entry,
       hp: phase === 'search' ? 0 : entry.hp,
+      shield: phase === 'search' ? 0 : entry.shield,
       action: null,
     }))
   }, [phase, corpseWave, current?.entryId])
@@ -2966,6 +2998,7 @@ export const CombatArena = memo(function CombatArena({
           parried: e.parried,
           abilityId: e.abilityId,
           targetHp: e.targetHitpointsAfter,
+          targetShield: e.targetShieldAfter,
         }))
     }
     return expedition?.recentEvents ?? []
@@ -3103,6 +3136,7 @@ export const CombatArena = memo(function CombatArena({
                           buffs={playerDisplayBuffs}
                           compact
                           hp={playerHp}
+                          shield={playerShield}
                           isVisible={isArenaVisible}
                           maxHp={playerMaxHp}
                           maxMp={playerMaxMp}
@@ -3131,6 +3165,7 @@ export const CombatArena = memo(function CombatArena({
                         actorKey={ally.actorKey}
                         compact
                         hp={ally.hp}
+                        shield={ally.shield}
                         isVisible={isArenaVisible}
                         maxHp={ally.maxHp}
                         maxMp={ally.maxMp}
@@ -3161,6 +3196,7 @@ export const CombatArena = memo(function CombatArena({
                     actorKey="player"
                     buffs={playerDisplayBuffs}
                     hp={playerHp}
+                    shield={playerShield}
                     isVisible={isArenaVisible}
                     maxHp={playerMaxHp}
                     maxMp={playerMaxMp}
@@ -3216,6 +3252,7 @@ export const CombatArena = memo(function CombatArena({
                       buffs={entry.buffs}
                       compact
                       hp={entry.hp}
+                      shield={entry.shield}
                       isVisible={isArenaVisible}
                       maxHp={entry.maxHp}
                       maxMp={entry.maxMp}

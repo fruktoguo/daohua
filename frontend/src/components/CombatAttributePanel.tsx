@@ -411,6 +411,34 @@ const UnitLoadoutSection = memo(function UnitLoadoutSection({
           <h4 className="insight-pill-group-title">{t('insight.combat.loadoutAbilities')}</h4>
           <div className="abilities-learned-grid">
             {skills.map(slot => {
+              if (slot.abilityId.startsWith('item.')) {
+                const itemDef = findItemInCatalog(itemCatalog, slot.abilityId)
+                const metadata = resolveCatalogItemMetadata(slot.abilityId, {
+                  itemDefinition: itemDef,
+                  glyph: '符',
+                  tone: 'gold',
+                  t,
+                })
+                const displayName = resolveAssetName(t, slot.abilityId, itemDef?.name)
+                return (
+                  <ItemTooltipTarget
+                    definition={itemDef}
+                    itemId={slot.abilityId}
+                    key={slot.abilityId}
+                    metadata={metadata}
+                  >
+                    <ItemTile
+                      category={resolveItemCategoryLabel(
+                        resolveItemSubCategory(slot.abilityId, itemDef), t)}
+                      className="inventory-cell"
+                      itemId={slot.abilityId}
+                      level={metadata.level}
+                      name={displayName}
+                      rarity={metadata.rarity}
+                    />
+                  </ItemTooltipTarget>
+                )
+              }
               const ability = findAbilityInCatalog(abilities, slot.abilityId)
               const iconUrl = resolveItemIconUrl(slot.abilityId)
               const level = Math.max(1, Math.floor(slot.level))

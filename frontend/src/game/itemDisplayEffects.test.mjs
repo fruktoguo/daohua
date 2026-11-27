@@ -364,3 +364,94 @@ test('describeEquipmentEffects: 强化技艺工具展示随强化缩放的秘法
   assert.equal(lines10[1].props.label, '强化成功率')
   assert.equal(lines10[1].props.value, '+7%')
 })
+
+
+test('describeItemEffects: 新增五种战斗符箓（剑符、怒焰符、定神符、神行符、隐身符）主卡片展示公式、消耗与冷却', () => {
+  const jian = {
+    itemId: 'item.jian-talisman',
+    name: '剑符',
+    category: 'consumable',
+    subCategory: 'talisman',
+    cooldownSeconds: 60,
+    strike: {
+      manaCostRatio: 0.1,
+      manaDamageRatio: 0,
+      spellAttackRatio: 0,
+      physicalAttackRatio: 3.2,
+      flatDamage: 30,
+      damageKind: 'physical',
+      element: 'metal',
+    },
+  }
+  const jianLines = describeItemEffects(jian)
+  const jianStrike = jianLines.find(l => l.key === 'item-strike')
+  const jianCost = jianLines.find(l => l.key === 'item-strike-cost')
+  assert.ok(jianStrike && String(jianStrike.props.value).includes('320%') && String(jianStrike.props.value).includes('30'))
+  assert.equal(jianCost?.props.value, '10%')
+
+  const nuyan = {
+    itemId: 'item.nuyan-talisman',
+    name: '怒焰符',
+    category: 'consumable',
+    subCategory: 'talisman',
+    cooldownSeconds: 60,
+    strike: {
+      manaCostRatio: 0.1,
+      manaDamageRatio: 0,
+      spellAttackRatio: 0,
+      element: 'fire',
+      targetType: 'allEnemies',
+      ranhunSpellAttackRatio: 0.1,
+      ranhunBaseStacks: 10,
+    },
+  }
+  const nuyanLines = describeItemEffects(nuyan)
+  const nuyanRanhun = nuyanLines.find(l => l.key === 'item-strike-ranhun')
+  assert.ok(nuyanRanhun && String(nuyanRanhun.props.value).includes('10%') && String(nuyanRanhun.props.value).includes('10'))
+
+  const dingshen = {
+    itemId: 'item.dingshen-talisman',
+    name: '定神符',
+    category: 'consumable',
+    subCategory: 'talisman',
+    cooldownSeconds: 60,
+    strike: {
+      manaCostRatio: 0.05,
+      manaDamageRatio: 0,
+      spellAttackRatio: 0,
+      element: 'none',
+      onHitBuff: { buffId: 'buff.mabi', name: '麻痹', durationSeconds: 5, baseStacks: 5 },
+    },
+  }
+  const dingshenLines = describeItemEffects(dingshen)
+  const dingshenDebuff = dingshenLines.find(l => l.key === 'item-strike-debuff')
+  const dingshenCost = dingshenLines.find(l => l.key === 'item-strike-cost')
+  assert.ok(dingshenDebuff && String(dingshenDebuff.props.value).includes('麻痹') && String(dingshenDebuff.props.value).includes('5'))
+  assert.equal(dingshenCost?.props.value, '5%')
+
+  const shenxing = {
+    itemId: 'item.shenxing-talisman',
+    name: '神行符',
+    category: 'consumable',
+    subCategory: 'talisman',
+    cooldownSeconds: 60,
+    manaCostRatio: 0.05,
+    buffEffects: [{ buffId: 'buff.shenxing', name: '神行', durationSeconds: 60, actionSpeedPoints: 10 }],
+  }
+  const shenxingLines = describeItemEffects(shenxing)
+  assert.equal(shenxingLines.find(l => l.key === 'item-mana-cost')?.props.value, '5%')
+  assert.equal(shenxingLines.find(l => l.key === 'item-duration')?.props.value, '60秒')
+
+  const yinshen = {
+    itemId: 'item.yinshen-talisman',
+    name: '隐身符',
+    category: 'consumable',
+    subCategory: 'talisman',
+    cooldownSeconds: 60,
+    manaCostRatio: 0.1,
+    buffEffects: [{ buffId: 'buff.yinshen', name: '隐身', durationSeconds: 10, threatPoints: -100 }],
+  }
+  const yinshenLines = describeItemEffects(yinshen)
+  assert.equal(yinshenLines.find(l => l.key === 'item-mana-cost')?.props.value, '10%')
+  assert.equal(yinshenLines.find(l => l.key === 'item-duration')?.props.value, '10秒')
+})

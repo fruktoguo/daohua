@@ -33,6 +33,7 @@ import {
   DUNGEON_MAX_DIFFICULTY,
   DUNGEON_MIN_DIFFICULTY,
   DUNGEON_WAVE_TIMEOUT_SECONDS,
+  SlotGroupAbility,
   dungeonDifficultyDisplayName,
   dungeonEnergyCost,
 } from './rules.ts'
@@ -206,6 +207,30 @@ function autoUseSlotToDto(slot: AutoUseSlotState): SimulatorAutoUseSlotDto {
   }
 }
 
+function buildResultCombatAutoUseSlots(state: PlayerState): SimulatorAutoUseSlotDto[] {
+  const list = state.autoUseSlots
+    .filter((slot) => slot.actionType === AutoUseBar.Combat)
+    .map(autoUseSlotToDto)
+  for (let i = 1; i < state.abilitySlots.length; i++) {
+    const itemId = state.abilitySlots[i].abilityId
+    if (!itemId || !itemId.startsWith('item.')) continue
+    const cdUntil = state.talismanCooldowns[itemId] ?? 0
+    if (cdUntil > 0) {
+      list.push({
+        actionType: AutoUseBar.Combat,
+        slotIndex: i,
+        itemId,
+        quantity: 1,
+        enabled: true,
+        remainingDurationSeconds: 0,
+        cooldownUntilUnixSeconds: cdUntil,
+        group: SlotGroupAbility,
+      })
+    }
+  }
+  return list
+}
+
 function toEnemyDtos(expedition: SimCombatExpeditionState | null): SimulatorExpeditionEnemyDto[] {
   if (!expedition || !expedition.enemies || expedition.enemies.length === 0) return []
   return expedition.enemies.map((e) => ({
@@ -343,9 +368,7 @@ function runSolo(
     itemsLost: report ? report.toItemsLostDto() : [],
     assetDeltas: result.assetDeltas,
     remainingConsumableBalances: rebuildRemainingAssets(profile.assets, result.assetDeltas),
-    combatAutoUseSlots: finalState.autoUseSlots
-      .filter((slot) => slot.actionType === AutoUseBar.Combat)
-      .map(autoUseSlotToDto),
+    combatAutoUseSlots: buildResultCombatAutoUseSlots(finalState),
     combatStats: report ? report.toCombatStatDtos() : [],
     enemies: toEnemyDtos(expedition),
     events: result.events.map(simEventToDto),
@@ -500,9 +523,7 @@ function runParty(
       itemsLost: report ? report.toItemsLostDto() : [],
       assetDeltas: memberDeltas,
       remainingConsumableBalances: remaining,
-      combatAutoUseSlots: finalState.autoUseSlots
-        .filter((slot) => slot.actionType === AutoUseBar.Combat)
-        .map(autoUseSlotToDto),
+      combatAutoUseSlots: buildResultCombatAutoUseSlots(finalState),
       combatStats: report ? report.toCombatStatDtos() : [],
       enemies: toEnemyDtos(expedition),
       events: memberEvents,
@@ -708,9 +729,7 @@ function runDungeonSolo(
       itemsLost: report ? report.toItemsLostDto() : [],
       assetDeltas: result.assetDeltas,
       remainingConsumableBalances: rebuildRemainingAssets(profile.assets, result.assetDeltas),
-      combatAutoUseSlots: finalState.autoUseSlots
-        .filter((slot) => slot.actionType === AutoUseBar.Combat)
-        .map(autoUseSlotToDto),
+      combatAutoUseSlots: buildResultCombatAutoUseSlots(finalState),
       combatStats: report ? report.toCombatStatDtos() : [],
       enemies: toEnemyDtos(expedition),
       events: [initEvent, ...result.events.map(simEventToDto)],
@@ -873,9 +892,7 @@ function runDungeonParty(
       itemsLost: report ? report.toItemsLostDto() : [],
       assetDeltas: memberDeltas,
       remainingConsumableBalances: remaining,
-      combatAutoUseSlots: finalState.autoUseSlots
-        .filter((slot) => slot.actionType === AutoUseBar.Combat)
-        .map(autoUseSlotToDto),
+      combatAutoUseSlots: buildResultCombatAutoUseSlots(finalState),
       combatStats: report ? report.toCombatStatDtos() : [],
       enemies: toEnemyDtos(expedition),
       events: memberEvents,

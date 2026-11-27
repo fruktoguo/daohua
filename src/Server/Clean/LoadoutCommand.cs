@@ -78,23 +78,39 @@ public static class LoadoutCommand
                 throw new DomainException(DomainErrorCode.InvalidArgument, "功法等级无效。");
             if (id is not null)
             {
-                if (!catalog.Abilities.ContainsKey(id) || !player.Loadout.LearnedAbilities.Contains(new AbilityId(id)) || !ids.Add(id))
-                    throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得或重复装配。");
-                var ability = catalog.Abilities[id];
-                Domain.Combat.SkillTriggerEvaluator.ValidateAbility(ability);
-                var learnedLevel = player.AbilityLevelFor(new AbilityId(id));
-                if (level > learnedLevel)
-                    throw new DomainException(DomainErrorCode.InvalidArgument, "装配等级超过已掌握等级。");
-                // 槽位与功法类别互斥：0 号内功位只收心法内功（discipline=internal），
-                // 其余术法位只收神通术法；缺省 discipline 一律按术法处理。
-                var discipline = ability.TryGetProperty("discipline", out var disciplineElement)
-                    && disciplineElement.ValueKind == JsonValueKind.String
-                    ? disciplineElement.GetString() : "spell";
-                if ((slotIndex == 0) != (discipline == "internal"))
-                    throw new DomainException(DomainErrorCode.InvalidArgument,
-                        slotIndex == 0 ? "内功位只能装配心法内功。" : "术法位只能装配神通术法。");
-                // 装配等级恒等于已参悟等级，自动对齐真实等级，防止旧客户端上报滞后。
-                level = learnedLevel;
+                if (slotIndex > 0 && id.StartsWith("item.", StringComparison.Ordinal))
+                {
+                    if (!Domain.Combat.CombatTraitRules.CanEquipTalismanInAbilitySlot(player.Progression.TraitIds))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "需装配特质「符法·天命」方可在术法位装配符箓。");
+                    if (!catalog.Items.TryGetValue(new ItemId(id), out var talismanItem)
+                        || talismanItem.Category != ItemDefinition.CategoryConsumable
+                        || !string.Equals(talismanItem.DisplaySubCategory, TechniqueCatalog.Talisman, StringComparison.Ordinal)
+                        || talismanItem.Consumable is not { IsContinuous: false, Durable: false })
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "术法位只能装配一次性战斗符箓。");
+                    if (!ids.Add(id))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "符箓不可重复装配。");
+                    level = 1;
+                }
+                else
+                {
+                    if (!catalog.Abilities.ContainsKey(id) || !player.Loadout.LearnedAbilities.Contains(new AbilityId(id)) || !ids.Add(id))
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得或重复装配。");
+                    var ability = catalog.Abilities[id];
+                    Domain.Combat.SkillTriggerEvaluator.ValidateAbility(ability);
+                    var learnedLevel = player.AbilityLevelFor(new AbilityId(id));
+                    if (level > learnedLevel)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, "装配等级超过已掌握等级。");
+                    // 槽位与功法类别互斥：0 号内功位只收心法内功（discipline=internal），
+                    // 其余术法位只收神通术法；缺省 discipline 一律按术法处理。
+                    var discipline = ability.TryGetProperty("discipline", out var disciplineElement)
+                        && disciplineElement.ValueKind == JsonValueKind.String
+                        ? disciplineElement.GetString() : "spell";
+                    if ((slotIndex == 0) != (discipline == "internal"))
+                        throw new DomainException(DomainErrorCode.InvalidArgument,
+                            slotIndex == 0 ? "内功位只能装配心法内功。" : "术法位只能装配神通术法。");
+                    // 装配等级恒等于已参悟等级，自动对齐真实等级，防止旧客户端上报滞后。
+                    level = learnedLevel;
+                }
             }
             abilities.Add(new(id, level));
             slotIndex++;

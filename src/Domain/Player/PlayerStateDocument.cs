@@ -107,6 +107,8 @@ public sealed record PlayerCombatStateDocument(
     public PlayerCombatSkillState Skills { get; init; } = PlayerCombatSkillState.Empty;
     /// <summary>战内 Buff 跨波携带态快照。</summary>
     public PlayerCombatBuffState Buffs { get; init; } = PlayerCombatBuffState.Empty;
+    /// <summary>主动术法槽符箓冷却截止时刻快照（可缺省解码为 null）。</summary>
+    public IReadOnlyDictionary<string, double>? TalismanCooldowns { get; init; }
 }
 
 /// <summary>客户端设置与快捷自动使用配置快照 DTO</summary>
@@ -249,7 +251,7 @@ public sealed partial class PlayerAggregate
                 Progression.TiliValue,
                 Progression.TiliUpdatedAtUnixSeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId, World.NodeBuildingUsages.ToArray()),
-            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs },
+            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs, TalismanCooldowns = Combat.TalismanCooldowns.Count > 0 ? new Dictionary<string, double>(Combat.TalismanCooldowns, StringComparer.Ordinal) : null },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
             GetCachedLearnedAbilities(),
@@ -588,6 +590,12 @@ public sealed partial class PlayerAggregate
         if (state.Combat.Buffs is null || !state.Combat.Buffs.IsValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战内 Buff 携带态无效。");
         aggregate.Combat.Buffs = state.Combat.Buffs;
+        if (state.Combat.TalismanCooldowns is not null)
+        {
+            foreach (var (k, v) in state.Combat.TalismanCooldowns)
+                if (!string.IsNullOrWhiteSpace(k) && k.Length <= 128 && double.IsFinite(v) && v >= 0)
+                    aggregate.Combat.TalismanCooldowns[k] = v;
+        }
         aggregate.Buffs.Active.AddRange(state.Buffs);
         aggregate.Loadout.EquippedInstances.AddRange(state.EquippedInstances);
         aggregate.Loadout.EquippedItemIds.AddRange(state.EquippedItemIds ?? []);
@@ -981,7 +989,7 @@ public sealed partial class PlayerAggregate
             World.AttributeInputVersion),
         PlayerSectionKind.Combat => new CombatCheckpoint(
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints,
-                Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs }),
+                Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills, Buffs = Combat.Buffs, TalismanCooldowns = Combat.TalismanCooldowns.Count > 0 ? new Dictionary<string, double>(Combat.TalismanCooldowns, StringComparer.Ordinal) : null }),
         PlayerSectionKind.Buffs => new BuffsCheckpoint(Buffs.Active.ToArray(), Buffs.Active.Version),
         PlayerSectionKind.Loadout => new LoadoutCheckpoint(
             Loadout.Export(),
@@ -1042,6 +1050,10 @@ public sealed partial class PlayerAggregate
                 Resources.RegenCarrySeconds = data.State.RegenCarrySeconds;
                 Combat.Skills = data.State.Skills;
                 Combat.Buffs = data.State.Buffs;
+                Combat.TalismanCooldowns.Clear();
+                if (data.State.TalismanCooldowns is not null)
+                    foreach (var (k, v) in data.State.TalismanCooldowns)
+                        Combat.TalismanCooldowns[k] = v;
                 break;
             }
             case PlayerSectionKind.Buffs:

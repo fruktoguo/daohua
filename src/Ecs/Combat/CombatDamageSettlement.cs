@@ -11,20 +11,29 @@ internal static class CombatDamageSettlement
             && CombatTraitRules.ContainsTrait(attacker.Stats.Traits, CombatTraitRules.HasteTraitId)
             ? hitpoints - 1 : damage;
 
-    /// <summary>扣除生命并返回裁决伤害及实际扣血；对称同刻波次期间暂存至波次缓冲区统一落账。</summary>
+    /// <summary>扣除护盾与生命并返回裁决总伤害及实际扣血；对称同刻波次期间暂存至波次缓冲区统一落账。</summary>
     internal static (double Damage, double Actual) Apply(CombatEncounterState? encounter,
-        CombatantState attacker, CombatantState target, double damage, bool accumulateXuyi = true)
+        CombatantState attacker, CombatantState target, double damage, bool accumulateXuyi = true, bool bypassShield = false)
     {
         if (encounter?.ActiveWave is SimultaneousCombatWave wave)
         {
-            var deferred = wave.RecordDamage(encounter, attacker, target, damage, accumulateXuyi);
+            var deferred = wave.RecordDamage(encounter, attacker, target, damage, accumulateXuyi, bypassShield);
             return (deferred.Damage, deferred.Actual);
         }
         if (!target.IsAlive) return (0, 0);
-        damage = Limit(attacker, target.Hitpoints, Math.Max(0, damage));
+        var remainingDamage = Math.Max(0, damage);
+        var shieldAbsorbed = 0d;
+        if (!bypassShield && target.Shield > 0 && remainingDamage > 0)
+        {
+            shieldAbsorbed = Math.Min(target.Shield, remainingDamage);
+            target.Shield = Math.Max(0, target.Shield - shieldAbsorbed);
+            remainingDamage -= shieldAbsorbed;
+        }
+        var hpDamage = remainingDamage > 0 ? Limit(attacker, target.Hitpoints, remainingDamage) : 0;
         var before = target.Hitpoints;
-        target.Hitpoints = Math.Max(0, before - damage);
+        target.Hitpoints = Math.Max(0, before - hpDamage);
         var actual = before - target.Hitpoints;
+        if (!target.IsAlive) target.Shield = 0;
         target.SyncDerivedStacks();
         if (accumulateXuyi && actual > 0 && target.IsAlive
             && CombatTraitRules.ContainsTrait(target.Stats.Traits, CombatTraitRules.XuyiTraitId))
@@ -35,7 +44,7 @@ internal static class CombatDamageSettlement
                 "蓄意", ResetOnWave: true));
         }
         if (!target.IsAlive) encounter?.NotifyAliveCountsChanged();
-        return (damage, actual);
+        return (shieldAbsorbed + hpDamage, actual);
     }
 
     /// <summary>读取当前上下文下目标是否存活（同刻波次内读当前出手者视角虚拟存活，常规读真实存活）。</summary>

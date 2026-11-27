@@ -61,6 +61,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                     var unit = encounter.PlayerAllies[i];
                     var alive = unit.IsAlive;
                     Tick(unit, statsBook, recorder, at, regenTick, secondTick);
+                    if (regenTick) CombatTraitReactions.ApplyXueqihuadun(encounter, unit, at);
                     if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
                     if (secondTick)
                     {
@@ -73,6 +74,7 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
                     var unit = encounter.Enemies[i];
                     var alive = unit.IsAlive;
                     Tick(unit, statsBook, recorder, at, regenTick, secondTick);
+                    if (regenTick) CombatTraitReactions.ApplyXueqihuadun(encounter, unit, at);
                     if (alive != unit.IsAlive) encounter.NotifyAliveCountsChanged();
                     if (secondTick)
                     {
@@ -333,14 +335,21 @@ public sealed class CombatAllyDownedSystem : YuoSystem<CombatEncounterComponent>
         for (var i = 0; i < encounter.Enemies.Count; i++) InterruptCast(encounter.Enemies[i]);
     }
 
-    /// <summary>作废单个单位未完成的吟唱：视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
+    /// <summary>作废单个单位未完成的吟唱：视为未释放，退还起手预扣灵力与气血且该槽不进入冷却。</summary>
     private static void InterruptCast(CombatantState unit)
     {
         var pending = unit.PendingSkillIndex;
         unit.PendingSkillIndex = -1;
         if (pending < 0 || pending >= unit.Skills.Count) return;
+        var ability = unit.Skills[pending].Ability;
         unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
-            unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
+            unit.Manapoints + AbilityNumber(ability, "manaCost"));
+        var hpCostRatio = AbilityNumber(ability, "hpCostMaxHpRatio");
+        if (hpCostRatio > 0 && unit.IsAlive)
+        {
+            unit.Hitpoints = Math.Min(unit.Stats.MaxHitpoints, unit.Hitpoints + unit.Stats.MaxHitpoints * hpCostRatio);
+            unit.SyncDerivedStacks();
+        }
         if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
             cooldowns[pending] = 0;
     }
@@ -369,5 +378,7 @@ public sealed class CombatOutcomeSystem : YuoSystem<CombatEncounterComponent>, I
             (false, true) => CombatOutcome.EnemyWon,
             _ => CombatOutcome.Draw
         };
+        if (encounter.Outcome != CombatOutcome.Running)
+            CombatTraitReactions.SettleWaveEndShields(encounter, ref context.Events);
     }
 }

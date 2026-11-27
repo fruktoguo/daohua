@@ -300,6 +300,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     : mapCombatAttributes(row.opponentAttributes, `行动 ${actionId} 的 duel.opponentAttributes`)
   const opponentHitpoints = finiteNumber(row.opponentHitpoints, `行动 ${actionId} 的 duel.opponentHitpoints`)
   const opponentManapoints = finiteNumber(row.opponentManapoints, `行动 ${actionId} 的 duel.opponentManapoints`)
+  const opponentShield = numberValue(row.opponentShield, 0)
   if (opponentMaxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentMaxHitpoints) {
     throw new Error(`行动 ${actionId} 的 duel 对手血量无效。`)
   }
@@ -327,6 +328,12 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
           : finiteNumber(duelEvent.targetHitpointsAfter, `${label}.targetHitpointsAfter`),
         attackerManapointsAfter: finiteNumber(duelEvent.attackerManapointsAfter, `${label}.attackerManapointsAfter`),
         targetManapointsAfter: finiteNumber(duelEvent.targetManapointsAfter, `${label}.targetManapointsAfter`),
+        attackerShieldAfter: duelEvent.attackerShieldAfter === undefined || duelEvent.attackerShieldAfter === null
+          ? undefined
+          : numberValue(duelEvent.attackerShieldAfter, 0),
+        targetShieldAfter: duelEvent.targetShieldAfter === undefined || duelEvent.targetShieldAfter === null
+          ? undefined
+          : numberValue(duelEvent.targetShieldAfter, 0),
         hit: duelEvent.hit === undefined ? undefined : booleanValue(duelEvent.hit),
         damage: duelEvent.damage === undefined || duelEvent.damage === null
           ? undefined
@@ -350,6 +357,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
         avatar: optionalString(u.avatar, `${label}.avatar`) ?? 'player',
         hitpoints: finiteNumber(u.hitpoints, `${label}.hitpoints`),
         manapoints: finiteNumber(u.manapoints, `${label}.manapoints`),
+        shield: numberValue(u.shield, 0),
         maxHitpoints: finiteNumber(u.maxHitpoints, `${label}.maxHitpoints`),
         maxManapoints: finiteNumber(u.maxManapoints, `${label}.maxManapoints`),
         attributes: u.attributes === null || u.attributes === undefined
@@ -375,6 +383,7 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     opponentEquipment: mapEquippedItems(row.opponentEquipment, `行动 ${actionId} 的 duel.opponentEquipment`),
     opponentHitpoints,
     opponentManapoints,
+    opponentShield,
     selfUnitIndex: row.selfUnitIndex === undefined || row.selfUnitIndex === null
       ? 0
       : finiteInteger(row.selfUnitIndex, `行动 ${actionId} 的 duel.selfUnitIndex`),
@@ -460,6 +469,8 @@ function mapCombatRecentEvents(value: unknown): CombatRecentEvent[] | null {
       parried: item.parried ? Boolean(item.parried) : undefined,
       abilityId: item.abilityId ? stringValue(item.abilityId) : null,
       targetHp: typeof item.targetHp === 'number' && Number.isFinite(item.targetHp) ? item.targetHp : undefined,
+      attackerShield: typeof item.attackerShield === 'number' && Number.isFinite(item.attackerShield) ? item.attackerShield : undefined,
+      targetShield: typeof item.targetShield === 'number' && Number.isFinite(item.targetShield) ? item.targetShield : undefined,
     }
   })
 }
@@ -481,6 +492,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   }
   const playerHitpoints = finiteNumber(row.playerHitpoints, `行动 ${actionId} 的 playerHitpoints`)
   const playerManapoints = finiteNumber(row.playerManapoints, `行动 ${actionId} 的 playerManapoints`)
+  const playerShield = numberValue(row.playerShield, 0)
 
   // 这些标量用于恢复/审计，即使当前界面不直接展示，也必须拒绝坏值，避免把损坏快照继续传播。
   finiteValue(row.seed, `行动 ${actionId} 的 seed`)
@@ -516,6 +528,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
         visual: mapCharacterVisual(enemy.visual, `${label}.visual`),
         hitpoints: finiteNumber(enemy.hitpoints, `${label}.hitpoints`),
         manapoints: finiteNumber(enemy.manapoints, `${label}.manapoints`),
+        shield: numberValue(enemy.shield, 0),
         maxHitpoints: enemy.maxHitpoints === null || enemy.maxHitpoints === undefined
           ? null
           : finiteNumber(enemy.maxHitpoints, `${label}.maxHitpoints`),
@@ -551,6 +564,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
           avatar: optionalString(ally.avatar, `${label}.avatar`) ?? 'player',
           hitpoints: finiteNumber(ally.hitpoints, `${label}.hitpoints`),
           manapoints: finiteNumber(ally.manapoints, `${label}.manapoints`),
+          shield: numberValue(ally.shield, 0),
           maxHitpoints: ally.maxHitpoints === null || ally.maxHitpoints === undefined
             ? null
             : finiteNumber(ally.maxHitpoints, `${label}.maxHitpoints`),
@@ -591,6 +605,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     durationSeconds,
     playerHitpoints,
     playerManapoints,
+    playerShield,
     battleElapsedSeconds,
     playerNextAttackAtSeconds,
     enemyHitpoints: primary?.hitpoints ?? 0,
@@ -929,6 +944,11 @@ function mapCombat(value: unknown): { resources: CombatResourceState; attributes
   for (const [abilityId, remaining] of Object.entries(cooldowns)) {
     abilityCooldownMilliseconds[abilityId] = finiteNumber(remaining, `combat.skills.cooldowns.${abilityId}`)
   }
+  const talismanCooldownRaw = object(row.talismanCooldownMilliseconds)
+  const talismanCooldownMilliseconds: Record<string, number> = {}
+  for (const [itemId, remaining] of Object.entries(talismanCooldownRaw)) {
+    talismanCooldownMilliseconds[itemId] = finiteNumber(remaining, `combat.talismanCooldownMilliseconds.${itemId}`)
+  }
   const consumableCooldownMilliseconds = arrayValue(row.consumableCooldownMilliseconds)
     .map((value, index) => finiteNumber(value, `combat.consumableCooldownMilliseconds[${index}]`))
   const castingAbilityId = skills.castingAbilityId === null || skills.castingAbilityId === undefined
@@ -945,6 +965,7 @@ function mapCombat(value: unknown): { resources: CombatResourceState; attributes
       maxHitpoints,
       maxManapoints,
       abilityCooldownMilliseconds,
+      talismanCooldownMilliseconds,
       consumableCooldownMilliseconds,
       castingAbilityId,
       castRemainingMilliseconds: finiteNumber(skills.castRemainingMilliseconds, 'combat.skills.castRemainingMilliseconds'),

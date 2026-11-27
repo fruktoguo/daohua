@@ -293,6 +293,9 @@ public static class DeterministicCombatEngine
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffTotal(BuffEffectChannel.DamageAbsorptionPoints),
             PercentCurveMode.NonLinear);
+        // 消耗层数类终伤独立倍率（如「天罡断岳」先吃天罡自身增伤，再按消耗层数额外乘算）。
+        if (context.PostFinalDamageMultiplier != 1.0)
+            damage *= context.PostFinalDamageMultiplier;
         // 第六层：固定伤害增减修正（总纲 §7.7.1：命中时末位固定点数直加直减，不吃抗性与百分比，最低截断为 0）。
         if (hit)
         {
@@ -321,19 +324,71 @@ public static class DeterministicCombatEngine
         CombatantStats casterStats)
     {
         var basePower = strike.ManaDamageRatio * casterStats.MaxManapoints
-            + strike.SpellAttackRatio * casterStats.SpellAttack;
+            + strike.SpellAttackRatio * casterStats.SpellAttack
+            + strike.PhysicalAttackRatio * casterStats.AttackPower
+            + strike.FlatDamage;
         if (!string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
             return basePower;
         return basePower * PercentValue.Multiplier(casterStats.TalismanDamageBonusPoints, PercentCurveMode.Linear);
     }
 
+    /// <summary>计算怒焰符类即时消耗品施加的燃烧层数（受符箓伤害增幅 Linear 放大并向下取整，保底 1 层）。</summary>
+    internal static double ResolveConsumableRanhunStacks(
+        Domain.GameData.ItemDefinition item,
+        Domain.GameData.ConsumableStrike strike,
+        CombatantStats casterStats)
+    {
+        if (strike.RanhunBaseStacks <= 0 && strike.RanhunSpellAttackRatio <= 0) return 0;
+        var rawStacks = Math.Max(0, casterStats.SpellAttack) * strike.RanhunSpellAttackRatio + strike.RanhunBaseStacks;
+        if (string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
+            rawStacks *= PercentValue.Multiplier(casterStats.TalismanDamageBonusPoints, PercentCurveMode.Linear);
+        return Math.Max(1, Math.Floor(rawStacks + 1e-9));
+    }
+
+    /// <summary>计算消耗品实际冷却秒数（归属符箓时叠加「符法·疾」冷却加速 NonLinear 曲线）。</summary>
+    internal static double ResolveConsumableCooldownSeconds(
+        Domain.GameData.ItemDefinition item,
+        Domain.GameData.ConsumableDefinition consumable,
+        IReadOnlyList<string>? traits,
+        IReadOnlyDictionary<string, int>? traitLevels = null)
+    {
+        if (!string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
+            return consumable.CooldownSeconds;
+        var speedPoints = CombatTraitRules.TalismanCooldownSpeedPoints(traits, traitLevels);
+        return speedPoints != 0
+            ? consumable.CooldownSeconds * PercentValue.Multiplier(speedPoints, PercentCurveMode.NonLinear)
+            : consumable.CooldownSeconds;
+    }
+
+    /// <summary>计算消耗品实际灵力消耗（归属符箓且携带「符法·疾」时灵力消耗提升 300% 即 ×4.0）。</summary>
+    internal static double ResolveConsumableManaCost(
+        Domain.GameData.ItemDefinition item,
+        double baseManaCostRatio,
+        CombatantStats casterStats)
+    {
+        if (baseManaCostRatio <= 0) return 0;
+        var mult = string.Equals(item.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal)
+            ? CombatTraitRules.TalismanManaCostMultiplier(casterStats.Traits)
+            : 1.0;
+        return baseManaCostRatio * mult * casterStats.MaxManapoints;
+    }
+
+    /// <summary>判定直伤符箓是否触发暴击（仅携带「符法·破阵」时开启，走独立通道 25）。</summary>
+    internal static bool RollTalismanCrit(long seed, ulong side, double rollIndex, CombatantState caster, CombatantState target)
+    {
+        if (!CombatTraitRules.CanTalismanCrit(caster.Stats.Traits)) return false;
+        var attackEff = caster.EffectiveStats;
+        var defenseEff = target.EffectiveStats;
+        if (attackEff.Critical <= 0) return false;
+        return Roll(seed, side, rollIndex, 25)
+            < attackEff.Critical / (attackEff.Critical + defenseEff.CriticalResistance + 100);
+    }
+
     /// <summary>
-    /// 雷击符类打击伤害（总纲 §20.2）：无命中/破招/格挡/暴击掷点、不消耗随机通道；
-    /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口。
-    /// 物品打击与阵盘反击非玩家自身技能，AttackPower 不并入技能增幅（总纲 §7.7.1 技能增幅作用域），
-    /// 由调用方在构造 AttackPower 时按符/阵各自增幅点数并入第一层原始威力基数。
+    /// 雷击符/剑符/阵盘类打击伤害（总纲 §20.2）：默认无命中/破招/格挡掷点；
+    /// 携带「符法·破阵」触发暴击时乘入暴伤乘区；固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 暴击 → 免伤收口。
     /// </summary>
-    internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
+    internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target, bool critical = false)
     {
         var defense = target.EffectiveStats;
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
@@ -369,6 +424,8 @@ public static class DeterministicCombatEngine
                 CombatElement.Earth => defense.EarthDamageReductionPoints,
                 _ => 0
             }, PercentCurveMode.NonLinear);
+        if (critical)
+            damage *= PercentValue.Multiplier(attack.CriticalDamagePoints, PercentCurveMode.Linear);
         // 末位收口：总减伤（免伤点数）NonLinear。
         damage *= PercentValue.Multiplier(
             defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffTotal(BuffEffectChannel.DamageAbsorptionPoints),

@@ -8,6 +8,7 @@ import {
   isZongmenResidenceNodeId,
   ItemCategories,
   parseCombatElement,
+  SlotGroupAbility,
   SlotGroupGeneral,
   SlotGroupPotion,
 } from './rules.ts';
@@ -261,15 +262,32 @@ export function validateAbility(ability: AbilityJson): void {
   const ranhunBase = typeof ability.ranhunBaseStacks === 'number' ? ability.ranhunBaseStacks : 0;
   const ranhunRatio =
     typeof ability.ranhunSpellAttackRatio === 'number' ? ability.ranhunSpellAttackRatio : 0;
+  const maxHpDamageRatio =
+    typeof ability.maxHpDamageRatio === 'number' ? ability.maxHpDamageRatio : 0;
+  const shieldDamageRatio =
+    typeof ability.shieldDamageRatio === 'number' ? ability.shieldDamageRatio : 0;
+  const shieldMaxHpRatio =
+    typeof ability.shieldMaxHpRatio === 'number' ? ability.shieldMaxHpRatio : 0;
+  const hpCostRatio =
+    typeof ability.hpCostMaxHpRatio === 'number' ? ability.hpCostMaxHpRatio : 0;
+  const channelingBuff =
+    ability.channelingAttackedBuff && typeof ability.channelingAttackedBuff === 'object'
+      ? (ability.channelingAttackedBuff as Record<string, unknown>)
+      : null;
   const hasEffect =
-    ratio + flat > 0 ||
+    ratio + flat + maxHpDamageRatio + shieldDamageRatio > 0 ||
     healing ||
     (!supportive && (ranhunBase > 0 || ranhunRatio > 0 || onHitBuffElements.length > 0)) ||
-    (supportive && (threatGain > 0 || threatPoints > 0 || buffElements.length > 0));
+    (supportive && (threatGain > 0 || threatPoints > 0 || shieldMaxHpRatio > 0 || buffElements.length > 0));
   const manaCost = typeof ability.manaCost === 'number' ? ability.manaCost : 0;
   if (
     ratio < 0 ||
     flat < 0 ||
+    maxHpDamageRatio < 0 ||
+    shieldDamageRatio < 0 ||
+    shieldMaxHpRatio < 0 ||
+    hpCostRatio < 0 ||
+    hpCostRatio >= 1 ||
     ranhunBase < 0 ||
     ranhunRatio < 0 ||
     !hasEffect ||
@@ -291,6 +309,7 @@ export function validateAbility(ability: AbilityJson): void {
   for (const spec of buffElements) validateAbilityBuff(spec);
   for (const spec of onHitBuffElements) validateAbilityBuff(spec);
   for (const spec of selfBuffElements) validateAbilityBuff(spec);
+  if (channelingBuff) validateAbilityBuff(channelingBuff);
   if (Array.isArray(ability.defaultTriggers)) {
     for (const trigger of ability.defaultTriggers) validateTrigger(trigger);
   }
@@ -465,7 +484,9 @@ export function validateMember(
   if (profile.abilitySlots.length > 16) {
     throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员功法槽位过多。`);
   }
+  const allowAbilityTalismans = Boolean(profile.traitIds?.includes('trait.fufatianming'));
   const slotted = new Set<string>();
+  const abilitySlotTalismans = new Set<string>();
   for (let slotIndex = 0; slotIndex < profile.abilitySlots.length; slotIndex++) {
     const slot = profile.abilitySlots[slotIndex];
     if (!slot) {
@@ -475,6 +496,27 @@ export function validateMember(
       throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员功法等级无效。`);
     }
     if (slot.abilityId === null || slot.abilityId === undefined) continue;
+    if (slotIndex > 0 && slot.abilityId.startsWith('item.')) {
+      if (!allowAbilityTalismans) {
+        throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员未携带符法·天命，术法位不能装配符箓。`);
+      }
+      const talismanItem = gameData.items.get(slot.abilityId);
+      if (
+        !talismanItem ||
+        talismanItem.category !== ItemCategories.Consumable ||
+        talismanItem.displaySubCategory !== 'talisman' ||
+        !talismanItem.consumable ||
+        talismanItem.consumable.isContinuous ||
+        talismanItem.consumable.durable ||
+        !talismanItem.consumable.usableInBars.has(AutoUseBar.Combat) ||
+        slotted.has(slot.abilityId)
+      ) {
+        throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员术法位符箓无效或重复装配。`);
+      }
+      slotted.add(slot.abilityId);
+      abilitySlotTalismans.add(slot.abilityId);
+      continue;
+    }
     const ability = gameData.abilities.get(slot.abilityId);
     if (!ability || slotted.has(slot.abilityId)) {
       throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员功法不存在或重复装配。`);
@@ -564,12 +606,14 @@ export function validateMember(
   const itemCounts = new Map<string, number>();
   const stackable = new Map<string, number>();
   for (const slot of profile.combatAutoUseSlots) {
+    const isAbilityGroup = slot?.group === SlotGroupAbility;
     if (
       !slot ||
       slot.actionType !== AutoUseBar.Combat ||
-      (slot.group !== SlotGroupGeneral && slot.group !== SlotGroupPotion) ||
-      slot.slotIndex < 0 ||
-      slot.slotIndex >= 3
+      (slot.group !== SlotGroupGeneral && slot.group !== SlotGroupPotion && !isAbilityGroup) ||
+      (isAbilityGroup
+        ? slot.slotIndex < 1 || slot.slotIndex >= profile.abilitySlots.length
+        : slot.slotIndex < 0 || slot.slotIndex >= 3)
     ) {
       throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员战斗消耗品槽位无效。`);
     }
@@ -589,10 +633,19 @@ export function validateMember(
       throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员战斗消耗品槽数量或时钟无效。`);
     }
     if (slot.itemId === null || slot.itemId === undefined) {
-      if (slot.enabled) {
+      if (slot.enabled || isAbilityGroup) {
         throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员空消耗品槽不能启用。`);
       }
       continue;
+    }
+    if (isAbilityGroup) {
+      if (profile.abilitySlots[slot.slotIndex]?.abilityId !== slot.itemId) {
+        throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员术法位符箓冷却条目失配。`);
+      }
+      continue;
+    }
+    if (abilitySlotTalismans.has(slot.itemId)) {
+      throw new SimulatorValidationError(`预演档案第 ${memberIndex + 1} 名成员符箓不能同时装配在术法槽与消耗品槽。`);
     }
     const item = gameData.items.get(slot.itemId);
     if (

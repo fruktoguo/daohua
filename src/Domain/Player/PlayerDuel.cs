@@ -756,6 +756,30 @@ public sealed partial class PlayerAggregate
                 itemBalances.TryAdd(slot.ItemId, wallet.Get(new AssetKey(itemId)));
             }
         }
+        if (CombatTraitRules.CanEquipTalismanInAbilitySlot(Progression.TraitIds))
+        {
+            for (var i = 1; i < Loadout.AbilitySlots.Count; i++)
+            {
+                var abilityIdText = Loadout.AbilitySlots[i].AbilityId;
+                if (abilityIdText is null || !abilityIdText.StartsWith("item.", StringComparison.Ordinal)
+                    || new ItemId(abilityIdText) is not { IsValid: true } talismanItemId
+                    || !gameData.Items.TryGetValue(talismanItemId, out var talismanItem)
+                    || !string.Equals(talismanItem.DisplaySubCategory, Domain.GameData.TechniqueCatalog.Talisman, StringComparison.Ordinal))
+                    continue;
+                var cdUntil = Combat.TalismanCooldowns.GetValueOrDefault(abilityIdText);
+                (consumableSlots ??= []).Add(new DuelConsumableSlotSnapshot(
+                    i,
+                    AutoUseSlotState.SlotGroupAbility,
+                    abilityIdText,
+                    Math.Max(0, cdUntil - nowUnix),
+                    0));
+                if (wallet is not null)
+                {
+                    itemBalances ??= new Dictionary<string, double>(StringComparer.Ordinal);
+                    itemBalances.TryAdd(abilityIdText, wallet.Get(new AssetKey(talismanItemId)));
+                }
+            }
+        }
         IReadOnlyDictionary<string, JsonElement[]>? consumableTriggers = Loadout.ConsumableTriggers.Count == 0
             ? null
             : Loadout.ConsumableTriggers.ToDictionary(

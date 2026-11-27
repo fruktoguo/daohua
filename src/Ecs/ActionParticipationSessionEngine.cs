@@ -179,7 +179,7 @@ public sealed class ActionParticipationSessionEngine
                 var triggers = ConsumableTriggerResolver.Resolve(row.ItemId, consumable,
                     _members[row.MemberIndex].Loadout.ConsumableTriggers);
                 mask = TriggerWakePlanner.ResolveMask(triggers, selfInEnemies: false);
-                if (consumable.Strike is not null)
+                if (consumable.Strike is not null || consumable.ManaCostRatio > 0)
                     mask = mask.Union(new SlotWakeMask { Self = UnitChannel.Mana });
             }
             // 词表外物品或未注册依赖一律退化为全量订阅；外部视图兜底覆盖钱包脏/面板刷新。
@@ -751,47 +751,100 @@ public sealed class ActionParticipationSessionEngine
             Domain.Common.RuntimeInstrumentation.Count("consumable.trigger_evals");
             if (!SkillTriggerEvaluator.MatchesAll(triggerList, evalCaster, target, allies, enemies, _battle?.ElapsedSeconds ?? 0)) return false;
         }
-        var cooldown = consumable.CooldownSeconds;
-        if (cooldown <= 0)
+        if (consumable.CooldownSeconds <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动即时消耗品必须配置正冷却。");
+        var effectiveCasterStats = caster?.EffectiveStats ?? _spec.Members[memberIndex].Stats;
+        var baseCasterStats = caster?.Stats ?? _spec.Members[memberIndex].Stats;
+        var cooldown = DeterministicCombatEngine.ResolveConsumableCooldownSeconds(item, consumable,
+            baseCasterStats.Traits, baseCasterStats.TraitLevels);
         if (strike is { } s)
         {
-            // 雷击符打击（总纲 §20.2）：扣施放者灵力后按 Spell 链对最高威胁存活敌造成一次
-            // 无命中/暴击掷点的伤害；灵力不足或无存活目标则本次不激活。
-            if (caster is null) return false;
-            var manaCost = s.ManaCostRatio * caster.Stats.MaxManapoints;
-            if (target is null || caster.Manapoints < manaCost - 1e-9) return false;
-            var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, s.Element);
-            // 物品打击非玩家自身技能，不吃技能增幅，但归属符箓时吃符箓伤害增幅（总纲 §7.7.1 / §20.1.3 / §20.2）。
-            var strikeStats = caster.Stats with
+            if (caster is null || _battle is null) return false;
+            var manaCost = DeterministicCombatEngine.ResolveConsumableManaCost(item, s.ManaCostRatio, caster.Stats);
+            if (caster.Manapoints < manaCost - 1e-9) return false;
+            var isAoE = string.Equals(s.TargetType, "allEnemies", StringComparison.Ordinal);
+            if (isAoE)
             {
-                AttackPower = DeterministicCombatEngine.ResolveConsumableStrikePower(item, s, caster.Stats),
-                DamageKind = CombatDamageKind.Spell,
-                Element = strikeElement
-            };
-            strikeStats = strikeStats with { TotalDamageBonusPoints = caster.Stats.TotalDamageBonusPoints + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints) };
-            var damage = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, target);
+                if (!_battle.Enemies.Any(static e => e.IsAlive)) return false;
+            }
+            else if (target is null || !target.IsAlive)
+            {
+                return false;
+            }
             caster.Manapoints = Math.Max(0, caster.Manapoints - manaCost);
-            var settled = CombatDamageSettlement.Apply(_battle, caster, target, damage);
-            damage = settled.Damage;
-            CombatTraitReactions.ApplyRanhun(caster, target, strikeElement, settled.Actual, _battle!.ElapsedSeconds);
-            if (_battle is { } liveBattle && !liveBattle.Enemies.Any(static e => e.IsAlive))
-                liveBattle.Outcome = CombatOutcome.PlayerWon;
-            if (target.DefinitionId is { } monsterId
-                && Canonical.Duel.ReportFor(Action.Id) is { } strikeReport)
+            var hasDirectDamage = s.ManaDamageRatio > 0 || s.SpellAttackRatio > 0
+                || s.PhysicalAttackRatio > 0 || s.FlatDamage > 0;
+            var ranhunStacks = DeterministicCombatEngine.ResolveConsumableRanhunStacks(item, s, caster.Stats);
+            var strikeElement = CombatTraitRules.ResolveDamageElement(caster.Stats.Traits, s.Element);
+            var rawPower = hasDirectDamage
+                ? DeterministicCombatEngine.ResolveConsumableStrikePower(item, s, effectiveCasterStats)
+                : 0;
+            var strikeStats = effectiveCasterStats with
             {
-                var book = strikeReport.CombatStats;
-                var attackerKey = memberIndex == 0 ? "player" : $"ally:{memberIndex}";
-                book.Register(attackerKey, _spec.Members[memberIndex].DisplayName);
-                book.Register($"monster:{monsterId}",
-                    _catalog.CombatMonsters.TryGetValue(monsterId, out var monster) ? monster.Name : monsterId);
-                book.RecordHit(attackerKey, $"monster:{monsterId}", CombatDamageKind.Spell,
-                    damage, Math.Max(0, strikeStats.AttackPower - damage));
+                AttackPower = rawPower,
+                DamageKind = s.DamageKind,
+                Element = strikeElement,
+                TotalDamageBonusPoints = caster.Stats.TotalDamageBonusPoints + caster.BuffTotal(BuffEffectChannel.DamageBonusPoints)
+            };
+            var totalDamage = 0d;
+            var anyCrit = false;
+            var allySide = CombatActSystem.AllySide(memberIndex);
+            var rollBase = caster.AttackCount + _battle.Sequence;
+            for (var eIdx = 0; eIdx < _battle.Enemies.Count; eIdx++)
+            {
+                var foe = _battle.Enemies[eIdx];
+                if (!foe.IsAlive) continue;
+                if (!isAoE && !ReferenceEquals(foe, target)) continue;
+                if (hasDirectDamage)
+                {
+                    var isCrit = DeterministicCombatEngine.RollTalismanCrit(_battle.Seed, allySide, rollBase + eIdx, caster, foe);
+                    if (isCrit) anyCrit = true;
+                    var dmg = DeterministicCombatEngine.ResolveStrikeDamage(strikeStats, foe, isCrit);
+                    var settled = CombatDamageSettlement.Apply(_battle, caster, foe, dmg);
+                    dmg = settled.Damage;
+                    totalDamage += dmg;
+                    CombatTraitReactions.ApplyRanhun(caster, foe, strikeElement, settled.Actual, _battle.ElapsedSeconds);
+                    if (foe.DefinitionId is { } monsterId
+                        && Canonical.Duel.ReportFor(Action.Id) is { } strikeReport)
+                    {
+                        var book = strikeReport.CombatStats;
+                        var attackerKey = memberIndex == 0 ? "player" : $"ally:{memberIndex}";
+                        book.Register(attackerKey, _spec.Members[memberIndex].DisplayName);
+                        book.Register($"monster:{monsterId}",
+                            _catalog.CombatMonsters.TryGetValue(monsterId, out var monster) ? monster.Name : monsterId);
+                        book.RecordHit(attackerKey, $"monster:{monsterId}", s.DamageKind,
+                            dmg, Math.Max(0, rawPower - dmg));
+                    }
+                }
+                if (ranhunStacks > 0)
+                    CombatTraitReactions.AddRanhunStacks(caster, foe, ranhunStacks, _battle.ElapsedSeconds, _battle);
+                if (s.OnHitBuff is { ValueKind: JsonValueKind.Object } onHitBuffSpec && foe.IsAlive)
+                    CombatActSystem.GrantBuff(onHitBuffSpec, caster, foe, _battle.ElapsedSeconds, 1.0, item.Id.Value, _battle, includeCasterSkillBonus: false);
+                CombatActSystem.NotifyUnitAttacked(_battle, caster, foe, _battle.ElapsedSeconds);
+            }
+            if (!_battle.Enemies.Any(static e => e.IsAlive))
+            {
+                _battle.Outcome = CombatOutcome.PlayerWon;
+                List<CombatEvent>? dummyEvents = null;
+                CombatTraitReactions.SettleWaveEndShields(_battle, ref dummyEvents);
             }
             SpendBalance(memberIndex, row.ItemId);
             _consumables![index] = _consumables![index] with { CooldownUntilUnixSeconds = now + cooldown };
-            SpendConsumable(memberIndex, item, at, now, $"自动使用 {item.Name}，造成 {damage:0.##} 点伤害。");
+            var strikeLog = hasDirectDamage
+                ? $"自动使用 {item.Name}，造成 {totalDamage:0.##} 点伤害{(anyCrit ? "（暴击）" : "")}。"
+                : ranhunStacks > 0
+                    ? $"自动使用 {item.Name}，施加 {ranhunStacks:0.##} 层燃烧。"
+                    : $"自动使用 {item.Name}。";
+            SpendConsumable(memberIndex, item, at, now, strikeLog);
             return true;
+        }
+        if (consumable.ManaCostRatio > 0)
+        {
+            var selfManaCost = DeterministicCombatEngine.ResolveConsumableManaCost(item, consumable.ManaCostRatio, baseCasterStats);
+            var availMp = caster is not null ? caster.Manapoints : _members[memberIndex].Resources.Manapoints;
+            if (availMp < selfManaCost - 1e-9) return false;
+            if (caster is not null) caster.Manapoints = Math.Max(0, caster.Manapoints - selfManaCost);
+            else _members[memberIndex].Resources.Manapoints = Math.Max(0, _members[memberIndex].Resources.Manapoints - selfManaCost);
         }
         // 恢复分支：战内写 canonical 单位，战外写成员资源池（并回写远征标量镜像）。
         var healed = 0d;
@@ -811,11 +864,9 @@ public sealed class ActionParticipationSessionEngine
             healed = member.Resources.Hitpoints - before;
             SyncSessionExpeditionResources(memberIndex);
         }
-        // 药品瞬回计「其他治疗」输出，与单人账本同口径（autoRegen: false）。
         if (healed > 0 && Canonical.Duel.ReportFor(Action.Id) is { } healReport)
             healReport.CombatStats.RecordHealing(memberIndex == 0 ? "player" : $"ally:{memberIndex}",
                 _spec.Members[memberIndex].DisplayName, autoRegen: false, healed);
-        // Buff 分支：战内直接注入单位 Buff（战斗域效果就地生效），战外折算跨波携带、入场重注入。
         if (hasBuffs)
             foreach (var buff in buffs.EnumerateArray())
             {
@@ -824,10 +875,16 @@ public sealed class ActionParticipationSessionEngine
                 if (duration <= 0) continue;
                 var effects = BuffEffectParser.Parse(buff, 1.0);
                 if (caster is not null)
-                    caster.SetBuff(new CombatBuffState(buffId, _battle!.ElapsedSeconds + duration, 1,
+                {
+                    var existing = caster.Buffs.FirstOrDefault(b => b.BuffId == buffId);
+                    var exp = CombatTraitRules.MergeBuffExpiry(existing?.ExpiresAtSeconds, _battle!.ElapsedSeconds + duration);
+                    caster.SetBuff(new CombatBuffState(buffId, exp, 1, BuffName(buff, buffId), Effects: effects));
+                }
+                else
+                {
+                    AddCarryBuff(memberIndex, new CombatBuffCarry(buffId, duration, 1,
                         BuffName(buff, buffId), Effects: effects));
-                else AddCarryBuff(memberIndex, new CombatBuffCarry(buffId, duration, 1,
-                    BuffName(buff, buffId), Effects: effects));
+                }
             }
         SpendBalance(memberIndex, row.ItemId);
         _consumables![index] = _consumables![index] with { CooldownUntilUnixSeconds = now + cooldown };
