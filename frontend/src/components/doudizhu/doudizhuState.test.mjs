@@ -114,3 +114,19 @@ test('斗地主叫抢操作判定：0 号位已叫地主时不得误判为未叫
   assert.equal(normalizeDouDiZhuGame(null), null)
   assert.equal(normalizeDouDiZhuGame(undefined), null)
 })
+
+test('对弈匹配大厅 UI 契约：八阶品级采用下拉框且微型资金指标显式携带灵石 itemId', async () => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const filePath = path.resolve('frontend/src/components/SocialPage.tsx')
+  const content = await fs.readFile(filePath, 'utf8')
+
+  assert.doesNotMatch(content, /ddz-tier-grid/, '对弈八阶选场不得再平铺 8 张卡片网格')
+  assert.match(content, /const DouDiZhuTierSelect = memo/, '对弈八阶选场应使用紧凑下拉组件 DouDiZhuTierSelect')
+  assert.match(content, /className="ddz-stat-strip"/, '底部资金与验资应使用紧凑单行条带 ddz-stat-strip')
+  const iconTags = content.match(/<ItemIcon[^>]*>/g) ?? []
+  assert.ok(iconTags.length >= 5, '品级下拉与微型指标芯片均应使用 ItemIcon 展示灵石小图标')
+  for (const tag of iconTags) {
+    assert.match(tag, /itemId="currency\.spirit-stone"/, `ItemIcon 必须显式透传 itemId: ${tag}`)
+  }
+})

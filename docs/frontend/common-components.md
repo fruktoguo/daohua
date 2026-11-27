@@ -4,8 +4,9 @@
 > 1. 进行任何前端开发前，**必须先查阅本手册**，核对是否存在适用的公共组件或统一模板，避免重复造轮子或各写一套样式。
 > 2. 凡是将某类 UI/交互收拢为统一模板，**必须同步登记至本手册**。
 > 3. 本手册**不记录具体 CSS 样式实现代码**，仅作为**快速索引与场景查找表**；具体用法、参数和样式直接查阅所列路径。
+> 4. **高布局空间利用率与横竖屏兼顾**：多档位选择优先使用 `FloatingPopover` Portal 紧凑下拉框（避免大卡片网格平铺占屏）；资金/门槛/速率等状态指标一律采用「极简短标签 + 小图标（`ItemIcon`/`Icon`）+ `UnitNumber` 紧凑数值」单行微型芯片，机制长句收进 `FloatingTooltip` 或说明弹窗；所有布局必须同步兼顾桌面横屏与移动竖屏（`≤960px` / `≤720px`）紧凑折行。
 
-斗地主对弈与牌桌：同道「对弈」独立子页（`DouDiZhuPage`）顶部提供八阶全局匹配选择栏（凡~帝八品品质色调、底注、准入验资与实时匹配人数），真实牌局使用 `frontend/src/components/doudizhu/DouDiZhuTable.tsx`；固定坐标扑克牌图案与编号边界为 `doudizhuArt.ts`，手牌槽位布局为 `doudizhuLayout.ts`，表现动画为 `doudizhuMotion.ts`，样式为同目录 `doudizhu.css`。角色复用 `CharacterAvatar`，灵石复用携带 `itemId` 的 `ItemIcon` / `ItemReference`，角色互动菜单复用 `FloatingPopover`，玩法窗口复用 `Modal`。
+斗地主对弈与牌桌：同道「对弈」独立子页（`DouDiZhuPage`）采用单卡高密度匹配面板——顶栏集成八阶品级下拉框（`.ddz-tier-select`，基于 `FloatingPopover` Portal 展现凡~帝八品品质色、底注与实时匹配人数）与「玩法」规则入口，下方单行紧凑排布「底注 / 验资 / 可用」微型指标芯片（`.ddz-stat-pill`：`ItemIcon` + `UnitNumber`，悬停「验资」展示十倍底注托管 `FloatingTooltip`）及匹配操作按钮；真实牌局使用 `frontend/src/components/doudizhu/DouDiZhuTable.tsx`；固定坐标扑克牌图案与编号边界为 `doudizhuArt.ts`，手牌槽位布局为 `doudizhuLayout.ts`，表现动画为 `doudizhuMotion.ts`，样式为同目录 `doudizhu.css`。角色复用 `CharacterAvatar`，灵石复用显式携带 `itemId` 的 `ItemIcon` / `UnitNumber`，角色互动菜单复用 `FloatingPopover`，玩法窗口复用 `Modal`。
 
 ---
 

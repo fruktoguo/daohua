@@ -30,8 +30,9 @@ import { Icon } from './Icon'
 import { FloatingPopover, FloatingTooltip, type FloatingPlacement } from './FloatingPopover'
 import { Modal } from './Modal'
 import { OptionToggle, type OptionToggleOption } from './OptionToggle'
+import { UnitNumber } from './UnitNumber'
 import { ValuationHoverTarget } from './ValuationDisplay'
-import { ItemIcon, ItemReference } from './ItemDisplay'
+import { ItemIcon } from './ItemDisplay'
 import type { RespawnPolicy } from '../game/types'
 import { buildPartyChatMarkup } from '../game/chatMarkup'
 import { shareToChat } from '../game/chatShare'
@@ -1234,7 +1235,112 @@ interface DouDiZhuQueuesResponseDto {
   queueCounts?: number[] | null
 }
 
-/** 同道独立对弈子页：顶部八阶选场（展示底注与当前匹配人数）+ 十倍底注验资全局匹配；开局后切换为正式牌桌。 */
+/**
+ * 对弈八阶品级下拉框 (DouDiZhuTierSelect)：
+ * 基于 FloatingPopover Portal 弹出八阶选项（凡~帝八品品质色、底注与实时排队人数），
+ * 替代平铺占屏的 8 卡片网格。
+ */
+const DouDiZhuTierSelect = memo(function DouDiZhuTierSelect({
+  selectedTier,
+  matchingTier,
+  queueCounts,
+  mySpiritStones,
+  onSelect,
+}: {
+  selectedTier: number
+  matchingTier: number | null
+  queueCounts: readonly number[]
+  mySpiritStones: number
+  onSelect: (tier: number) => void
+}): React.JSX.Element {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const [triggerWidth, setTriggerWidth] = useState(0)
+  const [placement, setPlacement] = useState<FloatingPlacement>('bottom-start')
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  const selectedMeta = getDouDiZhuTierMeta(selectedTier)
+  const selectedCount = queueCounts[selectedMeta.tier - 1] ?? 0
+  const isMatchingSelected = matchingTier === selectedMeta.tier
+
+  return (
+    <div
+      className={`party-select ddz-tier-select ddz-tier--q${selectedMeta.tier}${open ? ' is-open' : ''}${isMatchingSelected ? ' is-matching' : ''}`}
+      ref={rootRef}
+    >
+      <FloatingPopover
+        className="party-select-popover-card ddz-tier-popover-card"
+        content={({ close }) => (
+          <div
+            aria-label={t('social.doudizhu.tierAria')}
+            className="party-select-options ddz-tier-options"
+            role="listbox"
+            style={triggerWidth > 0 ? { minWidth: Math.max(triggerWidth, 236) } : { minWidth: 236 }}
+          >
+            {DOUDIZHU_TIERS.map(meta => {
+              const count = queueCounts[meta.tier - 1] ?? 0
+              const isSelected = selectedTier === meta.tier
+              const isMatching = matchingTier === meta.tier
+              const locked = mySpiritStones < meta.requiredStones
+              return (
+                <button
+                  aria-selected={isSelected}
+                  className={`party-select-option ddz-tier-option ddz-tier--q${meta.tier}${isSelected ? ' is-selected' : ''}${isMatching ? ' is-matching' : ''}${locked ? ' is-locked' : ''}`}
+                  key={meta.tier}
+                  onClick={() => {
+                    onSelect(meta.tier)
+                    close()
+                  }}
+                  role="option"
+                  type="button"
+                >
+                  <strong className="ddz-tier-name">{t(`social.doudizhu.tier.${meta.key}`)}</strong>
+                  <span className="ddz-tier-stake">
+                    <ItemIcon itemId="currency.spirit-stone" />
+                    <UnitNumber disableTooltip value={meta.baseStake} />
+                  </span>
+                  <span className={`ddz-tier-queue${count > 0 || isMatching ? ' is-hot' : ''}`}>
+                    {isMatching
+                      ? t('social.doudizhu.matchingBadge', { count: Math.max(1, count) })
+                      : t('social.doudizhu.queueCount', { count })}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+        gap={3}
+        onOpenChange={next => {
+          setOpen(next)
+          if (next && rootRef.current) setTriggerWidth(Math.ceil(rootRef.current.getBoundingClientRect().width))
+        }}
+        onPlacementChange={setPlacement}
+        open={open}
+        placement="bottom-start"
+        size="auto"
+        trigger="click"
+        triggerAs="button"
+        triggerClassName="party-select-trigger ddz-tier-select-trigger"
+      >
+        <span className="ddz-tier-trigger-main">
+          <strong className="ddz-tier-name">{t(`social.doudizhu.tier.${selectedMeta.key}`)}</strong>
+          <span className="ddz-tier-stake">
+            <ItemIcon itemId="currency.spirit-stone" />
+            <UnitNumber disableTooltip value={selectedMeta.baseStake} />
+          </span>
+          <span className={`ddz-tier-queue${selectedCount > 0 || isMatchingSelected ? ' is-hot' : ''}`}>
+            {isMatchingSelected
+              ? t('social.doudizhu.matchingBadge', { count: Math.max(1, selectedCount) })
+              : t('social.doudizhu.queueCount', { count: selectedCount })}
+          </span>
+        </span>
+        <span aria-hidden="true" className="party-select-arrow">{placement.startsWith('top') ? '▴' : '▾'}</span>
+      </FloatingPopover>
+    </div>
+  )
+})
+
+/** 同道独立对弈子页：单卡高密度匹配面板（顶栏八阶品级下拉 + 底栏微型指标与匹配操作）；开局后切换为正式牌桌。 */
 export const DouDiZhuPage = memo(function DouDiZhuPage(): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)
@@ -1303,87 +1409,73 @@ export const DouDiZhuPage = memo(function DouDiZhuPage(): React.JSX.Element {
   }
 
   const selectedMeta = getDouDiZhuTierMeta(selectedTier)
-  const selectedTierLabel = t(`social.doudizhu.tier.${selectedMeta.key}`)
   const meetsRequirement = mySpiritStones >= selectedMeta.requiredStones
   const isMatchingSelected = matchingTier === selectedMeta.tier
   const matchingMeta = matchingTier !== null ? getDouDiZhuTierMeta(matchingTier) : null
   const matchingCount = matchingTier !== null ? (queueCounts[matchingTier - 1] ?? 0) : 0
+  const otherQueuedCount = queueCounts.reduce(
+    (sum, count, idx) => (idx + 1 === selectedMeta.tier ? sum : sum + (count > 0 ? count : 0)),
+    0,
+  )
 
   return (
     <div className="ddz-lobby">
-      <div aria-label={t('social.doudizhu.tierAria')} className="ddz-tier-grid" role="tablist">
-        {DOUDIZHU_TIERS.map(meta => {
-          const count = queueCounts[meta.tier - 1] ?? 0
-          const isSelected = selectedTier === meta.tier
-          const isMatching = matchingTier === meta.tier
-          const locked = mySpiritStones < meta.requiredStones
-          return (
-            <button
-              aria-selected={isSelected}
-              className={`ddz-tier-card ddz-tier--q${meta.tier}${isSelected ? ' is-selected' : ''}${isMatching ? ' is-matching' : ''}${locked ? ' is-locked' : ''}`}
-              key={meta.tier}
-              onClick={() => setSelectedTier(meta.tier)}
-              role="tab"
-              type="button"
-            >
-              <div className="ddz-tier-head">
-                <strong className="ddz-tier-name">{t(`social.doudizhu.tier.${meta.key}`)}</strong>
-                <span className={`ddz-tier-queue${count > 0 ? ' is-hot' : ''}`}>
-                  {isMatching
-                    ? t('social.doudizhu.matchingBadge', { count })
-                    : t('social.doudizhu.queueCount', { count })}
-                </span>
-              </div>
-              <span className="ddz-tier-stake">
-                <ItemIcon itemId="currency.spirit-stone" />
-                <span>{formatNumber(meta.baseStake)}</span>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
       <section className="party-card ddz-match-panel">
         <div className="ddz-match-head">
           <div className="ddz-match-title">
-            <h3>{t('social.doudizhu.title')} · {selectedTierLabel}</h3>
-            <span className="badge">{t('social.doudizhu.queueCount', { count: queueCounts[selectedMeta.tier - 1] ?? 0 })}</span>
+            <h3>{t('social.doudizhu.title')}</h3>
+            <DouDiZhuTierSelect
+              matchingTier={matchingTier}
+              mySpiritStones={mySpiritStones}
+              onSelect={setSelectedTier}
+              queueCounts={queueCounts}
+              selectedTier={selectedMeta.tier}
+            />
+            {matchingMeta !== null && !isMatchingSelected ? (
+              <span className="ddz-matching-pill" role="status">
+                {t('social.doudizhu.matchingBanner', {
+                  tier: t(`social.doudizhu.tier.${matchingMeta.key}`),
+                  count: Math.max(1, matchingCount),
+                })}
+              </span>
+            ) : otherQueuedCount > 0 ? (
+              <span className="ddz-other-queue-pill">
+                {t('social.doudizhu.otherQueues', { count: otherQueuedCount })}
+              </span>
+            ) : null}
           </div>
-          <button onClick={() => setRulesOpen(true)} type="button">{t('social.doudizhu.rules')}</button>
+          <button className="ddz-rules-btn" onClick={() => setRulesOpen(true)} type="button">
+            {t('social.doudizhu.rules')}
+          </button>
         </div>
 
-        <div className="ddz-match-metrics">
-          <div className="ddz-match-metric">
-            <span>{t('social.doudizhu.stake')}</span>
-            <ItemReference amount={selectedMeta.baseStake} itemId="currency.spirit-stone" />
-          </div>
-          <div className="ddz-match-metric">
-            <span>{t('social.doudizhu.entryRequirement')}</span>
-            <ItemReference amount={selectedMeta.requiredStones} itemId="currency.spirit-stone" />
-          </div>
-          <div className={`ddz-match-metric${!meetsRequirement ? ' is-insufficient' : ''}`}>
-            <span>{t('social.doudizhu.myStones')}</span>
-            <ItemReference amount={mySpiritStones} itemId="currency.spirit-stone" />
-          </div>
-        </div>
-
-        {matchingMeta !== null && (
-          <div className="ddz-match-banner" role="status">
-            <span>
-              {t('social.doudizhu.matchingBanner', {
-                tier: t(`social.doudizhu.tier.${matchingMeta.key}`),
-                count: Math.max(1, matchingCount),
-              })}
+        <div className="ddz-match-bar">
+          <div className="ddz-stat-strip">
+            <span className="ddz-stat-pill">
+              <span className="ddz-stat-label">{t('social.doudizhu.stake')}</span>
+              <ItemIcon itemId="currency.spirit-stone" />
+              <UnitNumber tooltipLabel={t('social.doudizhu.stake')} value={selectedMeta.baseStake} />
             </span>
-            <button onClick={() => { cancelMatch() }} type="button">{t('social.doudizhu.cancelMatch')}</button>
+            <FloatingTooltip placement="top" title={t('social.doudizhu.matchHint')} tone="gold">
+              <span className="ddz-stat-pill is-help">
+                <span className="ddz-stat-label">{t('social.doudizhu.escrowShort')}</span>
+                <ItemIcon itemId="currency.spirit-stone" />
+                <UnitNumber disableTooltip value={selectedMeta.requiredStones} />
+              </span>
+            </FloatingTooltip>
+            <span className={`ddz-stat-pill${!meetsRequirement ? ' is-insufficient' : ''}`}>
+              <span className="ddz-stat-label">{t('social.doudizhu.availableShort')}</span>
+              <ItemIcon itemId="currency.spirit-stone" />
+              <UnitNumber tooltipLabel={t('social.doudizhu.myStones')} value={mySpiritStones} />
+            </span>
           </div>
-        )}
 
-        <div className="ddz-match-footer">
-          <span className="party-card-desc">{t('social.doudizhu.matchHint')}</span>
           <div className="ddz-match-actions">
             {!meetsRequirement && !isMatchingSelected && (
               <span className="ddz-insufficient-note">{t('social.doudizhu.insufficientStones')}</span>
+            )}
+            {matchingMeta !== null && !isMatchingSelected && (
+              <button onClick={() => { cancelMatch() }} type="button">{t('social.doudizhu.cancelMatch')}</button>
             )}
             {isMatchingSelected ? (
               <button onClick={() => { cancelMatch() }} type="button">{t('social.doudizhu.cancelMatch')}</button>
