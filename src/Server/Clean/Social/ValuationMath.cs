@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
+using Domain.Combat;
 using Domain.GameData;
 using Domain.Market;
 using Domain.Player;
@@ -8,8 +9,10 @@ using Domain.Player;
 namespace Server.Clean.Social;
 
 /// <summary>
-/// 身家估值纯计算辅助（单一计算真源）：
-/// 供 <see cref="PartyValuationService"/>（组队/名片）与全服排行榜整点物化共用，确保全游戏身家口径完全一致。
+/// 道行与身家纯计算辅助（单一计算真源）：
+/// - <see cref="ComputeDaohang"/>：当前启用的「道行」口径（境界×2 + 根基×1.5 + 穿戴战斗装备等级×(1+强化×5%) + 携带功法等级 + 携带特质消耗×(1+特质等级×5%)，工具不计）；
+/// - <see cref="Compute"/>：原有基于坊市/回收价的「身家」估值实现（保留不删除，暂不启用）。
+/// 供 <see cref="PartyValuationService"/>（组队/名片/附近）与全服排行榜整点物化共用，确保全游戏口径完全一致。
 /// </summary>
 public static class ValuationMath
 {
@@ -45,7 +48,105 @@ public static class ValuationMath
             protectionPrices.ToFrozenDictionary(StringComparer.Ordinal));
     }
 
-    /// <summary>按口径合计战斗装备、功法与技艺工具价值；非有限结果归零。</summary>
+    /// <summary>
+    /// 计算角色当前「道行」（保留至多 2 位小数以消除浮点尾差）：
+    /// 道行 = (境界等级 × 2 + 根基 × 1.5)
+    ///      + Σ 已穿戴非工具战斗装备等级 × (1 + 强化等级 × 5%)
+    ///      + Σ 已携带非空功法槽位等级（仅统计 ability.*，不含符法天命符箓）
+    ///      + Σ 已携带特质消耗点数 × (1 + 对应特质等级 × 5%)。
+    /// 技艺工具不计入道行。
+    /// </summary>
+    public static ValuationResult ComputeDaohang(
+        int fallbackRealmLevel,
+        PlayerProgressionState? progression,
+        PlayerLoadoutDocument? loadout,
+        GameDataCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+
+        var realmLevel = Math.Max(1, progression?.RealmLevel ?? fallbackRealmLevel);
+        var genjiPoints = Math.Max(0, progression?.GenjiPoints ?? 0);
+        var realmAndGenji = RoundDaohang(realmLevel * 2.0 + genjiPoints * 1.5);
+
+        var equipmentTotal = 0d;
+        if (loadout?.Equipment is { Count: > 0 } equipment)
+        {
+            foreach (var slot in equipment)
+            {
+                if (slot is null || string.IsNullOrWhiteSpace(slot.ItemId)) continue;
+                if (!catalog.RawEquipments.ContainsKey(slot.ItemId) || IsTool(slot.ItemId, catalog))
+                    continue;
+                var itemLevel = CraftingRecipeRules.ResolveEquipmentRequiredLevel(slot.ItemId, catalog.RawEquipments);
+                var enhLevel = double.IsFinite(slot.EnhancementLevel) && slot.EnhancementLevel > 0
+                    ? Math.Floor(slot.EnhancementLevel)
+                    : 0d;
+                equipmentTotal += itemLevel * (1.0 + enhLevel * 0.05);
+            }
+        }
+        equipmentTotal = RoundDaohang(equipmentTotal);
+
+        var abilitiesTotal = 0d;
+        if (loadout?.AbilitySlots is { Count: > 0 } abilitySlots)
+        {
+            var countedAbilities = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var slot in abilitySlots)
+            {
+                if (slot is null || string.IsNullOrWhiteSpace(slot.AbilityId)) continue;
+                if (!catalog.Abilities.ContainsKey(slot.AbilityId) || !countedAbilities.Add(slot.AbilityId))
+                    continue;
+                var level = double.IsFinite(slot.Level) && slot.Level >= 1 ? slot.Level : 1d;
+                if (loadout.AbilityExperiences is not null
+                    && loadout.AbilityExperiences.TryGetValue(slot.AbilityId, out var exp)
+                    && double.IsFinite(exp) && exp > 0)
+                {
+                    level = AbilityExpCurve.LevelFor(exp);
+                }
+                abilitiesTotal += Math.Max(1d, Math.Floor(level));
+            }
+        }
+        abilitiesTotal = RoundDaohang(abilitiesTotal);
+
+        var traitsTotal = 0d;
+        if (progression?.TraitIds is { Count: > 0 } traitIds)
+        {
+            Dictionary<string, int>? traitLevelById = null;
+            if (progression.UnlockedTraits is { Count: > 0 } unlocked)
+            {
+                traitLevelById = new Dictionary<string, int>(unlocked.Count, StringComparer.Ordinal);
+                foreach (var entry in unlocked)
+                {
+                    if (!string.IsNullOrWhiteSpace(entry.Id))
+                        traitLevelById[entry.Id] = Math.Max(1, entry.Level);
+                }
+            }
+
+            var countedTraits = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var traitId in traitIds)
+            {
+                if (string.IsNullOrWhiteSpace(traitId) || !countedTraits.Add(traitId)) continue;
+                if (!CombatTraitRules.AllTraits.TryGetValue(traitId, out var def)) continue;
+                var traitLevel = traitLevelById is not null && traitLevelById.TryGetValue(traitId, out var lv)
+                    ? Math.Max(1, lv)
+                    : 1;
+                traitsTotal += def.Cost * (1.0 + traitLevel * 0.05);
+            }
+        }
+        traitsTotal = RoundDaohang(traitsTotal);
+
+        return new ValuationResult(
+            Equipment: equipmentTotal,
+            Abilities: abilitiesTotal,
+            Tools: 0d,
+            RealmAndGenji: realmAndGenji,
+            Traits: traitsTotal);
+    }
+
+    internal static double RoundDaohang(double value)
+        => double.IsFinite(value) && value > 0
+            ? Math.Round(value, 2, MidpointRounding.AwayFromZero)
+            : 0d;
+
+    /// <summary>【保留未用】按原身家口径合计战斗装备、功法与技艺工具市场/回收价值；非有限结果归零。</summary>
     public static ValuationResult Compute(
         PlayerLoadoutDocument loadout,
         GameDataCatalog catalog,

@@ -157,7 +157,7 @@ export function buildPartyChatMarkup({
   const pName = (name ?? '').trim().replace(/[:}]/g, '')
   const pActivity = (activityKind ?? '').trim().replace(/[:}]/g, '')
   const pNode = (nodeId ?? '').trim().replace(/[:}]/g, '')
-  const pVal = Math.max(0, Math.floor(minValuation ?? 0))
+  const pVal = Math.max(0, Math.round((minValuation ?? 0) * 100) / 100)
   const pMembers = Math.max(1, Math.floor(memberCount ?? 1))
   const pSlots = Math.max(pMembers, Math.floor(maxSlots ?? 3))
   return `{{party:${pId}:${pName}:${pActivity}:${pNode}:${pVal}:${pMembers}:${pSlots}}}`

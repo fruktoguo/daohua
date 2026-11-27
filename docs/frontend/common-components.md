@@ -33,8 +33,8 @@
   - **竖屏与高度受限视口自适应等比缩放与滚动兜底**：当悬浮窗携带多副卡片在竖屏（$\le 768\text{px}$）单列纵向堆叠导致总高度超出屏幕时，`computeSafeFloatingPosition` 自动测量未缩放尺寸并解算等比缩放因子 `scale = Math.min(1.0, availableHeight / naturalHeight)`，硬性下限最多缩小到 **50%**（`scale: 0.5`）；视口翻转、对齐与边界 Clamp 均以物理缩放包围盒运算，配合 `transform-origin: top left` 杜绝漂移；极端情况下缩小至 50% 仍超视口时，由浮层整体容器（`.daohua-floating-layer`）无缝衔接 `overflow-y: auto` 滚动兜底，彻底消灭卡片溢出屏幕外的痛点。
   - **移动端触屏长按手势与捕获阶段防误触物理隔离**：全系统凡使用 `FloatingPopover` 体系的 Hover 标的（包括装备/道具/技能/怪物/状态等），触屏端按压 350ms 触发长按弹出悬浮详情卡并伴随轻微灵觉振动（`navigator.vibrate(15)`），手指滑屏（>10px）自动取消；长按松手后，在原生 DOM 捕获阶段（Capture Phase）彻底掐灭随后的模拟 `click` 事件（`stopImmediatePropagation` / `preventDefault`），确保绝对不会误触发装备槽更换、背包使用、购买或技能弹窗等底层子元素的业务点击；纯展示标的（无按钮包裹）在触屏下依旧支持轻触查看。
   - **生态生灵悬浮详情统一收拢 (`MonsterTooltipTarget` / `MonsterInfoCard`)**：大地图地点生灵（`MapMonsterPill`）、附近面板生灵（`NearbyPanel.MonsterCard`）、讨伐生态面板（`CombatEcologyPanel.EcologyMonsterTile`）、万象图鉴妖兽收录（`CodexPage.CodexMonsterEntry`）与日志敌怪引用（`LogFeed.EnemyReference`）全面统一收拢走 `frontend/src/components/MonsterDisplay.tsx`。共享最高规格统一浮层——生命层次品质徽记（普通金/精英紫/领主危红）、境界等阶副标、修仙伤害流派与五行属性描述、出没周期、击杀修为收益、施展功法瓦片行（`MonsterAbilityTile`，与玩家技能格子同构，具备元素/类别丝带、Lv 等级角标、WebP 图标/名称与独立参悟详情浮层）、掉落物图元复合胶囊（`ItemDropReference`，含概率与掉落区间且支持二次悬停查物品）、六维基础战斗属性网格（气血/灵力/双攻/双防，已剔除多余攻击间隔）；彻底消灭生态面板双层 Popover 的体验割裂与多处面板同怪不同展的断层。
-  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员、全服排行榜条目与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、身家、六维根骨等级与进度、战斗六维与特殊属性、生活技艺等级以及全身装配）；目标玩家可在「设置 → 隐私」关闭非同队配装可见性（本人与当前同队成员恒定全量可见），关闭后非同队访客仍可开启名片查看基础/属性/六维/技艺等级/身家，但服务端裁撤装备/功法/特质/消耗品并下发 `loadoutHidden=true`，弹窗在「配装」子页展示隐私受限提示。弹窗于顶层唯一挂载。战斗消耗品复用 `ItemTile` / `ItemTooltipTarget` 显示普通钱包「可用」数量，离线储备另列并用 `FloatingTooltip` 说明不可售与退回时机，禁止两者相加。
-  - **身家估值构成悬浮窗 (`ValuationHoverTarget` / `ValuationDisplay`)**：全游戏凡展示「身家」之处（名片弹窗 `PlayerCardModal`、附近修士卡片 `NearbyPanel`、同道队伍成员与大厅散人卡片 `SocialPage` 等），统一挂载该组件。Hover 时弹出浮层，展示总身家及「战斗装备」、「参悟功法」、「技艺工具」三项细分估值，支持无 breakdown 时的保底说明；源码 `frontend/src/components/ValuationDisplay.tsx`。
+  - **角色名片弹窗全局收拢 (`PlayerCardModal`)**：同道队伍成员、全服排行榜条目与地图人物附近修士点击事件统一唤起 `PlayerCardModal`，服务端按需投影白名单（形象、道号、境界牌匾、道行、六维根骨等级与进度、战斗六维与特殊属性、生活技艺等级以及全身装配）；目标玩家可在「设置 → 隐私」关闭非同队配装可见性（本人与当前同队成员恒定全量可见），关闭后非同队访客仍可开启名片查看基础/属性/六维/技艺等级/道行，但服务端裁撤装备/功法/特质/消耗品并下发 `loadoutHidden=true`，弹窗在「配装」子页展示隐私受限提示。弹窗于顶层唯一挂载。战斗消耗品复用 `ItemTile` / `ItemTooltipTarget` 显示普通钱包「可用」数量，离线储备另列并用 `FloatingTooltip` 说明不可售与退回时机，禁止两者相加。
+  - **道行构成悬浮窗 (`ValuationHoverTarget` / `ValuationDisplay`)**：全游戏凡展示「道行」之处（名片弹窗 `PlayerCardModal`、附近修士卡片 `NearbyPanel`、同道队伍成员与大厅散人卡片 `SocialPage`、全服排行榜 `LeaderboardPage` 等），统一挂载该组件。Hover 时弹出浮层，展示总道行及「境界根基」、「战斗装备」、「携带功法」、「携带特质」四项构成明细（保留对旧三分项数据的兜底展示）；源码 `frontend/src/components/ValuationDisplay.tsx`。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
   - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
@@ -665,8 +665,8 @@
 ## 40. 全服排行榜视图模板 (LeaderboardPage)
 
 - **适用场景**：
-  - 全服 12 榜（境界 / 技艺 7 门 / 身家 / 灵石 / 宗门 / 斗法）整点快照浏览与本人排名定位，收拢于桌面侧边栏「其他」分组与移动端「更多」分组（页签 `leaderboard`）。
-  - 复用 `OptionToggle` / 二级榜签栏 + 技艺子切换条 + 榜行列表（前三名次徽标 + `CharacterAvatar` + 道号/宗门前缀 + `RealmBadge` + `UnitNumber` 紧凑数值 + `ValuationHoverTarget` 身家分项悬停）+ 「我的名次」常驻卡片 + 顶部快照时间/整点倒计时与手动刷新钮；点击玩家行通过 `useSocialStore.getState().requestPlayerCard(playerId)` 唤起 `PlayerCardModal`。
+  - 全服 12 榜（境界 / 技艺 7 门 / 道行 / 灵石 / 宗门 / 斗法）整点快照浏览与本人排名定位，收拢于桌面侧边栏「其他」分组与移动端「更多」分组（页签 `leaderboard`）。
+  - 复用 `OptionToggle` / 二级榜签栏 + 技艺子切换条 + 榜行列表（前三名次徽标 + `CharacterAvatar` + 道号/宗门前缀 + `RealmBadge` + `ValuationHoverTarget` 道行分项悬停）+ 「我的名次」常驻卡片 + 顶部快照时间/整点倒计时与手动刷新钮；点击玩家行通过 `useSocialStore.getState().requestPlayerCard(playerId)` 唤起 `PlayerCardModal`。
 - **组件源码**：[`frontend/src/components/LeaderboardPage.tsx`](../../frontend/src/components/LeaderboardPage.tsx)
 - **样式文件**：[`frontend/src/styles/leaderboard.css`](../../frontend/src/styles/leaderboard.css)，浅色主题覆盖见 [`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)
 

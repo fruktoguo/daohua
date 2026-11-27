@@ -4,7 +4,7 @@ import { resolveEntityName } from '../game/entityNames'
 import { calculateRealmInfo, getRootCumulativeExpForLevel, resolveEquippedTraitViews } from '../game/combatConstants'
 import { resolveGenjiBonusPoints } from '../game/genjiCalculations'
 import { sortEquippedItemsBySlot } from '../game/equipmentOrder'
-import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatNumber, formatValuation } from '../game/format'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { ConditionedTile } from './ConditionedTile'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -280,7 +280,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             <span>{t('combat.nearby.isSelf')}</span>
           </div>
         )}
-        {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
+        {/* 上部 80%：左 40% 形象，右 60% 名字与道行 */}
         <div className="player-card-hero-top">
           <div className="player-card-hero-avatar">
             <CharacterAvatar actorId={resolvePlayerActorId(card.avatar)} name={card.displayName ?? ''} role="player" />
@@ -295,7 +295,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
             <ValuationHoverTarget breakdown={card.valuationBreakdown} valuation={card.valuation}>
               <div className="player-card-hero-valuation" style={{ cursor: 'help' }}>
                 <span className="player-card-stat-label">{t('social.card.valuation')}：</span>
-                <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
+                <strong className="player-card-stat-value tone-gold">{formatValuation(card.valuation)}</strong>
               </div>
             </ValuationHoverTarget>
           </div>
@@ -321,7 +321,7 @@ const PlayerCardBody = memo(function PlayerCardBody({ card }: { card: PlayerCard
         <ValuationHoverTarget breakdown={card.valuationBreakdown} valuation={card.valuation}>
           <div className="player-card-stat" style={{ cursor: 'help' }}>
             <span className="player-card-stat-label">{t('social.card.valuation')}</span>
-            <strong className="player-card-stat-value tone-gold">{formatNumber(Math.floor(card.valuation))}</strong>
+            <strong className="player-card-stat-value tone-gold">{formatValuation(card.valuation)}</strong>
           </div>
         </ValuationHoverTarget>
       </div>

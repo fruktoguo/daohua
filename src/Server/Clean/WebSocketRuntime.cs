@@ -1267,7 +1267,7 @@ public static class WebSocketEndpoint
         Social.SocialFailure.NotLeader => "只有队长可以执行该操作。",
         Social.SocialFailure.InvitationNotFound => "没有待处理的队伍邀请。",
         Social.SocialFailure.PartyNotFound => "队伍不存在或已解散。",
-        Social.SocialFailure.ValuationTooLow => "身家未达到队伍门槛。",
+        Social.SocialFailure.ValuationTooLow => "道行未达到队伍门槛。",
         Social.SocialFailure.InvalidPartyProfile => "队伍配置无效。",
         Social.SocialFailure.SeekingNotFound => "你没有进行中的队伍匹配。",
         Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",

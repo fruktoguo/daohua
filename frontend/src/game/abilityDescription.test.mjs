@@ -53,7 +53,7 @@ await build({
   ],
 })
 
-const { describeAbility, describeMorphAbility } = await import(pathToFileURL(tempOut).href)
+const { describeAbility, describeMorphAbility, formatValuation } = await import(pathToFileURL(tempOut).href)
 
 test.after(() => {
   try {
@@ -546,4 +546,13 @@ test('describeAbility：罡气护体、迸裂与天罡断岳主描述与气血�
       tiangangDesc.description.includes('20%'),
     `天罡断岳主描述应包含吟唱受击叠天罡与消耗天罡额外增伤: ${tiangangDesc.description}`,
   )
+})
+
+test('formatValuation: 小于 1 万保留至多 2 位小数，满万自动转中文单位', () => {
+  assert.equal(formatValuation(0), '0')
+  assert.equal(formatValuation(-5), '0')
+  assert.equal(formatValuation(113), '113')
+  assert.equal(formatValuation(613.9), '613.9')
+  assert.equal(formatValuation(606.550000001), '606.55')
+  assert.equal(formatValuation(12500), '1.25万')
 })

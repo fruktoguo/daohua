@@ -1,6 +1,6 @@
 /**
  * social 域词典（zh-CN）：同道页、队伍组队、匹配登记、组队大厅与队伍管理文本收拢。
- * 注：valuation 对应「身家」口径（装备+功法的市场估值，非战斗属性），后续若改名只需改本域文案。
+ * 注：valuation 当前展示口径为「道行」（旧身家市场估值逻辑保留不删但暂不启用），后续切换只需改本域文案。
  */
 export const socialZh = {
   social: {
@@ -243,14 +243,16 @@ export const socialZh = {
     offline: '离线',
     memberCount: '{count} 人',
     memberCountOf: '{count}/{slots}',
-    valuationValue: '身家 {value}',
-    minValuationValue: '身家 ≥ {value}',
+    valuationValue: '道行 {value}',
+    minValuationValue: '道行 ≥ {value}',
     valuationBreakdown: {
-      title: '身家估值',
+      title: '道行构成',
+      realmAndGenji: '境界根基',
       equipment: '战斗装备',
-      abilities: '参悟功法',
+      abilities: '携带功法',
+      traits: '携带特质',
       tools: '技艺工具',
-      desc: '包含穿戴装备、参悟功法与技艺工具的市场参考价估值。',
+      desc: '由境界、根基、穿戴战斗装备、携带功法与特质综合折算的道行。',
     },
     activity: {
       any: '不限',
@@ -276,7 +278,7 @@ export const socialZh = {
       anyRegion: '不限',
       node: '地点',
       anyNode: '不限',
-      minValuation: '最低身家',
+      minValuation: '最低道行',
       minValuationPlaceholder: '0 = 不设门槛',
       isPublic: '公开到大厅',
       openSlots: '开启槽位',
@@ -303,7 +305,7 @@ export const socialZh = {
     action: {
       create: '创建队伍',
       join: '加入',
-      joinLocked: '身家不足',
+      joinLocked: '道行不足',
       leave: '离开队伍',
       disband: '解散队伍',
       kick: '移出',
@@ -328,13 +330,13 @@ export const socialZh = {
     },
     lobby: {
       heading: '组队大厅',
-      desc: '按目标筛选公开队伍与匹配中的散人，身家门槛将实时裁决。',
-      myValuation: '我的身家 {value}',
+      desc: '按目标筛选公开队伍与匹配中的散人，道行门槛将实时裁决。',
+      myValuation: '我的道行 {value}',
       partiesHeading: '公开队伍',
       seekersHeading: '匹配中的散人',
       leader: '队长 {name}',
       myParty: '当前队伍',
-      seekerWants: '期望队友身家 ≥ {value}',
+      seekerWants: '期望队友道行 ≥ {value}',
       noParties: '暂无公开队伍',
       noSeekers: '暂无匹配中的散人',
     },
@@ -480,7 +482,7 @@ export const socialZh = {
       seq: '序号 #{seq}',
       cultivation: '修为',
       combatExp: '战斗经验',
-      valuation: '身家',
+      valuation: '道行',
       sixDimensions: '六维',
       combatAttributes: '战斗属性',
       techniqueLevels: '技艺等级',

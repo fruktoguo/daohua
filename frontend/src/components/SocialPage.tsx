@@ -5,7 +5,7 @@ import { DOUDIZHU_TIERS, getDouDiZhuTierMeta } from './doudizhu/doudizhuRules'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { PARTY_OPEN_SLOTS_DEFAULT, PARTY_OPEN_SLOTS_MAX, PARTY_OPEN_SLOTS_MIN, useSocialStore } from '../game/socialStore'
-import { formatNumber } from '../game/format'
+import { formatValuation } from '../game/format'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { getDifficultyBracket } from '../game/combatDifficulty'
 import {
@@ -64,7 +64,7 @@ interface PartyProfileFormState {
   dungeonRepeatCount: number
 }
 
-/** 身家门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
+/** 道行门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
 function parseMinValuation(raw: string): number {
   const value = Number.parseFloat(raw)
   return Number.isFinite(value) && value > 0 ? value : 0
@@ -439,7 +439,7 @@ const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: Read
         <div className="party-seeking">
           <span className="badge">{t('social.match.seeking')}</span>
           <span>{t(`social.activity.${seeking.activityKind}`)} · {nodeLabel(seeking.nodeId, nodeNames, t('social.field.anyNode'))}</span>
-          {seeking.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatNumber(seeking.minValuation) })}</span>}
+          {seeking.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatValuation(seeking.minValuation) })}</span>}
           <button onClick={() => gameClient.sendSocialAction('party.match.clear')} type="button">{t('social.action.matchClear')}</button>
         </div>
       ) : (
@@ -500,7 +500,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
         <button className="confirm-primary" onClick={refresh} type="button">{t('social.action.refreshLobby')}</button>
         {myValuation !== null && (
           <ValuationHoverTarget breakdown={myValuationBreakdown} valuation={myValuation}>
-            <span className="party-my-valuation" style={{ cursor: 'help' }}>{t('social.lobby.myValuation', { value: formatNumber(myValuation) })}</span>
+            <span className="party-my-valuation" style={{ cursor: 'help' }}>{t('social.lobby.myValuation', { value: formatValuation(myValuation) })}</span>
           </ValuationHoverTarget>
         )}
       </div>
@@ -544,7 +544,7 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
                 <span>{t('social.lobby.leader', { name: entry.leaderName })}</span>
                 {entry.minValuation > 0 && (
                   <span className={meets ? 'party-gate party-gate--met' : 'party-gate party-gate--unmet'}>
-                    {t('social.minValuationValue', { value: formatNumber(entry.minValuation) })}
+                    {t('social.minValuationValue', { value: formatValuation(entry.minValuation) })}
                   </span>
                 )}
               </div>
@@ -595,9 +595,9 @@ const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: Read
             </div>
             <div className="party-lobby-entry-meta">
               <ValuationHoverTarget breakdown={seeker.valuationBreakdown} valuation={seeker.valuation}>
-                <span style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatNumber(seeker.valuation) })}</span>
+                <span style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatValuation(seeker.valuation) })}</span>
               </ValuationHoverTarget>
-              {seeker.minValuation > 0 && <span>{t('social.lobby.seekerWants', { value: formatNumber(seeker.minValuation) })}</span>}
+              {seeker.minValuation > 0 && <span>{t('social.lobby.seekerWants', { value: formatValuation(seeker.minValuation) })}</span>}
             </div>
             {isLeader && seeker.playerId !== myPlayerId && (
               <div className="party-lobby-entry-actions">
@@ -1050,7 +1050,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
           {isDungeonParty && ` · ${(party.dungeonRepeatCount ?? -1) < 0 ? t('social.dungeon.metaRepeatInfinite') : t('social.dungeon.metaRepeatCount', { count: party.dungeonRepeatCount ?? 1 })}`}
           {' · '}{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}
           {' · '}{party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
-          {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatNumber(party.minValuation) })}`}
+          {party.minValuation > 0 && ` · ${t('social.minValuationValue', { value: formatValuation(party.minValuation) })}`}
           {' · '}{t('social.memberCountOf', { count: party.members.length, slots: openSlots })}
         </p>
         {isDungeonParty && <p className="party-card-desc">{t('social.dungeon.noPvpNote')}</p>}
@@ -1123,7 +1123,7 @@ const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMa
                 </div>
                 <div className="party-slot-meta">
                   <ValuationHoverTarget breakdown={member.valuationBreakdown} valuation={member.valuation}>
-                    <span className="party-member-valuation" style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatNumber(member.valuation) })}</span>
+                    <span className="party-member-valuation" style={{ cursor: 'help' }}>{t('social.valuationValue', { value: formatValuation(member.valuation) })}</span>
                   </ValuationHoverTarget>
                   {isDungeonParty && (
                     <div className="party-dungeon-tili-row" onClick={event => event.stopPropagation()}>

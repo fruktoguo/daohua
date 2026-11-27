@@ -1084,14 +1084,18 @@ public sealed record FriendDto(string PlayerId, string DisplayName, bool Online)
 /// <param name="DisplayName">对端道号</param>
 /// <param name="CreatedAtUnixMilliseconds">申请时刻（Unix 毫秒）</param>
 public sealed record FriendRequestDto(string RequestId, string PlayerId, string DisplayName, long CreatedAtUnixMilliseconds);
-/// <summary>身家估值构成细分（战斗装备、参悟功法、技艺工具）。</summary>
-/// <param name="Equipment">战斗装备市场估值（已穿戴非 tool 装备）</param>
-/// <param name="Abilities">已参悟功法市场估值（参悟等级 × 对应秘籍单价）</param>
-/// <param name="Tools">生活技艺工具市场估值（已穿戴 tool-* 装备）</param>
+/// <summary>道行（原身家）构成细分：境界根基、战斗装备、携带功法、携带特质（Tools 仅作旧口径兼容保留）。</summary>
+/// <param name="Equipment">战斗装备折算（已穿戴非 tool-* 装备等级 × (1 + 强化等级 × 5%)）</param>
+/// <param name="Abilities">携带功法等级合计（AbilitySlots 非空 ability.* 槽位等级之和）</param>
+/// <param name="Tools">生活技艺工具估值（旧身家口径兼容保留，道行口径恒为 0）</param>
+/// <param name="RealmAndGenji">境界与根基（境界等级 × 2 + 根基 × 1.5）</param>
+/// <param name="Traits">携带特质折算（已激活特质消耗点数 × (1 + 对应特质等级 × 5%)）</param>
 public sealed record ValuationBreakdownDto(
     double Equipment = 0,
     double Abilities = 0,
-    double Tools = 0);
+    double Tools = 0,
+    double RealmAndGenji = 0,
+    double Traits = 0);
 
 
 /// <summary>队伍成员条目。</summary>
@@ -1388,7 +1392,7 @@ public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, dou
 /// <param name="Experience">当前层修为进度</param>
 /// <param name="ExperienceToNext">升至下一级所需修为（满级为 0）</param>
 /// <param name="CombatExperience">战斗经验对抗池累计值</param>
-/// <param name="Valuation">身家（服务端估值口径）</param>
+/// <param name="Valuation">道行（原身家口径，内部协议键沿用 Valuation）</param>
 /// <param name="CoreAttributes">六维经验与等级投影</param>
 /// <param name="AbilitySlots">功法装配槽位</param>
 /// <param name="LearnedAbilityIds">已学功法 ID 列表</param>
@@ -1397,7 +1401,7 @@ public sealed record PlayerCardAutoUseSlotDto(int SlotIndex, string? ItemId, dou
 /// <param name="AutoUseSlots">战斗栏域消耗品配置（丹药栏 + 通用栏）</param>
 /// <param name="Attributes">战斗属性投影（含基础/特殊/流派属性；隐私受限时裁撤 traits）</param>
 /// <param name="TechniqueLevels">生活技艺等级表</param>
-/// <param name="ValuationBreakdown">身家构成明细</param>
+/// <param name="ValuationBreakdown">道行构成明细</param>
 /// <param name="CurrentReport">队友协同收益战报</param>
 /// <param name="LoadoutHidden">当目标关闭非同队配装可见且查询方非本人/非同队/未付费解锁时为 true，配装字段已置空</param>
 /// <param name="LoadoutInspectPrice">当 LoadoutHidden 为 true 且目标开启付费查阅（正整数灵石）时下发查阅价格；完全隐藏时为 null</param>

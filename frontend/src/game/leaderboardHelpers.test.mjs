@@ -49,7 +49,7 @@ test('全服排行榜辅助：全部 12 榜均配备运行时二值图腾且名�
   const dict = {
     'app.leaderboard.tabRealm': '境界榜',
     'app.leaderboard.tabDuel': '斗法榜',
-    'app.leaderboard.tabValuation': '身家榜',
+    'app.leaderboard.tabValuation': '道行榜',
     'app.leaderboard.tabSpiritStone': '灵石榜',
     'app.leaderboard.tabZongmen': '宗门榜',
     'app.leaderboard.tabTechnique': '技艺榜',

@@ -26,7 +26,9 @@ public sealed record LeaderboardPlayerInput(
     double SpiritStones = 0,
     double DuelWins = 0,
     double DuelLosses = 0,
-    IReadOnlyDictionary<string, double>? TechniqueExperiences = null);
+    IReadOnlyDictionary<string, double>? TechniqueExperiences = null,
+    double RealmAndGenjiValuation = 0,
+    double TraitsValuation = 0);
 
 /// <summary>全服排行榜汇编阶段消费的单个宗门只读投影。</summary>
 public sealed record LeaderboardZongmenInput(
@@ -256,26 +258,32 @@ public static class LeaderboardAssembler
             Register(desc, entries, candidates.Count, myRanks.ToFrozenDictionary());
         }
 
-        // 3. 身家估值榜（排除总身家 <= 0；同总值按装备身家 -> 功法身家 -> 序号打破平手）
+        // 3. 道行榜（原 valuation 榜；排除总道行 <= 0；同总值按境界根基 -> 战斗装备 -> 携带功法 -> 携带特质 -> 序号打破平手）
         {
             var desc = CanonicalBoards[1 + TechniqueCatalog.All.Length];
-            var candidates = new List<(LeaderboardPlayerInput Player, double Total, double Eq, double Ab, double Tools)>(players.Count);
+            var candidates = new List<(LeaderboardPlayerInput Player, double Total, double RealmGenji, double Eq, double Ab, double Tools, double Traits)>(players.Count);
             foreach (var p in players)
             {
+                var realmGenji = NonNegFinite(p.RealmAndGenjiValuation);
                 var eq = NonNegFinite(p.EquipmentValuation);
                 var ab = NonNegFinite(p.AbilitiesValuation);
                 var tools = NonNegFinite(p.ToolsValuation);
-                var total = eq + ab + tools;
+                var traits = NonNegFinite(p.TraitsValuation);
+                var total = Math.Round(realmGenji + eq + ab + tools + traits, 2, MidpointRounding.AwayFromZero);
                 if (!double.IsFinite(total) || total <= 0) continue;
-                candidates.Add((p, total, eq, ab, tools));
+                candidates.Add((p, total, realmGenji, eq, ab, tools, traits));
             }
             candidates.Sort(static (a, b) =>
             {
                 var cmp = b.Total.CompareTo(a.Total);
                 if (cmp != 0) return cmp;
+                cmp = b.RealmGenji.CompareTo(a.RealmGenji);
+                if (cmp != 0) return cmp;
                 cmp = b.Eq.CompareTo(a.Eq);
                 if (cmp != 0) return cmp;
                 cmp = b.Ab.CompareTo(a.Ab);
+                if (cmp != 0) return cmp;
+                cmp = b.Traits.CompareTo(a.Traits);
                 if (cmp != 0) return cmp;
                 return CompareTie(a.Player, b.Player);
             });
@@ -298,7 +306,7 @@ public static class LeaderboardAssembler
                         PlayerId: item.Player.PlayerId.ToString("D"),
                         RealmLevel: SafeRealmLevel(item.Player.RealmLevel),
                         Valuation: item.Total,
-                        ValuationBreakdown: new ValuationBreakdownDto(item.Eq, item.Ab, item.Tools),
+                        ValuationBreakdown: new ValuationBreakdownDto(item.Eq, item.Ab, item.Tools, item.RealmGenji, item.Traits),
                         PlayerSeq: item.Player.PlayerSeq);
                 }
             }

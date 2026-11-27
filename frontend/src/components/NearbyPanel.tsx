@@ -7,7 +7,7 @@ import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
 import { resolveItemMetadata, resolveWorldLocationName } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
 import { Modal } from './Modal'
-import { formatInteger, formatNumber, formatRemainingSeconds } from '../game/format'
+import { formatInteger, formatRemainingSeconds, formatValuation } from '../game/format'
 import { calculateRealmInfo, serverExpToNextCap } from '../game/combatConstants'
 import { gameClient } from '../network/gameClient'
 import { ItemReference } from './ItemDisplay'
@@ -272,7 +272,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                   <div className="nearby-card-self-ribbon" aria-label={t('combat.nearby.isSelf')}>
                     <span>{t('combat.nearby.isSelf')}</span>
                   </div>
-                  {/* 上部 80%：左 40% 形象，右 60% 名字与身家 */}
+                  {/* 上部 80%：左 40% 形象，右 60% 名字与道行 */}
                   <div className="nearby-player-top">
                     <div className="nearby-player-avatar-cell">
                       <CharacterAvatar actorId={resolvePlayerActorId(avatarId)} name={name} role="player" />
@@ -281,7 +281,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       <strong className="nearby-player-name">{name}</strong>
                       <ValuationHoverTarget breakdown={myValuationBreakdown} valuation={myValuation ?? 0}>
                         <div className="nearby-player-valuation" style={{ cursor: 'help' }}>
-                          {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(myValuation ?? 0))}</span>
+                          {t('social.card.valuation')}：<span className="tone-gold">{formatValuation(myValuation ?? 0)}</span>
                         </div>
                       </ValuationHoverTarget>
                     </div>
@@ -300,7 +300,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                       onClick={() => requestPlayerCard(player.playerId)}
                       title={t('social.card.viewDetail')}
                     >
-                      {/* 上部 80%：左 40% 形象，右 60% 名字与身家及操作 */}
+                      {/* 上部 80%：左 40% 形象，右 60% 名字与道行及操作 */}
                       <div className="nearby-player-top">
                         <div className="nearby-player-avatar-cell">
                           <CharacterAvatar actorId={resolvePlayerActorId(player.avatar)} name={player.displayName} role="player" />
@@ -309,7 +309,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                           <strong className="nearby-player-name">{player.displayName}</strong>
                           <ValuationHoverTarget breakdown={player.valuationBreakdown} valuation={player.valuation ?? 0}>
                             <div className="nearby-player-valuation" style={{ cursor: 'help' }}>
-                              {t('social.card.valuation')}：<span className="tone-gold">{formatNumber(Math.floor(player.valuation ?? 0))}</span>
+                              {t('social.card.valuation')}：<span className="tone-gold">{formatValuation(player.valuation ?? 0)}</span>
                             </div>
                           </ValuationHoverTarget>
                           <div className="nearby-player-actions" onClick={e => e.stopPropagation()}>

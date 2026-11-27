@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import { resolveAssetName, resolveEntityName } from '../game/entityNames'
-import { formatNumber } from '../game/format'
+import { formatNumber, formatValuation } from '../game/format'
 import { parseChatMarkup, type ChatMarkupSegment } from '../game/chatMarkup'
 import { findEquipmentInCatalog, findItemInCatalog } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
@@ -152,7 +152,7 @@ const ChatPartyReference = memo(function ChatPartyReference({
         {Boolean(party.minValuation && party.minValuation > 0) && (
           <p>
             <span className="text-muted">{t('social.field.minValuation')}: </span>
-            <span>{party.minValuation}</span>
+            <span>{formatValuation(party.minValuation)}</span>
           </p>
         )}
         <p>

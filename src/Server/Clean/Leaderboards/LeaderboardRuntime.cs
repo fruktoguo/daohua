@@ -441,7 +441,7 @@ public sealed class LeaderboardRuntime
                 loadedById[snap.PlayerId] = snap;
             }
 
-            // 先定位离线玩家 ID，分片（500 人一批）读取 loadout 分段算身家 + 7 项技艺，控制 2c4g 内存峰值
+            // 先定位离线玩家 ID，分片（500 人一批）读取 loadout 与 progression 分段算道行 + 7 项技艺 + 破镜上限，控制 2c4g 内存峰值
             var offlinePlayerIds = new List<Guid>(Math.Max(0, players.Count - loadedById.Count));
             foreach (var playerId in players.Keys)
             {
@@ -451,25 +451,52 @@ public sealed class LeaderboardRuntime
 
             var offlineValuations = new Dictionary<Guid, ValuationResult>(offlinePlayerIds.Count);
             var offlineTechniques = new Dictionary<Guid, IReadOnlyDictionary<string, double>>(offlinePlayerIds.Count);
+            var offlineExpToNext = new Dictionary<Guid, double>(offlinePlayerIds.Count);
             const int batchSize = 500;
             for (var offset = 0; offset < offlinePlayerIds.Count; offset += batchSize)
             {
                 var sliceCount = Math.Min(batchSize, offlinePlayerIds.Count - offset);
                 var batchIds = offlinePlayerIds.GetRange(offset, sliceCount);
-                var sections = await _sections.LoadSectionsAsync(batchIds, PlayerSectionKinds.Loadout, cancellationToken);
-                foreach (var (pid, stored) in sections)
+                var loadoutSections = await _sections.LoadSectionsAsync(batchIds, PlayerSectionKinds.Loadout, cancellationToken);
+                var progSections = await _sections.LoadSectionsAsync(batchIds, PlayerSectionKinds.Progression, cancellationToken);
+
+                foreach (var pid in batchIds)
                 {
-                    try
+                    PlayerLoadoutDocument? loadout = null;
+                    if (loadoutSections.TryGetValue(pid, out var storedLoadout))
                     {
-                        var loadout = SectionCodec.DecodeLoadout(stored);
-                        offlineValuations[pid] = ValuationMath.Compute(loadout, _gameData, _sellPriceBook, _market);
-                        if (loadout.TechniqueExperiences is { Count: > 0 })
-                            offlineTechniques[pid] = loadout.TechniqueExperiences;
+                        try
+                        {
+                            loadout = SectionCodec.DecodeLoadout(storedLoadout);
+                            if (loadout.TechniqueExperiences is { Count: > 0 })
+                                offlineTechniques[pid] = loadout.TechniqueExperiences;
+                        }
+                        catch (Exception ex) when (ex is InvalidDataException or JsonException)
+                        {
+                            _logger.LogWarning(ex, "排行榜跳过损坏的离线 loadout 分段：playerId={PlayerId}", pid);
+                        }
                     }
-                    catch (Exception ex) when (ex is InvalidDataException or JsonException)
+
+                    PlayerProgressionState? prog = null;
+                    if (progSections.TryGetValue(pid, out var storedProg))
                     {
-                        _logger.LogWarning(ex, "排行榜跳过损坏的离线 loadout 分段：playerId={PlayerId}", pid);
+                        try
+                        {
+                            prog = SectionCodec.DecodeProgression(storedProg);
+                            offlineExpToNext[pid] = HeavenGateRules.ResolveExpCapWithLinggen(
+                                Math.Max(1, prog.RealmLevel),
+                                prog.HeavenGateConfirmed ?? LinggenValues.Empty,
+                                prog.HeavenGateEntered,
+                                _gameData.RealmProgression);
+                        }
+                        catch (Exception ex) when (ex is InvalidDataException or JsonException)
+                        {
+                            _logger.LogWarning(ex, "排行榜跳过损坏的离线 progression 分段：playerId={PlayerId}", pid);
+                        }
                     }
+
+                    offlineValuations[pid] = ValuationMath.ComputeDaohang(
+                        players[pid].RealmLevel, prog, loadout, _gameData);
                 }
             }
 
@@ -505,13 +532,16 @@ public sealed class LeaderboardRuntime
                     var onlineStones = FindSpiritStones(online.Assets);
                     if (onlineStones is { } os) stones = os;
 
-                    valuation = ValuationMath.Compute(online.State.Loadout, _gameData, _sellPriceBook, _market);
+                    valuation = ValuationMath.ComputeDaohang(
+                        realmLevel, online.State.Progression, online.State.Loadout, _gameData);
                     techniqueExps = online.State.Loadout.TechniqueExperiences;
                 }
                 else
                 {
                     valuation = offlineValuations.GetValueOrDefault(playerId);
                     techniqueExps = offlineTechniques.GetValueOrDefault(playerId);
+                    if (offlineExpToNext.TryGetValue(playerId, out var offCap))
+                        expToNext = offCap;
                 }
 
                 inputs.Add(new LeaderboardPlayerInput(
@@ -528,27 +558,29 @@ public sealed class LeaderboardRuntime
                     stones,
                     duelWins,
                     duelLosses,
-                    techniqueExps));
+                    techniqueExps,
+                    valuation.RealmAndGenji,
+                    valuation.Traits));
             }
 
-            // 6. 仅针对落入境界榜 Top 50 且处于离线的玩家，再补充精确灵根破镜乘区（最多 50 行，几乎零代价）
+            // 6. 对落入境界榜 Top 50 且前述步骤尚未拿到精确上限的离线玩家补查一次（正常情况下步骤 4 已全量覆盖）
             var realmTopIds = LeaderboardAssembler.SelectRealmTopPlayerIds(inputs);
-            var offlineRealmTopIds = new List<Guid>(realmTopIds.Count);
+            var missingRealmTopIds = new List<Guid>(realmTopIds.Count);
             foreach (var id in realmTopIds)
             {
-                if (!loadedById.ContainsKey(id))
-                    offlineRealmTopIds.Add(id);
+                if (!loadedById.ContainsKey(id) && !offlineExpToNext.ContainsKey(id))
+                    missingRealmTopIds.Add(id);
             }
-            if (offlineRealmTopIds.Count > 0)
+            if (missingRealmTopIds.Count > 0)
             {
-                var progSections = await _sections.LoadSectionsAsync(offlineRealmTopIds, PlayerSectionKinds.Progression, cancellationToken);
-                var offlineExpToNext = new Dictionary<Guid, double>(progSections.Count);
+                var progSections = await _sections.LoadSectionsAsync(missingRealmTopIds, PlayerSectionKinds.Progression, cancellationToken);
+                var fallbackExpToNext = new Dictionary<Guid, double>(progSections.Count);
                 foreach (var (pid, stored) in progSections)
                 {
                     try
                     {
                         var prog = SectionCodec.DecodeProgression(stored);
-                        offlineExpToNext[pid] = HeavenGateRules.ResolveExpCapWithLinggen(
+                        fallbackExpToNext[pid] = HeavenGateRules.ResolveExpCapWithLinggen(
                             Math.Max(1, prog.RealmLevel),
                             prog.HeavenGateConfirmed ?? LinggenValues.Empty,
                             prog.HeavenGateEntered,
@@ -559,11 +591,11 @@ public sealed class LeaderboardRuntime
                         _logger.LogWarning(ex, "排行榜跳过损坏的离线 progression 分段：playerId={PlayerId}", pid);
                     }
                 }
-                if (offlineExpToNext.Count > 0)
+                if (fallbackExpToNext.Count > 0)
                 {
                     for (var i = 0; i < inputs.Count; i++)
                     {
-                        if (offlineExpToNext.TryGetValue(inputs[i].PlayerId, out var cap))
+                        if (fallbackExpToNext.TryGetValue(inputs[i].PlayerId, out var cap))
                             inputs[i] = inputs[i] with { ExperienceToNext = cap };
                     }
                 }

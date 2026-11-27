@@ -99,4 +99,54 @@ public sealed class PartyValuationServiceTests
             Assert.Equal(9010, result.Total);
         });
     }
+
+    [Fact]
+    public void ComputeDaohang_ComputesRealmGenjiCombatEquipmentCarriedAbilitiesAndTraitsWithoutTools()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var progression = new PlayerProgressionState(
+            RealmLevel: 31,
+            Experience: 0,
+            CompletedActions: 0,
+            TraitIds: ["trait.tianshengmanli", "trait.jiuyoushiling"],
+            UnlockedTraits:
+            [
+                new Domain.Combat.TraitProgressState("trait.tianshengmanli", 1, 0),
+                new Domain.Combat.TraitProgressState("trait.jiuyoushiling", 11, 0),
+            ],
+            GenjiPoints: 34,
+            GenjiUnlocked: true);
+        var loadout = new PlayerLoadoutDocument(
+            new PlayerCoreAttributes(),
+            [
+                new PlayerAbilitySlot("ability.xuanyuan-yiqi-gong", 46),
+                new PlayerAbilitySlot("ability.palm-lightning", 20),
+                new PlayerAbilitySlot(null, 1),
+                new PlayerAbilitySlot("item.talisman.shenxing", 1),
+            ],
+            [
+                new PlayerEquipmentSlot("equipment.xuantie-sword", 10), // level=9 -> 9*(1+10*0.05) = 13.5
+                new PlayerEquipmentSlot("equipment.tool-flame-ding", 20), // 工具不计入道行
+            ],
+            new Dictionary<string, double>
+            {
+                ["ability.heavy-slash"] = 2_056_503, // 已学未携带不计入
+            });
+
+        var result = ValuationMath.ComputeDaohang(progression.RealmLevel, progression, loadout, catalog);
+
+        Assert.Equal(113d, result.RealmAndGenji); // 31*2 + 34*1.5 = 62 + 51
+        Assert.Equal(13.5d, result.Equipment);
+        Assert.Equal(0d, result.Tools);
+        Assert.Equal(66d, result.Abilities); // 46 + 20
+        Assert.Equal(33.1d, result.Traits); // 2*(1+0.05) + 20*(1+0.55) = 2.1 + 31.0
+        Assert.Equal(225.6d, result.Total);
+
+        var dto = result.ToDto();
+        Assert.Equal(113d, dto.RealmAndGenji);
+        Assert.Equal(13.5d, dto.Equipment);
+        Assert.Equal(66d, dto.Abilities);
+        Assert.Equal(0d, dto.Tools);
+        Assert.Equal(33.1d, dto.Traits);
+    }
 }

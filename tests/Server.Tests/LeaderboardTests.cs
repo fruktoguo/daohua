@@ -373,12 +373,19 @@ public sealed class LeaderboardTests
             await batch.ExecuteNonQueryAsync();
         }
 
-        // p1 写入双段（高修为、高胜场、炼丹经验、灵石）；p2 加入宗门并持有更高灵石。
+        // p1 写入双段（高修为、高胜场、炼丹经验、灵石、根基、特质、携带功法与战斗装备）；p2 加入宗门并持有更高灵石。
         var agg1 = PlayerAggregate.Create(new(p1), new(p1), "天榜甲", now, catalog.Fingerprint);
         agg1.Progression.RealmLevel = 320;
         agg1.Progression.Experience = 9876;
         agg1.Progression.DuelWins = 999999;
         agg1.Progression.DuelLosses = 2;
+        agg1.Progression.Genji.Apply(10, true);
+        agg1.Progression.AwakenTrait(new Random(1), "trait.tianshengmanli");
+        agg1.Progression.SetTraits(["trait.tianshengmanli"]);
+        agg1.LearnAbility(new Domain.Common.AbilityId("ability.palm-lightning"));
+        agg1.Loadout.AbilitySlots[1] = new PlayerAbilitySlot("ability.palm-lightning", 10);
+        agg1.Loadout.Equipment.Add(new PlayerEquipmentSlot("equipment.xuantie-sword", 10));
+        agg1.Loadout.Equipment.Add(new PlayerEquipmentSlot("equipment.tool-flame-ding", 10));
         agg1.Settings.Avatar = PlayerSettingsState.DefaultMaleAvatar;
         agg1.Loadout.TechniqueExperiences["alchemy"] = 5000;
 
@@ -489,6 +496,18 @@ public sealed class LeaderboardTests
         var sectDto1 = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(sect1.Value.JsonUtf8.Span, ProtocolJson.Options)!;
         Assert.NotNull(sectDto1.MyRank);
         Assert.Equal(1d, sectDto1.MyRank!.Score);
+
+        // 校验离线玩家 p1 的道行榜物化：320*2 + 10*1.5 (655) + xuantie-sword lv9*(1+10*0.05) (13.5) + palm-lightning (10) + trait.tianshengmanli lv1 cost=2*(1+0.05) (2.1) = 680.6（工具不算）。
+        var val1 = runtime2.TryGetBoard(LeaderboardBoardIds.Valuation, p1, default);
+        Assert.NotNull(val1);
+        var valDto1 = JsonSerializer.Deserialize<LeaderboardSnapshotDto>(val1.Value.JsonUtf8.Span, ProtocolJson.Options)!;
+        var p1Entry = Assert.Single(valDto1.Entries, e => e.PlayerId == p1.ToString("D"));
+        Assert.Equal(680.6d, p1Entry.Valuation);
+        Assert.Equal(655d, p1Entry.ValuationBreakdown?.RealmAndGenji);
+        Assert.Equal(13.5d, p1Entry.ValuationBreakdown?.Equipment);
+        Assert.Equal(10d, p1Entry.ValuationBreakdown?.Abilities);
+        Assert.Equal(0d, p1Entry.ValuationBreakdown?.Tools);
+        Assert.Equal(2.1d, p1Entry.ValuationBreakdown?.Traits);
     }
 
     /// <summary>真实 PostgreSQL 集成：is_bot = true 的账号必须从全部个人榜与宗门成员统计（含全机器人宗门）中剔除。</summary>

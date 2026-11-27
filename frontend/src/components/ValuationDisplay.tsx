@@ -1,13 +1,13 @@
 import React, { memo } from 'react'
 import { FloatingTooltip } from './FloatingPopover'
 import type { ValuationBreakdownDto } from '../network/protocol'
-import { formatNumber } from '../game/format'
+import { formatValuation } from '../game/format'
 import { useT } from '../i18n'
 
 export interface ValuationHoverTargetProps {
-  /** 总身家估值 */
+  /** 总道行 */
   valuation: number
-  /** 身家构成细分；为空时展示总身家与保底说明 */
+  /** 道行构成细分；为空时展示总道行与各项 0 */
   breakdown?: ValuationBreakdownDto | null
   /** 弹出方位，默认 top */
   placement?: 'top' | 'bottom' | 'left' | 'right'
@@ -18,7 +18,7 @@ export interface ValuationHoverTargetProps {
 }
 
 /**
- * 身家悬浮目标组件：鼠标 hover 时展示总身家及「战斗装备」、「参悟功法」、「技艺工具」三项细分估值。
+ * 道行悬浮目标组件：鼠标 hover 时展示总道行及「境界根基」、「战斗装备」、「携带功法」、「携带特质」四项构成（兼容旧三分项回退）。
  */
 export const ValuationHoverTarget = memo(function ValuationHoverTarget({
   valuation,
@@ -28,31 +28,52 @@ export const ValuationHoverTarget = memo(function ValuationHoverTarget({
   children,
 }: ValuationHoverTargetProps): React.JSX.Element {
   const t = useT()
-  const total = Math.max(0, Math.floor(valuation))
-  const eq = Math.max(0, Math.floor(breakdown?.equipment ?? 0))
-  const ab = Math.max(0, Math.floor(breakdown?.abilities ?? 0))
-  const tool = Math.max(0, Math.floor(breakdown?.tools ?? 0))
+  const total = Math.max(0, valuation)
+  const useLegacyBreakdown = Boolean(
+    breakdown &&
+      breakdown.realmAndGenji === undefined &&
+      breakdown.traits === undefined &&
+      breakdown.tools > 0,
+  )
+  const realmGenji = Math.max(0, breakdown?.realmAndGenji ?? 0)
+  const eq = Math.max(0, breakdown?.equipment ?? 0)
+  const ab = Math.max(0, breakdown?.abilities ?? 0)
+  const traits = Math.max(0, breakdown?.traits ?? 0)
+  const tool = Math.max(0, breakdown?.tools ?? 0)
 
   const tooltipContent = (
     <div className="valuation-breakdown-card">
       <div className="valuation-breakdown-header">
         <span className="valuation-breakdown-title">{t('social.valuationBreakdown.title')}</span>
-        <strong className="valuation-breakdown-total tone-gold">{formatNumber(total)}</strong>
+        <strong className="valuation-breakdown-total tone-gold">{formatValuation(total)}</strong>
       </div>
       <div className="valuation-breakdown-divider" />
       <div className="valuation-breakdown-rows">
+        {!useLegacyBreakdown && (
+          <div className="valuation-breakdown-row">
+            <span className="valuation-breakdown-label">{t('social.valuationBreakdown.realmAndGenji')}</span>
+            <span className="valuation-breakdown-val">{formatValuation(realmGenji)}</span>
+          </div>
+        )}
         <div className="valuation-breakdown-row">
           <span className="valuation-breakdown-label">{t('social.valuationBreakdown.equipment')}</span>
-          <span className="valuation-breakdown-val">{formatNumber(eq)}</span>
+          <span className="valuation-breakdown-val">{formatValuation(eq)}</span>
         </div>
         <div className="valuation-breakdown-row">
           <span className="valuation-breakdown-label">{t('social.valuationBreakdown.abilities')}</span>
-          <span className="valuation-breakdown-val">{formatNumber(ab)}</span>
+          <span className="valuation-breakdown-val">{formatValuation(ab)}</span>
         </div>
-        <div className="valuation-breakdown-row">
-          <span className="valuation-breakdown-label">{t('social.valuationBreakdown.tools')}</span>
-          <span className="valuation-breakdown-val">{formatNumber(tool)}</span>
-        </div>
+        {useLegacyBreakdown ? (
+          <div className="valuation-breakdown-row">
+            <span className="valuation-breakdown-label">{t('social.valuationBreakdown.tools')}</span>
+            <span className="valuation-breakdown-val">{formatValuation(tool)}</span>
+          </div>
+        ) : (
+          <div className="valuation-breakdown-row">
+            <span className="valuation-breakdown-label">{t('social.valuationBreakdown.traits')}</span>
+            <span className="valuation-breakdown-val">{formatValuation(traits)}</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -70,11 +91,11 @@ export const ValuationHoverTarget = memo(function ValuationHoverTarget({
 })
 
 export interface ValuationDisplayProps {
-  /** 总身家估值 */
+  /** 总道行 */
   valuation: number
-  /** 身家构成细分 */
+  /** 道行构成细分 */
   breakdown?: ValuationBreakdownDto | null
-  /** 前缀标签（如「身家：」或「身家」），缺省时使用词典预设 */
+  /** 前缀标签（如「道行：」或「道行」），缺省时使用词典预设 */
   prefix?: string
   /** 自定义最外层类名 */
   className?: string
@@ -83,7 +104,7 @@ export interface ValuationDisplayProps {
 }
 
 /**
- * 完整身家行内展示组件：集成「身家：53.3万」与 hover 细分悬浮卡。
+ * 完整道行行内展示组件：集成「道行：599.9」与 hover 构成悬浮卡。
  */
 export const ValuationDisplay = memo(function ValuationDisplay({
   valuation,
@@ -99,7 +120,7 @@ export const ValuationDisplay = memo(function ValuationDisplay({
     <ValuationHoverTarget breakdown={breakdown} placement={placement} valuation={valuation}>
       <span className={className} style={{ cursor: 'help' }}>
         <span>{label}</span>
-        <span className="tone-gold">{formatNumber(Math.max(0, Math.floor(valuation)))}</span>
+        <span className="tone-gold">{formatValuation(valuation)}</span>
       </span>
     </ValuationHoverTarget>
   )

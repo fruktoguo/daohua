@@ -1,6 +1,6 @@
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
 import { calculateRealmInfo } from '../game/combatConstants'
-import { formatNumber } from '../game/format'
+import { formatValuation } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
@@ -118,7 +118,7 @@ const PartyLinkCard = memo(function PartyLinkCard({ link }: { link: PartyLinkDto
         <span className="badge">{t(`social.activity.${link.activityKind}`)}</span>
         <span>{nodeName}</span>
         <span>{t('social.memberCount', { count: link.memberCount })}</span>
-        {link.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatNumber(link.minValuation) })}</span>}
+        {link.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatValuation(link.minValuation) })}</span>}
       </span>
       <button
         className="party-link-join"

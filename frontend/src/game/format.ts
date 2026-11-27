@@ -529,6 +529,17 @@ export function formatNumber(
 }
 
 /**
+ * 道行（原身家）数值格式化：小于 1 万时保留最多 2 位有效小数（如 606.55、599.9、113），
+ * 达到 1 万及以上自动走中文万进制缩写。
+ */
+export function formatValuation(value: number | null | undefined): string {
+  const num = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
+  const rounded = Math.round(num * 100) / 100
+  if (rounded < 10000) return String(rounded)
+  return formatUnitNumber(rounded)
+}
+
+/**
  * 战斗属性与收益预览的整数显示约定：原始值先向零取整，再按默认精度走大数缩写。
  * 注意不能直接传 maxDecimals=0——那会把取整应用在万进制换算后的值上，
  * 导致 1.8万 被截成 1万（万以下尾数全丢）。

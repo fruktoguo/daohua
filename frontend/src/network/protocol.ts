@@ -647,14 +647,18 @@ export interface FriendRequestDto {
   displayName: string
   createdAtUnixMilliseconds: number
 }
-/** 身家估值构成细分（战斗装备、参悟功法、技艺工具） */
+/** 道行（原身家）构成细分：境界根基、战斗装备、携带功法、携带特质 */
 export interface ValuationBreakdownDto {
-  /** 战斗装备市场估值（已穿戴非 tool 装备） */
+  /** 战斗装备折算（或旧身家口径战斗装备市场估值） */
   equipment: number
-  /** 已参悟功法市场估值（参悟等级 × 对应秘籍单价） */
+  /** 携带功法等级合计（或旧身家口径参悟功法估值） */
   abilities: number
-  /** 生活技艺工具市场估值（已穿戴 tool-* 装备） */
+  /** 生活技艺工具估值（旧身家口径兼容保留，道行口径为 0） */
   tools: number
+  /** 境界与根基（境界等级×2 + 根基×1.5） */
+  realmAndGenji?: number
+  /** 携带特质折算（特质消耗点数×(1 + 对应特质等级×5%)） */
+  traits?: number
 }
 
 
@@ -974,9 +978,9 @@ export interface PlayerCardDto {
   experienceToNext: number
   /** 战斗经验 */
   combatExperience: number
-  /** 装备与功法估值身家 */
+  /** 道行（原身家口径，内部协议键沿用 valuation） */
   valuation: number
-  /** 身家估值构成细分 */
+  /** 道行构成细分 */
   valuationBreakdown?: ValuationBreakdownDto | null
   /** 六维经验与等级投影 */
   coreAttributes: PlayerCardCoreDto | null
@@ -1020,7 +1024,7 @@ export interface LeaderboardIndexDto {
   boards: LeaderboardBoardSummaryDto[]
 }
 
-/** 身家细分估值（与 LeaderboardEntryDto 复用同一线形） */
+/** 全服排行榜单条名次行（Top 50 条目，含道行细分） */
 export interface LeaderboardEntryDto {
   rank: number
   score: number

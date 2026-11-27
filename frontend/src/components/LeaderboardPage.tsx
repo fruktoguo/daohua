@@ -14,7 +14,7 @@ import { useGameStore } from '../game/gameStore'
 import { useSocialStore } from '../game/socialStore'
 import { resolvePlayerActorId } from '../game/avatarStore'
 import { calculateRealmInfo, TECHNIQUE_IDS } from '../game/combatConstants'
-import { formatNumber } from '../game/format'
+import { formatNumber, formatValuation } from '../game/format'
 import {
   formatLeaderboardTimestamp,
   resolveBoardId,
@@ -439,8 +439,8 @@ function renderEntryMetric(
             placement="left"
             valuation={val}
           >
-            <strong className="leaderboard-metric-primary is-hoverable">
-              <UnitNumber disableTooltip tone="gold" value={val} />
+            <strong className="leaderboard-metric-primary is-hoverable tone-gold">
+              {formatValuation(val)}
             </strong>
           </ValuationHoverTarget>
           <span className="leaderboard-metric-sub">{t('app.leaderboard.valuationSub')}</span>
@@ -514,7 +514,7 @@ function renderMyRankMetric(
       return (
         <span className="leaderboard-my-score">
           {t('app.leaderboard.myValuationPrefix')}{' '}
-          <UnitNumber tone="gold" value={myRank.score} />
+          <strong className="tone-gold">{formatValuation(myRank.score)}</strong>
         </span>
       )
 
