@@ -215,6 +215,8 @@ export const marketZh = {
       // 多维筛选：每维首项恒为「任意」（该维度不过滤），品阶为跨品类全局下拉。
       filter: {
         any: '任意',
+        categoryLabel: '品类',
+        subCategoryLabel: '分类',
         rarityLabel: '稀有度',
         rarityAria: '材料稀有度筛选',
         rarity: {

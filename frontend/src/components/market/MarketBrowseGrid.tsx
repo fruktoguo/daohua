@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../../game/format'
 import { resolveItemCategoryLabel, resolveItemSubCategory } from '../../game/ids'
 import { useT } from '../../i18n'
@@ -57,6 +57,81 @@ const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
 
 /** 品阶下拉档位：与品质档 `ITEM_GRADE_ORDER`（1~8 阶）同域 */
 const GRADE_TIERS: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 7, 8]
+
+/** 竖屏或窄屏断点：将坊市各级分类与筛选组收拢为紧凑下拉框，释放物品网格可视高度 */
+const COMPACT_MARKET_FILTER_QUERY = '(orientation: portrait), (max-width: 960px)'
+
+function useCompactMarketFilters(): boolean {
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_MARKET_FILTER_QUERY).matches,
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const media = window.matchMedia(COMPACT_MARKET_FILTER_QUERY)
+    const update = () => setCompact(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return compact
+}
+
+interface FilterDimensionProps<T extends string> {
+  ariaLabel: string
+  compact: boolean
+  disabled?: boolean
+  label: string
+  onChange: (value: T) => void
+  options: ReadonlyArray<OptionToggleOption<T>>
+  value: T
+}
+
+/**
+ * 坊市筛选维度控件：桌面横屏渲染为互斥 OptionToggle，竖屏/窄屏收拢为原生下拉框。
+ */
+function FilterDimension<T extends string>({
+  ariaLabel,
+  compact,
+  disabled,
+  label,
+  onChange,
+  options,
+  value,
+}: FilterDimensionProps<T>): React.JSX.Element {
+  if (compact) {
+    return (
+      <label className={`filter-grade-field${disabled ? ' is-disabled' : ''}`}>
+        <span className="filter-label">{label}</span>
+        <select
+          aria-label={ariaLabel}
+          className="filter-grade-select"
+          disabled={disabled}
+          onChange={event => onChange(event.target.value as T)}
+          value={value}
+        >
+          {options.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+
+  return (
+    <>
+      <span className="filter-label">{label}</span>
+      <OptionToggle
+        ariaLabel={ariaLabel}
+        disabled={disabled}
+        onChange={onChange}
+        options={options}
+        value={value}
+      />
+    </>
+  )
+}
 
 /** 材料子分类判定：与品类丝带同一 `resolveItemSubCategory` 口径 */
 function matchesMaterialSubCategory(item: MarketInstrument, sub: string): boolean {
@@ -170,6 +245,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   onSelect,
 }: MarketBrowseGridProps): React.JSX.Element {
   const t = useT()
+  const compactFilters = useCompactMarketFilters()
   const inventory = useGameStore(state => state.inventory)
   const marketStats = useGameStore(state => state.marketStats)
   const amountDisplayMode = useMarketStore(state => state.amountDisplayMode)
@@ -317,6 +393,12 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   }
 
   // 4. 筛选选项常量：首项恒为「任意」，其余互斥
+  const primaryTabOptions = useMemo<ReadonlyArray<OptionToggleOption<PrimaryCategory>>>(() =>
+    PRIMARY_TABS.map(tab => ({ value: tab.id, label: t(tab.labelKey) || tab.fallback })), [t])
+
+  const materialSubOptions = useMemo<ReadonlyArray<OptionToggleOption<MaterialSubCategory>>>(() =>
+    MATERIAL_SUB_TABS.map(sub => ({ value: sub.id, label: t(sub.labelKey) || sub.fallback })), [t])
+
   const materialRarityOptions = useMemo<ReadonlyArray<OptionToggleOption<MaterialRarityFilter>>>(() => [
     { value: 'any', label: t('market.browse.filter.any') },
     { value: 'common', label: t('market.browse.filter.rarity.common') },
@@ -421,23 +503,25 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   ])
 
   return (
-    <div className="market-browse">
+    <div className={`market-browse${compactFilters ? ' is-compact' : ''}`}>
       <div className="market-browse-toolbar">
         <div className="market-category-bar">
-          <div className="market-category-chips" role="tablist" aria-label={t('market.browse.filterCategoryAria')}>
-            {PRIMARY_TABS.map(tab => (
-              <button
-                aria-selected={primaryTab === tab.id}
-                className={primaryTab === tab.id ? 'active' : ''}
-                key={tab.id}
-                onClick={() => handlePrimaryTabChange(tab.id)}
-                role="tab"
-                type="button"
-              >
-                {t(tab.labelKey) || tab.fallback}
-              </button>
-            ))}
-          </div>
+          {!compactFilters && (
+            <div className="market-category-chips" role="tablist" aria-label={t('market.browse.filterCategoryAria')}>
+              {PRIMARY_TABS.map(tab => (
+                <button
+                  aria-selected={primaryTab === tab.id}
+                  className={primaryTab === tab.id ? 'active' : ''}
+                  key={tab.id}
+                  onClick={() => handlePrimaryTabChange(tab.id)}
+                  role="tab"
+                  type="button"
+                >
+                  {t(tab.labelKey) || tab.fallback}
+                </button>
+              ))}
+            </div>
+          )}
           <div
             aria-label={t('market.browse.amountMode.aria')}
             className={`market-amount-toggle is-${amountDisplayMode.toLowerCase()}`}
@@ -491,7 +575,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           value={query}
         />
       </div>
-      {primaryTab === 'material' && (
+      {!compactFilters && primaryTab === 'material' && (
         <div className="insight-sub-tabs market-sub-tabs" role="tablist" aria-label={t('market.browse.filterSubCategoryAria')}>
           {MATERIAL_SUB_TABS.map(sub => (
             <button
@@ -509,27 +593,49 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
       )}
 
       <div className="filter-bar" role="toolbar" aria-label={t('market.browse.filterSubCategoryAria')}>
+        {compactFilters && (
+          <FilterDimension
+            ariaLabel={t('market.browse.filterCategoryAria')}
+            compact
+            label={t('market.browse.filter.categoryLabel')}
+            onChange={handlePrimaryTabChange}
+            options={primaryTabOptions}
+            value={primaryTab}
+          />
+        )}
+
+        {compactFilters && primaryTab === 'material' && (
+          <FilterDimension
+            ariaLabel={t('market.browse.filterSubCategoryAria')}
+            compact
+            label={t('market.browse.filter.subCategoryLabel')}
+            onChange={handleSubCategoryChange}
+            options={materialSubOptions}
+            value={(MATERIAL_SUB_TABS.some(sub => sub.id === subCategory) ? subCategory : 'all') as MaterialSubCategory}
+          />
+        )}
+
         {primaryTab === 'material' && (
-          <>
-            <span className="filter-label">{t('market.browse.filter.rarityLabel')}</span>
-            <OptionToggle
-              ariaLabel={t('market.browse.filter.rarityAria')}
-              onChange={next => {
-                setMaterialRarity(next)
-                resetScroll()
-              }}
-              options={materialRarityOptions}
-              value={materialRarity}
-            />
-          </>
+          <FilterDimension
+            ariaLabel={t('market.browse.filter.rarityAria')}
+            compact={compactFilters}
+            label={t('market.browse.filter.rarityLabel')}
+            onChange={next => {
+              setMaterialRarity(next)
+              resetScroll()
+            }}
+            options={materialRarityOptions}
+            value={materialRarity}
+          />
         )}
 
         {primaryTab === 'equipment' && (
           <>
-            <span className="filter-label">{t('market.browse.filter.kindLabel')}</span>
-            <OptionToggle
+            <FilterDimension
               ariaLabel={t('market.browse.filter.kindAria')}
+              compact={compactFilters}
               disabled={equipmentSlot === 'tool'}
+              label={t('market.browse.filter.kindLabel')}
               onChange={next => {
                 setEquipmentKind(next)
                 resetScroll()
@@ -537,9 +643,10 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={equipmentKindOptions}
               value={equipmentKind}
             />
-            <span className="filter-label">{t('market.browse.filter.slotLabel')}</span>
-            <OptionToggle
+            <FilterDimension
               ariaLabel={t('market.browse.filter.slotAria')}
+              compact={compactFilters}
+              label={t('market.browse.filter.slotLabel')}
               onChange={next => {
                 setEquipmentSlot(next)
                 resetScroll()
@@ -551,25 +658,25 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         )}
 
         {primaryTab === 'consumable' && (
-          <>
-            <span className="filter-label">{t('market.browse.filter.consumableLabel')}</span>
-            <OptionToggle
-              ariaLabel={t('market.browse.filter.consumableAria')}
-              onChange={next => {
-                setConsumableKind(next)
-                resetScroll()
-              }}
-              options={consumableKindOptions}
-              value={consumableKind}
-            />
-          </>
+          <FilterDimension
+            ariaLabel={t('market.browse.filter.consumableAria')}
+            compact={compactFilters}
+            label={t('market.browse.filter.consumableLabel')}
+            onChange={next => {
+              setConsumableKind(next)
+              resetScroll()
+            }}
+            options={consumableKindOptions}
+            value={consumableKind}
+          />
         )}
 
         {primaryTab === 'manual' && (
           <>
-            <span className="filter-label">{t('market.browse.filter.disciplineLabel')}</span>
-            <OptionToggle
+            <FilterDimension
               ariaLabel={t('market.browse.manual.disciplineAria')}
+              compact={compactFilters}
+              label={t('market.browse.filter.disciplineLabel')}
               onChange={next => {
                 setManualDiscipline(next)
                 resetScroll()
@@ -577,9 +684,10 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={disciplineOptions}
               value={manualDiscipline}
             />
-            <span className="filter-label">{t('market.browse.filter.damageLabel')}</span>
-            <OptionToggle
+            <FilterDimension
               ariaLabel={t('market.browse.manual.categoryAria')}
+              compact={compactFilters}
+              label={t('market.browse.filter.damageLabel')}
               onChange={next => {
                 setManualCategory(next)
                 resetScroll()
@@ -587,9 +695,10 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               options={manualCategoryOptions}
               value={manualCategory}
             />
-            <span className="filter-label">{t('market.browse.filter.formLabel')}</span>
-            <OptionToggle
+            <FilterDimension
               ariaLabel={t('market.browse.manual.formAria')}
+              compact={compactFilters}
+              label={t('market.browse.filter.formLabel')}
               onChange={next => {
                 setManualForm(next)
                 resetScroll()
